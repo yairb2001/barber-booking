@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// === עסק ===
+model Business {
+  id             String   @id @default(uuid())
+  name           String
+  slug           String   @unique
+  logoUrl        String?  @map("logo_url")
+  coverImageUrl  String?  @map("cover_image_url")
+  brandColor     String?  @default("#D4AF37") @map("brand_color")
+  phone          String?
+  address        String?
+  about          String?
+  terms          String?
+  socialLinks    String?  @map("social_links") // JSON string
+  facebookPixel  String?  @map("facebook_pixel")
+  settings       String?  // JSON string
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  staff          Staff[]
+  services       Service[]
+  customers      Customer[]
+  appointments   Appointment[]
+  waitlist       Waitlist[]
+  announcements  Announcement[]
+  products       Product[]
+
+  @@map("businesses")
+}
+
+// === צוות ===
+model Staff {
+  id            String   @id @default(uuid())
+  businessId    String   @map("business_id")
+  phone         String?
+  name          String
+  nickname      String?
+  avatarUrl     String?  @map("avatar_url")
+  role          String   @default("barber") // owner, manager, barber
+  isAvailable   Boolean  @default(true) @map("is_available")
+  inQuickPool   Boolean  @default(false) @map("in_quick_pool")
+  poolPriority  Int      @default(0) @map("pool_priority")
+  settings      String?  // JSON string
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  business      Business @relation(fields: [businessId], references: [id])
+  schedules     StaffSchedule[]
+  overrides     StaffScheduleOverride[]
+  staffServices StaffService[]
+  appointments  Appointment[]
+  waitlist      Waitlist[]
+  portfolio     PortfolioItem[]
+
+  @@map("staff")
+}
+
+// === שעות עבודה קבועות ===
+model StaffSchedule {
+  id          String  @id @default(uuid())
+  staffId     String  @map("staff_id")
+  dayOfWeek   Int     @map("day_of_week") // 0=Sunday
+  isWorking   Boolean @default(true) @map("is_working")
+  slots       String  // JSON: [{start: "09:00", end: "20:00"}]
+  breaks      String? // JSON: [{start: "13:00", end: "13:30"}]
+
+  staff       Staff   @relation(fields: [staffId], references: [id])
+
+  @@unique([staffId, dayOfWeek])
+  @@map("staff_schedules")
+}
+
+// === חריגים ===
+model StaffScheduleOverride {
+  id          String  @id @default(uuid())
+  staffId     String  @map("staff_id")
+  date        DateTime
+  isWorking   Boolean @default(false) @map("is_working")
+  slots       String? // JSON
+  breaks      String? // JSON
+  reason      String?
+
+  staff       Staff   @relation(fields: [staffId], references: [id])
+
+  @@unique([staffId, date])
+  @@map("staff_schedule_overrides")
+}
+
+// === שירותים ===
+model Service {
+  id              String   @id @default(uuid())
+  businessId      String   @map("business_id")
+  name            String
+  description     String?
+  price           Float
+  durationMinutes Int      @map("duration_minutes")
+  color           String?  @default("#D4AF37")
+  icon            String?
+  note            String?
+  isVisible       Boolean  @default(true) @map("is_visible")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  business        Business @relation(fields: [businessId], references: [id])
+  staffServices   StaffService[]
+  appointments    Appointment[]
+  waitlist        Waitlist[]
+
+  @@map("services")
+}
+
+// === שירות לפי ספר ===
+model StaffService {
+  staffId        String  @map("staff_id")
+  serviceId      String  @map("service_id")
+  customPrice    Float?  @map("custom_price")
+  customDuration Int?    @map("custom_duration")
+
+  staff          Staff   @relation(fields: [staffId], references: [id])
+  service        Service @relation(fields: [serviceId], references: [id])
+
+  @@id([staffId, serviceId])
+  @@map("staff_services")
+}
+
+// === לקוחות ===
+model Customer {
+  id                String    @id @default(uuid())
+  businessId        String    @map("business_id")
+  phone             String
+  name              String
+  referralSource    String?   @map("referral_source")
+  referredById      String?   @map("referred_by_id")
+  isBlocked         Boolean   @default(false) @map("is_blocked")
+  pushToken         String?   @map("push_token")
+  notificationPrefs String?   @map("notification_prefs") // JSON
+  createdAt         DateTime  @default(now()) @map("created_at")
+  lastVisitAt       DateTime? @map("last_visit_at")
+
+  business          Business   @relation(fields: [businessId], references: [id])
+  referredBy        Customer?  @relation("CustomerReferral", fields: [referredById], references: [id])
+  referrals         Customer[] @relation("CustomerReferral")
+  appointments      Appointment[]
+  waitlist          Waitlist[]
+
+  @@unique([businessId, phone])
+  @@map("customers")
+}
+
+// === תורים ===
+model Appointment {
+  id             String   @id @default(uuid())
+  businessId     String   @map("business_id")
+  customerId     String   @map("customer_id")
+  staffId        String   @map("staff_id")
+  serviceId      String   @map("service_id")
+  date           DateTime
+  startTime      String   @map("start_time") // "14:30"
+  endTime        String   @map("end_time")   // "15:00"
+  status         String   @default("confirmed") // pending, confirmed, cancelled_by_customer, cancelled_by_staff, completed, no_show
+  price          Float
+  note           String?
+  staffNote      String?  @map("staff_note")
+  referralSource String?  @map("referral_source")
+  referredById   String?  @map("referred_by_id")
+  cancelledAt    DateTime? @map("cancelled_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  business       Business @relation(fields: [businessId], references: [id])
+  customer       Customer @relation(fields: [customerId], references: [id])
+  staff          Staff    @relation(fields: [staffId], references: [id])
+  service        Service  @relation(fields: [serviceId], references: [id])
+
+  @@map("appointments")
+}
+
+// === רשימת המתנה ===
+model Waitlist {
+  id           String   @id @default(uuid())
+  businessId   String   @map("business_id")
+  customerId   String   @map("customer_id")
+  staffId      String?  @map("staff_id")
+  serviceId    String   @map("service_id")
+  date         DateTime
+  isFlexible   Boolean  @default(false) @map("is_flexible")
+  status       String   @default("waiting") // waiting, notified, booked, expired
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  business     Business @relation(fields: [businessId], references: [id])
+  customer     Customer @relation(fields: [customerId], references: [id])
+  staff        Staff?   @relation(fields: [staffId], references: [id])
+  service      Service  @relation(fields: [serviceId], references: [id])
+
+  @@map("waitlist")
+}
+
+// === עדכונים / פינבורד ===
+model Announcement {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  title       String
+  content     String?
+  isPinned    Boolean  @default(false) @map("is_pinned")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business    Business @relation(fields: [businessId], references: [id])
+
+  @@map("announcements")
+}
+
+// === מוצרים ===
+model Product {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  name        String
+  description String?
+  price       Float
+  imageUrl    String?  @map("image_url")
+  isVisible   Boolean  @default(true) @map("is_visible")
+  sortOrder   Int      @default(0) @map("sort_order")
+
+  business    Business @relation(fields: [businessId], references: [id])
+
+  @@map("products")
+}
+
+// === גלריית עבודות / סטוריז ===
+model PortfolioItem {
+  id          String   @id @default(uuid())
+  staffId     String   @map("staff_id")
+  imageUrl    String   @map("image_url")
+  caption     String?
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  staff       Staff    @relation(fields: [staffId], references: [id])
+
+  @@map("portfolio_items")
+}
