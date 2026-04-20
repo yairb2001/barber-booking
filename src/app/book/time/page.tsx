@@ -1,8 +1,6 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -24,7 +22,7 @@ function getDateLabel(date: Date, today: Date): string {
   return `יום ${getDayName(date)}`;
 }
 
-export default function ChooseTimePage() {
+function ChooseTimePageContent() {
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId");
   const serviceId = searchParams.get("serviceId");
@@ -143,5 +141,13 @@ export default function ChooseTimePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ChooseTimePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-neutral-400">טוען...</div>}>
+      <ChooseTimePageContent />
+    </Suspense>
   );
 }

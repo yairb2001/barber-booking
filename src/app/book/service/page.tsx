@@ -1,8 +1,6 @@
 "use client";
 
-export const dynamic = "force-dynamic";
-
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
@@ -34,7 +32,7 @@ type StaffInfo = {
   avatarUrl: string | null;
 };
 
-export default function ChooseServicePage() {
+function ChooseServicePageContent() {
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId");
   const [services, setServices] = useState<Service[]>([]);
@@ -154,5 +152,13 @@ export default function ChooseServicePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ChooseServicePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-neutral-400">טוען...</div>}>
+      <ChooseServicePageContent />
+    </Suspense>
   );
 }
