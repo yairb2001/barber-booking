@@ -38,6 +38,8 @@ export default function AdminStaffPage() {
   const [schedule, setSchedule] = useState(emptySchedule());
   const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true });
   const [saving, setSaving] = useState(false);
+  const [setPasswordFor, setSetPasswordFor] = useState<Staff | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   async function load() {
     const data = await fetch("/api/admin/staff").then((r) => r.json());
@@ -79,9 +81,26 @@ export default function AdminStaffPage() {
     load();
   }
 
-  async function deleteStaff(id: string) {
-    if (!confirm("למחוק את הספר?")) return;
-    await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
+  async function setStaffPassword(id: string) {
+    if (!newPassword || newPassword.length < 4) { alert("סיסמה חייבת להיות לפחות 4 תווים"); return; }
+    setSaving(true);
+    const res = await fetch(`/api/admin/staff/${id}/set-password`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPassword }),
+    });
+    setSaving(false);
+    if (res.ok) { setSetPasswordFor(null); setNewPassword(""); alert("סיסמה הוגדרה בהצלחה ✓"); }
+    else { const d = await res.json(); alert(d.error || "שגיאה"); }
+  }
+
+  async function deleteStaff(id: string, name: string) {
+    if (!confirm(`למחוק את ${name}?\n\nפעולה זו תמחק גם את לוח השעות, השירותים והגלריה שלו.`)) return;
+    const res = await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error || "שגיאה במחיקה");
+      return;
+    }
     load();
   }
 
@@ -164,6 +183,12 @@ export default function AdminStaffPage() {
                     {s.inQuickPool ? "✓ תורים מהירים" : "תורים מהירים"}
                   </button>
                   <button
+                    onClick={() => { setSetPasswordFor(s); setNewPassword(""); }}
+                    className="text-xs px-3 py-1.5 rounded-full border border-violet-200 text-violet-600 hover:bg-violet-50 transition"
+                  >
+                    🔑 סיסמה
+                  </button>
+                  <button
                     onClick={() => openSchedule(s)}
                     className="text-xs px-3 py-1.5 rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
                   >
@@ -180,7 +205,7 @@ export default function AdminStaffPage() {
                     {s.isAvailable ? "פעיל" : "לא פעיל"}
                   </button>
                   <button
-                    onClick={() => deleteStaff(s.id)}
+                    onClick={() => deleteStaff(s.id, s.name)}
                     className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition"
                   >
                     מחק
@@ -248,6 +273,49 @@ export default function AdminStaffPage() {
                 onClick={() => setShowAdd(false)}
                 className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium"
               >
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Password Modal */}
+      {setPasswordFor && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSetPasswordFor(null)}>
+          <div className="bg-white rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-neutral-900 mb-1 text-lg">הגדרת סיסמה</h3>
+            <p className="text-sm text-neutral-500 mb-4">
+              {setPasswordFor.name} יוכל להיכנס עם הטלפון שלו
+              {setPasswordFor.phone ? ` (${setPasswordFor.phone})` : ""} והסיסמה הזו
+            </p>
+            {!setPasswordFor.phone && (
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+                ⚠️ לא הוגדר טלפון לספר זה — הוסף טלפון קודם
+              </p>
+            )}
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">סיסמה חדשה (מינ׳ 4 תווים)</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoFocus
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={() => setStaffPassword(setPasswordFor.id)}
+                disabled={saving || newPassword.length < 4 || !setPasswordFor.phone}
+                className="flex-1 bg-violet-500 text-white py-2 rounded-xl text-sm font-semibold hover:bg-violet-400 disabled:opacity-50"
+              >
+                {saving ? "שומר..." : "שמור סיסמה"}
+              </button>
+              <button onClick={() => setSetPasswordFor(null)} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">
                 ביטול
               </button>
             </div>

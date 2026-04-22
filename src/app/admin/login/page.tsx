@@ -5,20 +5,29 @@ import { useRouter } from "next/navigation";
 
 export default function AdminLoginPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<"owner" | "staff">("owner");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!password) { setError("נא להזין סיסמה"); return; }
+    if (mode === "staff" && !phone) { setError("נא להזין טלפון"); return; }
+
     setSubmitting(true);
 
     try {
+      const body: Record<string, string> = { password };
+      if (mode === "staff") body.phone = phone;
+
       const res = await fetch("/api/admin/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(body),
       });
 
       if (!res.ok) {
@@ -45,8 +54,39 @@ export default function AdminLoginPage() {
         <div className="text-center space-y-1">
           <div className="text-4xl">✂️</div>
           <h1 className="text-xl font-bold text-amber-400">כניסת מנהל</h1>
-          <p className="text-sm text-neutral-400">הזן סיסמה כדי להיכנס</p>
         </div>
+
+        {/* Mode tabs */}
+        <div className="flex bg-neutral-800 rounded-xl p-1">
+          <button
+            type="button"
+            onClick={() => { setMode("owner"); setError(""); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${mode === "owner" ? "bg-amber-500 text-neutral-950" : "text-neutral-400"}`}
+          >
+            מנהל ראשי
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("staff"); setError(""); }}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${mode === "staff" ? "bg-amber-500 text-neutral-950" : "text-neutral-400"}`}
+          >
+            ספר
+          </button>
+        </div>
+
+        {mode === "staff" && (
+          <div>
+            <label className="text-sm text-neutral-400 block mb-1">טלפון</label>
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="050-0000000"
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-amber-500"
+              dir="ltr"
+            />
+          </div>
+        )}
 
         <div>
           <label className="text-sm text-neutral-400 block mb-1">סיסמה</label>
@@ -54,7 +94,7 @@ export default function AdminLoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            autoFocus
+            autoFocus={mode === "owner"}
             className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-amber-500"
             dir="ltr"
           />

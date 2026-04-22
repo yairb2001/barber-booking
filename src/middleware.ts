@@ -4,11 +4,10 @@ import { verifySession, COOKIE_NAME } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Skip: login page, login API, logout API
+  // Skip: login page, auth APIs
   if (
     pathname === "/admin/login" ||
-    pathname === "/api/admin/auth/login" ||
-    pathname === "/api/admin/auth/logout"
+    pathname.startsWith("/api/admin/auth/")
   ) {
     return NextResponse.next();
   }
@@ -17,17 +16,25 @@ export async function middleware(req: NextRequest) {
   const session = await verifySession(token);
 
   if (!session) {
-    // Block API routes with 401
     if (pathname.startsWith("/api/admin")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    // Redirect admin pages to login
     const url = req.nextUrl.clone();
     url.pathname = "/admin/login";
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  // Pass session info to API route handlers via request headers
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-session-business-id", session.businessId);
+  requestHeaders.set("x-session-role", session.role);
+  if (session.staffId) {
+    requestHeaders.set("x-session-staff-id", session.staffId);
+  } else {
+    requestHeaders.delete("x-session-staff-id");
+  }
+
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {

@@ -18,6 +18,32 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  await prisma.staff.delete({ where: { id: params.id } });
+  const staffId = params.id;
+
+  // Block if future confirmed appointments exist
+  const futureAppts = await prisma.appointment.count({
+    where: {
+      staffId,
+      date: { gte: new Date() },
+      status: { in: ["confirmed", "pending"] },
+    },
+  });
+  if (futureAppts > 0) {
+    return NextResponse.json(
+      { error: `לא ניתן למחוק — יש ${futureAppts} תורים עתידיים פעילים` },
+      { status: 409 }
+    );
+  }
+
+  // Cascade-delete related data
+  await prisma.$transaction([
+    prisma.staffScheduleOverride.deleteMany({ where: { staffId } }),
+    prisma.staffSchedule.deleteMany({ where: { staffId } }),
+    prisma.staffService.deleteMany({ where: { staffId } }),
+    prisma.portfolioItem.deleteMany({ where: { staffId } }),
+    prisma.waitlist.deleteMany({ where: { staffId } }),
+    prisma.staff.delete({ where: { id: staffId } }),
+  ]);
+
   return NextResponse.json({ ok: true });
 }

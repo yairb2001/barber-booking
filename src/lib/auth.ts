@@ -16,8 +16,14 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
   return bcrypt.compare(plain, hash);
 }
 
-export async function signSession(businessId: string): Promise<string> {
-  return new SignJWT({ businessId })
+export type SessionPayload = {
+  businessId: string;
+  staffId?: string;   // undefined = owner (full access)
+  role: "owner" | "barber";
+};
+
+export async function signSession(payload: SessionPayload): Promise<string> {
+  return new SignJWT(payload as Record<string, unknown>)
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
@@ -26,12 +32,16 @@ export async function signSession(businessId: string): Promise<string> {
 
 export async function verifySession(
   token: string | undefined
-): Promise<{ businessId: string } | null> {
+): Promise<SessionPayload | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, SECRET);
     if (typeof payload.businessId !== "string") return null;
-    return { businessId: payload.businessId };
+    return {
+      businessId: payload.businessId as string,
+      staffId: payload.staffId as string | undefined,
+      role: (payload.role as "owner" | "barber") || "owner",
+    };
   } catch {
     return null;
   }
