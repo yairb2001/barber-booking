@@ -149,7 +149,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
     setSaving(true);
     const res = await fetch("/api/admin/appointments", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, phone, customerName: name }),
+      body: JSON.stringify({ ...form, startTime: form.time, phone, customerName: name }),
     });
     if (res.ok) { onSaved(); onClose(); }
     setSaving(false);
