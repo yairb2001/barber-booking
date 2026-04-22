@@ -22,6 +22,7 @@ model Business {
   terms          String?
   socialLinks    String?  @map("social_links") // JSON string
   facebookPixel  String?  @map("facebook_pixel")
+  passwordHash   String?  @map("password_hash")
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

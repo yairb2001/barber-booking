@@ -18,6 +18,16 @@ const navItems = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
+  // Login page uses its own minimal layout (no sidebar)
+  if (pathname === "/admin/login") {
+    return <div className="min-h-screen bg-neutral-950 text-white" dir="rtl">{children}</div>;
+  }
+
+  const handleLogout = async () => {
+    await fetch("/api/admin/auth/logout", { method: "POST" });
+    window.location.href = "/admin/login";
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-neutral-100" dir="rtl">
       {/* Sidebar */}
@@ -40,8 +50,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             );
           })}
         </nav>
-        <div className="px-4 py-3 border-t border-neutral-800">
-          <Link href="/" className="text-xs text-neutral-500 hover:text-neutral-300 transition">← האתר ללקוחות</Link>
+        <div className="px-4 py-3 border-t border-neutral-800 space-y-2">
+          <Link href="/" className="block text-xs text-neutral-500 hover:text-neutral-300 transition">← האתר ללקוחות</Link>
+          <button onClick={handleLogout} className="text-xs text-red-400 hover:text-red-300 transition">🚪 יציאה</button>
         </div>
       </aside>
 
