@@ -114,6 +114,8 @@ function ApptBlock({ appt, colorClass, onClick }: { appt: Appt; colorClass: stri
 function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved }:
   { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void }
 ) {
+  // fromGrid = opened by clicking a cell (staff + time pre-set)
+  const fromGrid = !!staff;
   const [form, setForm] = useState({ staffId: staff?.id || "", serviceId: "", date, time, note: "" });
   const [customerMode, setCustomerMode] = useState<"search" | "new">("search");
   const [customerQuery, setCustomerQuery] = useState("");
@@ -145,6 +147,8 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
     setSaving(false);
   }
 
+  const selectedStaff = allStaff.find(s => s.id === form.staffId);
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -153,29 +157,77 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100">✕</button>
         </div>
         <div className="px-5 py-4 space-y-4">
-          {/* Date & time */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
-              <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+
+          {/* Pre-filled summary banner when opened from grid click */}
+          {fromGrid && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-white font-bold text-base shrink-0">
+                {staff.name[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-amber-900 text-sm">{staff.name}</p>
+                <p className="text-xs text-amber-700">
+                  {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })}
+                  {" · "}
+                  {form.time}
+                  {endTime && ` – ${endTime}`}
+                </p>
+              </div>
+              <div className="text-amber-400 text-lg">✂️</div>
             </div>
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">שעה</label>
-              <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+          )}
+
+          {/* Date & time — shown collapsed/editable based on context */}
+          {!fromGrid && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
+                <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+              </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">שעה</label>
+                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+              </div>
             </div>
-          </div>
+          )}
+          {fromGrid && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
+                <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+                  className="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-900" dir="ltr" />
+              </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">שעה</label>
+                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
+                  className="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-900" dir="ltr" />
+              </div>
+            </div>
+          )}
 
           {/* Staff */}
-          <div>
-            <label className="text-xs text-neutral-500 block mb-1">ספר</label>
-            <select value={form.staffId} onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
-              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
-              <option value="">בחר ספר...</option>
-              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
+          {fromGrid ? (
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">ספר</label>
+              <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-amber-900 flex-1">{selectedStaff?.name}</span>
+                <button onClick={() => {/* allow changing */}} className="text-xs text-amber-500 underline"
+                  title="שנה ספר">
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">ספר</label>
+              <select value={form.staffId} onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+                <option value="">בחר ספר...</option>
+                {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* Service */}
           <div>
