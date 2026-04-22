@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
+import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -69,5 +70,30 @@ export async function POST(req: NextRequest) {
     },
     include: { customer: true, staff: true, service: true },
   });
+
+  // Send WhatsApp confirmation (fire-and-forget; failures are logged but don't break the flow)
+  if (hasFeature(business.features, "reminders")) {
+    const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+    const body = confirmationText({
+      customerName: appointment.customer.name,
+      businessName: business.name,
+      staffName: appointment.staff.name,
+      serviceName: appointment.service.name,
+      dateLabel,
+      startTime: appointment.startTime,
+      endTime: appointment.endTime,
+      price: appointment.price,
+      address: business.address,
+    });
+    // Fire-and-forget: don't await, don't block the response
+    sendMessage({
+      businessId: business.id,
+      appointmentId: appointment.id,
+      customerPhone: appointment.customer.phone,
+      kind: "confirmation",
+      body,
+    }).catch(err => console.error("confirmation send failed", err));
+  }
+
   return NextResponse.json(appointment, { status: 201 });
 }

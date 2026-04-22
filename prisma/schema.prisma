@@ -23,6 +23,13 @@ model Business {
   socialLinks    String?  @map("social_links") // JSON string
   facebookPixel  String?  @map("facebook_pixel")
   passwordHash   String?  @map("password_hash")
+  // ── WhatsApp / Messaging ──
+  whatsappNumber        String? @map("whatsapp_number")          // E.164 format, e.g. 972501234567
+  messagingProvider     String? @default("green_api") @map("messaging_provider") // green_api | meta_cloud | none
+  greenApiInstanceId    String? @map("green_api_instance_id")
+  greenApiToken         String? @map("green_api_token")
+  // ── Feature flags ──
+  features       String?  // JSON: { reminders: true, agent: false }
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -34,8 +41,32 @@ model Business {
   waitlist       Waitlist[]
   announcements  Announcement[]
   products       Product[]
+  messageLogs    MessageLog[]
 
   @@map("businesses")
+}
+
+// === לוג הודעות ===
+model MessageLog {
+  id            String   @id @default(uuid())
+  businessId    String   @map("business_id")
+  appointmentId String?  @map("appointment_id")
+  customerPhone String   @map("customer_phone")
+  kind          String   // confirmation | reminder_24h | otp | broadcast | manual | agent_reply
+  status        String   @default("queued") // queued | sent | delivered | read | failed
+  providerId    String?  @map("provider_id")   // ID from WhatsApp provider
+  body          String
+  error         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  sentAt        DateTime? @map("sent_at")
+  deliveredAt   DateTime? @map("delivered_at")
+  readAt        DateTime? @map("read_at")
+
+  business      Business @relation(fields: [businessId], references: [id])
+
+  @@index([businessId, createdAt])
+  @@index([appointmentId])
+  @@map("message_logs")
 }
 
 // === צוות ===

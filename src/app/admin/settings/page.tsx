@@ -7,6 +7,11 @@ type Business = {
   name: string; phone: string; address: string; about: string;
   logoUrl: string; coverImageUrl: string; brandColor: string;
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; waze?: string };
+  whatsappNumber: string;
+  messagingProvider: string;
+  greenApiInstanceId: string;
+  greenApiToken: string;
+  features: { reminders: boolean; agent: boolean };
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; schedules: Schedule[] };
@@ -16,6 +21,8 @@ type DayConfig = { isWorking: boolean; start: string; end: string; hasBreak: boo
 // ── Defaults ───────────────────────────────────────────────────────────────────
 const emptyBusiness: Business = {
   name: "", phone: "", address: "", about: "", logoUrl: "", coverImageUrl: "", brandColor: "#D4AF37", socialLinks: {},
+  whatsappNumber: "", messagingProvider: "green_api", greenApiInstanceId: "", greenApiToken: "",
+  features: { reminders: true, agent: false },
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -126,7 +133,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminSettingsPage() {
-  const [tab, setTab] = useState<"business" | "hours">("business");
+  const [tab, setTab] = useState<"business" | "hours" | "whatsapp">("business");
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
   const [form, setForm] = useState<Business>(emptyBusiness);
@@ -136,7 +143,16 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     fetch("/api/admin/business").then(r => r.json()).then(data => {
-      if (data) setForm({ name: data.name || "", phone: data.phone || "", address: data.address || "", about: data.about || "", logoUrl: data.logoUrl || "", coverImageUrl: data.coverImageUrl || "", brandColor: data.brandColor || "#D4AF37", socialLinks: data.socialLinks || {} });
+      if (data) setForm({
+        name: data.name || "", phone: data.phone || "", address: data.address || "", about: data.about || "",
+        logoUrl: data.logoUrl || "", coverImageUrl: data.coverImageUrl || "", brandColor: data.brandColor || "#D4AF37",
+        socialLinks: data.socialLinks || {},
+        whatsappNumber: data.whatsappNumber || "",
+        messagingProvider: data.messagingProvider || "green_api",
+        greenApiInstanceId: data.greenApiInstanceId || "",
+        greenApiToken: data.greenApiToken || "",
+        features: (typeof data.features === "string" ? JSON.parse(data.features) : data.features) || { reminders: true, agent: false },
+      });
       setBizLoading(false);
     });
     fetch("/api/admin/staff").then(r => r.json()).then(data => { setStaffList(data); setStaffLoading(false); });
@@ -160,8 +176,8 @@ export default function AdminSettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 mb-6 w-fit">
-        {[{ key: "business", label: "פרטי עסק" }, { key: "hours", label: "שעות עבודה" }].map(({ key, label }) => (
-          <button key={key} onClick={() => setTab(key as "business" | "hours")}
+        {[{ key: "business", label: "פרטי עסק" }, { key: "hours", label: "שעות עבודה" }, { key: "whatsapp", label: "WhatsApp" }].map(({ key, label }) => (
+          <button key={key} onClick={() => setTab(key as "business" | "hours" | "whatsapp")}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
             {label}
           </button>
@@ -269,6 +285,145 @@ export default function AdminSettingsPage() {
             ))}
           </div>
         )
+      )}
+
+      {/* ── WhatsApp tab ── */}
+      {tab === "whatsapp" && (
+        bizLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
+          <WhatsAppTab form={form} setField={setField} onSaved={saveBiz} saving={saving} saved={saved} />
+        )
+      )}
+    </div>
+  );
+}
+
+// ── WhatsApp Tab ───────────────────────────────────────────────────────────────
+function WhatsAppTab({
+  form, setField, onSaved, saving, saved,
+}: {
+  form: Business;
+  setField: <K extends keyof Business>(key: K, value: Business[K]) => void;
+  onSaved: () => void;
+  saving: boolean;
+  saved: boolean;
+}) {
+  const [testPhone, setTestPhone] = useState(form.phone || "");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
+
+  async function runTest() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/admin/messaging/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: testPhone }),
+      });
+      const data = await res.json();
+      setTestResult({ ok: !!data.ok, error: data.error });
+    } catch (e) {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : "error" });
+    }
+    setTesting(false);
+  }
+
+  const configured = !!(form.greenApiInstanceId && form.greenApiToken);
+
+  return (
+    <div className="space-y-5 max-w-xl">
+      {/* Credentials */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${configured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+            {configured ? "✓ מחובר" : "לא מוגדר"}
+          </span>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">
+          הזן את פרטי ה-Green API של המספר העסקי. ההודעות (תזכורות, אישורים) יישלחו ממספר זה.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">ספק הודעות</label>
+            <select value={form.messagingProvider} onChange={e => setField("messagingProvider", e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+              <option value="green_api">Green API (לא רשמי)</option>
+              <option value="none" disabled>Meta Cloud (רשמי — בקרוב)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">מספר WhatsApp של העסק</label>
+            <input value={form.whatsappNumber} onChange={e => setField("whatsappNumber", e.target.value)}
+              dir="ltr" placeholder="972501234567"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+            <p className="text-[11px] text-neutral-400 mt-1">פורמט בינלאומי, ללא פלוס או אפס מוביל</p>
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">Instance ID</label>
+            <input value={form.greenApiInstanceId} onChange={e => setField("greenApiInstanceId", e.target.value)}
+              dir="ltr" placeholder="1101234567"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">API Token</label>
+            <input type="password" value={form.greenApiToken} onChange={e => setField("greenApiToken", e.target.value)}
+              dir="ltr" placeholder="••••••••"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Features */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+        <h2 className="font-semibold text-neutral-800 mb-4">אוטומציות</h2>
+        <div className="space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked={form.features.reminders}
+              onChange={e => setField("features", { ...form.features, reminders: e.target.checked })}
+              className="accent-emerald-500 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-neutral-800">תזכורות ואישורי תור</p>
+              <p className="text-xs text-neutral-500">אישור מיידי כשנקבע תור + תזכורת 24 שעות לפני</p>
+            </div>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer opacity-50">
+            <input type="checkbox" disabled checked={form.features.agent}
+              className="accent-violet-500 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-neutral-800">🤖 סוכן AI (בקרוב)</p>
+              <p className="text-xs text-neutral-500">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      {/* Save */}
+      <button onClick={onSaved} disabled={saving}
+        className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+        {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
+      </button>
+
+      {/* Test send */}
+      {configured && (
+        <div className="bg-neutral-50 rounded-2xl border border-dashed border-neutral-300 p-6">
+          <h3 className="font-semibold text-neutral-800 mb-2">🧪 שלח הודעת בדיקה</h3>
+          <p className="text-xs text-neutral-500 mb-3">בדוק שההגדרות נכונות על ידי שליחת הודעה לטלפון שלך</p>
+          <div className="flex gap-2">
+            <input value={testPhone} onChange={e => setTestPhone(e.target.value)}
+              placeholder="0501234567" dir="ltr"
+              className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+            <button onClick={runTest} disabled={testing || !testPhone}
+              className="bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-400 disabled:opacity-50">
+              {testing ? "שולח..." : "שלח"}
+            </button>
+          </div>
+          {testResult && (
+            <div className={`mt-3 text-xs rounded-lg px-3 py-2 ${testResult.ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+              {testResult.ok ? "✓ נשלח בהצלחה!" : `❌ ${testResult.error || "שגיאה"}`}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

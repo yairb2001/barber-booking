@@ -37,6 +37,8 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
+// NOTE: /api/cron/* is intentionally NOT in the matcher so it bypasses auth
+// (Vercel Cron authenticates itself via CRON_SECRET header — see the endpoint).
 export const config = {
   matcher: ["/admin/:path*", "/api/admin/:path*"],
 };

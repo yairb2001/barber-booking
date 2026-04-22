@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
+import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -117,6 +118,30 @@ export async function POST(request: Request) {
     where: { id: customer.id },
     data: { lastVisitAt: new Date() },
   });
+
+  // Send WhatsApp confirmation (fire-and-forget)
+  const business = await prisma.business.findUnique({ where: { id: staff.businessId } });
+  if (business && hasFeature(business.features, "reminders")) {
+    const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+    const msgBody = confirmationText({
+      customerName: customer.name,
+      businessName: business.name,
+      staffName: appointment.staff.name,
+      serviceName: appointment.service.name,
+      dateLabel,
+      startTime,
+      endTime,
+      price,
+      address: business.address,
+    });
+    sendMessage({
+      businessId: staff.businessId,
+      appointmentId: appointment.id,
+      customerPhone,
+      kind: "confirmation",
+      body: msgBody,
+    }).catch(err => console.error("confirmation send failed", err));
+  }
 
   return NextResponse.json(appointment, { status: 201 });
 }

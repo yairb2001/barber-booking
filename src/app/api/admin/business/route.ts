@@ -32,6 +32,12 @@ export async function PATCH(req: NextRequest) {
       ...(body.settings !== undefined && {
         settings: JSON.stringify(body.settings),
       }),
+      // WhatsApp / messaging
+      ...(body.whatsappNumber !== undefined && { whatsappNumber: body.whatsappNumber }),
+      ...(body.messagingProvider !== undefined && { messagingProvider: body.messagingProvider }),
+      ...(body.greenApiInstanceId !== undefined && { greenApiInstanceId: body.greenApiInstanceId }),
+      ...(body.greenApiToken !== undefined && { greenApiToken: body.greenApiToken }),
+      ...(body.features !== undefined && { features: JSON.stringify(body.features) }),
     },
   });
   return NextResponse.json(updated);
