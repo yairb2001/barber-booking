@@ -30,8 +30,8 @@ const apptTop = (t: string) => ((toMin(t) - DAY_START * 60) / 60) * HOUR_HEIGHT;
 const apptH = (s: string, e: string) => Math.max(((toMin(e) - toMin(s)) / 60) * HOUR_HEIGHT, 20);
 const nowPx = () => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - DAY_START * 60) / 60) * HOUR_HEIGHT; };
 const yToTime = (y: number) => {
-  const mins = Math.round((y / HOUR_HEIGHT) * 60 / 30) * 30 + DAY_START * 60;
-  return minToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 30, mins)));
+  const mins = Math.round((y / HOUR_HEIGHT) * 60 / 5) * 5 + DAY_START * 60;
+  return minToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 5, mins)));
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -47,6 +47,14 @@ type Appt = {
 };
 type Customer = { id: string; name: string; phone: string };
 type ViewType = "day" | "3day" | "week" | "month";
+type WaitlistEntry = {
+  id: string;
+  customer: { name: string; phone: string };
+  service: { name: string };
+  staff?: { name: string } | null;
+  date: string;
+  status: string;
+};
 
 // ── Working hours helper ───────────────────────────────────────────────────────
 function getWorkingRanges(staff: Staff, dow: number): { start: number; end: number }[] {
@@ -187,8 +195,20 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שעה</label>
-                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" dir="ltr" />
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => {
+                    const [h, m] = form.time.split(":").map(Number);
+                    const total = Math.max(DAY_START * 60, h * 60 + m - 5);
+                    setForm(p => ({ ...p, time: minToTime(total) }));
+                  }} className="w-8 h-9 border border-neutral-200 rounded-lg text-neutral-600 hover:bg-neutral-50 flex items-center justify-center text-sm">−</button>
+                  <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
+                    className="flex-1 border border-neutral-200 rounded-lg px-2 py-2 text-sm" dir="ltr" />
+                  <button type="button" onClick={() => {
+                    const [h, m] = form.time.split(":").map(Number);
+                    const total = Math.min(DAY_END * 60, h * 60 + m + 5);
+                    setForm(p => ({ ...p, time: minToTime(total) }));
+                  }} className="w-8 h-9 border border-neutral-200 rounded-lg text-neutral-600 hover:bg-neutral-50 flex items-center justify-center text-sm">+</button>
+                </div>
               </div>
             </div>
           )}
@@ -201,8 +221,20 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שעה</label>
-                <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                  className="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-900" dir="ltr" />
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => {
+                    const [h, m] = form.time.split(":").map(Number);
+                    const total = Math.max(DAY_START * 60, h * 60 + m - 5);
+                    setForm(p => ({ ...p, time: minToTime(total) }));
+                  }} className="w-8 h-9 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 flex items-center justify-center text-sm">−</button>
+                  <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
+                    className="flex-1 border border-amber-200 bg-amber-50 rounded-lg px-2 py-2 text-sm text-amber-900" dir="ltr" />
+                  <button type="button" onClick={() => {
+                    const [h, m] = form.time.split(":").map(Number);
+                    const total = Math.min(DAY_END * 60, h * 60 + m + 5);
+                    setForm(p => ({ ...p, time: minToTime(total) }));
+                  }} className="w-8 h-9 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 flex items-center justify-center text-sm">+</button>
+                </div>
               </div>
             </div>
           )}
@@ -293,6 +325,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                 <input value={newCustomer.phone} onChange={e => setNewCustomer(p => ({ ...p, phone: e.target.value }))}
                   placeholder="טלפון" dir="ltr"
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                <p className="text-xs text-neutral-400 mt-1">✓ יתווסף אוטומטית למאגר הלקוחות</p>
               </div>
             )}
           </div>
@@ -311,6 +344,78 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             className="w-full bg-amber-500 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-amber-400 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Add Break Modal ───────────────────────────────────────────────────────────
+function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
+  staffId: string; date: string; defaultTime: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [start, setStart] = useState(defaultTime);
+  const [end, setEnd] = useState(() => {
+    const [h, m] = defaultTime.split(":").map(Number);
+    const total = h * 60 + m + 30;
+    return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    // Load existing override or schedule for that day's slots
+    const dow = new Date(date + "T00:00:00").getDay();
+    // Get current overrides
+    const overrideRes = await fetch(`/api/admin/staff/${staffId}/schedule/override?date=${date}`).then(r => r.json()).catch(() => null);
+    // Get base schedule slots
+    const staffRes = await fetch(`/api/admin/staff`).then(r => r.json());
+    const staff = staffRes.find((s: {id:string}) => s.id === staffId);
+    const baseSchedule = staff?.schedules?.find((sc: {dayOfWeek: number}) => sc.dayOfWeek === dow);
+    const baseSlots = baseSchedule ? JSON.parse(baseSchedule.slots || "[]") : [{ start: "09:00", end: "20:00" }];
+    const existingBreaks = overrideRes?.breaks ? JSON.parse(overrideRes.breaks) : (baseSchedule?.breaks ? JSON.parse(baseSchedule.breaks || "[]") : []);
+    const existingSlots = overrideRes?.slots ? JSON.parse(overrideRes.slots) : baseSlots;
+
+    // Add the new break
+    const newBreaks = [...existingBreaks, { start, end }];
+
+    await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date,
+        isWorking: true,
+        slots: existingSlots,
+        breaks: newBreaks,
+      }),
+    });
+    setSaving(false);
+    onSaved();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-80 shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+        <h3 className="font-bold text-neutral-900 mb-4">הוספת הפסקה</h3>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">מ</label>
+            <input type="time" value={start} onChange={e => setStart(e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">עד</label>
+            <input type="time" value={end} onChange={e => setEnd(e.target.value)}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={save} disabled={saving}
+            className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+            {saving ? "שומר..." : "הוסף הפסקה"}
+          </button>
+          <button onClick={onClose} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">ביטול</button>
         </div>
       </div>
     </div>
@@ -462,11 +567,40 @@ function ApptModal({ appt, onClose, onChange }: { appt: Appt; onClose: () => voi
   );
 }
 
-// ── Day Override Modal ────────────────────────────────────────────────────────
-function DayMenu({ date, staffId, onClose, onRefresh }: { date: string; staffId: string; onClose: () => void; onRefresh: () => void }) {
-  const [mode, setMode] = useState<"menu" | "hours">("menu");
+// ── Day Panel (replaces DayMenu) ──────────────────────────────────────────────
+function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId: string; onClose: () => void; onRefresh: () => void }) {
+  const [tab, setTab] = useState<"hours" | "breaks" | "waitlist">("hours");
   const [hours, setHours] = useState({ isWorking: true, start: "09:00", end: "20:00" });
+  const [breaks, setBreaks] = useState<{ start: string; end: string }[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [saving, setSaving] = useState(false);
+  const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
+  const [services, setServices] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    // Load existing override/schedule
+    fetch("/api/admin/staff").then(r => r.json()).then(allStaff => {
+      const s = allStaff.find((x: {id:string}) => x.id === staffId);
+      const dow = new Date(date + "T00:00:00").getDay();
+      const sched = s?.schedules?.find((sc: {dayOfWeek: number}) => sc.dayOfWeek === dow);
+      if (sched) {
+        const slots = JSON.parse(sched.slots || "[]");
+        setHours({ isWorking: sched.isWorking, start: slots[0]?.start || "09:00", end: slots[0]?.end || "20:00" });
+        setBreaks(sched.breaks ? JSON.parse(sched.breaks) : []);
+      }
+    });
+    fetch(`/api/admin/waitlist?date=${date}&staffId=${staffId}`).then(r => r.json()).then(setWaitlist).catch(() => {});
+    fetch("/api/admin/services").then(r => r.json()).then(setServices).catch(() => {});
+  }, [date, staffId]);
+
+  async function saveHours() {
+    setSaving(true);
+    await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks }),
+    });
+    setSaving(false); onRefresh(); onClose();
+  }
 
   async function closeDay() {
     setSaving(true);
@@ -474,57 +608,169 @@ function DayMenu({ date, staffId, onClose, onRefresh }: { date: string; staffId:
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date, isWorking: false }),
     });
-    setSaving(false); onClose(); onRefresh();
+    setSaving(false); onRefresh(); onClose();
   }
 
-  async function saveHours() {
-    setSaving(true);
+  async function removeBreak(idx: number) {
+    const newBreaks = breaks.filter((_, i) => i !== idx);
+    setBreaks(newBreaks);
     await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, isWorking: true, slots: [{ start: hours.start, end: hours.end }] }),
+      body: JSON.stringify({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: newBreaks }),
     });
-    setSaving(false); onClose(); onRefresh();
+    onRefresh();
   }
+
+  async function addBreak() {
+    const newBreak = { start: "13:00", end: "13:30" };
+    const newBreaks = [...breaks, newBreak];
+    setBreaks(newBreaks);
+  }
+
+  async function addToWaitlist() {
+    if (!newWaiting.phone || !newWaiting.serviceId) return;
+    await fetch("/api/admin/waitlist", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...newWaiting, staffId, date }),
+    });
+    setNewWaiting({ name: "", phone: "", serviceId: "" });
+    fetch(`/api/admin/waitlist?date=${date}&staffId=${staffId}`).then(r => r.json()).then(setWaitlist);
+  }
+
+  async function removeFromWaitlist(id: string) {
+    await fetch("/api/admin/waitlist", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, status: "expired" }),
+    });
+    setWaitlist(prev => prev.filter(w => w.id !== id));
+  }
+
+  const dateLabel = new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-xs shadow-2xl" onClick={e => e.stopPropagation()}>
-        {mode === "menu" ? (
-          <>
-            <div className="px-5 pt-5 pb-3 border-b border-neutral-100">
-              <h3 className="font-bold">{fmtShort(date)}</h3>
-            </div>
-            <div className="divide-y divide-neutral-100">
-              <button onClick={() => setMode("hours")} className="w-full text-right px-5 py-4 hover:bg-neutral-50 text-sm font-medium">✏️ עריכת שעות היום</button>
-              <button onClick={closeDay} disabled={saving} className="w-full text-right px-5 py-4 hover:bg-red-50 text-sm font-medium text-red-600 disabled:opacity-50">🔒 סגור יום זה</button>
-              <button onClick={onClose} className="w-full text-right px-5 py-4 hover:bg-neutral-50 text-sm text-neutral-400">ביטול</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="px-5 pt-5 pb-3 border-b border-neutral-100">
-              <h3 className="font-bold">עריכת שעות – {fmtShort(date)}</h3>
-            </div>
-            <div className="px-5 py-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">מ</label>
-                  <input type="time" value={hours.start} onChange={e => setHours(p => ({ ...p, start: e.target.value }))}
-                    className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm" />
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">עד</label>
-                  <input type="time" value={hours.end} onChange={e => setHours(p => ({ ...p, end: e.target.value }))}
-                    className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm" />
-                </div>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-5 pt-5 pb-3 border-b border-neutral-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-neutral-900">{dateLabel}</h3>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">✕</button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-neutral-100 px-3 pt-1">
+          {([["hours","שעות"],["breaks","הפסקות"],["waitlist","המתנה"]] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setTab(key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === key ? "border-amber-500 text-amber-700" : "border-transparent text-neutral-500"}`}>
+              {label}
+              {key === "waitlist" && waitlist.length > 0 && (
+                <span className="mr-1 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5">{waitlist.length}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {tab === "hours" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <button onClick={() => setHours(p => ({ ...p, isWorking: !p.isWorking }))}
+                  className={`w-11 h-6 rounded-full transition relative ${hours.isWorking ? "bg-emerald-500" : "bg-neutral-300"}`}>
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${hours.isWorking ? "right-1" : "left-1"}`} />
+                </button>
+                <span className="text-sm font-medium">{hours.isWorking ? "יום עבודה" : "יום סגור"}</span>
               </div>
-              <button onClick={saveHours} disabled={saving}
-                className="w-full bg-amber-500 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                {saving ? "שומר..." : "שמור"}
-              </button>
+              {hours.isWorking && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">מ</label>
+                    <input type="time" value={hours.start} onChange={e => setHours(p => ({ ...p, start: e.target.value }))}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">עד</label>
+                    <input type="time" value={hours.end} onChange={e => setHours(p => ({ ...p, end: e.target.value }))}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button onClick={saveHours} disabled={saving}
+                  className="flex-1 bg-amber-500 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  {saving ? "שומר..." : "שמור"}
+                </button>
+                <button onClick={closeDay} disabled={saving}
+                  className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50">
+                  🔒 סגור יום
+                </button>
+              </div>
             </div>
-          </>
-        )}
+          )}
+
+          {tab === "breaks" && (
+            <div className="space-y-3">
+              {breaks.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">אין הפסקות מוגדרות</p>}
+              {breaks.map((br, i) => (
+                <div key={i} className="flex items-center gap-2 bg-orange-50 rounded-xl px-3 py-2 border border-orange-100">
+                  <span className="text-sm font-mono font-medium text-orange-800 flex-1">{br.start} – {br.end}</span>
+                  <div className="flex gap-2">
+                    <input type="time" value={br.start}
+                      onChange={e => setBreaks(prev => prev.map((b, j) => j === i ? { ...b, start: e.target.value } : b))}
+                      className="border border-orange-200 rounded px-1 py-0.5 text-xs" />
+                    <input type="time" value={br.end}
+                      onChange={e => setBreaks(prev => prev.map((b, j) => j === i ? { ...b, end: e.target.value } : b))}
+                      className="border border-orange-200 rounded px-1 py-0.5 text-xs" />
+                    <button onClick={() => removeBreak(i)} className="text-red-400 text-xs hover:text-red-600">✕</button>
+                  </div>
+                </div>
+              ))}
+              <button onClick={addBreak}
+                className="w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-2 rounded-xl text-sm hover:border-amber-300 hover:text-amber-600 transition">
+                + הוסף הפסקה
+              </button>
+              {breaks.length > 0 && (
+                <button onClick={saveHours} disabled={saving}
+                  className="w-full bg-amber-500 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  {saving ? "שומר..." : "שמור הפסקות"}
+                </button>
+              )}
+            </div>
+          )}
+
+          {tab === "waitlist" && (
+            <div className="space-y-3">
+              {waitlist.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">אין ממתינים</p>}
+              {waitlist.map(w => (
+                <div key={w.id} className="flex items-center gap-2 bg-neutral-50 rounded-xl px-3 py-2 border border-neutral-200">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{w.customer.name}</p>
+                    <p className="text-xs text-neutral-500">{w.service.name}</p>
+                  </div>
+                  <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700">📞</a>
+                  <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
+                </div>
+              ))}
+              <div className="border-t border-neutral-100 pt-3 space-y-2">
+                <p className="text-xs font-medium text-neutral-500">הוסף להמתנה</p>
+                <input value={newWaiting.name} onChange={e => setNewWaiting(p => ({ ...p, name: e.target.value }))}
+                  placeholder="שם" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                <input value={newWaiting.phone} onChange={e => setNewWaiting(p => ({ ...p, phone: e.target.value }))}
+                  placeholder="טלפון" dir="ltr" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                <select value={newWaiting.serviceId} onChange={e => setNewWaiting(p => ({ ...p, serviceId: e.target.value }))}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
+                  <option value="">בחר שירות...</option>
+                  {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button onClick={addToWaitlist} disabled={!newWaiting.phone || !newWaiting.serviceId}
+                  className="w-full bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
+                  + הוסף לרשימה
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -568,9 +814,12 @@ export default function AdminCalendar() {
   const [showFilter, setShowFilter] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null);
   const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string } | null>(null);
+  const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
+  const [gridAction, setGridAction] = useState<{ staffId: string; date: string; time: string; x: number; y: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [nowY, setNowY] = useState(nowPx());
   const [hoverY, setHoverY] = useState<number | null>(null);
+  const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
   const gridRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
@@ -624,6 +873,20 @@ export default function AdminCalendar() {
     if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowY - 120, 0);
   }, [loading]);
 
+  // Fetch waitlist counts for visible dates
+  useEffect(() => {
+    const dates = getDates();
+    Promise.all(
+      dates.map(d =>
+        fetch(`/api/admin/waitlist?date=${d}`).then(r => r.json()).then(data => [d, data.length])
+      )
+    ).then(results => {
+      const counts: Record<string, number> = {};
+      for (const [d, count] of results) counts[d as string] = count as number;
+      setWaitlistCounts(counts);
+    }).catch(() => {});
+  }, [getDates]);
+
   function navigate(dir: -1 | 1) {
     const step = view === "day" ? 1 : view === "3day" ? 3 : 7;
     setDate(addDays(date, dir * step));
@@ -644,7 +907,7 @@ export default function AdminCalendar() {
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const time = yToTime(y);
-    setNewAppt({ staffId, date: d, time });
+    setGridAction({ staffId, date: d, time, x: e.clientX, y: e.clientY });
   }
 
   function handleStatusChange(id: string, status: string) {
@@ -674,7 +937,7 @@ export default function AdminCalendar() {
             const isToday = cell === todayISO();
             return (
               <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-amber-50 border-2 border-amber-400" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
-                onClick={() => { setDate(cell); setView("day"); }}>
+                onClick={() => { setDate(cell); setView("day"); setDayMenu({ date: cell, staffId: allStaff[0]?.id || "" }); }}>
                 <span className={`text-sm font-semibold ${isToday ? "text-amber-600" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
                 <div className="mt-1 space-y-0.5">
                   {dayAppts.slice(0, 3).map((a, ai) => (
@@ -715,10 +978,15 @@ export default function AdminCalendar() {
               const isToday = d === todayISO();
               const staffForDay = weekStaff;
               return (
-                <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50"
+                <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
                   onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
                   <span className={`text-xs font-semibold ${isToday ? "text-amber-600" : "text-neutral-500"}`}>{fmtShort(d)}</span>
                   {isToday && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-0.5" />}
+                  {waitlistCounts[d] > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                      {waitlistCounts[d]}
+                    </span>
+                  )}
                 </div>
               );
             })
@@ -805,7 +1073,15 @@ export default function AdminCalendar() {
         <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center">◀</button>
         <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-amber-600 hover:underline px-1">היום</button>
         <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center">▶</button>
-        <span className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate">{dateLabel}</span>
+        {view === "day" ? (
+          <button
+            className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate text-right hover:text-amber-600 transition"
+            onClick={() => setDayMenu({ date, staffId: displayedStaff[0]?.id || allStaff[0]?.id || "" })}>
+            {dateLabel}
+          </button>
+        ) : (
+          <span className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate">{dateLabel}</span>
+        )}
 
         {/* Refresh */}
         <button onClick={loadAppointments} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center" title="רענן">
@@ -880,7 +1156,37 @@ export default function AdminCalendar() {
           onClose={() => setNewAppt(null)} onSaved={loadAppointments}
         />
       )}
-      {dayMenu && <DayMenu date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
+      {addBreak && (
+        <AddBreakModal
+          staffId={addBreak.staffId}
+          date={addBreak.date}
+          defaultTime={addBreak.time}
+          onClose={() => setAddBreak(null)}
+          onSaved={loadAppointments}
+        />
+      )}
+      {dayMenu && <DayPanel date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
+
+      {/* ── Grid Action Picker ── */}
+      {gridAction && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setGridAction(null)} />
+          <div className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-neutral-100 overflow-hidden w-44"
+            style={{ top: Math.min(gridAction.y, window.innerHeight - 130), left: Math.min(gridAction.x, window.innerWidth - 180) }}>
+            <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-100 text-xs text-neutral-500 font-mono">
+              {gridAction.time}
+            </div>
+            <button onClick={() => { setNewAppt({ staffId: gridAction.staffId, date: gridAction.date, time: gridAction.time }); setGridAction(null); }}
+              className="w-full text-right px-4 py-3 hover:bg-amber-50 text-sm font-medium flex items-center gap-2 border-b border-neutral-50">
+              <span>✂️</span> קבע תור
+            </button>
+            <button onClick={() => { setAddBreak({ staffId: gridAction.staffId, date: gridAction.date, time: gridAction.time }); setGridAction(null); }}
+              className="w-full text-right px-4 py-3 hover:bg-orange-50 text-sm font-medium flex items-center gap-2">
+              <span>☕</span> הוסף הפסקה
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
