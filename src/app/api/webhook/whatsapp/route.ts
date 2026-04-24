@@ -63,13 +63,22 @@ function phoneFromChatId(chatId: string): string {
   return chatId.replace(/@.*$/, "");
 }
 
+export async function GET(): Promise<NextResponse> {
+  // Green API may send GET to verify the endpoint
+  return NextResponse.json({ ok: true });
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: GreenApiWebhook;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+    // Non-JSON body (ping, health check, etc.) — return 200 so Green API doesn't retry
+    return NextResponse.json({ ok: true, skipped: "non-json" });
   }
+
+  // Wrap everything in try/catch so Green API always gets 200
+  try {
 
   // Only handle incoming text messages
   if (body.typeWebhook !== "incomingMessageReceived") {
@@ -128,4 +137,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
 
   return NextResponse.json({ ok: true });
+
+  } catch (err) {
+    // Never return 500 to Green API — it will retry endlessly
+    console.error("[webhook] unhandled error:", err);
+    return NextResponse.json({ ok: true, error: "internal" });
+  }
 }
