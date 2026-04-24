@@ -926,12 +926,15 @@ function WhatsAppTab({
             defaultTemplate={DEFAULT_2H_TEMPLATE}
           />
 
-          {/* AI agent — coming soon */}
-          <div className="flex items-start gap-3 opacity-40 cursor-not-allowed pt-1">
-            <input type="checkbox" disabled className="accent-violet-500 mt-0.5" />
+          {/* AI agent — link to dedicated page */}
+          <div className="flex items-start gap-3 pt-1">
+            <span className="text-lg mt-0.5">🤖</span>
             <div>
-              <p className="text-sm font-semibold text-neutral-800">🤖 סוכן AI (בקרוב)</p>
-              <p className="text-xs text-neutral-500">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
+              <p className="text-sm font-semibold text-neutral-800">סוכן AI</p>
+              <p className="text-xs text-neutral-500 mb-1">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
+              <a href="/admin/agent" className="text-xs text-amber-600 hover:text-amber-700 font-medium underline">
+                עבור להגדרות הסוכן ←
+              </a>
             </div>
           </div>
         </div>
