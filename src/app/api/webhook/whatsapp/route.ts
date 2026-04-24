@@ -30,7 +30,7 @@ export const maxDuration = 60; // seconds — needed for Claude API call
 // Green API webhook body types
 interface GreenApiWebhook {
   typeWebhook: string;
-  instanceData?: { idInstance: string };
+  instanceData?: { idInstance: string | number };
   senderData?: {
     chatId: string;
     chatName?: string;
@@ -98,8 +98,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Look up business by Green API instance ID
   const instanceId = body.instanceData?.idInstance;
-  let biz = instanceId
-    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceId }, select: { id: true } })
+  const instanceIdStr = instanceId != null ? String(instanceId) : null;
+  let biz = instanceIdStr
+    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true } })
     : null;
 
   // Fallback: use the first business
