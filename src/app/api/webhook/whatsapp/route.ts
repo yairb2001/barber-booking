@@ -25,6 +25,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // seconds — needed for Claude API call
 
 // Green API webhook body types
 interface GreenApiWebhook {
@@ -131,10 +132,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, skipped: "escalated" });
   }
 
-  // Run agent in background (don't await — webhook must respond quickly)
-  runCustomerAgent({ businessId: biz.id, phone, incomingText: text }).catch(err => {
-    console.error("[agent] error:", err);
-  });
+  // Run agent synchronously — Vercel kills background tasks after response
+  try {
+    await runCustomerAgent({ businessId: biz.id, phone, incomingText: text });
+  } catch (agentErr) {
+    console.error("[agent] error:", agentErr);
+  }
 
   return NextResponse.json({ ok: true });
 
