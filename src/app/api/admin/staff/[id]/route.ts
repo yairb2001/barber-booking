@@ -12,6 +12,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.isAvailable !== undefined && { isAvailable: body.isAvailable }),
       ...(body.inQuickPool !== undefined && { inQuickPool: body.inQuickPool }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
+      ...(body.settings !== undefined && {
+        settings: body.settings === null ? null
+          : typeof body.settings === "string" ? body.settings
+          : JSON.stringify(body.settings),
+      }),
     },
   });
   return NextResponse.json(staff);

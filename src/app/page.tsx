@@ -3,6 +3,13 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 
+// === Stories types ===
+type Story = {
+  id: string;
+  mediaUrl: string;
+  caption: string | null;
+};
+
 type QuickSlot = {
   staffId: string;
   staffName: string;
@@ -42,6 +49,7 @@ type BusinessInfo = {
   name: string;
   logoUrl: string | null;
   coverImageUrl: string | null;
+  brandColor: string | null;
   phone: string | null;
   address: string | null;
   about: string | null;
@@ -53,6 +61,137 @@ type BusinessInfo = {
     waze?: string;
   };
 };
+
+// === Stories Carousel ===
+function StoriesCarousel({ stories }: { stories: Story[] }) {
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const progressRef = useRef<number>(0);
+  const [progress, setProgress] = useState(0);
+
+  function openStory(idx: number) {
+    setActiveIdx(idx);
+    setProgress(0);
+    progressRef.current = 0;
+  }
+
+  function closeStory() {
+    setActiveIdx(null);
+    if (timerRef.current) clearInterval(timerRef.current);
+  }
+
+  function goNext() {
+    if (activeIdx === null) return;
+    const next = (activeIdx + 1) % stories.length;
+    openStory(next);
+  }
+
+  function goPrev() {
+    if (activeIdx === null) return;
+    const prev = (activeIdx - 1 + stories.length) % stories.length;
+    openStory(prev);
+  }
+
+  useEffect(() => {
+    if (activeIdx === null) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+    setProgress(0);
+    const start = Date.now();
+    const duration = 5000;
+    timerRef.current = setInterval(() => {
+      const elapsed = Date.now() - start;
+      const pct = Math.min((elapsed / duration) * 100, 100);
+      setProgress(pct);
+      if (elapsed >= duration) {
+        clearInterval(timerRef.current!);
+        goNext();
+      }
+    }, 50);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIdx]);
+
+  if (stories.length === 0) return null;
+
+  const activeStory = activeIdx !== null ? stories[activeIdx] : null;
+
+  return (
+    <>
+      {/* Horizontal scroll strip */}
+      <div
+        className="flex gap-4 px-4 py-2 overflow-x-auto"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+      >
+        <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
+        {stories.map((story, idx) => (
+          <button key={story.id} onClick={() => openStory(idx)} className="flex flex-col items-center gap-1 flex-shrink-0">
+            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-500 shadow-sm">
+              <img
+                src={story.mediaUrl}
+                alt={story.caption || ""}
+                className="w-full h-full object-cover"
+              />
+            </div>
+            {story.caption && (
+              <span className="text-xs text-neutral-500 w-16 truncate text-center">{story.caption}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Fullscreen story overlay */}
+      {activeStory && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col" dir="rtl">
+          {/* Progress bar */}
+          <div className="absolute top-0 inset-x-0 h-1 bg-white/20 z-10">
+            <div
+              className="h-full bg-amber-500 transition-none"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={closeStory}
+            className="absolute top-4 right-4 z-20 w-9 h-9 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white text-lg hover:bg-white/30 transition"
+          >
+            ✕
+          </button>
+
+          {/* Story image */}
+          <div className="flex-1 flex items-center justify-center">
+            <img
+              src={activeStory.mediaUrl}
+              alt={activeStory.caption || ""}
+              className="max-h-[80vh] w-full object-contain"
+            />
+          </div>
+
+          {/* Caption */}
+          {activeStory.caption && (
+            <div className="absolute bottom-16 inset-x-0 text-center px-6">
+              <p className="text-white text-sm drop-shadow-md">{activeStory.caption}</p>
+            </div>
+          )}
+
+          {/* Navigation arrows */}
+          <button
+            onClick={goPrev}
+            className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white text-xl hover:bg-white/30 transition"
+          >
+            ‹
+          </button>
+          <button
+            onClick={goNext}
+            className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center text-white text-xl hover:bg-white/30 transition"
+          >
+            ›
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
 
 // === Quick Slots Infinite Carousel ===
 function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
@@ -102,7 +241,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
         ref={scrollRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="flex gap-2 overflow-x-auto scrollbar-hide"
+        className="flex gap-2 overflow-x-auto"
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
@@ -110,24 +249,22 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
           <Link
             key={i}
             href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-            className="min-w-[104px] bg-neutral-800/70 hover:bg-neutral-700 transition rounded-lg p-2 border border-neutral-700/40 flex-shrink-0"
+            className="min-w-[108px] bg-white hover:bg-amber-50 transition-colors rounded-2xl p-3 border border-neutral-200 flex-shrink-0 group shadow-sm"
           >
-            <div className="text-amber-400 font-bold text-sm">{slot.time}</div>
-            <div className="text-[11px] text-neutral-300">{slot.dayLabel}</div>
-            <div className="text-[11px] text-neutral-500 truncate">
-              {slot.staffName}
-            </div>
+            <div className="text-amber-500 font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
+            <div className="text-[11px] text-neutral-400 mt-0.5">{slot.dayLabel}</div>
+            <div className="text-[11px] text-neutral-500 truncate mt-0.5">{slot.staffName}</div>
           </Link>
         ))}
       </div>
-      <div className="flex justify-center gap-1 mt-1.5">
+      <div className="flex justify-center gap-1.5 mt-3">
         {slots.map((_, i) => (
           <div
             key={i}
-            className={`w-1.5 h-1.5 rounded-full transition-all ${
+            className={`h-1.5 rounded-full transition-all duration-300 ${
               i === activeIndex % slots.length
-                ? "bg-amber-400 w-3"
-                : "bg-neutral-700"
+                ? "bg-amber-500 w-4"
+                : "bg-neutral-200 w-1.5"
             }`}
           />
         ))}
@@ -136,7 +273,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
   );
 }
 
-// === Portfolio Gallery Carousel (works like Cali) ===
+// === Portfolio Gallery ===
 function PortfolioGallery({ staff }: { staff: Staff[] }) {
   const works = staff
     .filter((s) => s.portfolio.length > 0)
@@ -151,16 +288,20 @@ function PortfolioGallery({ staff }: { staff: Staff[] }) {
   if (works.length === 0) return null;
 
   return (
-    <div className="mt-6">
-      <h2 className="text-center font-bold text-lg mb-4">עבודות נבחרות</h2>
-      <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory">
+    <div className="mt-16">
+      <div className="text-center mb-8 px-6">
+        <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Gallery</p>
+        <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">עבודות נבחרות</h2>
+        <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+      </div>
+      <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
         {works.map((work, i) => (
           <div
             key={i}
-            className="min-w-[260px] max-w-[280px] flex-shrink-0 snap-center"
+            className="min-w-[240px] max-w-[260px] flex-shrink-0 snap-center"
           >
-            <div className="relative rounded-2xl overflow-hidden bg-neutral-800 aspect-[3/4]">
+            <div className="relative rounded-2xl overflow-hidden bg-stone-100 aspect-[3/4] border border-neutral-100 shadow-sm">
               <img
                 src={work.imageUrl}
                 alt={work.caption || ""}
@@ -169,10 +310,9 @@ function PortfolioGallery({ staff }: { staff: Staff[] }) {
                   (e.target as HTMLImageElement).style.display = "none";
                 }}
               />
-              {/* Fallback when no image */}
-              <div className="absolute inset-0 flex items-center justify-center text-neutral-600">
+              <div className="absolute inset-0 flex items-center justify-center text-neutral-300">
                 <svg
-                  className="w-16 h-16"
+                  className="w-12 h-12"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -180,15 +320,14 @@ function PortfolioGallery({ staff }: { staff: Staff[] }) {
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    strokeWidth={1}
+                    strokeWidth={0.5}
                     d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
                   />
                 </svg>
               </div>
-              {/* Barber info overlay */}
-              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/80 to-transparent p-4 pt-12">
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-10 h-10 rounded-full bg-neutral-700 border-2 border-white flex items-center justify-center overflow-hidden">
+              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent p-4 pt-16">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-full bg-white/20 border border-white/30 flex items-center justify-center overflow-hidden flex-shrink-0">
                     {work.staffAvatar ? (
                       <img
                         src={work.staffAvatar}
@@ -196,14 +335,12 @@ function PortfolioGallery({ staff }: { staff: Staff[] }) {
                         className="w-full h-full object-cover"
                       />
                     ) : (
-                      <span className="text-sm text-neutral-300">
+                      <span className="text-[9px] text-white">
                         {work.staffName[0]}
                       </span>
                     )}
                   </div>
-                </div>
-                <div className="text-center mt-1 font-semibold text-sm">
-                  {work.staffName}
+                  <span className="text-xs text-white/80 tracking-[0.1em] uppercase">{work.staffName}</span>
                 </div>
               </div>
             </div>
@@ -220,6 +357,7 @@ export default function HomePage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
+  const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -229,49 +367,54 @@ export default function HomePage() {
       fetch("/api/announcements").then((r) => r.json()),
       fetch("/api/products").then((r) => r.json()),
       fetch("/api/business").then((r) => r.json()),
+      fetch("/api/stories").then((r) => r.json()).catch(() => []),
     ])
-      .then(([slots, staffData, ann, prod, biz]) => {
+      .then(([slots, staffData, ann, prod, biz, storiesData]) => {
         setQuickSlots(slots);
         setStaff(staffData);
         setAnnouncements(ann);
         setProducts(prod);
         setBusiness(biz);
+        setStories(Array.isArray(storiesData) ? storiesData : []);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
+  const brandColor = business?.brandColor || "#D4AF37";
+
   const socialLinks = business?.socialLinks || {};
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-neutral-900">
-      {/* ===== Cover Image ===== */}
-      <div className="relative h-72">
+    <div className="min-h-screen flex flex-col bg-[#faf9f7] text-neutral-900" dir="rtl">
+
+      {/* ===== Hero / Cover ===== */}
+      <div className="relative h-screen max-h-[680px] min-h-[520px]">
+        {/* Background */}
         {business?.coverImageUrl ? (
           <img
             src={business.coverImageUrl}
             alt=""
-            className="w-full h-full object-cover"
+            className="absolute inset-0 w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-b from-neutral-800 to-neutral-900" />
+          <div className="absolute inset-0 bg-gradient-to-b from-stone-300 via-stone-200 to-stone-100" />
         )}
+        {/* Soft warm overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-black/30" />
 
-        {/* Social buttons on cover */}
-        <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+        {/* Social links — top corners */}
+        <div className="absolute top-6 inset-x-0 flex justify-between px-5 z-10">
           <div className="flex gap-2">
             {socialLinks.waze && (
               <a
                 href={socialLinks.waze}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur flex items-center justify-center shadow-lg"
+                className="w-9 h-9 rounded-full bg-white/80 backdrop-blur-md border border-white/60 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5">
-                  <path
-                    fill="#33CCFF"
-                    d="M12 2C6.486 2 2 6.486 2 12c0 1.527.35 2.97.97 4.26L2 22l5.74-.97A9.953 9.953 0 0012 22c5.514 0 10-4.486 10-10S17.514 2 12 2zm-2 9a1 1 0 110-2 1 1 0 010 2zm4 0a1 1 0 110-2 1 1 0 010 2zm-5 3s1 2 3 2 3-2 3-2H9z"
-                  />
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path fill="#33CCFF" d="M12 2C6.486 2 2 6.486 2 12c0 1.527.35 2.97.97 4.26L2 22l5.74-.97A9.953 9.953 0 0012 22c5.514 0 10-4.486 10-10S17.514 2 12 2zm-2 9a1 1 0 110-2 1 1 0 010 2zm4 0a1 1 0 110-2 1 1 0 010 2zm-5 3s1 2 3 2 3-2 3-2H9z" />
                 </svg>
               </a>
             )}
@@ -280,13 +423,10 @@ export default function HomePage() {
                 href={socialLinks.facebook}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur flex items-center justify-center shadow-lg"
+                className="w-9 h-9 rounded-full bg-white/80 backdrop-blur-md border border-white/60 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5">
-                  <path
-                    fill="#1877F2"
-                    d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"
-                  />
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path fill="#1877F2" d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
                 </svg>
               </a>
             )}
@@ -297,13 +437,10 @@ export default function HomePage() {
                 href={socialLinks.instagram}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur flex items-center justify-center shadow-lg"
+                className="w-9 h-9 rounded-full bg-white/80 backdrop-blur-md border border-white/60 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5">
-                  <path
-                    fill="#E4405F"
-                    d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"
-                  />
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path fill="#E4405F" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z" />
                 </svg>
               </a>
             )}
@@ -312,96 +449,142 @@ export default function HomePage() {
                 href={socialLinks.whatsapp}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-10 h-10 rounded-xl bg-white/90 backdrop-blur flex items-center justify-center shadow-lg"
+                className="w-9 h-9 rounded-full bg-white/80 backdrop-blur-md border border-white/60 flex items-center justify-center hover:bg-white transition-colors shadow-sm"
               >
-                <svg viewBox="0 0 24 24" className="w-5 h-5">
-                  <path
-                    fill="#25D366"
-                    d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"
-                  />
+                <svg viewBox="0 0 24 24" className="w-4 h-4">
+                  <path fill="#25D366" d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
                 </svg>
               </a>
             )}
           </div>
         </div>
-      </div>
 
-      {/* ===== Logo + Business Name ===== */}
-      <div className="flex flex-col items-center -mt-12 relative z-10">
-        <div className="w-24 h-24 rounded-full bg-neutral-900 border-4 border-white shadow-xl flex items-center justify-center overflow-hidden">
-          {business?.logoUrl ? (
-            <img
-              src={business.logoUrl}
-              alt={business?.name || ""}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="text-center">
-              <div className="text-amber-400 font-bold text-xs leading-tight">
-                DOMINANT
+        {/* Hero centered content */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10">
+          {/* Logo circle */}
+          <div className="w-20 h-20 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-8 overflow-hidden shadow-lg">
+            {business?.logoUrl ? (
+              <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="text-white font-light text-[10px] tracking-[0.2em] uppercase">
+                {business?.name?.charAt(0) || "D"}
               </div>
-              <div className="text-amber-400 text-[8px]">✂</div>
-            </div>
-          )}
+            )}
+          </div>
+
+          {/* Business name */}
+          <h1 className="text-3xl font-light tracking-[0.3em] uppercase text-white mb-3 drop-shadow-md">
+            {business?.name || "DOMINANT"}
+          </h1>
+          <p className="text-[11px] tracking-[0.25em] text-white/70 uppercase mb-10">
+            Barbershop
+          </p>
+
+          {/* CTA — rounded-full with brand color */}
+          <Link
+            href="/book"
+            className="inline-flex items-center gap-3 font-semibold text-sm tracking-[0.15em] uppercase px-8 py-4 rounded-full transition-colors shadow-lg"
+            style={{ backgroundColor: brandColor, color: "#fff" }}
+          >
+            זמן תור עכשיו
+            <span className="text-base">←</span>
+          </Link>
         </div>
-        <h1 className="font-bold text-xl mt-2">
-          {business?.name || "DOMINANT barbershop"}
-        </h1>
+
+        {/* Bottom fade into content */}
+        <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-[#faf9f7] to-transparent" />
       </div>
 
-      {/* ===== Quick Slots (animated compact carousel) ===== */}
+      {/* ===== Stories Carousel ===== */}
+      {!loading && stories.length > 0 && (
+        <div className="px-1 pt-4 pb-2">
+          <StoriesCarousel stories={stories} />
+        </div>
+      )}
+
+      {/* ===== Open Slots Today ===== */}
       {!loading && quickSlots.length > 0 && (
-        <div className="px-4 mt-4">
-          <div className="bg-neutral-50 rounded-xl p-3 border border-neutral-200">
-            <h2 className="text-sm font-semibold text-amber-600 mb-2">
-              🔥 תורים קרובים פנויים
-            </h2>
-            <QuickSlotsCarousel slots={quickSlots} />
+        <div className="px-5 py-10">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-1">Available Now</p>
+              <h2 className="text-base tracking-[0.2em] font-light uppercase text-neutral-900">תורים פנויים היום</h2>
+            </div>
+            <div className="w-px h-8 bg-neutral-200" />
+          </div>
+          <QuickSlotsCarousel slots={quickSlots} />
+        </div>
+      )}
+
+      {/* Divider */}
+      <div className="h-px bg-neutral-100 mx-5" />
+
+      {/* ===== Our Team ===== */}
+      {staff.length > 0 && (
+        <div className="py-12">
+          <div className="text-center mb-8 px-6">
+            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">The Team</p>
+            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">הספרים שלנו</h2>
+            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+          </div>
+          <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
+            <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
+            {staff.map((member) => (
+              <Link
+                key={member.id}
+                href={`/book/service?staffId=${member.id}`}
+                className="min-w-[160px] max-w-[160px] flex-shrink-0 group"
+              >
+                <div className="aspect-[3/4] bg-stone-100 rounded-2xl overflow-hidden mb-3 relative shadow-sm border border-neutral-100">
+                  {member.avatarUrl ? (
+                    <img
+                      src={member.avatarUrl}
+                      alt={member.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <span className="text-4xl font-light text-neutral-300">{member.name[0]}</span>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors rounded-2xl" />
+                </div>
+                <div className="text-center">
+                  <p className="text-xs tracking-[0.2em] uppercase font-light text-neutral-700">{member.name}</p>
+                  <p className="text-[10px] tracking-[0.15em] text-amber-500 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
+                </div>
+              </Link>
+            ))}
           </div>
         </div>
       )}
 
-      {/* ===== Book Button ===== */}
-      <div className="px-8 mt-4">
-        <Link
-          href="/book"
-          className="flex items-center justify-center gap-2 w-full bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-center py-3.5 rounded-full text-lg transition shadow-lg"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-            />
-          </svg>
-          זימון תור
-        </Link>
-      </div>
+      {/* Divider */}
+      <div className="h-px bg-neutral-100 mx-5" />
+
+      {/* ===== Portfolio Gallery ===== */}
+      {!loading && <PortfolioGallery staff={staff} />}
 
       {/* ===== Announcements ===== */}
       {announcements.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-center font-bold text-lg mb-3">עדכונים חשובים</h2>
-          <div className="px-4 space-y-3">
+        <div className="py-12 px-5">
+          <div className="text-center mb-8">
+            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Updates</p>
+            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">עדכונים</h2>
+            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+          </div>
+          <div className="space-y-3">
             {announcements.map((ann) => (
               <div
                 key={ann.id}
-                className="relative bg-neutral-50 rounded-2xl p-4 border border-neutral-200 shadow-sm"
+                className="bg-white rounded-2xl border border-neutral-100 p-5 relative shadow-sm overflow-hidden"
               >
                 {ann.isPinned && (
-                  <span className="absolute -top-2 -left-1 text-red-500 text-lg">
-                    📌
-                  </span>
+                  <div className="absolute top-0 right-0 w-1 h-full bg-amber-500 rounded-r-2xl" />
                 )}
-                <h3 className="font-bold text-center">{ann.title}</h3>
+                <h3 className="text-sm tracking-[0.1em] font-light text-neutral-900 mb-2">{ann.title}</h3>
                 {ann.content && (
-                  <p className="text-sm text-neutral-600 mt-2 text-center leading-relaxed">
+                  <p className="text-xs text-neutral-500 leading-relaxed">
                     {ann.content}
                   </p>
                 )}
@@ -411,21 +594,22 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* ===== Portfolio / Works Gallery ===== */}
-      {!loading && <PortfolioGallery staff={staff} />}
-
-      {/* ===== Product Catalog ===== */}
+      {/* ===== Products ===== */}
       {products.length > 0 && (
-        <div className="mt-6">
-          <h2 className="text-center font-bold text-lg mb-3">קטלוג המוצרים</h2>
-          <div className="flex gap-3 overflow-x-auto px-4 pb-2">
+        <div className="py-12">
+          <div className="text-center mb-8 px-6">
+            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Shop</p>
+            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">מוצרים</h2>
+            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+          </div>
+          <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {products.map((product) => (
               <div
                 key={product.id}
-                className="min-w-[160px] max-w-[180px] bg-white rounded-2xl border border-neutral-200 overflow-hidden flex-shrink-0 shadow-sm"
+                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-100 overflow-hidden flex-shrink-0 shadow-sm"
               >
-                <div className="h-32 bg-neutral-100 flex items-center justify-center">
+                <div className="h-36 bg-stone-50 flex items-center justify-center overflow-hidden rounded-t-2xl">
                   {product.imageUrl ? (
                     <img
                       src={product.imageUrl}
@@ -433,18 +617,20 @@ export default function HomePage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <span className="text-4xl">🧴</span>
+                    <div className="w-12 h-12 border border-neutral-200 rounded-xl flex items-center justify-center">
+                      <div className="w-1 h-6 bg-neutral-200" />
+                    </div>
                   )}
                 </div>
                 <div className="p-3">
-                  <h3 className="text-sm font-semibold">{product.name}</h3>
+                  <h3 className="text-xs tracking-[0.1em] font-light text-neutral-900 uppercase">{product.name}</h3>
                   {product.description && (
-                    <p className="text-[11px] text-neutral-500 mt-0.5 line-clamp-2">
+                    <p className="text-[10px] text-neutral-400 mt-1 line-clamp-2 leading-relaxed">
                       {product.description}
                     </p>
                   )}
-                  <div className="bg-amber-500 text-white font-bold text-sm mt-2 py-1 px-3 rounded-full text-center inline-block">
-                    ₪ {product.price}
+                  <div className="text-amber-500 text-sm font-light tracking-wider mt-3">
+                    ₪{product.price}
                   </div>
                 </div>
               </div>
@@ -455,51 +641,25 @@ export default function HomePage() {
 
       {/* ===== About ===== */}
       {business?.about && (
-        <div className="mt-6 px-4">
-          <div className="rounded-2xl overflow-hidden border border-neutral-200 shadow-sm">
-            {business.coverImageUrl && (
-              <img
-                src={business.coverImageUrl}
-                alt=""
-                className="w-full h-40 object-cover"
-              />
-            )}
-            <div className="text-center py-3">
-              <span className="text-sm text-neutral-600 font-medium">
-                על העסק
-              </span>
-            </div>
+        <div className="py-12 px-5">
+          <div className="h-px bg-neutral-100 mb-12" />
+          <div className="text-center mb-6">
+            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">About</p>
+            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">אודות</h2>
+            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
           </div>
-          <p className="text-sm text-neutral-600 mt-3 text-center leading-relaxed">
+          <p className="text-sm text-neutral-500 text-center leading-relaxed max-w-sm mx-auto font-light">
             {business.about}
           </p>
         </div>
       )}
 
-      {/* ===== Business Hours ===== */}
-      <div className="px-4 mt-6">
-        <div className="bg-neutral-50 rounded-2xl p-4 border border-neutral-200">
-          <h3 className="font-bold text-center mb-3">שעות פעילות</h3>
-          <div className="text-sm text-neutral-600 space-y-2">
-            <div className="flex justify-between">
-              <span>09:00 - 20:00</span>
-              <span className="font-medium">ראשון - חמישי</span>
-            </div>
-            <div className="flex justify-between">
-              <span>08:00 - 14:00</span>
-              <span className="font-medium">שישי</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">סגור</span>
-              <span className="font-medium">שבת</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* ===== Footer ===== */}
-      <div className="px-4 py-8 mt-6 text-center text-neutral-400 text-xs">
-        DOMINANT Barbershop © {new Date().getFullYear()}
+      <div className="h-px bg-neutral-100 mx-5 mt-4" />
+      <div className="py-10 text-center">
+        <p className="text-[10px] tracking-[0.3em] text-neutral-400 uppercase">
+          {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
+        </p>
       </div>
     </div>
   );

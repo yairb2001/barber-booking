@@ -14,103 +14,186 @@ type ServiceInfo = {
   customDuration: number | null;
 };
 
-const REFERRAL_SOURCES = [
-  { value: "instagram", label: "אינסטגרם" },
-  { value: "facebook", label: "פייסבוק" },
-  { value: "tiktok", label: "טיקטוק" },
-  { value: "google", label: "גוגל" },
-  { value: "friend", label: "חבר הביא חבר" },
-  { value: "walk_in", label: "הגעתי מהרחוב" },
-  { value: "other", label: "אחר" },
-];
+// ── Waitlist card shown after a successful booking ─────────────────────────────
+function WaitlistCard({ phone, name, staffId, serviceId, date }: {
+  phone: string; name: string; staffId: string; serviceId: string; date: string;
+}) {
+  const [timeOfDay, setTimeOfDay]   = useState<"morning" | "afternoon" | "any">("morning");
+  const [isFlexible, setIsFlexible] = useState(true);
+  const [joining, setJoining]       = useState(false);
+  const [joined, setJoined]         = useState(false);
+  const [error, setError]           = useState("");
 
+  async function join() {
+    setJoining(true);
+    setError("");
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, name, staffId, serviceId, date, isFlexible, preferredTimeOfDay: timeOfDay }),
+      });
+      if (!res.ok) {
+        const d = await res.json();
+        setError(d.error || "שגיאה");
+      } else {
+        setJoined(true);
+      }
+    } catch {
+      setError("שגיאת חיבור");
+    }
+    setJoining(false);
+  }
+
+  if (joined) {
+    return (
+      <div className="bg-amber-50 rounded-2xl border border-amber-200 p-5 text-center shadow-sm">
+        <div className="text-2xl text-amber-500 mb-2">🔔</div>
+        <p className="text-xs tracking-[0.15em] uppercase text-amber-600 font-light">הצטרפת לרשימת המתנה</p>
+        <p className="text-neutral-400 text-xs mt-2 leading-relaxed">נעדכן אותך ב-WhatsApp אם יתפנה מקום מוקדם יותר.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
+      <div className="flex items-start gap-3 mb-4">
+        <span className="text-amber-500 text-lg flex-shrink-0">🔔</span>
+        <div>
+          <p className="text-xs tracking-[0.1em] uppercase font-light text-neutral-900">רוצה להגיע מוקדם יותר?</p>
+          <p className="text-neutral-400 text-xs mt-1 leading-relaxed">
+            הצטרף לרשימת המתנה — נשלח לך הודעה ב-WhatsApp אם יתפנה מקום.
+          </p>
+        </div>
+      </div>
+
+      {/* Time of day */}
+      <p className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase mb-2">שעה מועדפת</p>
+      <div className="flex gap-2 mb-4">
+        {([
+          ["morning",   "בוקר",    "09:00–12:00"],
+          ["afternoon", "צהריים",  "12:00–17:00"],
+          ["any",       "כל שעה",  ""],
+        ] as const).map(([val, label, hint]) => (
+          <button
+            key={val}
+            onClick={() => setTimeOfDay(val)}
+            className={`flex-1 border rounded-xl py-2 px-1 text-center transition-colors ${
+              timeOfDay === val
+                ? "border-amber-500 bg-amber-50 text-amber-600"
+                : "border-neutral-200 text-neutral-500 hover:border-amber-200 bg-stone-50"
+            }`}
+          >
+            <div className="text-[11px] tracking-wider font-light">{label}</div>
+            {hint && <div className="text-[9px] text-neutral-400 mt-0.5" dir="ltr">{hint}</div>}
+          </button>
+        ))}
+      </div>
+
+      {/* Flexibility */}
+      <label className="flex items-center gap-3 mb-5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={isFlexible}
+          onChange={(e) => setIsFlexible(e.target.checked)}
+          className="accent-amber-500 w-4 h-4 rounded"
+        />
+        <span className="text-xs text-neutral-500 leading-relaxed">גמיש עם התאריך — כמה שיותר מוקדם</span>
+      </label>
+
+      {error && (
+        <p className="text-xs text-red-500 mb-3 tracking-wide">{error}</p>
+      )}
+
+      <button
+        onClick={join}
+        disabled={joining}
+        className="w-full border border-amber-400 text-amber-600 text-xs tracking-[0.15em] uppercase py-3 rounded-full hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-colors disabled:opacity-40"
+      >
+        {joining ? "מצרף..." : "הצטרף לרשימת המתנה"}
+      </button>
+    </div>
+  );
+}
+
+// ── Main page ──────────────────────────────────────────────────────────────────
 function ConfirmPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const staffId = searchParams.get("staffId") || "";
+  const staffId   = searchParams.get("staffId")   || "";
   const serviceId = searchParams.get("serviceId") || "";
-  const date = searchParams.get("date") || "";
-  const time = searchParams.get("time") || "";
+  const date      = searchParams.get("date")      || "";
+  const time      = searchParams.get("time")      || "";
 
-  const [staffInfo, setStaffInfo] = useState<StaffInfo | null>(null);
+  const [staffInfo, setStaffInfo]     = useState<StaffInfo | null>(null);
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
-  const [phone, setPhone] = useState("");
-  const [name, setName] = useState("");
+  const [phone, setPhone]             = useState("");
+  const [name, setName]               = useState("");
   const [referralSource, setReferralSource] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [referrerPhone, setReferrerPhone]   = useState("");
+  const [referralOptions, setReferralOptions] = useState<string[]>([]);
+  const [submitting, setSubmitting]   = useState(false);
+  const [error, setError]             = useState("");
 
   useEffect(() => {
-    // Fetch staff info
+    fetch("/api/referral-sources").then((r) => r.json()).then(setReferralOptions).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     fetch("/api/staff")
-      .then((res) => res.json())
-      .then((data) => {
-        const found = data.find((s: StaffInfo) => s.id === staffId);
+      .then((r) => r.json())
+      .then((data: StaffInfo[]) => {
+        const found = data.find((s) => s.id === staffId);
         if (found) setStaffInfo(found);
       });
 
-    // Fetch service info
     if (staffId) {
       fetch(`/api/services?staffId=${staffId}`)
-        .then((res) => res.json())
-        .then((data) => {
-          const found = data.find((s: ServiceInfo) => s.id === serviceId);
+        .then((r) => r.json())
+        .then((data: ServiceInfo[]) => {
+          const found = data.find((s) => s.id === serviceId);
           if (found) setServiceInfo(found);
         });
     }
   }, [staffId, serviceId]);
 
-  const dateObj = date ? new Date(date + "T00:00:00") : null;
+  const dateObj   = date ? new Date(date + "T00:00:00") : null;
   const dateLabel = dateObj
-    ? dateObj.toLocaleDateString("he-IL", {
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-      })
+    ? dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })
     : "";
-
-  const price = serviceInfo
-    ? serviceInfo.customPrice ?? serviceInfo.price
-    : 0;
-  const duration = serviceInfo
-    ? serviceInfo.customDuration ?? serviceInfo.durationMinutes
-    : 0;
+  const price    = serviceInfo ? serviceInfo.customPrice ?? serviceInfo.price : 0;
+  const duration = serviceInfo ? serviceInfo.customDuration ?? serviceInfo.durationMinutes : 0;
 
   const handleSubmit = async () => {
-    if (!phone || !name) {
-      setError("נא למלא טלפון ושם");
-      return;
-    }
-
+    if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
     setSubmitting(true);
     setError("");
-
     try {
       const res = await fetch("/api/appointments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          staffId,
-          serviceId,
-          date,
-          startTime: time,
-          customerPhone: phone,
-          customerName: name,
+          staffId, serviceId, date, startTime: time,
+          customerPhone: phone, customerName: name,
           referralSource: referralSource || undefined,
+          referrerPhone: (referralSource === "חבר הביא חבר" && referrerPhone) ? referrerPhone : undefined,
         }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "שגיאה בקביעת התור");
         setSubmitting(false);
         return;
       }
-
       const appointment = await res.json();
       router.push(
-        `/book/confirm?success=true&appointmentId=${appointment.id}&staffName=${encodeURIComponent(appointment.staff.name)}&serviceName=${encodeURIComponent(appointment.service.name)}&date=${date}&time=${time}&price=${price}`
+        `/book/confirm?success=true&appointmentId=${appointment.id}` +
+        `&staffId=${staffId}&serviceId=${serviceId}` +
+        `&staffName=${encodeURIComponent(appointment.staff.name)}` +
+        `&serviceName=${encodeURIComponent(appointment.service.name)}` +
+        `&date=${date}&time=${time}&price=${price}` +
+        `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`
       );
     } catch {
       setError("שגיאה בחיבור לשרת");
@@ -118,46 +201,87 @@ function ConfirmPageContent() {
     }
   };
 
-  // Success screen
+  // ── Success screen ──────────────────────────────────────────────────────────
   const isSuccess = searchParams.get("success") === "true";
   if (isSuccess) {
+    const successDate     = searchParams.get("date")         || "";
+    const successTime     = searchParams.get("time")         || "";
+    const successPrice    = searchParams.get("price")        || "";
+    const successStaffId  = searchParams.get("staffId")      || "";
+    const successSvcId    = searchParams.get("serviceId")    || "";
+    const successPhone    = searchParams.get("phone")        || "";
+    const successName     = searchParams.get("customerName") || "";
+
+    const successDateObj   = successDate ? new Date(successDate + "T00:00:00") : null;
+    const successDateLabel = successDateObj
+      ? successDateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })
+      : "";
+
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-4">
-        <div className="text-center">
-          <div className="text-6xl mb-4">✂️</div>
-          <h1 className="text-2xl font-bold text-amber-400 mb-2">
-            התור נקבע בהצלחה!
-          </h1>
-          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800 mt-4 text-right">
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-neutral-400">ספר</span>
-                <span>{searchParams.get("staffName")}</span>
+      <div className="min-h-screen bg-[#faf9f7] flex flex-col items-center justify-center px-5 py-12" dir="rtl">
+        <div className="w-full max-w-sm space-y-6">
+          {/* Header */}
+          <div className="text-center space-y-4">
+            {/* Check mark */}
+            <div className="w-16 h-16 border-2 border-amber-400 rounded-full flex items-center justify-center mx-auto bg-amber-50 shadow-md">
+              <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </div>
+
+            <div>
+              <h1 className="text-2xl font-light tracking-[0.2em] uppercase text-neutral-900 mb-2">
+                התור נקבע
+              </h1>
+              <p className="text-[10px] tracking-[0.25em] text-neutral-400 uppercase">
+                נשלחה הודעת אישור ב-WhatsApp
+              </p>
+            </div>
+
+            <div className="w-8 h-px bg-amber-400 mx-auto" />
+          </div>
+
+          {/* Summary card */}
+          <div className="bg-white rounded-2xl border border-neutral-100 shadow-md overflow-hidden">
+            <div className="divide-y divide-neutral-50">
+              <div className="flex justify-between items-center px-5 py-3.5">
+                <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">ספר</span>
+                <span className="text-sm font-light text-neutral-900">{searchParams.get("staffName")}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">שירות</span>
-                <span>{searchParams.get("serviceName")}</span>
+              <div className="flex justify-between items-center px-5 py-3.5">
+                <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">שירות</span>
+                <span className="text-sm font-light text-neutral-900">{searchParams.get("serviceName")}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">תאריך</span>
-                <span>{dateLabel}</span>
+              <div className="flex justify-between items-center px-5 py-3.5">
+                <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">תאריך</span>
+                <span className="text-sm font-light text-neutral-900">{successDateLabel}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">שעה</span>
-                <span>{time}</span>
+              <div className="flex justify-between items-center px-5 py-3.5">
+                <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">שעה</span>
+                <span className="text-sm font-light text-neutral-900" dir="ltr">{successTime}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-neutral-400">מחיר</span>
-                <span className="text-amber-400 font-bold">
-                  ₪{searchParams.get("price")}
-                </span>
+              <div className="flex justify-between items-center px-5 py-4">
+                <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">מחיר</span>
+                <span className="text-xl text-amber-500 font-light">₪{successPrice}</span>
               </div>
             </div>
           </div>
 
+          {/* Waitlist card */}
+          {successPhone && successStaffId && successSvcId && successDate && (
+            <WaitlistCard
+              phone={successPhone}
+              name={successName}
+              staffId={successStaffId}
+              serviceId={successSvcId}
+              date={successDate}
+            />
+          )}
+
+          {/* Home button */}
           <Link
             href="/"
-            className="block mt-6 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold py-3 px-8 rounded-xl transition"
+            className="block text-center bg-amber-500 text-white font-semibold text-sm tracking-[0.15em] uppercase py-4 rounded-full hover:bg-amber-600 transition-colors shadow-md"
           >
             חזרה לדף הבית
           </Link>
@@ -166,59 +290,67 @@ function ConfirmPageContent() {
     );
   }
 
+  // ── Booking form ────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-neutral-950/90 backdrop-blur border-b border-neutral-800 px-4 py-3">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#faf9f7]" dir="rtl">
+      {/* ===== Sticky Header ===== */}
+      <div className="sticky top-0 z-20 bg-[#faf9f7]/95 backdrop-blur-md border-b border-neutral-100 px-5 py-4">
+        <div className="flex items-center justify-between">
           <Link
             href={`/book/time?staffId=${staffId}&serviceId=${serviceId}`}
-            className="text-neutral-400 hover:text-white text-xl"
+            className="w-8 h-8 flex items-center justify-center text-neutral-400 hover:text-neutral-700 transition-colors"
           >
-            ←
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
           </Link>
-          <h1 className="text-lg font-semibold">אישור תור</h1>
+          <h1 className="text-[11px] tracking-[0.25em] font-light uppercase text-neutral-600">
+            אישור תור
+          </h1>
+          <div className="w-8" />
         </div>
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Appointment Summary */}
-        <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-          <h2 className="text-amber-400 font-semibold mb-3">סיכום התור</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-neutral-400">ספר</span>
-              <span>{staffInfo?.name || "..."}</span>
+      <div className="p-5 space-y-4">
+        {/* ===== Appointment Summary ===== */}
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm overflow-hidden">
+          <div className="px-5 pt-5 pb-2">
+            <p className="text-[10px] tracking-[0.25em] text-neutral-400 uppercase">סיכום</p>
+          </div>
+          <div className="divide-y divide-neutral-50">
+            <div className="flex justify-between items-center px-5 py-3.5">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">ספר</span>
+              <span className="text-sm font-light text-neutral-800">{staffInfo?.name || "..."}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">שירות</span>
-              <span>{serviceInfo?.name || "..."}</span>
+            <div className="flex justify-between items-center px-5 py-3.5">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">שירות</span>
+              <span className="text-sm font-light text-neutral-800">{serviceInfo?.name || "..."}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">תאריך</span>
-              <span>{dateLabel}</span>
+            <div className="flex justify-between items-center px-5 py-3.5">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">תאריך</span>
+              <span className="text-sm font-light text-neutral-800">{dateLabel}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">שעה</span>
-              <span>{time}</span>
+            <div className="flex justify-between items-center px-5 py-3.5">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">שעה</span>
+              <span className="text-sm font-light text-neutral-800" dir="ltr">{time}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-neutral-400">משך</span>
-              <span>{duration} דקות</span>
+            <div className="flex justify-between items-center px-5 py-3.5">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">משך</span>
+              <span className="text-sm font-light text-neutral-800">{duration} דקות</span>
             </div>
-            <div className="flex justify-between border-t border-neutral-800 pt-2 mt-2">
-              <span className="text-neutral-400">מחיר</span>
-              <span className="text-amber-400 font-bold text-lg">₪{price}</span>
+            <div className="flex justify-between items-center px-5 py-4">
+              <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">מחיר</span>
+              <span className="text-xl text-amber-500 font-light">₪{price}</span>
             </div>
           </div>
         </div>
 
-        {/* Customer Details */}
-        <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-          <h2 className="text-amber-400 font-semibold mb-3">פרטים שלך</h2>
-          <div className="space-y-3">
+        {/* ===== Customer Details ===== */}
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-5">
+          <p className="text-[10px] tracking-[0.25em] text-neutral-400 uppercase mb-5">פרטים</p>
+          <div className="space-y-4">
             <div>
-              <label className="text-sm text-neutral-400 block mb-1">
+              <label className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase block mb-2">
                 טלפון
               </label>
               <input
@@ -226,54 +358,73 @@ function ConfirmPageContent() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="050-0000000"
-                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-amber-500"
                 dir="ltr"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
               />
             </div>
             <div>
-              <label className="text-sm text-neutral-400 block mb-1">שם</label>
+              <label className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase block mb-2">
+                שם
+              </label>
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="השם שלך"
-                className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-amber-500"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
               />
             </div>
           </div>
         </div>
 
-        {/* Referral Source */}
-        <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-          <h2 className="text-amber-400 font-semibold mb-3">
-            מאיפה הכרת אותנו?
-          </h2>
+        {/* ===== Referral Source ===== */}
+        <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm p-5">
+          <p className="text-[10px] tracking-[0.25em] text-neutral-400 uppercase mb-5">מאיפה הכרת אותנו?</p>
           <select
             value={referralSource}
-            onChange={(e) => setReferralSource(e.target.value)}
-            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-amber-500"
+            onChange={(e) => { setReferralSource(e.target.value); setReferrerPhone(""); }}
+            className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors appearance-none"
+            style={{ WebkitAppearance: "none" }}
           >
-            <option value="">בחר (אופציונלי)</option>
-            {REFERRAL_SOURCES.map((src) => (
-              <option key={src.value} value={src.value}>
-                {src.label}
-              </option>
+            <option value="" className="text-neutral-400">בחר (אופציונלי)</option>
+            {referralOptions.map((src) => (
+              <option key={src} value={src} className="text-neutral-900">{src}</option>
             ))}
           </select>
+
+          {/* Referrer phone */}
+          {referralSource === "חבר הביא חבר" && (
+            <div className="mt-4">
+              <label className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase block mb-2">
+                טלפון החבר שהמליץ
+              </label>
+              <input
+                type="tel"
+                value={referrerPhone}
+                onChange={(e) => setReferrerPhone(e.target.value)}
+                placeholder="050-0000000"
+                dir="ltr"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+              />
+              <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
+                כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* Error */}
+        {/* ===== Error ===== */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm text-center">
-            {error}
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-red-500 text-xs tracking-wide text-center">{error}</p>
           </div>
         )}
 
-        {/* Submit */}
+        {/* ===== Submit button ===== */}
         <button
           onClick={handleSubmit}
           disabled={submitting || !phone || !name}
-          className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-neutral-700 disabled:text-neutral-500 text-neutral-950 font-bold py-4 rounded-xl text-lg transition"
+          className="w-full bg-amber-500 text-white font-semibold text-sm tracking-[0.2em] uppercase py-5 rounded-full hover:bg-amber-600 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors shadow-md hover:shadow-lg"
         >
           {submitting ? "קובע תור..." : "קביעת תור!"}
         </button>
@@ -284,7 +435,13 @@ function ConfirmPageContent() {
 
 export default function ConfirmPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-neutral-400">טוען...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#faf9f7] flex items-center justify-center">
+          <div className="text-[10px] tracking-[0.3em] text-neutral-400 uppercase">טוען...</div>
+        </div>
+      }
+    >
       <ConfirmPageContent />
     </Suspense>
   );

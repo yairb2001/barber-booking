@@ -21,23 +21,83 @@ export function providerForBusiness(business: {
   return null;
 }
 
-/** Check if business has reminders feature enabled. */
+/** Check if business has a feature enabled. */
 export function hasFeature(
   features: string | null,
-  flag: "reminders" | "agent"
+  flag: "reminders" | "reminder_24h" | "reminder_2h" | "agent"
 ): boolean {
-  if (!features) return true; // default: enabled during development
-  try {
-    const parsed = JSON.parse(features) as Record<string, boolean>;
-    return parsed[flag] ?? true;
-  } catch {
-    return true;
+  if (!features) {
+    // Defaults: reminders=on, 24h=on, 2h=off, agent=off
+    return flag === "reminders" || flag === "reminder_24h";
   }
+  try {
+    const f = JSON.parse(features) as Record<string, boolean>;
+    if (flag === "reminder_24h") {
+      // Fall back to legacy "reminders" key for backward compat
+      return f.reminder_24h ?? f.reminders ?? true;
+    }
+    if (flag === "reminder_2h") {
+      return f.reminder_2h ?? false;
+    }
+    return f[flag] ?? (flag === "reminders");
+  } catch {
+    return flag === "reminders" || flag === "reminder_24h";
+  }
+}
+
+// ── Template engine ────────────────────────────────────────────────────────────
+
+/** Replace {{variable}} placeholders in a template string. */
+export function applyTemplate(
+  template: string,
+  vars: Record<string, string>
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
+}
+
+/** Default template for 24-hour reminder. Uses {{variable}} placeholders. */
+export const DEFAULT_24H_TEMPLATE =
+`שלום {{name}} 👋
+
+תזכורת — יש לך תור מחר ב*{{business}}* ✂️
+📅 {{date}}
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+אם יש שינוי — נא להודיע מראש 🙏`;
+
+/** Default template for 2-hour reminder. */
+export const DEFAULT_2H_TEMPLATE =
+`שלום {{name}} 👋
+
+תזכורת — יש לך תור בעוד שעתיים ב*{{business}}* ✂️
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+נתראה בקרוב! 💈`;
+
+/** Build reminder vars from appointment data. */
+export function reminderVars(params: {
+  customerName: string;
+  businessName: string;
+  staffName: string;
+  startTime: string;
+  dateLabel: string;
+  address?: string | null;
+}): Record<string, string> {
+  return {
+    name: params.customerName,
+    business: params.businessName,
+    staff: params.staffName,
+    time: params.startTime,
+    date: params.dateLabel,
+    address_line: params.address ? `\n📍 ${params.address}` : "",
+  };
 }
 
 /**
  * Send a WhatsApp message and log it to MessageLog.
- * Silently no-ops if the business has no provider configured (to avoid breaking flows).
+ * Silently no-ops if the business has no provider configured.
  */
 export async function sendMessage(opts: {
   businessId: string;
@@ -87,16 +147,16 @@ export async function sendMessage(opts: {
   return result;
 }
 
-// ── Message templates ──────────────────────────────────────────────────────────
+// ── Message templates (legacy helpers — still used for confirmation) ───────────
 
 export function confirmationText(params: {
   customerName: string;
   businessName: string;
   staffName: string;
   serviceName: string;
-  dateLabel: string; // "יום שני, 14 אפריל"
-  startTime: string; // "14:30"
-  endTime: string;   // "15:00"
+  dateLabel: string;
+  startTime: string;
+  endTime: string;
   price: number;
   address?: string | null;
 }): string {
@@ -111,26 +171,5 @@ export function confirmationText(params: {
   ];
   if (params.address) lines.push(``, `📍 ${params.address}`);
   lines.push(``, `נתראה!`);
-  return lines.join("\n");
-}
-
-export function reminder24hText(params: {
-  customerName: string;
-  businessName: string;
-  staffName: string;
-  startTime: string;
-  dateLabel: string;
-  address?: string | null;
-}): string {
-  const lines = [
-    `שלום ${params.customerName} 👋`,
-    ``,
-    `תזכורת — יש לך תור מחר ב*${params.businessName}* ✂️`,
-    `📅 ${params.dateLabel}`,
-    `🕒 ${params.startTime}`,
-    `💈 אצל ${params.staffName}`,
-  ];
-  if (params.address) lines.push(``, `📍 ${params.address}`);
-  lines.push(``, `אם יש שינוי — נא להודיע מראש 🙏`);
   return lines.join("\n");
 }

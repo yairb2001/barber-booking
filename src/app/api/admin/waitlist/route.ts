@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const date = searchParams.get("date");
+  const date    = searchParams.get("date");
   const staffId = searchParams.get("staffId");
 
   const business = await prisma.business.findFirst();
@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   };
   if (date) {
     const start = new Date(date); start.setHours(0, 0, 0, 0);
-    const end = new Date(date); end.setHours(23, 59, 59, 999);
+    const end   = new Date(date); end.setHours(23, 59, 59, 999);
     where.date = { gte: start, lte: end };
   }
   if (staffId) where.staffId = staffId;
@@ -44,13 +44,14 @@ export async function POST(req: NextRequest) {
 
   const entry = await prisma.waitlist.create({
     data: {
-      businessId: business.id,
-      customerId: customer.id,
-      staffId: body.staffId || null,
-      serviceId: body.serviceId,
-      date: new Date(body.date),
-      isFlexible: body.isFlexible || false,
-      status: "waiting",
+      businessId:         business.id,
+      customerId:         customer.id,
+      staffId:            body.staffId || null,
+      serviceId:          body.serviceId,
+      date:               new Date(body.date),
+      isFlexible:         body.isFlexible || false,
+      preferredTimeOfDay: body.preferredTimeOfDay || "any",
+      status:             "waiting",
     },
     include: { customer: true, service: true },
   });
@@ -61,7 +62,7 @@ export async function PATCH(req: NextRequest) {
   const body = await req.json();
   const entry = await prisma.waitlist.update({
     where: { id: body.id },
-    data: { status: body.status },
+    data:  { status: body.status },
   });
   return NextResponse.json(entry);
 }

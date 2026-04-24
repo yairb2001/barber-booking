@@ -62,3 +62,37 @@ export function formatDate(date: Date): string {
 export function getDayOfWeek(date: Date): number {
   return date.getDay();
 }
+
+// ── Business timezone helpers ─────────────────────────────────────────────────
+// The business is in Israel; these helpers ensure that "now" is always in
+// Asia/Jerusalem regardless of where the Node process runs (Vercel = UTC).
+export const BUSINESS_TIMEZONE = "Asia/Jerusalem";
+
+/**
+ * Returns today's date + current time in the business timezone (Asia/Jerusalem).
+ * { date: "YYYY-MM-DD", time: "HH:MM", minutes: number since midnight }
+ */
+export function getBusinessNow(): { date: string; time: string; minutes: number } {
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: BUSINESS_TIMEZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+    hour12: false,
+  });
+  const parts = formatter.format(new Date()); // e.g. "2026-04-23 14:30"
+  const [datePart, timePart] = parts.split(" ");
+  const hhmm = timePart.slice(0, 5);
+  return { date: datePart, time: hhmm, minutes: timeToMinutes(hhmm) };
+}
+
+/** Add n days to a YYYY-MM-DD string (UTC-safe). */
+export function addDaysISO(iso: string, n: number): string {
+  const d = new Date(iso + "T00:00:00.000Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
+/** Day of week (0=Sunday) from a YYYY-MM-DD string (UTC-safe). */
+export function getDayOfWeekISO(iso: string): number {
+  return new Date(iso + "T00:00:00.000Z").getUTCDay();
+}

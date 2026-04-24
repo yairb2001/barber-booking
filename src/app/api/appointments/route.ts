@@ -5,7 +5,12 @@ import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { staffId, serviceId, date, startTime, customerPhone, customerName, referralSource } = body;
+  const {
+    staffId, serviceId, date, startTime,
+    customerPhone, customerName,
+    referralSource,
+    referrerPhone, // phone of the friend who referred — used when referralSource === "חבר הביא חבר"
+  } = body;
 
   if (!staffId || !serviceId || !date || !startTime || !customerPhone || !customerName) {
     return NextResponse.json(
@@ -48,6 +53,15 @@ export async function POST(request: Request) {
     },
   });
 
+  // If referred by a friend, look up the referrer customer record
+  let referredById: string | undefined;
+  if (referralSource === "חבר הביא חבר" && referrerPhone) {
+    const referrer = await prisma.customer.findUnique({
+      where: { businessId_phone: { businessId: staff.businessId, phone: referrerPhone } },
+    });
+    if (referrer) referredById = referrer.id;
+  }
+
   if (!customer) {
     customer = await prisma.customer.create({
       data: {
@@ -55,12 +69,19 @@ export async function POST(request: Request) {
         phone: customerPhone,
         name: customerName,
         referralSource,
+        referredById: referredById ?? null,
       },
+    });
+  } else if (referredById && !customer.referredById) {
+    // Update referredById if not already set
+    customer = await prisma.customer.update({
+      where: { id: customer.id },
+      data: { referredById },
     });
   }
 
-  // Check if slot is still available
-  const dateObj = new Date(date + "T00:00:00");
+  // Always use UTC midnight so dates are consistent on all servers/timezones
+  const dateObj = new Date(date + "T00:00:00.000Z");
   const conflicting = await prisma.appointment.findFirst({
     where: {
       staffId,

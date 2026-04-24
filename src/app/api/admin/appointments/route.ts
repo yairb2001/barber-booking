@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
+import { timeToMinutes } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -9,10 +10,20 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
   const staffIdParam = searchParams.get("staffId");
 
+  const from = searchParams.get("from");
+  const to   = searchParams.get("to");
+
   const where: Record<string, unknown> = {};
-  if (date) {
-    const start = new Date(date); start.setHours(0, 0, 0, 0);
-    const end = new Date(date); end.setHours(23, 59, 59, 999);
+  if (from && to) {
+    // Date range query — used by dashboard for monthly views
+    where.date = {
+      gte: new Date(from + "T00:00:00.000Z"),
+      lte: new Date(to   + "T23:59:59.999Z"),
+    };
+  } else if (date) {
+    // Single-day query — used by the calendar
+    const start = new Date(date + "T00:00:00.000Z");
+    const end   = new Date(date + "T23:59:59.999Z");
     where.date = { gte: start, lte: end };
   }
   // If logged in as barber → force filter to own appointments only
@@ -51,9 +62,41 @@ export async function POST(req: NextRequest) {
   const service = await prisma.service.findUnique({ where: { id: body.serviceId } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });
 
+  // Duration can come from request (custom) or fall back to the service default
+  const duration = Number(body.durationMinutes) > 0 ? Number(body.durationMinutes) : service.durationMinutes;
+
   const [sh, sm] = body.startTime.split(":").map(Number);
-  const endTotalMins = sh * 60 + sm + service.durationMinutes;
+  const startMins    = sh * 60 + sm;
+  const endTotalMins = startMins + duration;
   const endTime = `${String(Math.floor(endTotalMins / 60)).padStart(2, "0")}:${String(endTotalMins % 60).padStart(2, "0")}`;
+
+  const dateObj = new Date(body.date.split("T")[0] + "T00:00:00.000Z");
+
+  // Conflict check (unless explicitly bypassed with override: true)
+  if (!body.override) {
+    const existing = await prisma.appointment.findMany({
+      where: {
+        staffId,
+        date: dateObj,
+        status: { in: ["pending", "confirmed"] },
+      },
+      select: { id: true, startTime: true, endTime: true, customer: { select: { name: true } } },
+    });
+    const conflict = existing.find(apt => {
+      const aStart = timeToMinutes(apt.startTime);
+      const aEnd   = timeToMinutes(apt.endTime);
+      return startMins < aEnd && endTotalMins > aStart;
+    });
+    if (conflict) {
+      return NextResponse.json(
+        {
+          error: `השעה הזו כבר תפוסה ע״י ${conflict.customer.name} (${conflict.startTime}–${conflict.endTime}). להמשיך בכל זאת?`,
+          conflict: true,
+        },
+        { status: 409 }
+      );
+    }
+  }
 
   const appointment = await prisma.appointment.create({
     data: {
@@ -61,7 +104,7 @@ export async function POST(req: NextRequest) {
       customerId: customer.id,
       staffId,
       serviceId: body.serviceId,
-      date: new Date(body.date),
+      date: dateObj,
       startTime: body.startTime,
       endTime,
       status: "confirmed",

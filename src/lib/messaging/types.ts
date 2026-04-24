@@ -3,10 +3,15 @@
 export type MessageKind =
   | "confirmation"
   | "reminder_24h"
+  | "reminder_2h"
+  | "waitlist_notify"
   | "otp"
   | "broadcast"
   | "manual"
-  | "agent_reply";
+  | "agent_reply"
+  | "reengage"
+  | "post_first_visit"
+  | "post_every_visit";
 
 export type MessageStatus =
   | "queued"

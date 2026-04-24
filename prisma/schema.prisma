@@ -29,7 +29,21 @@ model Business {
   greenApiInstanceId    String? @map("green_api_instance_id")
   greenApiToken         String? @map("green_api_token")
   // ── Feature flags ──
-  features       String?  // JSON: { reminders: true, agent: false }
+  features       String?  // JSON: { reminders: true, reminder_24h: true, reminder_2h: false, agent: false }
+  // ── Reminder message templates (null = use built-in default) ──
+  reminder24hTemplate   String?  @map("reminder_24h_template")
+  reminder2hTemplate    String?  @map("reminder_2h_template")
+  // ── Re-engagement automation ──
+  reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
+  reengageWeeks         Int      @default(6)     @map("reengage_weeks")
+  reengageTemplate      String?  @map("reengage_template")
+  // ── Theme / branding ──
+  secondaryColor  String?  @default("#ffffff") @map("secondary_color")
+  bgColor         String?  @default("#faf9f7") @map("bg_color")
+  textColor       String?  @default("#171717") @map("text_color")
+  // ── Booking calendar ──
+  bookingHorizonDays    Int      @default(30) @map("booking_horizon_days")
+  minBookingLeadMinutes Int      @default(0)  @map("min_booking_lead_minutes")
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -42,6 +56,9 @@ model Business {
   announcements  Announcement[]
   products       Product[]
   messageLogs    MessageLog[]
+  recurringAppointments RecurringAppointment[]
+  automations           Automation[]
+  stories        Story[]
 
   @@map("businesses")
 }
@@ -93,6 +110,7 @@ model Staff {
   appointments  Appointment[]
   waitlist      Waitlist[]
   portfolio     PortfolioItem[]
+  recurringAppointments RecurringAppointment[]
 
   @@map("staff")
 }
@@ -147,6 +165,7 @@ model Service {
   staffServices   StaffService[]
   appointments    Appointment[]
   waitlist        Waitlist[]
+  recurringAppointments RecurringAppointment[]
 
   @@map("services")
 }
@@ -184,6 +203,7 @@ model Customer {
   referrals         Customer[] @relation("CustomerReferral")
   appointments      Appointment[]
   waitlist          Waitlist[]
+  recurringAppointments RecurringAppointment[]
 
   @@unique([businessId, phone])
   @@map("customers")
@@ -209,12 +229,45 @@ model Appointment {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
+  recurringId    String?  @map("recurring_id")
+
   business       Business @relation(fields: [businessId], references: [id])
   customer       Customer @relation(fields: [customerId], references: [id])
   staff          Staff    @relation(fields: [staffId], references: [id])
   service        Service  @relation(fields: [serviceId], references: [id])
+  recurring      RecurringAppointment? @relation(fields: [recurringId], references: [id])
 
+  @@index([recurringId])
   @@map("appointments")
+}
+
+// === תור קבוע (recurring) ===
+// Rule row that spawns recurring Appointment records.
+// Owner picks day-of-week + time + frequency (every N weeks) + start date
+// and we generate appointments forward up to `horizonWeeks` weeks.
+model RecurringAppointment {
+  id             String   @id @default(uuid())
+  businessId     String   @map("business_id")
+  customerId     String   @map("customer_id")
+  staffId        String   @map("staff_id")
+  serviceId      String   @map("service_id")
+  dayOfWeek      Int      @map("day_of_week") // 0=Sunday
+  startTime      String   @map("start_time")  // "14:30"
+  frequencyWeeks Int      @default(1) @map("frequency_weeks") // 1=weekly, 2=biweekly, 4=monthly
+  startDate      DateTime @map("start_date")
+  endDate        DateTime? @map("end_date")
+  price          Float?
+  note           String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  business       Business @relation(fields: [businessId], references: [id])
+  customer       Customer @relation(fields: [customerId], references: [id])
+  staff          Staff    @relation(fields: [staffId], references: [id])
+  service        Service  @relation(fields: [serviceId], references: [id])
+  appointments   Appointment[]
+
+  @@map("recurring_appointments")
 }
 
 // === רשימת המתנה ===
@@ -226,7 +279,8 @@ model Waitlist {
   serviceId    String   @map("service_id")
   date         DateTime
   isFlexible   Boolean  @default(false) @map("is_flexible")
-  status       String   @default("waiting") // waiting, notified, booked, expired
+  status              String   @default("waiting") // waiting, notified, booked, expired
+  preferredTimeOfDay  String?  @map("preferred_time_of_day") // morning | afternoon | any
   createdAt    DateTime @default(now()) @map("created_at")
 
   business     Business @relation(fields: [businessId], references: [id])
@@ -266,6 +320,44 @@ model Product {
   business    Business @relation(fields: [businessId], references: [id])
 
   @@map("products")
+}
+
+// === אוטומציות ===
+// type: reengage | post_first_visit | post_every_visit
+// settings JSON per type:
+//   reengage:         { inactiveWeeks: 6, excludeWithFutureAppt: true, segment: "all"|"new_only"|"regular_only" }
+//   post_first_visit: { delayMinutes: 30, ctaType: "google_review"|"instagram"|"custom", ctaUrl: string }
+//   post_every_visit: { delayMinutes: 60, segment: "regular_only", minVisits: 2 }
+model Automation {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  type        String   // reengage | post_first_visit | post_every_visit
+  active      Boolean  @default(false)
+  name        String
+  settings    String   // JSON with type-specific config
+  template    String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  business    Business @relation(fields: [businessId], references: [id])
+
+  @@map("automations")
+}
+
+// === סטוריז ===
+model Story {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  mediaUrl    String   @map("media_url")   // image URL
+  caption     String?
+  isActive    Boolean  @default(true) @map("is_active")
+  sortOrder   Int      @default(0) @map("sort_order")
+  expiresAt   DateTime? @map("expires_at")  // null = never expires
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business    Business @relation(fields: [businessId], references: [id])
+
+  @@map("stories")
 }
 
 // === גלריית עבודות / סטוריז ===

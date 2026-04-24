@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const HOUR_HEIGHT = 64;
+const DEFAULT_HOUR_HEIGHT = 64;
 const DAY_START = 8;
 const DAY_END = 21;
 const TOTAL_HOURS = DAY_END - DAY_START;
-const TOTAL_HEIGHT = TOTAL_HOURS * HOUR_HEIGHT;
+
+// Context for dynamic hourHeight (pinch-to-zoom)
+const HHCtx = React.createContext(DEFAULT_HOUR_HEIGHT);
 
 const COLORS = [
   { bg: "bg-violet-500", light: "bg-violet-100 text-violet-900 border-violet-300" },
@@ -26,11 +28,11 @@ const addDays = (iso: string, n: number) => { const d = new Date(iso); d.setDate
 const dayOfWeek = (iso: string) => new Date(iso).getDay();
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
-const apptTop = (t: string) => ((toMin(t) - DAY_START * 60) / 60) * HOUR_HEIGHT;
-const apptH = (s: string, e: string) => Math.max(((toMin(e) - toMin(s)) / 60) * HOUR_HEIGHT, 20);
-const nowPx = () => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - DAY_START * 60) / 60) * HOUR_HEIGHT; };
-const yToTime = (y: number) => {
-  const mins = Math.round((y / HOUR_HEIGHT) * 60 / 5) * 5 + DAY_START * 60;
+const apptTop = (t: string, hh: number) => ((toMin(t) - DAY_START * 60) / 60) * hh;
+const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
+const nowPxFn = (hh: number) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - DAY_START * 60) / 60) * hh; };
+const yToTimeFn = (y: number, hh: number) => {
+  const mins = Math.round((y / hh) * 60 / 5) * 5 + DAY_START * 60;
   return minToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 5, mins)));
 };
 
@@ -41,7 +43,7 @@ type Service = { id: string; name: string; price: number; durationMinutes: numbe
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
-  customer: { name: string; phone: string };
+  customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
   service: { name: string; durationMinutes: number };
 };
@@ -54,6 +56,8 @@ type WaitlistEntry = {
   staff?: { name: string } | null;
   date: string;
   status: string;
+  isFlexible: boolean;
+  preferredTimeOfDay?: string | null;
 };
 
 // ── Working hours helper ───────────────────────────────────────────────────────
@@ -72,6 +76,7 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
 function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
+  const hh = React.useContext(HHCtx);
   const working = getWorkingRanges(staff, dow);
   const breaks = getBreakRanges(staff, dow);
   const dayStartMin = DAY_START * 60;
@@ -93,8 +98,8 @@ function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
   return (
     <>
       {segments.map((seg, i) => {
-        const top = ((seg.start - dayStartMin) / 60) * HOUR_HEIGHT;
-        const height = ((seg.end - seg.start) / 60) * HOUR_HEIGHT;
+        const top = ((seg.start - dayStartMin) / 60) * hh;
+        const height = ((seg.end - seg.start) / 60) * hh;
         return (
           <div key={i} className={`absolute left-0 right-0 pointer-events-none ${seg.type === "closed" ? "bg-neutral-100/70" : "bg-orange-50/70"}`}
             style={{ top, height }} />
@@ -106,8 +111,9 @@ function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
 
 // ── Appointment Block ─────────────────────────────────────────────────────────
 function ApptBlock({ appt, colorClass, onClick }: { appt: Appt; colorClass: string; onClick: () => void }) {
-  const top = apptTop(appt.startTime);
-  const height = apptH(appt.startTime, appt.endTime);
+  const hh = React.useContext(HHCtx);
+  const top = apptTop(appt.startTime, hh);
+  const height = apptH(appt.startTime, appt.endTime, hh);
   return (
     <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition overflow-hidden px-1.5 py-1 z-10 ${colorClass}`}
       style={{ top, height }} onClick={e => { e.stopPropagation(); onClick(); }}>
@@ -131,6 +137,8 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
   const [saving, setSaving] = useState(false);
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (customerQuery.length < 1) { setCustomers([]); return; }
@@ -141,18 +149,30 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const endTime = selectedService
     ? minToTime(toMin(form.time) + selectedService.durationMinutes) : "";
 
-  async function save() {
+  async function save(override = false) {
     if (!form.staffId || !form.serviceId || !form.date || !form.time) return;
     const phone = selectedCustomer?.phone || newCustomer.phone;
     const name = selectedCustomer?.name || newCustomer.name;
     if (!phone || !name) return;
+    setErrMsg(null);
+    setConflictMsg(null);
     setSaving(true);
     const res = await fetch("/api/admin/appointments", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, startTime: form.time, phone, customerName: name }),
+      body: JSON.stringify({ ...form, startTime: form.time, phone, customerName: name, override }),
     });
-    if (res.ok) { onSaved(); onClose(); }
     setSaving(false);
+    if (res.status === 409) {
+      const j = await res.json().catch(() => ({}));
+      setConflictMsg(j.error || "השעה כבר תפוסה");
+      return;
+    }
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      setErrMsg(j.error || "שגיאה בשמירה");
+      return;
+    }
+    onSaved(); onClose();
   }
 
   const selectedStaff = allStaff.find(s => s.id === form.staffId);
@@ -338,8 +358,26 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           </div>
         </div>
 
-        <div className="px-5 pb-5">
-          <button onClick={save} disabled={saving || !form.staffId || !form.serviceId ||
+        <div className="px-5 pb-5 space-y-3">
+          {errMsg && (
+            <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{errMsg}</div>
+          )}
+          {conflictMsg && (
+            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <p className="text-amber-900">{conflictMsg}</p>
+              <div className="flex gap-2">
+                <button onClick={() => save(true)} disabled={saving}
+                  className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-amber-600">
+                  כן, קבע בכל זאת
+                </button>
+                <button onClick={() => setConflictMsg(null)}
+                  className="flex-1 bg-white border border-amber-300 text-amber-700 rounded-lg py-1.5 text-xs">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          )}
+          <button onClick={() => save(false)} disabled={saving || !!conflictMsg || !form.staffId || !form.serviceId ||
             !(selectedCustomer || (newCustomer.name && newCustomer.phone))}
             className="w-full bg-amber-500 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-amber-400 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
@@ -432,11 +470,35 @@ const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   no_show:             { label: "לא הגיע", badgeClass: "bg-neutral-100 text-neutral-500" },
 };
 
-function ApptModal({ appt, onClose, onChange }: { appt: Appt; onClose: () => void; onChange: (id: string, status: string) => void }) {
+function ApptModal({ appt, onClose, onChange, onReload }: {
+  appt: Appt; onClose: () => void;
+  onChange: (id: string, status: string) => void;
+  onReload?: () => void;
+}) {
   const [updating, setUpdating] = useState(false);
   const [staffNote, setStaffNote] = useState(appt.staffNote || "");
   const [savingNote, setSavingNote] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [referralSource, setReferralSource] = useState(appt.customer.referralSource || "");
+  const [editingReferral, setEditingReferral] = useState(false);
+  const [savingReferral, setSavingReferral] = useState(false);
+  const [referralOptions, setReferralOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
+  }, []);
   const meta = STATUS_META[appt.status] || { label: appt.status, badgeClass: "bg-neutral-100 text-neutral-500" };
+
+  async function saveReferral() {
+    setSavingReferral(true);
+    await fetch(`/api/admin/customers/${appt.customer.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ referralSource: referralSource.trim() || null }),
+    });
+    setSavingReferral(false);
+    setEditingReferral(false);
+  }
 
   async function setStatus(status: string) {
     setUpdating(true);
@@ -456,6 +518,19 @@ function ApptModal({ appt, onClose, onChange }: { appt: Appt; onClose: () => voi
   }
 
   const cleanPhone = appt.customer.phone.replace(/\D/g, "");
+
+  if (editMode) {
+    return <ApptEditForm
+      appt={appt}
+      onCancel={() => setEditMode(false)}
+      onSaved={() => {
+        setEditMode(false);
+        onReload?.();
+        onClose();
+      }}
+      onClose={onClose}
+    />;
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
@@ -500,12 +575,54 @@ function ApptModal({ appt, onClose, onChange }: { appt: Appt; onClose: () => voi
           </div>
           <div>
             <p className="text-xs text-neutral-400 mb-0.5">שעה</p>
-            <p className="font-medium text-neutral-800">{appt.startTime}–{appt.endTime}</p>
+            <p className="font-medium text-neutral-800" dir="ltr">{appt.startTime}–{appt.endTime}</p>
           </div>
           <div>
             <p className="text-xs text-neutral-400 mb-0.5">מחיר</p>
             <p className="font-bold text-amber-600">₪{appt.price}</p>
           </div>
+        </div>
+
+        {/* Edit button */}
+        <div className="px-5 py-3 border-b border-neutral-100">
+          <button onClick={() => setEditMode(true)}
+            className="w-full py-2.5 rounded-xl bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition flex items-center justify-center gap-2">
+            ✏️ ערוך תור (שעה / ספר / תאריך / שירות / מחיר)
+          </button>
+        </div>
+
+        {/* Referral source */}
+        <div className="px-5 py-3 border-b border-neutral-100">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-xs text-neutral-400">מקור הגעה</p>
+            {!editingReferral && (
+              <button onClick={() => setEditingReferral(true)}
+                className="text-xs text-amber-600 hover:underline">
+                {referralSource ? "ערוך" : "הוסף"}
+              </button>
+            )}
+          </div>
+          {editingReferral ? (
+            <div className="flex gap-2">
+              <select value={referralSource} onChange={e => setReferralSource(e.target.value)}
+                className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white">
+                <option value="">לא צוין</option>
+                {referralOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+              <button onClick={saveReferral} disabled={savingReferral}
+                className="text-xs bg-neutral-900 text-white px-3 rounded-lg shrink-0">
+                {savingReferral ? "..." : "שמור"}
+              </button>
+              <button onClick={() => { setEditingReferral(false); setReferralSource(appt.customer.referralSource || ""); }}
+                className="text-xs text-neutral-400 px-1">✕</button>
+            </div>
+          ) : (
+            <p className={`text-sm ${referralSource ? "text-neutral-800" : "text-neutral-400 italic"}`}>
+              {referralSource || "לא צוין"}
+            </p>
+          )}
         </div>
 
         {/* Customer note */}
@@ -546,21 +663,196 @@ function ApptModal({ appt, onClose, onChange }: { appt: Appt; onClose: () => voi
           </div>
         </div>
 
-        {/* Payment & messaging actions */}
-        <div className="px-5 py-4 space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <button className="py-2.5 rounded-xl bg-violet-50 text-violet-700 text-sm font-medium border border-violet-200 hover:bg-violet-100 transition">
-              🔗 קישור תשלום
-            </button>
-            <button className="py-2.5 rounded-xl bg-neutral-50 text-neutral-700 text-sm font-medium border border-neutral-200 hover:bg-neutral-100 transition">
-              🧾 הפק קבלה
-            </button>
-          </div>
-          <a href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(`שלום ${appt.customer.name}, תורך ב${fmtDay(appt.date)} בשעה ${appt.startTime} אצל ${appt.staff.name}`)}`}
-            target="_blank"
+        {/* Actions */}
+        <div className="px-5 py-4">
+          <a href={`https://wa.me/${cleanPhone}`} target="_blank"
             className="block w-full py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium text-center hover:bg-emerald-600 transition">
-            💬 שלח תזכורת ב-WhatsApp
+            💬 שלח הודעה ב-WhatsApp
           </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Full appointment edit form ─────────────────────────────────────────────────
+function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
+  appt: Appt; onCancel: () => void; onSaved: () => void; onClose: () => void;
+}) {
+  const initialDate = appt.date.split("T")[0];
+  const initialDuration = toMin(appt.endTime) - toMin(appt.startTime);
+
+  const [date, setDate] = useState(initialDate);
+  const [startTime, setStartTime] = useState(appt.startTime);
+  const [staffId, setStaffId] = useState(appt.staff.id);
+  const [serviceId, setServiceId] = useState<string>("");
+  const [duration, setDuration] = useState(initialDuration);
+  const [price, setPrice] = useState<number>(appt.price);
+  const [note, setNote] = useState(appt.note || "");
+
+  const [allStaff, setAllStaff] = useState<{ id: string; name: string }[]>([]);
+  const [allServices, setAllServices] = useState<Service[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/staff").then(r => r.json()).then(d => setAllStaff(d.map((s: { id: string; name: string }) => ({ id: s.id, name: s.name }))));
+    fetch("/api/admin/services").then(r => r.json()).then((d: Service[]) => {
+      setAllServices(d);
+      const match = d.find(s => s.name === appt.service.name);
+      if (match) setServiceId(match.id);
+    });
+  }, [appt.service.name]);
+
+  // When service changes → auto-set duration and price from the new service
+  const onServiceChange = (id: string) => {
+    setServiceId(id);
+    const svc = allServices.find(s => s.id === id);
+    if (svc) {
+      setDuration(svc.durationMinutes);
+      setPrice(svc.price);
+    }
+  };
+
+  async function save(override = false) {
+    setErr(null);
+    setConflict(null);
+    setSaving(true);
+
+    const body: Record<string, unknown> = {
+      date,
+      startTime,
+      staffId,
+      durationMinutes: Number(duration) || 30,
+      price: Number(price),
+      note: note || null,
+    };
+    if (serviceId) body.serviceId = serviceId;
+    if (override) body.override = true;
+
+    const r = await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setSaving(false);
+
+    if (r.status === 409) {
+      const j = await r.json();
+      setConflict(j.error || "יש התנגשות");
+      return;
+    }
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error || "שגיאה בשמירה");
+      return;
+    }
+    onSaved();
+  }
+
+  const endMin = toMin(startTime) + Number(duration || 0);
+  const endTime = minToTime(Math.min(endMin, 23 * 60 + 59));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100 sticky top-0 bg-white z-10">
+          <div>
+            <h3 className="font-bold text-lg text-neutral-900">עריכת תור</h3>
+            <p className="text-xs text-neutral-500 mt-0.5">{appt.customer.name}</p>
+          </div>
+          <button onClick={onCancel} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200">✕</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Date */}
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">תאריך</label>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} dir="ltr"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </div>
+
+          {/* Time + Duration */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-neutral-500 mb-1 block">שעת התחלה</label>
+              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} dir="ltr"
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+            <div>
+              <label className="text-xs text-neutral-500 mb-1 block">משך (דקות)</label>
+              <input type="number" min={5} step={5} value={duration}
+                onChange={e => setDuration(Number(e.target.value))}
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          </div>
+          <div className="text-xs text-neutral-400" dir="ltr">
+            {startTime} — {endTime}
+          </div>
+
+          {/* Staff */}
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">ספר</label>
+            <select value={staffId} onChange={e => setStaffId(e.target.value)}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+
+          {/* Service */}
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">סוג תור</label>
+            <select value={serviceId} onChange={e => onServiceChange(e.target.value)}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+              {allServices.map(s => (
+                <option key={s.id} value={s.id}>
+                  {s.name} (₪{s.price}, {s.durationMinutes} דק)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Price */}
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">מחיר (₪)</label>
+            <input type="number" min={0} value={price} onChange={e => setPrice(Number(e.target.value))}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </div>
+
+          {/* Customer note */}
+          <div>
+            <label className="text-xs text-neutral-500 mb-1 block">הערת לקוח</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          </div>
+
+          {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
+
+          {conflict && (
+            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <p className="text-amber-900">{conflict}</p>
+              <div className="flex gap-2">
+                <button onClick={() => save(true)} disabled={saving}
+                  className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-amber-600">
+                  כן, שמור בכל זאת
+                </button>
+                <button onClick={() => setConflict(null)}
+                  className="flex-1 bg-white border border-amber-300 text-amber-700 rounded-lg py-1.5 text-xs">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="p-5 border-t border-neutral-100 flex gap-2 sticky bottom-0 bg-white">
+          <button onClick={onCancel} disabled={saving}
+            className="flex-1 border border-neutral-200 rounded-xl py-2.5 text-sm hover:bg-neutral-50">ביטול</button>
+          <button onClick={() => save(false)} disabled={saving || !!conflict}
+            className="flex-1 bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-neutral-800 disabled:opacity-50">
+            {saving ? "שומר..." : "שמור שינויים"}
+          </button>
         </div>
       </div>
     </div>
@@ -742,16 +1034,29 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
           {tab === "waitlist" && (
             <div className="space-y-3">
               {waitlist.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">אין ממתינים</p>}
-              {waitlist.map(w => (
-                <div key={w.id} className="flex items-center gap-2 bg-neutral-50 rounded-xl px-3 py-2 border border-neutral-200">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{w.customer.name}</p>
-                    <p className="text-xs text-neutral-500">{w.service.name}</p>
+              {waitlist.map(w => {
+                const timeLabel =
+                  w.preferredTimeOfDay === "morning"   ? "🌅 בוקר"   :
+                  w.preferredTimeOfDay === "afternoon"  ? "☀️ צהריים" : null;
+                return (
+                  <div key={w.id} className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-200 flex items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold">{w.customer.name}</p>
+                      <p className="text-xs text-neutral-500">{w.service.name}</p>
+                      <div className="flex gap-1.5 mt-1 flex-wrap">
+                        {timeLabel && (
+                          <span className="text-[11px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
+                        )}
+                        {w.isFlexible && (
+                          <span className="text-[11px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
+                        )}
+                      </div>
+                    </div>
+                    <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700 text-sm mt-0.5">📞</a>
+                    <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs mt-0.5">✕</button>
                   </div>
-                  <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700">📞</a>
-                  <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs">✕</button>
-                </div>
-              ))}
+                );
+              })}
               <div className="border-t border-neutral-100 pt-3 space-y-2">
                 <p className="text-xs font-medium text-neutral-500">הוסף להמתנה</p>
                 <input value={newWaiting.name} onChange={e => setNewWaiting(p => ({ ...p, name: e.target.value }))}
@@ -778,10 +1083,12 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
 
 // ── Time Column ───────────────────────────────────────────────────────────────
 function TimeColumn() {
+  const hh = React.useContext(HHCtx);
+  const totalHeight = TOTAL_HOURS * hh;
   return (
-    <div className="w-14 shrink-0 relative select-none" style={{ height: TOTAL_HEIGHT }}>
+    <div className="w-14 shrink-0 relative select-none" style={{ height: totalHeight }}>
       {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
-        <div key={i} className="absolute right-2 text-[11px] text-neutral-400 font-mono" style={{ top: i * HOUR_HEIGHT - 7 }}>
+        <div key={i} className="absolute right-2 text-[11px] text-neutral-400 font-mono" style={{ top: i * hh - 7 }}>
           {String(DAY_START + i).padStart(2, "0")}:00
         </div>
       ))}
@@ -789,14 +1096,100 @@ function TimeColumn() {
   );
 }
 
-// ── Grid Lines ────────────────────────────────────────────────────────────────
+// ── Grid Lines (15-minute intervals) ──────────────────────────────────────────
 function GridLines() {
+  const hh = React.useContext(HHCtx);
+  // 4 segments per hour (15 min each)
+  const segments = TOTAL_HOURS * 4;
   return (
     <div className="absolute inset-0 pointer-events-none">
-      {Array.from({ length: TOTAL_HOURS * 2 + 1 }, (_, i) => (
-        <div key={i} className={`absolute left-0 right-0 border-t ${i % 2 === 0 ? "border-neutral-200" : "border-neutral-100 border-dashed"}`}
-          style={{ top: i * (HOUR_HEIGHT / 2) }} />
-      ))}
+      {Array.from({ length: segments + 1 }, (_, i) => {
+        const isHour    = i % 4 === 0;
+        const isHalfHour = i % 2 === 0;
+        return (
+          <div key={i}
+            className={`absolute left-0 right-0 border-t ${
+              isHour      ? "border-neutral-200" :
+              isHalfHour  ? "border-neutral-150 border-dashed opacity-60" :
+                            "border-neutral-100 border-dashed opacity-30"
+            }`}
+            style={{ top: i * (hh / 4) }} />
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Drag state for creating appointments ─────────────────────────────────────
+type DragState = { staffId: string; date: string; startY: number; endY: number } | null;
+
+// ── Draft Appointment Block (Google-Calendar style click-to-place) ─────────────
+function DraftApptBlock({
+  startY, staffName,
+  onMove, onConfirm, onAddBreak, onDismiss,
+}: {
+  startY: number; staffName: string; date: string;
+  onMove: (y: number) => void;
+  onConfirm: () => void;
+  onAddBreak: () => void;
+  onDismiss: () => void;
+}) {
+  const hh = React.useContext(HHCtx);
+  const totalH = TOTAL_HOURS * hh;
+  const blockH = Math.max(hh * 0.5, 60);
+  const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
+  const time = yToTimeFn(clampedTop, hh);
+  const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
+
+  return (
+    <div
+      className="absolute left-1 right-1 z-30 select-none cursor-grab active:cursor-grabbing"
+      style={{ top: clampedTop, height: blockH, touchAction: "none" }}
+      onPointerDown={e => {
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRef.current = { clientY: e.clientY, startY: clampedTop };
+      }}
+      onPointerMove={e => {
+        if (!dragRef.current) return;
+        const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
+        onMove(newY);
+      }}
+      onPointerUp={e => { e.stopPropagation(); dragRef.current = null; }}
+      onPointerCancel={() => { dragRef.current = null; }}>
+
+      {/* Shadow card */}
+      <div className="w-full h-full rounded-xl bg-white shadow-xl border border-neutral-200 flex flex-col overflow-hidden"
+        style={{ borderRight: "3px solid #f59e0b" }}>
+
+        {/* Top row — time + close */}
+        <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
+          <span className="text-[12px] font-semibold text-neutral-800">{time}</span>
+          <button
+            className="text-neutral-400 hover:text-neutral-600 text-sm leading-none"
+            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+        </div>
+
+        {/* Staff name */}
+        {blockH > 72 && (
+          <p className="text-[10px] text-neutral-400 px-2.5 truncate">✂️ {staffName}</p>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-1.5 px-2 pb-2 mt-auto">
+          <button
+            className="flex-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-neutral-950 rounded-lg text-[11px] font-semibold py-1.5 transition"
+            onClick={e => { e.stopPropagation(); onConfirm(); }}>
+            קבע תור
+          </button>
+          <button
+            className="text-neutral-400 hover:text-neutral-600 text-sm px-2 rounded-lg hover:bg-neutral-50 transition"
+            title="הוסף הפסקה"
+            onClick={e => { e.stopPropagation(); onAddBreak(); }}>
+            ☕
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -815,18 +1208,67 @@ export default function AdminCalendar() {
   const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null);
   const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
-  const [gridAction, setGridAction] = useState<{ staffId: string; date: string; time: string; x: number; y: number } | null>(null);
+  const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
-  const [nowY, setNowY] = useState(nowPx());
-  const [hoverY, setHoverY] = useState<number | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
+  // ── Zoom & drag ──────────────────────────────────────────────────────────────
+  const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
+  const [drag, setDrag] = useState<DragState>(null);
+  const hourHeightRef = useRef(DEFAULT_HOUR_HEIGHT);
+  hourHeightRef.current = hourHeight;
+  const totalHeight = TOTAL_HOURS * hourHeight;
+  const [nowY, setNowY] = useState(() => nowPxFn(DEFAULT_HOUR_HEIGHT));
   const gridRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
+  // Update nowY whenever hourHeight changes
   useEffect(() => {
-    const t = setInterval(() => setNowY(nowPx()), 60_000);
+    setNowY(nowPxFn(hourHeight));
+    const t = setInterval(() => setNowY(nowPxFn(hourHeightRef.current)), 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [hourHeight]);
+
+  // Pinch-to-zoom touch handler on the grid container
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    let startDist = 0;
+    let startHH = 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        startDist = Math.hypot(
+          e.touches[1].clientX - e.touches[0].clientX,
+          e.touches[1].clientY - e.touches[0].clientY
+        );
+        startHH = hourHeightRef.current;
+      } else {
+        startDist = 0;
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && startDist > 0) {
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[1].clientX - e.touches[0].clientX,
+          e.touches[1].clientY - e.touches[0].clientY
+        );
+        const scale = dist / startDist;
+        const newHH = Math.max(28, Math.min(220, Math.round(startHH * scale)));
+        setHourHeight(newHH);
+      }
+    };
+    const onTouchEnd = () => { startDist = 0; };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load staff + services once
   useEffect(() => {
@@ -870,8 +1312,8 @@ export default function AdminCalendar() {
   }, [loadAppointments]);
 
   useEffect(() => {
-    if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowY - 120, 0);
-  }, [loading]);
+    if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowPxFn(hourHeightRef.current) - 120, 0);
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch waitlist counts for visible dates
   useEffect(() => {
@@ -897,17 +1339,55 @@ export default function AdminCalendar() {
   const dates = getDates();
 
   function getAppts(staffId: string, d: string) {
+    // Compare only the date portion (first 10 chars of ISO string = YYYY-MM-DD)
+    // Works correctly when dates are stored as UTC midnight
     return appointments.filter(a =>
-      a.staff.id === staffId && a.date.startsWith(d) &&
+      a.staff.id === staffId &&
+      a.date.slice(0, 10) === d &&
       !["cancelled_by_customer", "cancelled_by_staff"].includes(a.status)
     );
   }
 
-  function handleGridClick(e: React.MouseEvent<HTMLDivElement>, staffId: string, d: string) {
+  // ── Drag to create (desktop/mouse only) ─────────────────────────────────────
+  function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
+    if (e.pointerType !== "mouse") return; // touch handled by onClick below
+    if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const time = yToTime(y);
-    setGridAction({ staffId, date: d, time, x: e.clientX, y: e.clientY });
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({ staffId, date: d, startY: y, endY: y });
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
+    if (e.pointerType !== "mouse") return;
+    if (!drag || drag.staffId !== staffId || drag.date !== d) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = Math.max(0, Math.min(totalHeight, e.clientY - rect.top));
+    setDrag(prev => prev ? { ...prev, endY: y } : null);
+  }
+
+  function handlePointerUp(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
+    if (e.pointerType !== "mouse") return;
+    if (!drag || drag.staffId !== staffId || drag.date !== d) return;
+    const dist = Math.abs(drag.endY - drag.startY);
+    if (dist < 10) {
+      // Short click → place draft block
+      setDraftAppt({ staffId, date: d, startY: drag.startY });
+    } else {
+      // Long drag → open modal immediately with start time
+      const startY = Math.min(drag.startY, drag.endY);
+      setNewAppt({ staffId, date: d, time: yToTimeFn(startY, hourHeight) });
+      setDraftAppt(null);
+    }
+    setDrag(null);
+  }
+
+  // For touch: tap places the draft block (onClick fires for taps, not scrolls)
+  function handleGridClick(e: React.MouseEvent<HTMLDivElement>, staffId: string, d: string) {
+    if (drag !== null) return; // already handled by pointer events
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    setDraftAppt({ staffId, date: d, startY: y });
   }
 
   function handleStatusChange(id: string, status: string) {
@@ -958,104 +1438,150 @@ export default function AdminCalendar() {
   // ── Time grid ───────────────────────────────────────────────────────────────
   function renderTimeGrid() {
     const isDay = view === "day";
-    const columns = isDay ? displayedStaff : dates;
+
+    // On mobile, each barber column in day-view needs a minimum width so columns don't get crushed
+    const gridMinWidth = isDay ? `${14 * 4 + displayedStaff.length * 80}px` : undefined; // 56px time col + 80px per barber
 
     return (
       <div className="flex flex-col flex-1 min-h-0">
-        {/* Column headers */}
-        <div className="flex border-b border-neutral-200 bg-white shrink-0">
-          <div className="w-14 shrink-0" />
-          {isDay
-            ? displayedStaff.map((s, si) => (
-              <div key={s.id} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
-                  {s.name[0]}
+        {/* Column headers — scrollable horizontally to match the grid */}
+        <div className="overflow-x-auto shrink-0 border-b border-neutral-200 bg-white">
+          <div className="flex" style={{ minWidth: gridMinWidth }}>
+            <div className="w-14 shrink-0" />
+            {isDay
+              ? displayedStaff.map((s, si) => (
+                <div key={s.id} style={isDay ? { minWidth: 80 } : {}} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
+                    {s.name[0]}
+                  </div>
+                  <span className="text-xs text-neutral-700 mt-1 font-medium truncate px-1">{s.name}</span>
                 </div>
-                <span className="text-xs text-neutral-700 mt-1 font-medium truncate px-1">{s.name}</span>
-              </div>
-            ))
-            : dates.map(d => {
-              const isToday = d === todayISO();
-              const staffForDay = weekStaff;
-              return (
-                <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
-                  onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
-                  <span className={`text-xs font-semibold ${isToday ? "text-amber-600" : "text-neutral-500"}`}>{fmtShort(d)}</span>
-                  {isToday && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-0.5" />}
-                  {waitlistCounts[d] > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                      {waitlistCounts[d]}
-                    </span>
-                  )}
-                </div>
-              );
-            })
-          }
+              ))
+              : dates.map(d => {
+                const isToday = d === todayISO();
+                const staffForDay = weekStaff;
+                return (
+                  <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
+                    onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
+                    <span className={`text-xs font-semibold ${isToday ? "text-amber-600" : "text-neutral-500"}`}>{fmtShort(d)}</span>
+                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-0.5" />}
+                    {waitlistCounts[d] > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                        {waitlistCounts[d]}
+                      </span>
+                    )}
+                  </div>
+                );
+              })
+            }
+          </div>
         </div>
 
-        {/* Scrollable grid */}
-        <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-          <div className="flex" style={{ height: TOTAL_HEIGHT }}>
-            <TimeColumn />
-            <div className="flex flex-1 relative">
-              <GridLines />
-              {/* Now line */}
-              {dates.includes(todayISO()) && nowY >= 0 && nowY <= TOTAL_HEIGHT && (
-                <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
-                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  <div className="flex-1 border-t-2 border-red-400" />
-                </div>
-              )}
-
-              {isDay
-                ? displayedStaff.map((s, si) => (
-                  <div key={s.id} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
-                    onClick={e => handleGridClick(e, s.id, date)}
-                    onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); setHoverY(e.clientY - r.top); }}
-                    onMouseLeave={() => setHoverY(null)}>
-                    <WorkingOverlay staff={s} dow={dayOfWeek(date)} />
-                    {hoverY !== null && (
-                      <div className="absolute left-0 right-0 pointer-events-none z-10 flex items-center" style={{ top: hoverY }}>
-                        <div className="absolute right-1 -top-4 bg-neutral-800 text-white text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
-                          {yToTime(hoverY)}
-                        </div>
-                        <div className="w-full border-t border-dashed border-amber-400 opacity-70" />
-                      </div>
-                    )}
-                    {getAppts(s.id, date).map(a => (
-                      <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                        onClick={() => setSelectedAppt(a)} />
-                    ))}
+        {/* Scrollable grid — vertical + horizontal on mobile */}
+        <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto">
+          <HHCtx.Provider value={hourHeight}>
+            <div className="flex" style={{ height: totalHeight, minWidth: gridMinWidth }}>
+              <TimeColumn />
+              <div className="flex flex-1 relative">
+                <GridLines />
+                {/* Now line */}
+                {dates.includes(todayISO()) && nowY >= 0 && nowY <= totalHeight && (
+                  <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
+                    <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                    <div className="flex-1 border-t-2 border-red-400" />
                   </div>
-                ))
-                : dates.map(d => {
-                  const s = weekStaff;
-                  if (!s) return <div key={d} className="flex-1" />;
-                  const si = allStaff.findIndex(x => x.id === s.id);
-                  return (
-                    <div key={d} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
-                      onClick={e => handleGridClick(e, s.id, d)}
-                      onMouseMove={e => { const r = e.currentTarget.getBoundingClientRect(); setHoverY(e.clientY - r.top); }}
-                      onMouseLeave={() => setHoverY(null)}>
-                      <WorkingOverlay staff={s} dow={dayOfWeek(d)} />
-                      {hoverY !== null && (
-                        <div className="absolute left-0 right-0 pointer-events-none z-10 flex items-center" style={{ top: hoverY }}>
-                          <div className="absolute right-1 -top-4 bg-neutral-800 text-white text-[10px] px-1.5 py-0.5 rounded font-mono whitespace-nowrap">
-                            {yToTime(hoverY)}
+                )}
+
+                {isDay
+                  ? displayedStaff.map((s, si) => {
+                    const colDrag = drag?.staffId === s.id && drag?.date === date ? drag : null;
+                    const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
+                    const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === date ? draftAppt : null;
+                    return (
+                      <div key={s.id} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
+                        onClick={e => { if (!colDraft) handleGridClick(e, s.id, date); else setDraftAppt(null); }}
+                        onPointerDown={e => handlePointerDown(e, s.id, date)}
+                        onPointerMove={e => handlePointerMove(e, s.id, date)}
+                        onPointerUp={e => handlePointerUp(e, s.id, date)}
+                        onPointerCancel={() => setDrag(null)}>
+                        <WorkingOverlay staff={s} dow={dayOfWeek(date)} />
+                        {/* Drag-to-create ghost rectangle */}
+                        {colDrag && dragDist >= 6 && (
+                          <div className="absolute left-0.5 right-0.5 bg-amber-300/40 border-2 border-dashed border-amber-500 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                            style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
+                            {dragDist > 20 && (
+                              <span className="text-[10px] font-bold text-amber-900 leading-tight">
+                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
+                              </span>
+                            )}
                           </div>
-                          <div className="w-full border-t border-dashed border-amber-400 opacity-70" />
-                        </div>
-                      )}
-                      {getAppts(s.id, d).map(a => (
-                        <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                          onClick={() => setSelectedAppt(a)} />
-                      ))}
-                    </div>
-                  );
-                })
-              }
+                        )}
+                        {/* Draft appointment block (Google Calendar style) */}
+                        {colDraft && (
+                          <DraftApptBlock
+                            startY={colDraft.startY}
+                            staffName={s.name}
+                            date={date}
+                            onMove={y => setDraftAppt(prev => prev ? { ...prev, startY: y } : null)}
+                            onConfirm={() => { setNewAppt({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onDismiss={() => setDraftAppt(null)}
+                          />
+                        )}
+                        {getAppts(s.id, date).map(a => (
+                          <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                            onClick={() => setSelectedAppt(a)} />
+                        ))}
+                      </div>
+                    );
+                  })
+                  : dates.map(d => {
+                    const s = weekStaff;
+                    if (!s) return <div key={d} className="flex-1" />;
+                    const si = allStaff.findIndex(x => x.id === s.id);
+                    const colDrag = drag?.staffId === s.id && drag?.date === d ? drag : null;
+                    const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
+                    const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === d ? draftAppt : null;
+                    return (
+                      <div key={d} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
+                        onClick={e => { if (!colDraft) handleGridClick(e, s.id, d); else setDraftAppt(null); }}
+                        onPointerDown={e => handlePointerDown(e, s.id, d)}
+                        onPointerMove={e => handlePointerMove(e, s.id, d)}
+                        onPointerUp={e => handlePointerUp(e, s.id, d)}
+                        onPointerCancel={() => setDrag(null)}>
+                        <WorkingOverlay staff={s} dow={dayOfWeek(d)} />
+                        {colDrag && dragDist >= 6 && (
+                          <div className="absolute left-0.5 right-0.5 bg-amber-300/40 border-2 border-dashed border-amber-500 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                            style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
+                            {dragDist > 20 && (
+                              <span className="text-[10px] font-bold text-amber-900 leading-tight">
+                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {colDraft && (
+                          <DraftApptBlock
+                            startY={colDraft.startY}
+                            staffName={s.name}
+                            date={d}
+                            onMove={y => setDraftAppt(prev => prev ? { ...prev, startY: y } : null)}
+                            onConfirm={() => { setNewAppt({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onDismiss={() => setDraftAppt(null)}
+                          />
+                        )}
+                        {getAppts(s.id, d).map(a => (
+                          <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                            onClick={() => setSelectedAppt(a)} />
+                        ))}
+                      </div>
+                    );
+                  })
+                }
+              </div>
             </div>
-          </div>
+          </HHCtx.Provider>
         </div>
       </div>
     );
@@ -1069,10 +1595,13 @@ export default function AdminCalendar() {
   return (
     <div className="flex flex-col h-full bg-white">
       {/* ── Top bar ── */}
-      <div className="flex items-center gap-2 px-4 py-2.5 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-2">
-        <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center">◀</button>
-        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-amber-600 hover:underline px-1">היום</button>
-        <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center">▶</button>
+      <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-1.5">
+        {/* Navigation */}
+        <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">◀</button>
+        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-amber-600 hover:underline px-1 shrink-0">היום</button>
+        <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">▶</button>
+
+        {/* Date label */}
         {view === "day" ? (
           <button
             className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate text-right hover:text-amber-600 transition"
@@ -1083,32 +1612,32 @@ export default function AdminCalendar() {
           <span className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate">{dateLabel}</span>
         )}
 
-        {/* Refresh */}
-        <button onClick={loadAppointments} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center" title="רענן">
+        {/* Refresh — hidden on mobile to save space */}
+        <button onClick={loadAppointments} className="hidden sm:flex w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 items-center justify-center shrink-0" title="רענן">
           🔄
         </button>
 
         {/* Week barber picker (only in week/3day view) */}
         {(view === "week" || view === "3day") && (
           <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
-            className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700">
+            className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
             {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
 
-        {/* View switcher */}
-        <div className="flex bg-neutral-100 rounded-lg p-0.5">
+        {/* View switcher — compact on mobile */}
+        <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
           {(["day","3day","week","month"] as ViewType[]).map(v => (
             <button key={v} onClick={() => setView(v)}
-              className={`px-2.5 py-1 text-xs rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
-              {v === "day" ? "יום" : v === "3day" ? "3 ימים" : v === "week" ? "שבוע" : "חודש"}
+              className={`px-2 py-1 text-[11px] rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"} ${v === "3day" ? "hidden sm:block" : ""}`}>
+              {v === "day" ? "יום" : v === "3day" ? "3י" : v === "week" ? "שבוע" : "חודש"}
             </button>
           ))}
         </div>
 
         {/* Day view barber filter */}
         {view === "day" && (
-          <div className="relative">
+          <div className="relative shrink-0">
             <button onClick={() => setShowFilter(!showFilter)}
               className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-amber-500 text-neutral-950 border-amber-400" : "bg-white border-neutral-200 text-neutral-600"}`}>
               ✂️ {visibleStaff.length === allStaff.length ? "הכל" : `${visibleStaff.length}`}
@@ -1135,7 +1664,7 @@ export default function AdminCalendar() {
 
         {/* New appointment button */}
         <button onClick={() => setNewAppt({ staffId: allStaff[0]?.id || "", date, time: "10:00" })}
-          className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-neutral-950 rounded-lg text-xs font-semibold hover:bg-amber-400 transition">
+          className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-neutral-950 rounded-lg text-xs font-semibold hover:bg-amber-400 transition shrink-0">
           + תור
         </button>
       </div>
@@ -1147,7 +1676,7 @@ export default function AdminCalendar() {
       }
 
       {/* ── Modals ── */}
-      {selectedAppt && <ApptModal appt={selectedAppt} onClose={() => setSelectedAppt(null)} onChange={handleStatusChange} />}
+      {selectedAppt && <ApptModal appt={selectedAppt} onClose={() => setSelectedAppt(null)} onChange={handleStatusChange} onReload={loadAppointments} />}
       {newAppt && (
         <NewApptModal
           staff={allStaff.find(s => s.id === newAppt.staffId) || null}
@@ -1166,27 +1695,6 @@ export default function AdminCalendar() {
         />
       )}
       {dayMenu && <DayPanel date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
-
-      {/* ── Grid Action Picker ── */}
-      {gridAction && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setGridAction(null)} />
-          <div className="fixed z-50 bg-white rounded-2xl shadow-2xl border border-neutral-100 overflow-hidden w-44"
-            style={{ top: Math.min(gridAction.y, window.innerHeight - 130), left: Math.min(gridAction.x, window.innerWidth - 180) }}>
-            <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-100 text-xs text-neutral-500 font-mono">
-              {gridAction.time}
-            </div>
-            <button onClick={() => { setNewAppt({ staffId: gridAction.staffId, date: gridAction.date, time: gridAction.time }); setGridAction(null); }}
-              className="w-full text-right px-4 py-3 hover:bg-amber-50 text-sm font-medium flex items-center gap-2 border-b border-neutral-50">
-              <span>✂️</span> קבע תור
-            </button>
-            <button onClick={() => { setAddBreak({ staffId: gridAction.staffId, date: gridAction.date, time: gridAction.time }); setGridAction(null); }}
-              className="w-full text-right px-4 py-3 hover:bg-orange-50 text-sm font-medium flex items-center gap-2">
-              <span>☕</span> הוסף הפסקה
-            </button>
-          </div>
-        </>
-      )}
     </div>
   );
 }

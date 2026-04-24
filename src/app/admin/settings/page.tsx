@@ -6,23 +6,81 @@ import { useEffect, useState } from "react";
 type Business = {
   name: string; phone: string; address: string; about: string;
   logoUrl: string; coverImageUrl: string; brandColor: string;
+  secondaryColor: string; bgColor: string; textColor: string;
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; waze?: string };
   whatsappNumber: string;
   messagingProvider: string;
   greenApiInstanceId: string;
   greenApiToken: string;
-  features: { reminders: boolean; agent: boolean };
+  features: { reminders: boolean; reminder_24h: boolean; reminder_2h: boolean; agent: boolean };
+  reminder24hTemplate: string;
+  reminder2hTemplate: string;
+  bookingHorizonDays: number;
+  minBookingLeadMinutes: number;
+  reengageEnabled: boolean;
+  reengageWeeks: number;
+  reengageTemplate: string;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
-type StaffMember = { id: string; name: string; schedules: Schedule[] };
+type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
+type StaffBookingSettings = { bookingHorizonDays?: number; minBookingLeadMinutes?: number };
 
 type DayConfig = { isWorking: boolean; start: string; end: string; hasBreak: boolean; breakStart: string; breakEnd: string };
 
+type AutoType = "reengage" | "post_first_visit" | "post_every_visit";
+interface AutoRec {
+  id: string; type: AutoType; name: string; active: boolean;
+  settings: string; template: string | null;
+}
+const AUTO_NAMES: Record<AutoType, string> = {
+  reengage: "החזרת לקוחות לא פעילים",
+  post_first_visit: "קידום חכם — ביקור ראשון",
+  post_every_visit: "הודעה אחרי כל ביקור",
+};
+const AUTO_DEFAULT_SETTINGS: Record<AutoType, object> = {
+  reengage:         { inactiveWeeks: 6, excludeWithFutureAppt: true, segment: "all" },
+  post_first_visit: { ctaType: "google_review", ctaUrl: "" },
+  post_every_visit: { segment: "regular_only", minVisits: 2 },
+};
+function parseAutoS<T>(s: string): T { try { return JSON.parse(s) as T; } catch { return {} as T; } }
+
 // ── Defaults ───────────────────────────────────────────────────────────────────
+const DEFAULT_24H_TEMPLATE =
+`שלום {{name}} 👋
+
+תזכורת — יש לך תור מחר ב*{{business}}* ✂️
+📅 {{date}}
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+אם יש שינוי — נא להודיע מראש 🙏`;
+
+const DEFAULT_2H_TEMPLATE =
+`שלום {{name}} 👋
+
+תזכורת — יש לך תור בעוד שעתיים ב*{{business}}* ✂️
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+נתראה בקרוב! 💈`;
+
+const DEFAULT_REENGAGE_TEMPLATE =
+`שלום {{name}} 👋
+
+מזמן לא ראינו אותך אצלנו!
+נשמח לראותך שוב — קבע תור עכשיו 💈
+
+{{booking_link}}`;
+
 const emptyBusiness: Business = {
-  name: "", phone: "", address: "", about: "", logoUrl: "", coverImageUrl: "", brandColor: "#D4AF37", socialLinks: {},
+  name: "", phone: "", address: "", about: "", logoUrl: "", coverImageUrl: "",
+  brandColor: "#D4AF37", secondaryColor: "#ffffff", bgColor: "#faf9f7", textColor: "#171717",
+  socialLinks: {},
   whatsappNumber: "", messagingProvider: "green_api", greenApiInstanceId: "", greenApiToken: "",
-  features: { reminders: true, agent: false },
+  features: { reminders: true, reminder_24h: true, reminder_2h: false, agent: false },
+  reminder24hTemplate: "", reminder2hTemplate: "",
+  bookingHorizonDays: 30, minBookingLeadMinutes: 0,
+  reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -48,6 +106,32 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
   const [days, setDays] = useState<DayConfig[]>(() => parseSchedule(staff.schedules));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Per-barber booking settings (stored in staff.settings JSON)
+  const initBooking: StaffBookingSettings = (() => {
+    try { return staff.settings ? JSON.parse(staff.settings) : {}; } catch { return {}; }
+  })();
+  const [horizonDays,    setHorizonDays]    = useState<string>(initBooking.bookingHorizonDays    !== undefined ? String(initBooking.bookingHorizonDays)    : "");
+  const [leadMins,       setLeadMins]       = useState<string>(initBooking.minBookingLeadMinutes !== undefined ? String(initBooking.minBookingLeadMinutes) : "");
+  const [bookingSaving,  setBookingSaving]  = useState(false);
+  const [bookingSaved,   setBookingSaved]   = useState(false);
+
+  async function saveBookingSettings() {
+    setBookingSaving(true);
+    const patch: StaffBookingSettings = {};
+    if (horizonDays !== "") patch.bookingHorizonDays    = Number(horizonDays);
+    if (leadMins    !== "") patch.minBookingLeadMinutes = Number(leadMins);
+    // Merge into existing settings
+    const existing: Record<string, unknown> = (() => {
+      try { return staff.settings ? JSON.parse(staff.settings) : {}; } catch { return {}; }
+    })();
+    const merged = { ...existing, ...patch };
+    await fetch(`/api/admin/staff/${staff.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: merged }),
+    });
+    setBookingSaving(false); setBookingSaved(true); setTimeout(() => setBookingSaved(false), 2500);
+  }
 
   function updateDay(dow: number, patch: Partial<DayConfig>) {
     setDays(prev => prev.map((d, i) => i === dow ? { ...d, ...patch } : d));
@@ -93,14 +177,15 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
 
               {day.isWorking ? (
                 <>
-                  {/* Work hours */}
-                  <div className="flex items-center gap-2">
+                  {/* Work hours — force LTR so "start → end" reads naturally */}
+                  <div className="flex items-center gap-2" dir="ltr">
                     <span className="text-xs text-neutral-400">מ</span>
-                    <input type="time" value={day.start} onChange={e => updateDay(dow, { start: e.target.value })}
+                    <input type="time" dir="ltr" value={day.start} onChange={e => updateDay(dow, { start: e.target.value })}
+                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                    <span className="text-xs text-neutral-400">—</span>
+                    <input type="time" dir="ltr" value={day.end} onChange={e => updateDay(dow, { end: e.target.value })}
                       className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
                     <span className="text-xs text-neutral-400">עד</span>
-                    <input type="time" value={day.end} onChange={e => updateDay(dow, { end: e.target.value })}
-                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
                   </div>
 
                   {/* Break */}
@@ -110,11 +195,11 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
                       הפסקה
                     </button>
                     {day.hasBreak && (
-                      <div className="flex items-center gap-2">
-                        <input type="time" value={day.breakStart} onChange={e => updateDay(dow, { breakStart: e.target.value })}
+                      <div className="flex items-center gap-2" dir="ltr">
+                        <input type="time" dir="ltr" value={day.breakStart} onChange={e => updateDay(dow, { breakStart: e.target.value })}
                           className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
-                        <span className="text-xs text-neutral-400">–</span>
-                        <input type="time" value={day.breakEnd} onChange={e => updateDay(dow, { breakEnd: e.target.value })}
+                        <span className="text-xs text-neutral-400">—</span>
+                        <input type="time" dir="ltr" value={day.breakEnd} onChange={e => updateDay(dow, { breakEnd: e.target.value })}
                           className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
                       </div>
                     )}
@@ -127,13 +212,49 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
           </div>
         ))}
       </div>
+
+      {/* Per-barber booking calendar settings */}
+      <div className="border-t border-neutral-100 px-5 py-4 bg-neutral-50/40">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs font-semibold text-neutral-700">📅 הגדרות יומן אישיות</p>
+            <p className="text-[11px] text-neutral-400 mt-0.5">ריק = ברירת מחדל של העסק</p>
+          </div>
+          <button onClick={saveBookingSettings} disabled={bookingSaving}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+            {bookingSaving ? "שומר..." : bookingSaved ? "✓ נשמר" : "שמור"}
+          </button>
+        </div>
+        <div className="flex gap-4 flex-wrap">
+          <div>
+            <label className="text-[11px] text-neutral-500 block mb-1">ימים קדימה פתוח</label>
+            <div className="flex items-center gap-1.5">
+              <input type="number" min={1} max={365} value={horizonDays}
+                onChange={e => setHorizonDays(e.target.value)}
+                placeholder="גלובלי"
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
+              <span className="text-xs text-neutral-400">ימים</span>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] text-neutral-500 block mb-1">מינימום לפני קביעה</label>
+            <div className="flex items-center gap-1.5">
+              <input type="number" min={0} max={1440} value={leadMins}
+                onChange={e => setLeadMins(e.target.value)}
+                placeholder="גלובלי"
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
+              <span className="text-xs text-neutral-400">דקות</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminSettingsPage() {
-  const [tab, setTab] = useState<"business" | "hours" | "whatsapp">("business");
+  const [tab, setTab] = useState<"business" | "hours" | "whatsapp" | "automations">("business");
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
   const [form, setForm] = useState<Business>(emptyBusiness);
@@ -141,22 +262,79 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  // Referral sources
+  const [referralSources, setReferralSources] = useState<string[]>([]);
+  const [newSource, setNewSource] = useState("");
+  const [savingReferral, setSavingReferral] = useState(false);
+
   useEffect(() => {
     fetch("/api/admin/business").then(r => r.json()).then(data => {
-      if (data) setForm({
-        name: data.name || "", phone: data.phone || "", address: data.address || "", about: data.about || "",
-        logoUrl: data.logoUrl || "", coverImageUrl: data.coverImageUrl || "", brandColor: data.brandColor || "#D4AF37",
-        socialLinks: data.socialLinks || {},
-        whatsappNumber: data.whatsappNumber || "",
-        messagingProvider: data.messagingProvider || "green_api",
-        greenApiInstanceId: data.greenApiInstanceId || "",
-        greenApiToken: data.greenApiToken || "",
-        features: (typeof data.features === "string" ? JSON.parse(data.features) : data.features) || { reminders: true, agent: false },
-      });
+      if (data) {
+        const rawF = (typeof data.features === "string" ? JSON.parse(data.features) : data.features) || {};
+        setForm({
+          name: data.name || "", phone: data.phone || "", address: data.address || "", about: data.about || "",
+          logoUrl: data.logoUrl || "", coverImageUrl: data.coverImageUrl || "",
+          brandColor: data.brandColor || "#D4AF37",
+          secondaryColor: data.secondaryColor || "#ffffff",
+          bgColor: data.bgColor || "#faf9f7",
+          textColor: data.textColor || "#171717",
+          socialLinks: data.socialLinks || {},
+          whatsappNumber: data.whatsappNumber || "",
+          messagingProvider: data.messagingProvider || "green_api",
+          greenApiInstanceId: data.greenApiInstanceId || "",
+          greenApiToken: data.greenApiToken || "",
+          features: {
+            reminders:    rawF.reminders    ?? true,
+            // backward compat: if reminder_24h missing, inherit from legacy "reminders"
+            reminder_24h: rawF.reminder_24h ?? rawF.reminders ?? true,
+            reminder_2h:  rawF.reminder_2h  ?? false,
+            agent:        rawF.agent        ?? false,
+          },
+          reminder24hTemplate: data.reminder24hTemplate || "",
+          reminder2hTemplate:  data.reminder2hTemplate  || "",
+          bookingHorizonDays:     data.bookingHorizonDays     ?? 30,
+          minBookingLeadMinutes:  data.minBookingLeadMinutes  ?? 0,
+          reengageEnabled:        data.reengageEnabled        ?? false,
+          reengageWeeks:       data.reengageWeeks       ?? 6,
+          reengageTemplate:    data.reengageTemplate    || "",
+        });
+      }
       setBizLoading(false);
     });
     fetch("/api/admin/staff").then(r => r.json()).then(data => { setStaffList(data); setStaffLoading(false); });
+    fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralSources);
   }, []);
+
+  async function saveReferralSources() {
+    setSavingReferral(true);
+    await fetch("/api/admin/referral-sources", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(referralSources),
+    });
+    setSavingReferral(false);
+  }
+
+  function addSource() {
+    const v = newSource.trim();
+    if (!v || referralSources.includes(v)) return;
+    setReferralSources(prev => [...prev, v]);
+    setNewSource("");
+  }
+
+  function removeSource(idx: number) {
+    setReferralSources(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function moveSource(idx: number, dir: -1 | 1) {
+    setReferralSources(prev => {
+      const next = [...prev];
+      const swap = idx + dir;
+      if (swap < 0 || swap >= next.length) return next;
+      [next[idx], next[swap]] = [next[swap], next[idx]];
+      return next;
+    });
+  }
 
   async function saveBiz() {
     setSaving(true);
@@ -176,8 +354,13 @@ export default function AdminSettingsPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 mb-6 w-fit">
-        {[{ key: "business", label: "פרטי עסק" }, { key: "hours", label: "שעות עבודה" }, { key: "whatsapp", label: "WhatsApp" }].map(({ key, label }) => (
-          <button key={key} onClick={() => setTab(key as "business" | "hours" | "whatsapp")}
+        {([
+          { key: "business", label: "פרטי עסק" },
+          { key: "hours",    label: "שעות עבודה" },
+          { key: "whatsapp", label: "WhatsApp" },
+          { key: "automations", label: "🤖 אוטומציות" },
+        ] as { key: "business" | "hours" | "whatsapp" | "automations"; label: string }[]).map(({ key, label }) => (
+          <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
             {label}
           </button>
@@ -236,13 +419,136 @@ export default function AdminSettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-neutral-500 block mb-1">צבע מותג</label>
+                  <label className="text-xs text-neutral-500 block mb-1">צבע ראשי (מותג)</label>
                   <div className="flex items-center gap-3">
                     <input type="color" value={form.brandColor} onChange={e => setField("brandColor", e.target.value)}
                       className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
                     <span className="text-sm text-neutral-600 font-mono">{form.brandColor}</span>
                   </div>
                 </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">צבע משני</label>
+                  <div className="flex items-center gap-3">
+                    <input type="color" value={form.secondaryColor} onChange={e => setField("secondaryColor", e.target.value)}
+                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
+                    <span className="text-sm text-neutral-600 font-mono">{form.secondaryColor}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">צבע רקע</label>
+                  <div className="flex items-center gap-3">
+                    <input type="color" value={form.bgColor} onChange={e => setField("bgColor", e.target.value)}
+                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
+                    <span className="text-sm text-neutral-600 font-mono">{form.bgColor}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">צבע טקסט</label>
+                  <div className="flex items-center gap-3">
+                    <input type="color" value={form.textColor} onChange={e => setField("textColor", e.target.value)}
+                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
+                    <span className="text-sm text-neutral-600 font-mono">{form.textColor}</span>
+                  </div>
+                </div>
+                {/* Live color preview swatch */}
+                <div className="col-span-2">
+                  <label className="text-xs text-neutral-500 block mb-1">תצוגה מקדימה</label>
+                  <div
+                    className="rounded-xl px-4 py-3 flex items-center gap-3 border border-neutral-200"
+                    style={{ backgroundColor: form.bgColor, color: form.textColor }}
+                  >
+                    <div className="w-8 h-8 rounded-full border-2 flex-shrink-0" style={{ backgroundColor: form.brandColor, borderColor: form.secondaryColor }} />
+                    <div>
+                      <p className="text-sm font-semibold">{form.name || "שם העסק"}</p>
+                      <p className="text-xs opacity-60">תצוגה מקדימה של הצבעים</p>
+                    </div>
+                    <div className="mr-auto px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: form.brandColor, color: form.secondaryColor }}>
+                      CTA
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Booking calendar */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <h2 className="font-semibold text-neutral-800 mb-4">יומן ותורים</h2>
+              <div className="space-y-5">
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">כמה ימים קדימה היומן פתוח</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number" min={1} max={365}
+                      value={form.bookingHorizonDays}
+                      onChange={e => setField("bookingHorizonDays", Number(e.target.value))}
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <span className="text-sm text-neutral-500">ימים</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    לקוחות יכולים לקבוע תור עד {form.bookingHorizonDays} ימים מהיום (ברירת מחדל: 30)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">זמן מינימלי מעכשיו לקביעת תור</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number" min={0} max={1440}
+                      value={form.minBookingLeadMinutes}
+                      onChange={e => setField("minBookingLeadMinutes", Number(e.target.value))}
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                    <span className="text-sm text-neutral-500">דקות</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    {form.minBookingLeadMinutes === 0
+                      ? "לקוחות יכולים לקבוע תור ״מעכשיו לעכשיו״"
+                      : `לקוחות לא יוכלו לקבוע תור פחות מ-${form.minBookingLeadMinutes} דקות מעכשיו`}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Referral sources */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold text-neutral-800">מקורות הגעה</h2>
+                <button onClick={saveReferralSources} disabled={savingReferral}
+                  className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-neutral-700 disabled:opacity-50">
+                  {savingReferral ? "שומר..." : "שמור רשימה"}
+                </button>
+              </div>
+              <p className="text-xs text-neutral-400 mb-4">
+                האופציות שיופיעו ללקוח ב״מאיפה הכרת אותנו?״ ולך ביומן הניהול
+              </p>
+
+              <div className="space-y-2 mb-3">
+                {referralSources.map((src, i) => (
+                  <div key={i} className="flex items-center gap-2 bg-neutral-50 rounded-xl px-3 py-2">
+                    <span className="flex-1 text-sm text-neutral-800">{src}</span>
+                    <button onClick={() => moveSource(i, -1)} disabled={i === 0}
+                      className="text-neutral-400 hover:text-neutral-600 disabled:opacity-20 text-xs px-1">▲</button>
+                    <button onClick={() => moveSource(i, 1)} disabled={i === referralSources.length - 1}
+                      className="text-neutral-400 hover:text-neutral-600 disabled:opacity-20 text-xs px-1">▼</button>
+                    <button onClick={() => removeSource(i)}
+                      className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+                  </div>
+                ))}
+                {referralSources.length === 0 && (
+                  <p className="text-sm text-neutral-400 italic text-center py-2">אין אופציות — הוסף למטה</p>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <input value={newSource} onChange={e => setNewSource(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addSource()}
+                  placeholder="הוסף אופציה חדשה..."
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                <button onClick={addSource}
+                  className="bg-amber-500 text-white px-4 rounded-xl text-sm font-medium hover:bg-amber-400">
+                  + הוסף
+                </button>
               </div>
             </div>
 
@@ -292,6 +598,206 @@ export default function AdminSettingsPage() {
         bizLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
           <WhatsAppTab form={form} setField={setField} onSaved={saveBiz} saving={saving} saved={saved} />
         )
+      )}
+
+      {/* ── Automations tab ── */}
+      {tab === "automations" && <AutomationsTab />}
+    </div>
+  );
+}
+
+// ── ReminderTemplateEditor ─────────────────────────────────────────────────────
+function ReminderTemplateEditor({
+  label, emoji, description, proNote,
+  enabled, onToggle,
+  value, onChange, defaultTemplate,
+}: {
+  label: string; emoji: string; description: string; proNote?: string;
+  enabled: boolean; onToggle: () => void;
+  value: string; onChange: (v: string) => void;
+  defaultTemplate: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const displayValue = value || defaultTemplate;
+
+  return (
+    <div className={`rounded-xl border transition ${enabled ? "border-neutral-200 bg-white" : "border-neutral-100 bg-neutral-50/50"}`}>
+      {/* Header row */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Toggle */}
+        <button
+          onClick={onToggle}
+          className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${enabled ? "bg-emerald-500" : "bg-neutral-200"}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${enabled ? "right-0.5" : "left-0.5"}`} />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${enabled ? "text-neutral-800" : "text-neutral-400"}`}>
+            {emoji} {label}
+          </p>
+          <p className="text-xs text-neutral-400 truncate">{description}</p>
+        </div>
+
+        {/* Expand/collapse edit button */}
+        <button
+          onClick={() => setExpanded(x => !x)}
+          className="text-xs text-neutral-400 hover:text-neutral-600 px-2 py-1 rounded-lg hover:bg-neutral-100 transition flex items-center gap-1 shrink-0"
+        >
+          ✏️ ערוך טקסט
+          <span className="text-[10px]">{expanded ? "▲" : "▼"}</span>
+        </button>
+      </div>
+
+      {/* Expandable template editor */}
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-neutral-100 pt-3 space-y-2">
+          {proNote && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              <span>⚠️</span>
+              <span>{proNote}</span>
+            </div>
+          )}
+          <textarea
+            value={displayValue}
+            onChange={e => onChange(e.target.value)}
+            rows={7}
+            dir="rtl"
+            className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+          />
+          {/* Variables hint */}
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              ["{{name}}", "שם לקוח"],
+              ["{{business}}", "שם עסק"],
+              ["{{staff}}", "שם ספר"],
+              ["{{date}}", "תאריך"],
+              ["{{time}}", "שעה"],
+              ["{{address_line}}", "כתובת"],
+            ].map(([placeholder, label]) => (
+              <button
+                key={placeholder}
+                onClick={() => onChange(displayValue + placeholder)}
+                title={`הוסף ${label}`}
+                className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md font-mono transition"
+              >
+                {placeholder}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            לחץ על משתנה כדי להוסיף אותו לסוף הטקסט. ניתן למקם אותו ידנית בכל מקום.
+          </p>
+          {value && (
+            <button
+              onClick={() => onChange("")}
+              className="text-xs text-red-400 hover:text-red-600 transition"
+            >
+              ↺ החזר לברירת מחדל
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Re-engagement Template Editor ─────────────────────────────────────────────
+function ReengageEditor({
+  form, setField,
+}: {
+  form: Business;
+  setField: <K extends keyof Business>(key: K, value: Business[K]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const displayValue = form.reengageTemplate || DEFAULT_REENGAGE_TEMPLATE;
+
+  return (
+    <div className={`rounded-xl border transition ${form.reengageEnabled ? "border-neutral-200 bg-white" : "border-neutral-100 bg-neutral-50/50"}`}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3">
+        <button
+          onClick={() => setField("reengageEnabled", !form.reengageEnabled)}
+          className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${form.reengageEnabled ? "bg-emerald-500" : "bg-neutral-200"}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.reengageEnabled ? "right-0.5" : "left-0.5"}`} />
+        </button>
+
+        <div className="flex-1 min-w-0">
+          <p className={`text-sm font-semibold ${form.reengageEnabled ? "text-neutral-800" : "text-neutral-400"}`}>
+            🔁 החזרת לקוחות לא פעילים
+          </p>
+          <p className="text-xs text-neutral-400 truncate">
+            שלח הודעה אוטומטית ללקוחות שלא ביקרו — מופעל על ידי cron יומי
+          </p>
+        </div>
+
+        <button
+          onClick={() => setExpanded(x => !x)}
+          className="text-xs text-neutral-400 hover:text-neutral-600 px-2 py-1 rounded-lg hover:bg-neutral-100 transition flex items-center gap-1 shrink-0"
+        >
+          ✏️ ערוך
+          <span className="text-[10px]">{expanded ? "▲" : "▼"}</span>
+        </button>
+      </div>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-neutral-100 pt-3 space-y-3">
+          {/* Weeks threshold */}
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">שלח הודעה אחרי</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={1} max={52}
+                value={form.reengageWeeks}
+                onChange={e => setField("reengageWeeks", Number(e.target.value))}
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              <span className="text-sm text-neutral-600">שבועות ללא ביקור</span>
+            </div>
+          </div>
+
+          {/* Template */}
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">טקסט ההודעה</label>
+            <textarea
+              value={displayValue}
+              onChange={e => setField("reengageTemplate", e.target.value)}
+              rows={6}
+              dir="rtl"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
+            />
+            <div className="flex flex-wrap gap-1.5 mt-1.5">
+              {[
+                ["{{name}}", "שם לקוח"],
+                ["{{business}}", "שם עסק"],
+                ["{{booking_link}}", "קישור לאתר"],
+              ].map(([placeholder, label]) => (
+                <button
+                  key={placeholder}
+                  onClick={() => setField("reengageTemplate", displayValue + placeholder)}
+                  title={`הוסף ${label}`}
+                  className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md font-mono transition"
+                >
+                  {placeholder}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {form.reengageTemplate && (
+            <button
+              onClick={() => setField("reengageTemplate", "")}
+              className="text-xs text-red-400 hover:text-red-600 transition"
+            >
+              ↺ החזר לברירת מחדל
+            </button>
+          )}
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            ⚠️ הגדר cron יומי שיפנה ל: <code className="font-mono">/api/cron/reengage?secret=CRON_SECRET</code>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -374,28 +880,72 @@ function WhatsAppTab({
         </div>
       </div>
 
-      {/* Features */}
+      {/* Automations & templates */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-        <h2 className="font-semibold text-neutral-800 mb-4">אוטומציות</h2>
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-semibold text-neutral-800">אוטומציות</h2>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">
+          בחר אילו הודעות לשלוח ועצב את הטקסט שלהן.
+        </p>
+
+        {/* Master toggle — confirmations */}
+        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-neutral-100">
+          <input type="checkbox" checked={form.features.reminders}
+            onChange={e => setField("features", { ...form.features, reminders: e.target.checked })}
+            className="accent-emerald-500 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-neutral-800">✅ אישור מיידי</p>
+            <p className="text-xs text-neutral-500">נשלח ברגע שנקבע תור (מהאתר או מהאדמין)</p>
+          </div>
+        </div>
+
         <div className="space-y-3">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input type="checkbox" checked={form.features.reminders}
-              onChange={e => setField("features", { ...form.features, reminders: e.target.checked })}
-              className="accent-emerald-500 mt-0.5" />
+          {/* 24h reminder */}
+          <ReminderTemplateEditor
+            label="תזכורת 24 שעות לפני"
+            emoji="🔔"
+            description="נשלחת יום לפני התור, ב-10:00 בבוקר"
+            enabled={form.features.reminder_24h}
+            onToggle={() => setField("features", { ...form.features, reminder_24h: !form.features.reminder_24h })}
+            value={form.reminder24hTemplate}
+            onChange={v => setField("reminder24hTemplate", v)}
+            defaultTemplate={DEFAULT_24H_TEMPLATE}
+          />
+
+          {/* 2h reminder */}
+          <ReminderTemplateEditor
+            label="תזכורת שעתיים לפני"
+            emoji="⏰"
+            description="נשלחת כ-2 שעות לפני התור"
+            proNote="דורש הרצת cron כל שעה. ב-Vercel Hobby — הגדר שירות חיצוני (cron-job.org) שיפנה כל שעה לכתובת /api/cron/reminders-2h עם ה-CRON_SECRET."
+            enabled={form.features.reminder_2h}
+            onToggle={() => setField("features", { ...form.features, reminder_2h: !form.features.reminder_2h })}
+            value={form.reminder2hTemplate}
+            onChange={v => setField("reminder2hTemplate", v)}
+            defaultTemplate={DEFAULT_2H_TEMPLATE}
+          />
+
+          {/* AI agent — coming soon */}
+          <div className="flex items-start gap-3 opacity-40 cursor-not-allowed pt-1">
+            <input type="checkbox" disabled className="accent-violet-500 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-neutral-800">תזכורות ואישורי תור</p>
-              <p className="text-xs text-neutral-500">אישור מיידי כשנקבע תור + תזכורת 24 שעות לפני</p>
-            </div>
-          </label>
-          <label className="flex items-start gap-3 cursor-pointer opacity-50">
-            <input type="checkbox" disabled checked={form.features.agent}
-              className="accent-violet-500 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-neutral-800">🤖 סוכן AI (בקרוב)</p>
+              <p className="text-sm font-semibold text-neutral-800">🤖 סוכן AI (בקרוב)</p>
               <p className="text-xs text-neutral-500">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
             </div>
-          </label>
+          </div>
         </div>
+      </div>
+
+      {/* Re-engagement automation */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-semibold text-neutral-800">אוטומציה — החזרת לקוחות</h2>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">
+          שלח הודעה ללקוחות שלא ביקרו כבר זמן מה — נדרש הגדרת cron יומי.
+        </p>
+        <ReengageEditor form={form} setField={setField} />
       </div>
 
       {/* Save */}
@@ -425,6 +975,369 @@ function WhatsAppTab({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Automations sub-panels ─────────────────────────────────────────────────────
+
+function ReengagePanelSettings({
+  settings, saving, onSave,
+}: {
+  settings: Record<string, unknown>;
+  saving: boolean;
+  onSave: (s: object) => void;
+}) {
+  const [weeks,   setWeeks]   = useState((settings.inactiveWeeks as number)          ?? 6);
+  const [exclude, setExclude] = useState((settings.excludeWithFutureAppt as boolean) ?? true);
+  const [segment, setSegment] = useState((settings.segment as string)                ?? "all");
+  const [dirty,   setDirty]   = useState(false);
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1">שלח אחרי כמה שבועות ללא ביקור</label>
+        <div className="flex items-center gap-3">
+          <input type="range" min={2} max={24} value={weeks}
+            onChange={e => { setWeeks(Number(e.target.value)); setDirty(true); }}
+            className="flex-1 accent-amber-500" />
+          <span className="text-amber-600 font-bold text-sm w-24 text-center">{weeks} שבועות</span>
+        </div>
+      </div>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={exclude}
+          onChange={e => { setExclude(e.target.checked); setDirty(true); }}
+          className="accent-emerald-500" />
+        <span className="text-sm text-neutral-600">אל תשלח ללקוחות עם תור עתידי</span>
+      </label>
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">למי לשלח</label>
+        <div className="flex gap-2">
+          {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
+            <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {dirty && (
+        <button onClick={() => { onSave({ inactiveWeeks: weeks, excludeWithFutureAppt: exclude, segment }); setDirty(false); }}
+          disabled={saving}
+          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          {saving ? "שומר..." : "שמור הגדרות"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PostFirstPanelSettings({
+  settings, saving, onSave,
+}: {
+  settings: Record<string, unknown>;
+  saving: boolean;
+  onSave: (s: object) => void;
+}) {
+  const [ctaType, setCtaType] = useState((settings.ctaType as string) ?? "google_review");
+  const [ctaUrl,  setCtaUrl]  = useState((settings.ctaUrl  as string) ?? "");
+  const [dirty,   setDirty]   = useState(false);
+  const CTA_OPTIONS = [
+    { value: "google_review", label: "⭐ גוגל",      placeholder: "https://g.page/r/..." },
+    { value: "instagram",     label: "📸 אינסטגרם", placeholder: "https://instagram.com/..." },
+    { value: "custom",        label: "🔗 מותאם",    placeholder: "https://..." },
+  ];
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">קריאה לפעולה (CTA)</label>
+        <div className="flex gap-2">
+          {CTA_OPTIONS.map(opt => (
+            <button key={opt.value} onClick={() => { setCtaType(opt.value); setDirty(true); }}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1">קישור</label>
+        <input type="url" value={ctaUrl} dir="ltr"
+          onChange={e => { setCtaUrl(e.target.value); setDirty(true); }}
+          placeholder={CTA_OPTIONS.find(o => o.value === ctaType)?.placeholder}
+          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+      </div>
+      {dirty && (
+        <button onClick={() => { onSave({ ctaType, ctaUrl }); setDirty(false); }}
+          disabled={saving}
+          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          {saving ? "שומר..." : "שמור הגדרות"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function PostEveryPanelSettings({
+  settings, saving, onSave,
+}: {
+  settings: Record<string, unknown>;
+  saving: boolean;
+  onSave: (s: object) => void;
+}) {
+  const [segment,   setSegment]   = useState((settings.segment   as string) ?? "regular_only");
+  const [minVisits, setMinVisits] = useState((settings.minVisits as number) ?? 2);
+  const [dirty,     setDirty]     = useState(false);
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">למי לשלח</label>
+        <div className="flex gap-2">
+          {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
+            <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {segment === "regular_only" && (
+        <div>
+          <label className="text-xs text-neutral-500 block mb-1">מינימום ביקורים לשליחה</label>
+          <div className="flex items-center gap-3">
+            <input type="range" min={2} max={10} value={minVisits}
+              onChange={e => { setMinVisits(Number(e.target.value)); setDirty(true); }}
+              className="flex-1 accent-amber-500" />
+            <span className="text-amber-600 font-bold text-sm w-12 text-center">{minVisits}+</span>
+          </div>
+        </div>
+      )}
+      {dirty && (
+        <button onClick={() => { onSave({ segment, minVisits }); setDirty(false); }}
+          disabled={saving}
+          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          {saving ? "שומר..." : "שמור הגדרות"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── AutoPanel (shared light-themed card) ───────────────────────────────────────
+
+function AutoPanel({
+  emoji, title, subtitle, active, saving, onToggle, template, vars, defaultTemplate, onSave, children,
+}: {
+  emoji: string; title: string; subtitle: string;
+  active: boolean; saving: boolean;
+  onToggle: () => void;
+  template: string | null; vars: string[]; defaultTemplate: string;
+  onSave: (patch: Record<string, unknown>) => void;
+  children?: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [localTpl,  setLocalTpl]  = useState(template ?? "");
+  const [tplDirty,  setTplDirty]  = useState(false);
+  const display = localTpl || defaultTemplate;
+
+  return (
+    <div className={`rounded-2xl border overflow-hidden transition ${active ? "border-neutral-200 bg-white" : "border-neutral-100 bg-neutral-50/60"}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span className="text-xl">{emoji}</span>
+          <div>
+            <p className={`text-sm font-semibold ${active ? "text-neutral-800" : "text-neutral-400"}`}>{title}</p>
+            <p className="text-xs text-neutral-400 mt-0.5">{subtitle}</p>
+          </div>
+        </div>
+        <button onClick={onToggle} disabled={saving}
+          className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${active ? "bg-emerald-500" : "bg-neutral-200"} disabled:opacity-50`}>
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${active ? "right-0.5" : "left-0.5"}`} />
+        </button>
+      </div>
+
+      {/* Type-specific settings */}
+      {children && (
+        <div className="px-5 pb-4 border-t border-neutral-100 pt-4 space-y-3">
+          {children}
+        </div>
+      )}
+
+      {/* Template editor */}
+      <div className="px-5 pb-4 border-t border-neutral-100 pt-3">
+        <button onClick={() => setExpanded(x => !x)}
+          className="text-xs text-neutral-500 hover:text-neutral-700 flex items-center gap-1.5 mb-2 transition">
+          ✏️ ערוך תבנית הודעה
+          <span className="text-[10px]">{expanded ? "▲" : "▼"}</span>
+        </button>
+        {expanded && (
+          <div className="space-y-2">
+            <textarea value={display}
+              onChange={e => { setLocalTpl(e.target.value); setTplDirty(true); }}
+              rows={5} dir="rtl"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {vars.map(v => (
+                <button key={v} onClick={() => { setLocalTpl(display + v); setTplDirty(true); }}
+                  className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md font-mono transition">
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              {tplDirty && (
+                <button onClick={() => { onSave({ template: localTpl || null }); setTplDirty(false); }}
+                  disabled={saving}
+                  className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+                  {saving ? "שומר..." : "שמור תבנית"}
+                </button>
+              )}
+              {localTpl && (
+                <button onClick={() => { setLocalTpl(""); setTplDirty(true); }}
+                  className="text-xs text-red-400 hover:text-red-600 transition">
+                  ↺ ברירת מחדל
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── AutomationsTab ─────────────────────────────────────────────────────────────
+
+function AutomationsTab() {
+  const [autos,   setAutos]   = useState<AutoRec[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState<AutoType | null>(null);
+  const [toast,   setToast]   = useState("");
+
+  useEffect(() => {
+    fetch("/api/admin/automations").then(r => r.json())
+      .then(d => { setAutos(Array.isArray(d) ? d : []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const get = (t: AutoType) => autos.find(a => a.type === t) ?? null;
+
+  function showToast() {
+    setToast("✅ נשמר בהצלחה");
+    setTimeout(() => setToast(""), 2500);
+  }
+
+  async function upsert(type: AutoType, patch: Record<string, unknown>) {
+    setSaving(type);
+    let rec = get(type);
+    if (!rec) {
+      const created: AutoRec = await fetch("/api/admin/automations", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, name: AUTO_NAMES[type], active: false, settings: AUTO_DEFAULT_SETTINGS[type] }),
+      }).then(r => r.json());
+      setAutos(p => [...p, created]);
+      rec = created;
+    }
+    const updated: AutoRec = await fetch(`/api/admin/automations/${rec.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then(r => r.json());
+    setAutos(p => p.map(a => a.id === updated.id ? updated : a));
+    setSaving(null);
+    showToast();
+  }
+
+  function toggle(type: AutoType) {
+    const cur = get(type)?.active ?? false;
+    // Optimistic update
+    setAutos(p => p.map(a => a.type === type ? { ...a, active: !cur } : a));
+    // If no record yet, add placeholder so UI reacts immediately
+    if (!get(type)) {
+      setAutos(p => [...p, { id: "__tmp__", type, name: AUTO_NAMES[type], active: true, settings: JSON.stringify(AUTO_DEFAULT_SETTINGS[type]), template: null }]);
+    }
+    upsert(type, { active: !cur });
+  }
+
+  if (loading) return <div className="text-center py-16 text-neutral-400">טוען...</div>;
+
+  const reengage  = get("reengage");
+  const postFirst = get("post_first_visit");
+  const postEvery = get("post_every_visit");
+
+  return (
+    <div className="space-y-4 max-w-xl">
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-900 border border-emerald-600 text-emerald-300 text-sm font-medium px-5 py-2.5 rounded-xl shadow-lg">
+          {toast}
+        </div>
+      )}
+
+      <p className="text-xs text-neutral-500">
+        האוטומציות שולחות הודעות WhatsApp. ודא שהחיבור מוגדר בלשונית WhatsApp.
+      </p>
+
+      {/* Re-engagement */}
+      <AutoPanel
+        emoji="🔄" title="החזרת לקוחות לא פעילים"
+        subtitle="שולח ללקוחות שלא ביקרו זמן רב — דורש cron יומי"
+        active={reengage?.active ?? false}
+        saving={saving === "reengage"}
+        onToggle={() => toggle("reengage")}
+        template={reengage?.template ?? null}
+        vars={["{{name}}", "{{business}}", "{{booking_url}}"]}
+        defaultTemplate={"שלום {{name}} 👋\n\nהתגעגענו אליך ב*{{business}}* ✂️\nבוא נקבע תור: {{booking_url}}"}
+        onSave={patch => upsert("reengage", patch)}
+      >
+        <ReengagePanelSettings
+          settings={parseAutoS(reengage?.settings ?? "{}")}
+          saving={saving === "reengage"}
+          onSave={s => upsert("reengage", { settings: s })}
+        />
+      </AutoPanel>
+
+      {/* Post first visit */}
+      <AutoPanel
+        emoji="🌟" title="קידום חכם — לקוח חדש"
+        subtitle="נשלח אחרי הביקור הראשון — מופעל כשמסמנים תור כ׳הושלם׳"
+        active={postFirst?.active ?? false}
+        saving={saving === "post_first_visit"}
+        onToggle={() => toggle("post_first_visit")}
+        template={postFirst?.template ?? null}
+        vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}", "{{cta}}"]}
+        defaultTemplate={"שלום {{name}} 👋\n\nתודה שביקרת לראשונה ב*{{business}}* ✂️\nנשמח לראותך שוב! {{cta}}"}
+        onSave={patch => upsert("post_first_visit", patch)}
+      >
+        <PostFirstPanelSettings
+          settings={parseAutoS(postFirst?.settings ?? "{}")}
+          saving={saving === "post_first_visit"}
+          onSave={s => upsert("post_first_visit", { settings: s })}
+        />
+      </AutoPanel>
+
+      {/* Post every visit */}
+      <AutoPanel
+        emoji="💬" title="הודעה אחרי כל ביקור"
+        subtitle="תודה / follow-up אחרי כל תור שהושלם"
+        active={postEvery?.active ?? false}
+        saving={saving === "post_every_visit"}
+        onToggle={() => toggle("post_every_visit")}
+        template={postEvery?.template ?? null}
+        vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}"]}
+        defaultTemplate={"שלום {{name}} 👋\n\nתודה שביקרת ב*{{business}}* ✂️\nנתראה בפעם הבאה! 😊"}
+        onSave={patch => upsert("post_every_visit", patch)}
+      >
+        <PostEveryPanelSettings
+          settings={parseAutoS(postEvery?.settings ?? "{}")}
+          saving={saving === "post_every_visit"}
+          onSave={s => upsert("post_every_visit", { settings: s })}
+        />
+      </AutoPanel>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+        ⚠️ <strong>החזרת לקוחות</strong> דורשת cron יומי על:{" "}
+        <code className="font-mono">/api/cron/reengage</code>
+      </div>
     </div>
   );
 }

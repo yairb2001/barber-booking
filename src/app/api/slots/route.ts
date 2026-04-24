@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { generateSlots, getDayOfWeek } from "@/lib/utils";
+import { generateSlots, getDayOfWeek, timeToMinutes, getBusinessNow } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -15,7 +17,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const date = new Date(dateStr + "T00:00:00");
+  const date = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
   const dayOfWeek = getDayOfWeek(date);
 
   // Get service duration (check for custom duration)
@@ -74,7 +76,28 @@ export async function GET(request: Request) {
     select: { startTime: true, endTime: true },
   });
 
-  const slots = generateSlots(scheduleSlots, breaks, duration, appointments);
+  let slots = generateSlots(scheduleSlots, breaks, duration, appointments);
+
+  // Filter out past slots + honor min-lead-time when the requested date is today
+  const nowBiz = getBusinessNow();
+  if (nowBiz.date === dateStr) {
+    // Per-barber override takes priority over business-level setting
+    const staffRecord = await prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { settings: true },
+    });
+    const staffSettings: Record<string, unknown> = staffRecord?.settings
+      ? JSON.parse(staffRecord.settings)
+      : {};
+    let leadMinutes = 0;
+    if (staffSettings.minBookingLeadMinutes !== undefined) {
+      leadMinutes = Number(staffSettings.minBookingLeadMinutes);
+    } else {
+      const biz = await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
+      leadMinutes = biz?.minBookingLeadMinutes ?? 0;
+    }
+    slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + leadMinutes);
+  }
 
   return NextResponse.json(slots);
 }

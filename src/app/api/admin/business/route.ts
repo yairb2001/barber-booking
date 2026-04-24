@@ -26,6 +26,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.logoUrl !== undefined && { logoUrl: body.logoUrl }),
       ...(body.coverImageUrl !== undefined && { coverImageUrl: body.coverImageUrl }),
       ...(body.brandColor !== undefined && { brandColor: body.brandColor }),
+      ...(body.secondaryColor !== undefined && { secondaryColor: body.secondaryColor }),
+      ...(body.bgColor !== undefined && { bgColor: body.bgColor }),
+      ...(body.textColor !== undefined && { textColor: body.textColor }),
       ...(body.socialLinks !== undefined && {
         socialLinks: JSON.stringify(body.socialLinks),
       }),
@@ -38,6 +41,26 @@ export async function PATCH(req: NextRequest) {
       ...(body.greenApiInstanceId !== undefined && { greenApiInstanceId: body.greenApiInstanceId }),
       ...(body.greenApiToken !== undefined && { greenApiToken: body.greenApiToken }),
       ...(body.features !== undefined && { features: JSON.stringify(body.features) }),
+      // Reminder templates (null = use built-in default)
+      ...(body.reminder24hTemplate !== undefined && {
+        reminder24hTemplate: body.reminder24hTemplate || null,
+      }),
+      ...(body.reminder2hTemplate !== undefined && {
+        reminder2hTemplate: body.reminder2hTemplate || null,
+      }),
+      // Booking calendar
+      ...(body.bookingHorizonDays !== undefined && {
+        bookingHorizonDays: Number(body.bookingHorizonDays) || 30,
+      }),
+      ...(body.minBookingLeadMinutes !== undefined && {
+        minBookingLeadMinutes: Math.max(0, Number(body.minBookingLeadMinutes) || 0),
+      }),
+      // Re-engagement automation
+      ...(body.reengageEnabled !== undefined && { reengageEnabled: Boolean(body.reengageEnabled) }),
+      ...(body.reengageWeeks   !== undefined && { reengageWeeks:   Number(body.reengageWeeks) || 6 }),
+      ...(body.reengageTemplate !== undefined && {
+        reengageTemplate: body.reengageTemplate || null,
+      }),
     },
   });
   return NextResponse.json(updated);

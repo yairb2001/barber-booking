@@ -1,10 +1,25 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { generateSlots, getDayOfWeek, formatDate, timeToMinutes } from "@/lib/utils";
+import {
+  generateSlots,
+  timeToMinutes,
+  getBusinessNow,
+  addDaysISO,
+  getDayOfWeekISO,
+} from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffIdFilter = searchParams.get("staffId"); // optional: for specific barber
+
+  // Get business-wide min lead time for bookings
+  const biz = await prisma.business.findFirst({
+    select: { minBookingLeadMinutes: true },
+  });
+  const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
 
   // Get staff members in the quick pool
   const staffWhere = staffIdFilter
@@ -36,7 +51,9 @@ export async function GET(request: Request) {
     return NextResponse.json([]);
   }
 
-  const now = new Date();
+  // Israel-aware "now" — avoids bugs when server is UTC and client is in Israel
+  const nowBiz = getBusinessNow();
+  const todayStr = nowBiz.date;
 
   // Collect ALL available slots across all pool staff for next 3 days
   const allCandidates: {
@@ -54,13 +71,12 @@ export async function GET(request: Request) {
   }[] = [];
 
   for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
-    const date = new Date(now);
-    date.setDate(date.getDate() + dayOffset);
-    const dateStr = formatDate(date);
-    const dayOfWeek = getDayOfWeek(date);
+    const dateStr   = addDaysISO(todayStr, dayOffset);
+    const date      = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
+    const dayOfWeek = getDayOfWeekISO(dateStr);
     const dayLabel =
       dayOffset === 0 ? "היום" : dayOffset === 1 ? "מחר"
-        : date.toLocaleDateString("he-IL", { weekday: "long" });
+        : date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
 
     for (const staff of poolStaff) {
       const override = await prisma.staffScheduleOverride.findUnique({
@@ -97,13 +113,10 @@ export async function GET(request: Request) {
 
       const slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 
+      // Filter out slots whose time has already passed (for today) OR
+      // slots that fall within the configured minimum lead time from now.
       const available = dayOffset === 0
-        ? slots.filter((s) => {
-            const [h, m] = s.split(":").map(Number);
-            const slotTime = new Date(date);
-            slotTime.setHours(h, m, 0, 0);
-            return slotTime > now;
-          })
+        ? slots.filter((s) => timeToMinutes(s) >= nowBiz.minutes + leadMinutes)
         : slots;
 
       for (const time of available) {

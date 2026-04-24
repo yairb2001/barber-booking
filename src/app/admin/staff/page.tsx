@@ -40,6 +40,8 @@ export default function AdminStaffPage() {
   const [saving, setSaving] = useState(false);
   const [setPasswordFor, setSetPasswordFor] = useState<Staff | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [editingAvatarId, setEditingAvatarId] = useState<string | null>(null);
+  const [avatarUrlDraft, setAvatarUrlDraft] = useState("");
 
   async function load() {
     const data = await fetch("/api/admin/staff").then((r) => r.json());
@@ -91,6 +93,19 @@ export default function AdminStaffPage() {
     setSaving(false);
     if (res.ok) { setSetPasswordFor(null); setNewPassword(""); alert("סיסמה הוגדרה בהצלחה ✓"); }
     else { const d = await res.json(); alert(d.error || "שגיאה"); }
+  }
+
+  async function saveAvatar(id: string) {
+    setSaving(true);
+    await fetch(`/api/admin/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ avatarUrl: avatarUrlDraft.trim() || null }),
+    });
+    setSaving(false);
+    setEditingAvatarId(null);
+    setAvatarUrlDraft("");
+    load();
   }
 
   async function deleteStaff(id: string, name: string) {
@@ -172,6 +187,16 @@ export default function AdminStaffPage() {
                   {s.phone && <div className="text-sm text-neutral-500" dir="ltr">{s.phone}</div>}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {/* Photo edit button */}
+                  <button
+                    onClick={() => {
+                      setEditingAvatarId(s.id);
+                      setAvatarUrlDraft(s.avatarUrl || "");
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-full border border-amber-200 text-amber-700 hover:bg-amber-50 transition"
+                  >
+                    ✏️ תמונה
+                  </button>
                   <button
                     onClick={() => toggleQuickPool(s.id, s.inQuickPool)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${
@@ -212,6 +237,35 @@ export default function AdminStaffPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Inline avatar URL editor */}
+              {editingAvatarId === s.id && (
+                <div className="mt-3 flex gap-2 items-center">
+                  <input
+                    value={avatarUrlDraft}
+                    onChange={(e) => setAvatarUrlDraft(e.target.value)}
+                    placeholder="https://... קישור לתמונה"
+                    dir="ltr"
+                    className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  />
+                  {avatarUrlDraft && (
+                    <img src={avatarUrlDraft} alt="" className="w-10 h-10 rounded-full object-cover border border-neutral-200" />
+                  )}
+                  <button
+                    onClick={() => saveAvatar(s.id)}
+                    disabled={saving}
+                    className="bg-amber-500 text-neutral-950 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-amber-400 disabled:opacity-50"
+                  >
+                    {saving ? "..." : "שמור"}
+                  </button>
+                  <button
+                    onClick={() => { setEditingAvatarId(null); setAvatarUrlDraft(""); }}
+                    className="bg-neutral-100 text-neutral-600 px-3 py-2 rounded-lg text-xs"
+                  >
+                    ביטול
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

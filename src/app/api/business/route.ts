@@ -14,6 +14,7 @@ export async function GET() {
       address: true,
       about: true,
       socialLinks: true,
+      bookingHorizonDays: true,
     },
   });
 

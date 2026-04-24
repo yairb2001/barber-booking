@@ -13,6 +13,7 @@ export async function GET() {
       role: true,
       isAvailable: true,
       inQuickPool: true,
+      settings: true,
       portfolio: {
         orderBy: { sortOrder: "asc" },
         select: {
@@ -24,5 +25,17 @@ export async function GET() {
     },
   });
 
-  return NextResponse.json(staff);
+  // Expose per-barber booking config as parsed fields (fall back to null if not set)
+  const result = staff.map(s => {
+    let bookingConfig: Record<string, unknown> = {};
+    try { if (s.settings) bookingConfig = JSON.parse(s.settings); } catch { /* ignore */ }
+    return {
+      ...s,
+      settings: undefined, // don't expose raw JSON
+      bookingHorizonDays:    bookingConfig.bookingHorizonDays    ?? null,
+      minBookingLeadMinutes: bookingConfig.minBookingLeadMinutes ?? null,
+    };
+  });
+
+  return NextResponse.json(result);
 }
