@@ -37,6 +37,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(conversations);
 }
 
+export async function DELETE() {
+  const biz = await prisma.business.findFirst({ select: { id: true } });
+  if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
+
+  const msgs  = await prisma.conversationMessage.deleteMany({ where: { conversation: { businessId: biz.id } } });
+  const convs = await prisma.conversation.deleteMany({ where: { businessId: biz.id } });
+
+  return NextResponse.json({ deleted: { messages: msgs.count, conversations: convs.count } });
+}
+
 export async function PATCH(req: NextRequest) {
   const biz = await prisma.business.findFirst({ select: { id: true } });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });

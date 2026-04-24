@@ -40,6 +40,7 @@ export default function AdminAgentPage() {
   const [config, setConfig] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loadingDefault, setLoadingDefault] = useState(false);
 
   // FAQ editing
   const [faqs, setFaqs] = useState<FAQ[]>([]);
@@ -50,8 +51,8 @@ export default function AdminAgentPage() {
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
   const [convsLoading, setConvsLoading] = useState(false);
+  const [clearingConvs, setClearingConvs] = useState(false);
 
-  // Load config
   useEffect(() => {
     fetch("/api/admin/agent")
       .then(r => r.json())
@@ -61,7 +62,6 @@ export default function AdminAgentPage() {
       });
   }, []);
 
-  // Load conversations when tab switches
   useEffect(() => {
     if (tab === "conversations") loadConversations();
   }, [tab]);
@@ -76,13 +76,11 @@ export default function AdminAgentPage() {
   async function saveConfig() {
     if (!config) return;
     setSaving(true);
-    // Save main config
     await fetch("/api/admin/agent", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(config),
     });
-    // Save FAQs
     await fetch("/api/admin/agent/faqs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -91,6 +89,25 @@ export default function AdminAgentPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function loadDefaultPrompt() {
+    setLoadingDefault(true);
+    try {
+      const data = await fetch("/api/admin/agent/default-prompt").then(r => r.json());
+      setConfig(c => c ? { ...c, systemPrompt: data.prompt } : c);
+    } finally {
+      setLoadingDefault(false);
+    }
+  }
+
+  async function clearAllConversations() {
+    if (!confirm("למחוק את כל השיחות? פעולה זו בלתי הפיכה.")) return;
+    setClearingConvs(true);
+    await fetch("/api/admin/agent/conversations", { method: "DELETE" });
+    setConvs([]);
+    setSelectedConv(null);
+    setClearingConvs(false);
   }
 
   function addFAQ() {
@@ -135,17 +152,19 @@ export default function AdminAgentPage() {
           <h1 className="text-2xl font-bold text-neutral-900">🤖 סוכן WhatsApp</h1>
           <p className="text-neutral-500 text-sm mt-0.5">עונה ללקוחות, קובע תורים, עוזר — אוטומטית</p>
         </div>
-        {/* Toggle */}
-        <button
-          onClick={() => setConfig(c => c ? { ...c, isEnabled: !c.isEnabled } : c)}
-          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
-            config.isEnabled ? "bg-emerald-500" : "bg-neutral-300"
-          }`}
-        >
-          <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
-            config.isEnabled ? "-translate-x-7" : "-translate-x-1"
-          }`} />
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-neutral-500">{config.isEnabled ? "פעיל" : "כבוי"}</span>
+          <button
+            onClick={() => setConfig(c => c ? { ...c, isEnabled: !c.isEnabled } : c)}
+            className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+              config.isEnabled ? "bg-emerald-500" : "bg-neutral-300"
+            }`}
+          >
+            <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+              config.isEnabled ? "-translate-x-7" : "-translate-x-1"
+            }`} />
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -166,6 +185,7 @@ export default function AdminAgentPage() {
       {/* ── CONFIG TAB ─────────────────────────────────────────────────────────── */}
       {tab === "config" && (
         <div className="space-y-6 max-w-2xl">
+
           {/* Basic settings */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
             <h2 className="font-semibold text-neutral-800">הגדרות בסיסיות</h2>
@@ -181,7 +201,7 @@ export default function AdminAgentPage() {
             </label>
 
             <label className="block">
-              <span className="text-xs text-neutral-500 block mb-1">טלפון להסלמה (כשהסוכן לא מצליח לעזור)</span>
+              <span className="text-xs text-neutral-500 block mb-1">טלפון להעברה לאדם (כשהסוכן לא מצליח לעזור)</span>
               <input
                 value={config.escalatePhone ?? ""}
                 onChange={e => setConfig(c => c ? { ...c, escalatePhone: e.target.value } : c)}
@@ -207,34 +227,66 @@ export default function AdminAgentPage() {
 
           {/* System prompt */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
-            <div>
-              <h2 className="font-semibold text-neutral-800">הנחיות מיוחדות לסוכן</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                השאר ריק לשימוש בהנחיות ברירת המחדל. מלא רק אם רוצה לשנות את ה"אישיות" של הסוכן.
-              </p>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-neutral-800">הוראות התנהגות לסוכן</h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  כאן קובעים איך הסוכן מדבר, מה הוא יודע, ואיך הוא מתנהג. ריק = ברירת מחדל.
+                </p>
+              </div>
+              <button
+                onClick={loadDefaultPrompt}
+                disabled={loadingDefault}
+                className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition disabled:opacity-50"
+              >
+                {loadingDefault ? "טוען..." : "📋 טען ברירת מחדל"}
+              </button>
             </div>
+
+            {/* Hint */}
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-700 space-y-1">
+              <p className="font-medium">💡 טיפים לעריכה:</p>
+              <ul className="list-disc list-inside space-y-0.5 text-blue-600">
+                <li>לחץ "טען ברירת מחדל" לקבל את הפרומפט הנוכחי לעריכה</li>
+                <li>אפשר לשנות את הטון, להוסיף כללים, לקבוע מה הסוכן עושה ולא עושה</li>
+                <li>השינויים נשמרים עם כפתור "שמור" למטה</li>
+              </ul>
+            </div>
+
             <textarea
               value={config.systemPrompt ?? ""}
-              onChange={e => setConfig(c => c ? { ...c, systemPrompt: e.target.value } : c)}
-              rows={5}
-              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-              placeholder="לדוגמה: אתה ספר מקצועי ידידותי שעוזר ללקוחות..."
+              onChange={e => setConfig(c => c ? { ...c, systemPrompt: e.target.value || null } : c)}
+              rows={14}
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y font-mono leading-relaxed"
+              placeholder="ריק = שימוש בברירת מחדל&#10;&#10;לחץ 'טען ברירת מחדל' כדי לראות ולערוך את הפרומפט הנוכחי..."
+              dir="rtl"
             />
+
+            {config.systemPrompt && (
+              <button
+                onClick={() => setConfig(c => c ? { ...c, systemPrompt: null } : c)}
+                className="text-xs text-red-400 hover:text-red-600 transition"
+              >
+                × אפס לברירת מחדל
+              </button>
+            )}
           </div>
 
           {/* FAQs */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
             <div>
               <h2 className="font-semibold text-neutral-800">שאלות ותשובות נפוצות</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">הסוכן ישתמש בתשובות אלו כשלקוחות שואלים שאלות נפוצות.</p>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                הסוכן יענה על שאלות נפוצות בהתבסס על מה שכתבת כאן.
+              </p>
             </div>
 
             <div className="space-y-2">
               {faqs.map((faq, idx) => (
                 <div key={idx} className="bg-neutral-50 rounded-xl p-3 flex gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-neutral-800 truncate">ש: {faq.question}</p>
-                    <p className="text-xs text-neutral-500 mt-0.5 line-clamp-2">ת: {faq.answer}</p>
+                    <p className="text-sm font-medium text-neutral-800">ש: {faq.question}</p>
+                    <p className="text-xs text-neutral-500 mt-0.5">ת: {faq.answer}</p>
                   </div>
                   <button
                     onClick={() => removeFAQ(idx)}
@@ -244,11 +296,14 @@ export default function AdminAgentPage() {
                   </button>
                 </div>
               ))}
+              {faqs.length === 0 && (
+                <p className="text-xs text-neutral-400 text-center py-3">אין שאלות עדיין</p>
+              )}
             </div>
 
             {/* Add FAQ */}
             <div className="border border-dashed border-neutral-300 rounded-xl p-4 space-y-2">
-              <p className="text-xs text-neutral-500 font-medium">הוספת שאלה ותשובה</p>
+              <p className="text-xs text-neutral-500 font-medium">+ הוסף שאלה ותשובה</p>
               <input
                 value={newQ}
                 onChange={e => setNewQ(e.target.value)}
@@ -260,34 +315,34 @@ export default function AdminAgentPage() {
                 onChange={e => setNewA(e.target.value)}
                 rows={2}
                 className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-                placeholder="אנחנו פתוחים ראשון עד חמישי 09:00-20:00, שישי 08:00-14:00"
+                placeholder="אנחנו פתוחים ראשון עד חמישי 09:00–20:00, שישי 08:00–14:00"
               />
               <button
                 onClick={addFAQ}
                 disabled={!newQ.trim() || !newA.trim()}
                 className="bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 disabled:opacity-40"
               >
-                + הוסף
+                הוסף
               </button>
             </div>
           </div>
 
           {/* Webhook info */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-2">
-            <h2 className="font-semibold text-neutral-800">🔗 הגדרת Webhook ב-Green API</h2>
-            <p className="text-xs text-neutral-600">
-              כדי שהסוכן יקבל הודעות נכנסות, יש להגדיר את ה-Webhook URL הבא בלוח הניהול של Green API:
-            </p>
-            <div className="bg-white border border-amber-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all" dir="ltr">
+            <h2 className="font-semibold text-neutral-800">🔗 כתובת Webhook ל-Green API</h2>
+            <div
+              className="bg-white border border-amber-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
+              dir="ltr"
+              onClick={() => navigator.clipboard?.writeText(WEBHOOK_URL)}
+              title="לחץ להעתקה"
+            >
               {WEBHOOK_URL}
             </div>
-            <p className="text-xs text-neutral-500">
-              לחץ על הכתובת כדי לסמן → העתק → הדבק בשדה Webhook URL בהגדרות Instance ב-Green API
-            </p>
+            <p className="text-xs text-neutral-500">לחץ על הכתובת להעתקה → הדבק בשדה Webhook URL בהגדרות האינסטנס ב-Green API</p>
           </div>
 
           {/* Save */}
-          <div className="flex justify-end">
+          <div className="flex justify-end pb-8">
             <button
               onClick={saveConfig}
               disabled={saving}
@@ -301,113 +356,130 @@ export default function AdminAgentPage() {
 
       {/* ── CONVERSATIONS TAB ──────────────────────────────────────────────────── */}
       {tab === "conversations" && (
-        <div className="flex gap-4 h-[calc(100vh-220px)]">
-          {/* List */}
-          <div className="w-72 flex-shrink-0 bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col">
-            <div className="p-3 border-b border-neutral-100 flex items-center justify-between">
-              <span className="text-sm font-semibold text-neutral-800">שיחות</span>
-              <button onClick={loadConversations} className="text-xs text-neutral-400 hover:text-neutral-600">רענן</button>
-            </div>
-            <div className="overflow-y-auto flex-1">
-              {convsLoading ? (
-                <div className="p-4 text-center text-neutral-400 text-sm">טוען...</div>
-              ) : convs.length === 0 ? (
-                <div className="p-6 text-center text-neutral-400 text-sm">
-                  <p className="text-2xl mb-2">💬</p>
-                  <p>אין שיחות עדיין</p>
-                </div>
-              ) : (
-                convs.map(conv => (
-                  <button
-                    key={conv.id}
-                    onClick={() => setSelectedConv(conv)}
-                    className={`w-full text-right p-3 border-b border-neutral-50 hover:bg-neutral-50 transition ${
-                      selectedConv?.id === conv.id ? "bg-amber-50 border-amber-100" : ""
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-sm font-medium text-neutral-800 font-mono" dir="ltr">{conv.phone}</span>
-                      <StatusBadge status={conv.status} />
-                    </div>
-                    <p className="text-xs text-neutral-400 truncate">
-                      {conv.messages[conv.messages.length - 1]?.content.slice(0, 50) ?? "—"}
-                    </p>
-                    {conv.lastMessageAt && (
-                      <p className="text-[10px] text-neutral-300 mt-0.5">
-                        {new Date(conv.lastMessageAt).toLocaleString("he-IL", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "numeric" })}
-                      </p>
-                    )}
-                  </button>
-                ))
-              )}
+        <div className="space-y-3">
+          {/* Toolbar */}
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-neutral-500">{convs.length} שיחות</span>
+            <div className="flex gap-2">
+              <button
+                onClick={loadConversations}
+                className="text-xs px-3 py-1.5 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
+              >
+                🔄 רענן
+              </button>
+              <button
+                onClick={clearAllConversations}
+                disabled={clearingConvs || convs.length === 0}
+                className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition disabled:opacity-40"
+              >
+                {clearingConvs ? "מוחק..." : "🗑️ מחק הכל"}
+              </button>
             </div>
           </div>
 
-          {/* Detail */}
-          <div className="flex-1 bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col">
-            {!selectedConv ? (
-              <div className="flex-1 flex items-center justify-center text-neutral-300 flex-col gap-2">
-                <span className="text-4xl">💬</span>
-                <p className="text-sm">בחר שיחה מהרשימה</p>
-              </div>
-            ) : (
-              <>
-                {/* Header */}
-                <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-neutral-800 font-mono" dir="ltr">{selectedConv.phone}</p>
-                    <p className="text-xs text-neutral-400">
-                      {new Date(selectedConv.createdAt).toLocaleDateString("he-IL")}
-                      {" · "}
-                      {selectedConv.messages.length} הודעות
-                    </p>
+          <div className="flex gap-4 h-[calc(100vh-280px)]">
+            {/* List */}
+            <div className="w-72 flex-shrink-0 bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col">
+              <div className="overflow-y-auto flex-1">
+                {convsLoading ? (
+                  <div className="p-4 text-center text-neutral-400 text-sm">טוען...</div>
+                ) : convs.length === 0 ? (
+                  <div className="p-6 text-center text-neutral-400 text-sm">
+                    <p className="text-2xl mb-2">💬</p>
+                    <p>אין שיחות עדיין</p>
                   </div>
-                  <div className="flex gap-2">
-                    {selectedConv.status !== "resolved" && (
-                      <button
-                        onClick={() => resolveConversation(selectedConv.id)}
-                        className="text-xs px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition"
-                      >
-                        ✓ סגור שיחה
-                      </button>
-                    )}
-                    {selectedConv.status === "resolved" && (
-                      <button
-                        onClick={() => reopenConversation(selectedConv.id)}
-                        className="text-xs px-3 py-1.5 rounded-full bg-neutral-50 border border-neutral-200 text-neutral-600 hover:bg-neutral-100 transition"
-                      >
-                        פתח מחדש
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {selectedConv.messages
-                    .filter(m => m.role !== "tool")
-                    .map(msg => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                      >
-                        <div
-                          className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
-                            msg.role === "user"
-                              ? "bg-amber-500 text-neutral-950 rounded-tr-sm"
-                              : "bg-neutral-100 text-neutral-800 rounded-tl-sm"
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap">{msg.content}</p>
-                          <p className={`text-[10px] mt-1 ${msg.role === "user" ? "text-amber-800" : "text-neutral-400"}`}>
-                            {new Date(msg.createdAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
-                          </p>
-                        </div>
+                ) : (
+                  convs.map(conv => (
+                    <button
+                      key={conv.id}
+                      onClick={() => setSelectedConv(conv)}
+                      className={`w-full text-right p-3 border-b border-neutral-50 hover:bg-neutral-50 transition ${
+                        selectedConv?.id === conv.id ? "bg-amber-50 border-amber-100" : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-sm font-medium text-neutral-800 font-mono" dir="ltr">{conv.phone}</span>
+                        <StatusBadge status={conv.status} />
                       </div>
-                    ))}
+                      <p className="text-xs text-neutral-400 truncate">
+                        {conv.messages[conv.messages.length - 1]?.content.slice(0, 50) ?? "—"}
+                      </p>
+                      {conv.lastMessageAt && (
+                        <p className="text-[10px] text-neutral-300 mt-0.5">
+                          {new Date(conv.lastMessageAt).toLocaleString("he-IL", {
+                            hour: "2-digit", minute: "2-digit", day: "numeric", month: "numeric",
+                          })}
+                        </p>
+                      )}
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Detail */}
+            <div className="flex-1 bg-white border border-neutral-200 rounded-2xl overflow-hidden flex flex-col">
+              {!selectedConv ? (
+                <div className="flex-1 flex items-center justify-center text-neutral-300 flex-col gap-2">
+                  <span className="text-4xl">💬</span>
+                  <p className="text-sm">בחר שיחה מהרשימה</p>
                 </div>
-              </>
-            )}
+              ) : (
+                <>
+                  <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-neutral-800 font-mono" dir="ltr">{selectedConv.phone}</p>
+                      <p className="text-xs text-neutral-400">
+                        {new Date(selectedConv.createdAt).toLocaleDateString("he-IL")}
+                        {" · "}{selectedConv.messages.length} הודעות
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {selectedConv.status !== "resolved" && (
+                        <button
+                          onClick={() => resolveConversation(selectedConv.id)}
+                          className="text-xs px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 transition"
+                        >
+                          ✓ סגור שיחה
+                        </button>
+                      )}
+                      {selectedConv.status === "resolved" && (
+                        <button
+                          onClick={() => reopenConversation(selectedConv.id)}
+                          className="text-xs px-3 py-1.5 rounded-full bg-neutral-50 border border-neutral-200 text-neutral-600 hover:bg-neutral-100 transition"
+                        >
+                          פתח מחדש
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {selectedConv.messages
+                      .filter(m => m.role !== "tool")
+                      .map(msg => (
+                        <div
+                          key={msg.id}
+                          className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                        >
+                          <div
+                            className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
+                              msg.role === "user"
+                                ? "bg-amber-500 text-neutral-950 rounded-tr-sm"
+                                : "bg-neutral-100 text-neutral-800 rounded-tl-sm"
+                            }`}
+                          >
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                            <p className={`text-[10px] mt-1 ${msg.role === "user" ? "text-amber-800" : "text-neutral-400"}`}>
+                              {new Date(msg.createdAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -417,9 +489,9 @@ export default function AdminAgentPage() {
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    active:    { label: "פעיל",     cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    escalated: { label: "הסלמה",   cls: "bg-amber-50 text-amber-700 border-amber-200" },
-    resolved:  { label: "סגור",    cls: "bg-neutral-50 text-neutral-400 border-neutral-200" },
+    active:    { label: "פעיל",   cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    escalated: { label: "הסלמה", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    resolved:  { label: "סגור",  cls: "bg-neutral-50 text-neutral-400 border-neutral-200" },
   };
   const s = map[status] ?? { label: status, cls: "bg-neutral-50 text-neutral-400 border-neutral-200" };
   return (

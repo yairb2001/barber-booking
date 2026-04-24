@@ -27,7 +27,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-haiku-4-5";
+const MODEL = "claude-sonnet-4-6";
 const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
