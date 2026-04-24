@@ -116,7 +116,10 @@ function ApptBlock({ appt, colorClass, onClick }: { appt: Appt; colorClass: stri
   const height = apptH(appt.startTime, appt.endTime, hh);
   return (
     <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition overflow-hidden px-1.5 py-1 z-10 ${colorClass}`}
-      style={{ top, height }} onClick={e => { e.stopPropagation(); onClick(); }}>
+      style={{ top, height }}
+      onPointerDown={e => e.stopPropagation()}
+      onPointerUp={e => e.stopPropagation()}
+      onClick={e => { e.stopPropagation(); onClick(); }}>
       <p className="text-[11px] font-bold leading-tight truncate">{appt.customer.name}</p>
       {height > 36 && <p className="text-[10px] opacity-70 truncate">{appt.service.name}</p>}
       {height > 52 && <p className="text-[10px] opacity-60">{appt.startTime}</p>}

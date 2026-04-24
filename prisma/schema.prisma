@@ -59,6 +59,8 @@ model Business {
   recurringAppointments RecurringAppointment[]
   automations           Automation[]
   stories        Story[]
+  conversations  Conversation[]
+  agentConfig    AgentConfig?
 
   @@map("businesses")
 }
@@ -358,6 +360,74 @@ model Story {
   business    Business @relation(fields: [businessId], references: [id])
 
   @@map("stories")
+}
+
+// === סוכן AI - שיחות ===
+model Conversation {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  phone       String                          // customer WhatsApp phone
+  customerId  String?  @map("customer_id")   // linked once identified
+  agentType   String   @default("customer")  // customer | barber
+  status      String   @default("active")    // active | resolved | escalated
+  summary     String?                         // auto-summary after close
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  lastMessageAt DateTime? @map("last_message_at")
+
+  business    Business @relation(fields: [businessId], references: [id])
+  messages    ConversationMessage[]
+
+  @@index([businessId, phone])
+  @@index([businessId, status])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  role           String   // user | assistant | tool
+  content        String   // message text (or JSON for tool calls)
+  toolName       String?  @map("tool_name")
+  toolCallId     String?  @map("tool_call_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
+}
+
+// === סוכן AI - הגדרות ===
+model AgentConfig {
+  id              String   @id @default(uuid())
+  businessId      String   @unique @map("business_id")
+  isEnabled       Boolean  @default(false) @map("is_enabled")
+  agentName       String   @default("הסוכן") @map("agent_name")
+  systemPrompt    String?  @map("system_prompt")   // override default prompt
+  greetingMsg     String?  @map("greeting_msg")    // first message when agent starts
+  escalatePhone   String?  @map("escalate_phone")  // barber phone to forward to
+  maxIdleMinutes  Int      @default(30) @map("max_idle_minutes")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  business  Business   @relation(fields: [businessId], references: [id])
+  faqs      AgentFAQ[]
+
+  @@map("agent_configs")
+}
+
+model AgentFAQ {
+  id            String   @id @default(uuid())
+  agentConfigId String   @map("agent_config_id")
+  question      String
+  answer        String
+  sortOrder     Int      @default(0) @map("sort_order")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  agentConfig   AgentConfig @relation(fields: [agentConfigId], references: [id])
+
+  @@map("agent_faqs")
 }
 
 // === גלריית עבודות / סטוריז ===

@@ -16,12 +16,24 @@ export default function AdminStoriesPage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // New story form
   const [newUrl, setNewUrl] = useState("");
   const [newCaption, setNewCaption] = useState("");
   const [newExpiry, setNewExpiry] = useState("");
   const [showAdd, setShowAdd] = useState(false);
+
+  async function uploadFile(file: File) {
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+    const data = await res.json();
+    setUploading(false);
+    if (data.url) setNewUrl(data.url);
+    else alert(data.error || "שגיאה בהעלאת תמונה");
+  }
 
   async function load() {
     const data = await fetch("/api/admin/stories").then((r) => r.json());
@@ -204,8 +216,27 @@ export default function AdminStoriesPage() {
           >
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">סטורי חדש</h3>
             <div className="space-y-3">
+              {/* File upload */}
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">קישור לתמונה (URL) *</label>
+                <label className="text-xs text-neutral-500 block mb-1.5">העלאה מהמכשיר</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed text-sm font-medium w-full justify-center transition
+                    ${uploading ? "border-amber-300 text-amber-400 bg-amber-50" : "border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"}`}>
+                    {uploading ? "⏳ מעלה תמונה..." : "📷 בחר תמונה מהמכשיר"}
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); }}
+                  />
+                </label>
+              </div>
+
+              {/* OR URL */}
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">או קישור (URL)</label>
                 <input
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
@@ -214,8 +245,10 @@ export default function AdminStoriesPage() {
                   placeholder="https://..."
                 />
               </div>
+
+              {/* Preview */}
               {newUrl && (
-                <div className="w-full h-32 rounded-xl overflow-hidden bg-stone-100">
+                <div className="w-full h-40 rounded-xl overflow-hidden bg-stone-100">
                   <img
                     src={newUrl}
                     alt=""
@@ -247,7 +280,7 @@ export default function AdminStoriesPage() {
             <div className="flex gap-2 mt-5">
               <button
                 onClick={addStory}
-                disabled={saving || !newUrl.trim()}
+                disabled={saving || uploading || !newUrl.trim()}
                 className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}

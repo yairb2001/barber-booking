@@ -117,14 +117,15 @@ export async function GET(req: NextRequest) {
   for (const [custId, { referralSource }] of Array.from(periodCustMap.entries())) {
     const dates = custDates.get(custId) ?? [];
     if (!dates.length) continue;
-    const src = referralSource || "ישיר";
+    const src = referralSource || "לא צוין";
 
     if (dates[0] >= fromDate && dates[0] <= toDate) {
-      // New this period
+      // New this period — first ever visit is within the period
       newCount++;
       newBySrc.set(src, (newBySrc.get(src) ?? 0) + 1);
-    } else if (dates[1] && dates[1] >= fromDate && dates[1] <= toDate) {
-      // 2nd visit in this period (returning customer)
+    } else {
+      // Returning customer — first visit was before this period, came back now
+      // Counts all returning visits (2nd, 3rd, 4th...) not just the 2nd
       returnedBySrc.set(src, (returnedBySrc.get(src) ?? 0) + 1);
     }
   }

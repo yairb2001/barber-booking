@@ -92,7 +92,7 @@ function HBarChart({ data }: { data: SourceRow[] }) {
       })}
       <div className="flex gap-4 mt-3 text-xs text-neutral-500">
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-amber-400" />חדשים</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-emerald-400" />ביקור שני</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-emerald-400" />חוזרים</span>
       </div>
     </div>
   );
@@ -107,7 +107,7 @@ function SourceTable({ data }: { data: SourceRow[] }) {
         <tr className="border-b border-neutral-200">
           <th className="text-right pb-2 text-xs text-neutral-500 font-medium">מקור הגעה</th>
           <th className="text-center pb-2 text-xs text-neutral-500 font-medium">חדשים</th>
-          <th className="text-center pb-2 text-xs text-neutral-500 font-medium">ביקור שני</th>
+          <th className="text-center pb-2 text-xs text-neutral-500 font-medium">חוזרים</th>
           <th className="text-center pb-2 text-xs text-neutral-500 font-medium">אחוז חזרה</th>
         </tr>
       </thead>
@@ -457,7 +457,7 @@ export default function Dashboard() {
               color="text-blue-600"
               badge={selStaff ? "אצל הספר" : "בעסק"}
             />
-            <StatCard label="ביקור שני" value={secondVisitCustomers} color="text-emerald-600" sub="לקוחות שחזרו" />
+            <StatCard label="לקוחות חוזרים" value={secondVisitCustomers} color="text-emerald-600" sub="ביקרו שוב החודש" />
           </div>
 
           {/* Marketing */}

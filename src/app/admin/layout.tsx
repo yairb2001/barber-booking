@@ -11,6 +11,8 @@ const navItems = [
   { href: "/admin/services",     label: "שירותים",        icon: "💈" },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
+  { href: "/admin/stories",      label: "סטוריז",         icon: "🎬" },
+  { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖" },
   { href: "/admin/announcements",label: "עדכונים",        icon: "📌" },
   { href: "/admin/products",     label: "מוצרים",         icon: "🛍️" },
   { href: "/admin/settings",     label: "הגדרות",         icon: "⚙️" },
