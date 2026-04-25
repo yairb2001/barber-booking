@@ -340,20 +340,45 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Business name — Cormorant Garamond */}
-          <h1
-            className="uppercase text-white mb-2"
-            style={{
-              fontFamily: "var(--font-display)",
-              fontWeight: 300,
-              fontSize: "clamp(2.2rem, 8vw, 3.5rem)",
-              letterSpacing: "0.18em",
-              lineHeight: 1.1,
-              textShadow: "0 2px 24px rgba(0,0,0,0.85)",
-            }}
-          >
-            {business?.name || "DOMINANT"}
-          </h1>
+          {/* Business name — split: main large, descriptor small */}
+          {(() => {
+            const full = business?.name || "DOMINANT";
+            const idx = full.search(/\s+(barbershop|barber|shop|studio|salon|beauty|hair)/i);
+            const main = idx > 0 ? full.slice(0, idx) : full;
+            const sub  = idx > 0 ? full.slice(idx + 1) : "";
+            const shadow = "0 1px 3px rgba(0,0,0,1), 0 3px 12px rgba(0,0,0,0.9), 0 8px 32px rgba(0,0,0,0.7)";
+            return (
+              <>
+                <h1
+                  className="uppercase text-white mb-1"
+                  style={{
+                    fontFamily: "var(--font-display)",
+                    fontWeight: 400,
+                    fontSize: "clamp(2.6rem, 9vw, 4rem)",
+                    letterSpacing: "0.22em",
+                    lineHeight: 1.05,
+                    textShadow: shadow,
+                  }}
+                >
+                  {main}
+                </h1>
+                {sub && (
+                  <p
+                    className="uppercase text-white/55 mb-2"
+                    style={{
+                      fontFamily: "var(--font-display)",
+                      fontWeight: 300,
+                      fontSize: "clamp(0.65rem, 2.2vw, 0.8rem)",
+                      letterSpacing: "0.45em",
+                      textShadow: "0 1px 8px rgba(0,0,0,0.9)",
+                    }}
+                  >
+                    {sub}
+                  </p>
+                )}
+              </>
+            );
+          })()}
 
           {/* CTA */}
           <Link
