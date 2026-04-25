@@ -32,9 +32,9 @@ function ProgressDots({ step }: { step: number }) {
           key={i}
           className={`rounded-full transition-all duration-300 ${
             i === step
-              ? "w-4 h-2 bg-amber-500"
+              ? "w-4 h-2 bg-[var(--brand)]"
               : i < step
-              ? "w-2 h-2 bg-amber-300"
+              ? "w-2 h-2 bg-[var(--brand)/60]"
               : "w-2 h-2 bg-neutral-200"
           }`}
         />
@@ -97,8 +97,8 @@ export default function ChooseBarberPage() {
       {!loading && quickSlots.length > 0 && (
         <div className="px-5 pt-6">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-1 h-3 bg-amber-500 rounded-full" />
-            <p className="text-[10px] tracking-[0.25em] text-amber-600 uppercase">זמין היום</p>
+            <div className="w-1 h-3 bg-[var(--brand)] rounded-full" />
+            <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">זמין היום</p>
           </div>
           <div
             className="flex gap-2 overflow-x-auto pb-1"
@@ -109,7 +109,7 @@ export default function ChooseBarberPage() {
               <Link
                 key={i}
                 href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                className="min-w-[100px] bg-white hover:bg-amber-50 border border-neutral-200 rounded-2xl flex-shrink-0 p-3 transition-colors shadow-sm"
+                className="min-w-[100px] bg-white hover:bg-[var(--brand)/8] border border-neutral-200 rounded-2xl flex-shrink-0 p-3 transition-colors shadow-sm"
               >
                 <div className="font-light text-sm tracking-widest" dir="ltr" style={{ color: brandColor }}>
                   {slot.time}
@@ -147,7 +147,7 @@ export default function ChooseBarberPage() {
                 <Link
                   key={member.id}
                   href={`/book/service?staffId=${member.id}`}
-                  className="group block bg-white rounded-2xl overflow-hidden hover:border-amber-200 hover:shadow-md transition-all shadow-sm border border-neutral-100"
+                  className="group block bg-white rounded-2xl overflow-hidden hover:border-[var(--brand)/30] hover:shadow-md transition-all shadow-sm border border-neutral-100"
                 >
                   {/* Avatar — portrait ratio */}
                   <div className="aspect-[3/4] bg-stone-50 relative overflow-hidden">
@@ -165,7 +165,7 @@ export default function ChooseBarberPage() {
                       </div>
                     )}
                     {/* Hover overlay */}
-                    <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors" />
+                    <div className="absolute inset-0 bg-[var(--brand)]/0 group-hover:bg-[var(--brand)]/5 transition-colors" />
                     {/* Available badge — top-right */}
                     {member.isAvailable && (
                       <div className="absolute top-1.5 right-1.5">
@@ -176,8 +176,8 @@ export default function ChooseBarberPage() {
                     )}
                     {/* Nearest slot badge */}
                     {nearestSlot && (
-                      <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm border border-amber-200 rounded-lg px-1.5 py-0.5 shadow-sm">
-                        <span className="text-amber-600 text-[9px] font-light tracking-widest" dir="ltr">{nearestSlot.time}</span>
+                      <div className="absolute bottom-1.5 right-1.5 bg-white/90 backdrop-blur-sm border border-[var(--brand)/30] rounded-lg px-1.5 py-0.5 shadow-sm">
+                        <span className="text-[var(--brand)] text-[9px] font-light tracking-widest" dir="ltr">{nearestSlot.time}</span>
                       </div>
                     )}
                   </div>

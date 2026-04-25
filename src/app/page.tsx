@@ -50,6 +50,7 @@ type BusinessInfo = {
   logoUrl: string | null;
   coverImageUrl: string | null;
   brandColor: string | null;
+  bgColor: string | null;
   phone: string | null;
   address: string | null;
   about: string | null;
@@ -526,28 +527,27 @@ export default function HomePage() {
 
       {/* ===== Open Slots Today ===== */}
       {!loading && quickSlots.length > 0 && (
-        <div className="px-5 py-10">
-          <div className="mb-5 flex items-center justify-between">
+        <div className="bg-white px-5 py-8 border-b border-neutral-100">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brandColor }} />
             <div>
-              <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-1">Available Now</p>
-              <h2 className="text-base tracking-[0.2em] font-light uppercase text-neutral-900">תורים פנויים היום</h2>
+              <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">Available Now</p>
+              <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">תורים פנויים היום</h2>
             </div>
-            <div className="w-px h-8 bg-neutral-200" />
           </div>
           <QuickSlotsCarousel slots={quickSlots} />
         </div>
       )}
 
-      {/* Divider */}
-      <div className="h-px bg-neutral-100 mx-5" />
-
       {/* ===== Our Team ===== */}
       {staff.length > 0 && (
-        <div className="py-12">
-          <div className="text-center mb-8 px-6">
-            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">The Team</p>
-            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">הספרים שלנו</h2>
-            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
+        <div className="py-10 border-b border-neutral-100">
+          <div className="flex items-center gap-3 px-5 mb-6">
+            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brandColor }} />
+            <div>
+              <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">The Team</p>
+              <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">הספרים שלנו</h2>
+            </div>
           </div>
           <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
@@ -555,9 +555,9 @@ export default function HomePage() {
               <Link
                 key={member.id}
                 href={`/book/service?staffId=${member.id}`}
-                className="min-w-[160px] max-w-[160px] flex-shrink-0 group"
+                className="min-w-[150px] max-w-[150px] flex-shrink-0 group"
               >
-                <div className="aspect-[3/4] bg-stone-100 rounded-2xl overflow-hidden mb-3 relative shadow-sm border border-neutral-100">
+                <div className="aspect-[3/4] bg-stone-100 rounded-2xl overflow-hidden mb-3 relative shadow-md border border-neutral-150">
                   {member.avatarUrl ? (
                     <img
                       src={member.avatarUrl}
@@ -569,11 +569,11 @@ export default function HomePage() {
                       <span className="text-4xl font-light text-neutral-300">{member.name[0]}</span>
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-[var(--brand)]/0 group-hover:bg-[var(--brand)]/5 transition-colors rounded-2xl" />
+                  <div className="absolute inset-0 bg-[var(--brand)]/0 group-hover:bg-[var(--brand)]/8 transition-colors rounded-2xl" />
                 </div>
                 <div className="text-center">
-                  <p className="text-xs tracking-[0.2em] uppercase font-light text-neutral-700">{member.name}</p>
-                  <p className="text-[10px] tracking-[0.15em] text-[var(--brand)] mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
+                  <p className="text-xs tracking-[0.15em] font-medium text-neutral-700">{member.name}</p>
+                  <p className="text-[10px] text-[var(--brand)] mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
                 </div>
               </Link>
             ))}
@@ -581,30 +581,29 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Divider */}
-      <div className="h-px bg-neutral-100 mx-5" />
-
       {/* ===== Portfolio Gallery ===== */}
       {!loading && <PortfolioGallery staff={staff} />}
 
       {/* ===== Announcements ===== */}
       {announcements.length > 0 && (
-        <div className="py-12 px-5">
-          <div className="text-center mb-8">
-            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">Updates</p>
-            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">עדכונים</h2>
-            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
+        <div className="bg-white py-10 px-5 border-b border-neutral-100">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brandColor }} />
+            <div>
+              <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">Updates</p>
+              <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">עדכונים</h2>
+            </div>
           </div>
           <div className="space-y-3">
             {announcements.map((ann) => (
               <div
                 key={ann.id}
-                className="bg-white rounded-2xl border border-neutral-100 p-5 relative shadow-sm overflow-hidden"
+                className="bg-neutral-50 rounded-2xl border border-neutral-150 p-4 relative overflow-hidden"
               >
                 {ann.isPinned && (
-                  <div className="absolute top-0 right-0 w-1 h-full bg-[var(--brand)] rounded-r-2xl" />
+                  <div className="absolute top-0 right-0 w-1 h-full rounded-r-2xl" style={{ backgroundColor: brandColor }} />
                 )}
-                <h3 className="text-sm tracking-[0.1em] font-light text-neutral-900 mb-2">{ann.title}</h3>
+                <h3 className="text-sm font-medium text-neutral-800 mb-1.5 pr-3">{ann.title}</h3>
                 {ann.content && (
                   <p className="text-xs text-neutral-500 leading-relaxed">
                     {ann.content}
@@ -618,18 +617,20 @@ export default function HomePage() {
 
       {/* ===== Products ===== */}
       {products.length > 0 && (
-        <div className="py-12">
-          <div className="text-center mb-8 px-6">
-            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">Shop</p>
-            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">מוצרים</h2>
-            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
+        <div className="py-10 border-b border-neutral-100">
+          <div className="flex items-center gap-3 px-5 mb-6">
+            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brandColor }} />
+            <div>
+              <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">Shop</p>
+              <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">מוצרים</h2>
+            </div>
           </div>
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {products.map((product) => (
               <div
                 key={product.id}
-                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-100 overflow-hidden flex-shrink-0 shadow-sm"
+                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-150 overflow-hidden flex-shrink-0 shadow-md"
               >
                 <div className="h-36 bg-stone-50 flex items-center justify-center overflow-hidden rounded-t-2xl">
                   {product.imageUrl ? (
@@ -639,19 +640,17 @@ export default function HomePage() {
                       className="w-full h-full object-cover"
                     />
                   ) : (
-                    <div className="w-12 h-12 border border-neutral-200 rounded-xl flex items-center justify-center">
-                      <div className="w-1 h-6 bg-neutral-200" />
-                    </div>
+                    <div className="w-10 h-10 border border-neutral-200 rounded-xl flex items-center justify-center text-neutral-300 text-xl">🧴</div>
                   )}
                 </div>
                 <div className="p-3">
-                  <h3 className="text-xs tracking-[0.1em] font-light text-neutral-900 uppercase">{product.name}</h3>
+                  <h3 className="text-xs font-medium text-neutral-800">{product.name}</h3>
                   {product.description && (
                     <p className="text-[10px] text-neutral-400 mt-1 line-clamp-2 leading-relaxed">
                       {product.description}
                     </p>
                   )}
-                  <div className="text-[var(--brand)] text-sm font-light tracking-wider mt-3">
+                  <div className="text-[var(--brand)] text-sm font-medium mt-2">
                     ₪{product.price}
                   </div>
                 </div>
@@ -663,14 +662,15 @@ export default function HomePage() {
 
       {/* ===== About ===== */}
       {business?.about && (
-        <div className="py-12 px-5">
-          <div className="h-px bg-neutral-100 mb-12" />
-          <div className="text-center mb-6">
-            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">About</p>
-            <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">אודות</h2>
-            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
+        <div className="bg-white py-10 px-5">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-1 h-8 rounded-full" style={{ backgroundColor: brandColor }} />
+            <div>
+              <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">About</p>
+              <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">אודות</h2>
+            </div>
           </div>
-          <p className="text-sm text-neutral-500 text-center leading-relaxed max-w-sm mx-auto font-light">
+          <p className="text-sm text-neutral-600 leading-relaxed">
             {business.about}
           </p>
         </div>

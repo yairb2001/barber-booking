@@ -272,7 +272,13 @@ export default function AdminSettingsPage() {
       fd.append("file", file);
       const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
       const data = await res.json();
-      if (data.url) setField(field, data.url);
+      if (data.url) {
+        setField(field, data.url);
+      } else {
+        alert("שגיאה בהעלאת תמונה: " + (data.error || "שגיאה לא ידועה"));
+      }
+    } catch {
+      alert("שגיאה בהעלאת תמונה — בדוק חיבור לאינטרנט");
     } finally {
       setter(false);
     }

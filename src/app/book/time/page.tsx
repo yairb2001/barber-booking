@@ -31,9 +31,9 @@ function ProgressDots({ step }: { step: number }) {
           key={i}
           className={`rounded-full transition-all duration-300 ${
             i === step
-              ? "w-4 h-2 bg-amber-500"
+              ? "w-4 h-2 bg-[var(--brand)]"
               : i < step
-              ? "w-2 h-2 bg-amber-300"
+              ? "w-2 h-2 bg-[var(--brand)/60]"
               : "w-2 h-2 bg-neutral-200"
           }`}
         />
@@ -90,7 +90,7 @@ function WaitlistSheet({
         <div>
           <h2 className="text-base tracking-[0.15em] font-light uppercase text-neutral-900">
             רשימת המתנה
-            <span className="text-amber-500 mr-2">🔔</span>
+            <span className="text-[var(--brand)] mr-2">🔔</span>
           </h2>
           <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
             {dateLabel} — נודיע לך ב-WhatsApp כשיתפנה מקום
@@ -107,8 +107,8 @@ function WaitlistSheet({
                 onClick={() => setPref(p.v)}
                 className={`py-3 px-3 rounded-xl text-sm text-right border transition-colors ${
                   pref === p.v
-                    ? "bg-amber-500 text-white border-amber-500 font-semibold"
-                    : "bg-stone-50 border-neutral-200 text-neutral-600 hover:border-amber-200"
+                    ? "bg-[var(--brand)] text-white border-[var(--brand)] font-semibold"
+                    : "bg-stone-50 border-neutral-200 text-neutral-600 hover:border-[var(--brand)/30]"
                 }`}
               >
                 <div className="text-xs tracking-[0.1em]">{p.l}</div>
@@ -126,7 +126,7 @@ function WaitlistSheet({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="ישראל ישראלי"
-              className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+              className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
             />
           </div>
           <div>
@@ -137,7 +137,7 @@ function WaitlistSheet({
               placeholder="050-0000000"
               type="tel"
               dir="ltr"
-              className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+              className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
             />
           </div>
         </div>
@@ -147,7 +147,7 @@ function WaitlistSheet({
         <button
           onClick={submit}
           disabled={saving}
-          className="w-full bg-amber-500 text-white font-semibold py-4 text-sm tracking-[0.15em] uppercase rounded-full hover:bg-amber-600 disabled:opacity-40 transition-all active:scale-[0.99] shadow-md"
+          className="w-full bg-[var(--brand)] text-white font-semibold py-4 text-sm tracking-[0.15em] uppercase rounded-full hover:bg-[var(--brand)] disabled:opacity-40 transition-all active:scale-[0.99] shadow-md"
         >
           {saving ? "שומר..." : "הצטרף להמתנה"}
         </button>
@@ -166,7 +166,7 @@ function WaitlistSuccess({ dateLabel, onClose }: { dateLabel: string; onClose: (
       >
         <div className="w-10 h-1 bg-neutral-200 mx-auto rounded-full" />
 
-        <div className="text-3xl text-amber-500">🔔</div>
+        <div className="text-3xl text-[var(--brand)]">🔔</div>
 
         <div>
           <h2 className="text-base tracking-[0.2em] font-light uppercase text-neutral-900 mb-2">
@@ -179,7 +179,7 @@ function WaitlistSuccess({ dateLabel, onClose }: { dateLabel: string; onClose: (
 
         <button
           onClick={onClose}
-          className="w-full bg-amber-500 text-white font-semibold py-4 text-sm tracking-[0.15em] uppercase rounded-full hover:bg-amber-600 transition-colors shadow-md"
+          className="w-full bg-[var(--brand)] text-white font-semibold py-4 text-sm tracking-[0.15em] uppercase rounded-full hover:bg-[var(--brand)] transition-colors shadow-md"
         >
           סגור
         </button>
@@ -288,8 +288,8 @@ function ChooseTimePageContent() {
               onClick={() => setSelectedDate(d.date)}
               className={`flex-shrink-0 min-w-[60px] py-3 px-2 text-center rounded-full border transition-all ${
                 selectedDate === d.date
-                  ? "bg-amber-500 border-amber-500 text-white shadow-md"
-                  : "bg-white border-neutral-200 text-neutral-500 hover:border-amber-200 hover:bg-amber-50 shadow-sm"
+                  ? "bg-[var(--brand)] border-[var(--brand)] text-white shadow-md"
+                  : "bg-white border-neutral-200 text-neutral-500 hover:border-[var(--brand)/30] hover:bg-[var(--brand)/8] shadow-sm"
               }`}
             >
               <div className="text-[9px] tracking-wider uppercase mb-1">
@@ -321,7 +321,7 @@ function ChooseTimePageContent() {
               <Link
                 key={time}
                 href={`/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}&time=${time}`}
-                className="bg-white hover:bg-amber-500 hover:text-white border border-neutral-200 hover:border-amber-500 transition-all text-center py-3.5 rounded-xl font-light text-sm tracking-widest text-neutral-700 hover:font-semibold shadow-sm hover:shadow-md"
+                className="bg-white hover:bg-[var(--brand)] hover:text-white border border-neutral-200 hover:border-[var(--brand)] transition-all text-center py-3.5 rounded-xl font-light text-sm tracking-widest text-neutral-700 hover:font-semibold shadow-sm hover:shadow-md"
                 dir="ltr"
               >
                 {time}
@@ -340,9 +340,9 @@ function ChooseTimePageContent() {
 
         {/* ===== Waitlist CTA ===== */}
         {!loading && selectedDate && (
-          <div className="mt-10 rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+          <div className="mt-10 rounded-2xl border border-[var(--brand)/30] bg-[var(--brand)/8] p-5 shadow-sm">
             <div className="flex items-start gap-3">
-              <span className="text-amber-500 text-base mt-0.5">🔔</span>
+              <span className="text-[var(--brand)] text-base mt-0.5">🔔</span>
               <div className="flex-1">
                 <p className="text-sm font-light text-neutral-900 tracking-wide">
                   אין את השעה שחיפשת?
@@ -352,7 +352,7 @@ function ChooseTimePageContent() {
                 </p>
                 <button
                   onClick={() => { setWaitlistOpen(true); setWaitlistSuccess(false); }}
-                  className="border border-amber-400 text-amber-600 text-xs tracking-[0.15em] uppercase px-5 py-2.5 rounded-full hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-colors"
+                  className="border border-[var(--brand)] text-[var(--brand)] text-xs tracking-[0.15em] uppercase px-5 py-2.5 rounded-full hover:bg-[var(--brand)] hover:text-white hover:border-[var(--brand)] transition-colors"
                 >
                   הצטרף לרשימת ההמתנה
                 </button>

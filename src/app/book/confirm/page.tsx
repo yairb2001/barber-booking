@@ -47,9 +47,9 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
 
   if (joined) {
     return (
-      <div className="bg-amber-50 rounded-2xl border border-amber-200 p-5 text-center shadow-sm">
-        <div className="text-2xl text-amber-500 mb-2">🔔</div>
-        <p className="text-xs tracking-[0.15em] uppercase text-amber-600 font-light">הצטרפת לרשימת המתנה</p>
+      <div className="bg-[var(--brand)/8] rounded-2xl border border-[var(--brand)/30] p-5 text-center shadow-sm">
+        <div className="text-2xl text-[var(--brand)] mb-2">🔔</div>
+        <p className="text-xs tracking-[0.15em] uppercase text-[var(--brand)] font-light">הצטרפת לרשימת המתנה</p>
         <p className="text-neutral-400 text-xs mt-2 leading-relaxed">נעדכן אותך ב-WhatsApp אם יתפנה מקום מוקדם יותר.</p>
       </div>
     );
@@ -58,7 +58,7 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   return (
     <div className="bg-white rounded-2xl border border-neutral-100 p-5 shadow-sm">
       <div className="flex items-start gap-3 mb-4">
-        <span className="text-amber-500 text-lg flex-shrink-0">🔔</span>
+        <span className="text-[var(--brand)] text-lg flex-shrink-0">🔔</span>
         <div>
           <p className="text-xs tracking-[0.1em] uppercase font-light text-neutral-900">רוצה להגיע מוקדם יותר?</p>
           <p className="text-neutral-400 text-xs mt-1 leading-relaxed">
@@ -80,8 +80,8 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
             onClick={() => setTimeOfDay(val)}
             className={`flex-1 border rounded-xl py-2 px-1 text-center transition-colors ${
               timeOfDay === val
-                ? "border-amber-500 bg-amber-50 text-amber-600"
-                : "border-neutral-200 text-neutral-500 hover:border-amber-200 bg-stone-50"
+                ? "border-[var(--brand)] bg-[var(--brand)/8] text-[var(--brand)]"
+                : "border-neutral-200 text-neutral-500 hover:border-[var(--brand)/30] bg-stone-50"
             }`}
           >
             <div className="text-[11px] tracking-wider font-light">{label}</div>
@@ -96,7 +96,7 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
           type="checkbox"
           checked={isFlexible}
           onChange={(e) => setIsFlexible(e.target.checked)}
-          className="accent-amber-500 w-4 h-4 rounded"
+          className="accent-[var(--brand)] w-4 h-4 rounded"
         />
         <span className="text-xs text-neutral-500 leading-relaxed">גמיש עם התאריך — כמה שיותר מוקדם</span>
       </label>
@@ -108,7 +108,7 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
       <button
         onClick={join}
         disabled={joining}
-        className="w-full border border-amber-400 text-amber-600 text-xs tracking-[0.15em] uppercase py-3 rounded-full hover:bg-amber-500 hover:text-white hover:border-amber-500 transition-colors disabled:opacity-40"
+        className="w-full border border-[var(--brand)] text-[var(--brand)] text-xs tracking-[0.15em] uppercase py-3 rounded-full hover:bg-[var(--brand)] hover:text-white hover:border-[var(--brand)] transition-colors disabled:opacity-40"
       >
         {joining ? "מצרף..." : "הצטרף לרשימת המתנה"}
       </button>
@@ -223,8 +223,8 @@ function ConfirmPageContent() {
           {/* Header */}
           <div className="text-center space-y-4">
             {/* Check mark */}
-            <div className="w-16 h-16 border-2 border-amber-400 rounded-full flex items-center justify-center mx-auto bg-amber-50 shadow-md">
-              <svg className="w-7 h-7 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <div className="w-16 h-16 border-2 border-[var(--brand)] rounded-full flex items-center justify-center mx-auto bg-[var(--brand)/8] shadow-md">
+              <svg className="w-7 h-7 text-[var(--brand)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
@@ -238,7 +238,7 @@ function ConfirmPageContent() {
               </p>
             </div>
 
-            <div className="w-8 h-px bg-amber-400 mx-auto" />
+            <div className="w-8 h-px bg-[var(--brand)] mx-auto" />
           </div>
 
           {/* Summary card */}
@@ -262,7 +262,7 @@ function ConfirmPageContent() {
               </div>
               <div className="flex justify-between items-center px-5 py-4">
                 <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">מחיר</span>
-                <span className="text-xl text-amber-500 font-light">₪{successPrice}</span>
+                <span className="text-xl text-[var(--brand)] font-light">₪{successPrice}</span>
               </div>
             </div>
           </div>
@@ -281,7 +281,7 @@ function ConfirmPageContent() {
           {/* Home button */}
           <Link
             href="/"
-            className="block text-center bg-amber-500 text-white font-semibold text-sm tracking-[0.15em] uppercase py-4 rounded-full hover:bg-amber-600 transition-colors shadow-md"
+            className="block text-center bg-[var(--brand)] text-white font-semibold text-sm tracking-[0.15em] uppercase py-4 rounded-full hover:bg-[var(--brand)] transition-colors shadow-md"
           >
             חזרה לדף הבית
           </Link>
@@ -340,7 +340,7 @@ function ConfirmPageContent() {
             </div>
             <div className="flex justify-between items-center px-5 py-4">
               <span className="text-[10px] tracking-[0.2em] text-neutral-400 uppercase">מחיר</span>
-              <span className="text-xl text-amber-500 font-light">₪{price}</span>
+              <span className="text-xl text-[var(--brand)] font-light">₪{price}</span>
             </div>
           </div>
         </div>
@@ -359,7 +359,7 @@ function ConfirmPageContent() {
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
               />
             </div>
             <div>
@@ -371,7 +371,7 @@ function ConfirmPageContent() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="השם שלך"
-                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
               />
             </div>
           </div>
@@ -383,7 +383,7 @@ function ConfirmPageContent() {
           <select
             value={referralSource}
             onChange={(e) => { setReferralSource(e.target.value); setReferrerPhone(""); }}
-            className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors appearance-none"
+            className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors appearance-none"
             style={{ WebkitAppearance: "none" }}
           >
             <option value="" className="text-neutral-400">בחר (אופציונלי)</option>
@@ -404,7 +404,7 @@ function ConfirmPageContent() {
                 onChange={(e) => setReferrerPhone(e.target.value)}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-colors"
+                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
               />
               <p className="text-[10px] text-neutral-400 mt-2 leading-relaxed">
                 כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם
@@ -424,7 +424,7 @@ function ConfirmPageContent() {
         <button
           onClick={handleSubmit}
           disabled={submitting || !phone || !name}
-          className="w-full bg-amber-500 text-white font-semibold text-sm tracking-[0.2em] uppercase py-5 rounded-full hover:bg-amber-600 disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors shadow-md hover:shadow-lg"
+          className="w-full bg-[var(--brand)] text-white font-semibold text-sm tracking-[0.2em] uppercase py-5 rounded-full hover:bg-[var(--brand)] disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors shadow-md hover:shadow-lg"
         >
           {submitting ? "קובע תור..." : "קביעת תור!"}
         </button>

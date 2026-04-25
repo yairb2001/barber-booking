@@ -41,9 +41,9 @@ function ProgressDots({ step }: { step: number }) {
           key={i}
           className={`rounded-full transition-all duration-300 ${
             i === step
-              ? "w-4 h-2 bg-amber-500"
+              ? "w-4 h-2 bg-[var(--brand)]"
               : i < step
-              ? "w-2 h-2 bg-amber-300"
+              ? "w-2 h-2 bg-[var(--brand)/60]"
               : "w-2 h-2 bg-neutral-200"
           }`}
         />
@@ -96,7 +96,7 @@ function ChooseServicePageContent() {
               בחר שירות
             </h1>
             {staffInfo && (
-              <p className="text-[9px] tracking-[0.2em] text-amber-500 uppercase">{staffInfo.name}</p>
+              <p className="text-[9px] tracking-[0.2em] text-[var(--brand)] uppercase">{staffInfo.name}</p>
             )}
           </div>
 
@@ -109,8 +109,8 @@ function ChooseServicePageContent() {
       {!loading && quickSlots.length > 0 && (
         <div className="px-5 pt-6">
           <div className="flex items-center gap-3 mb-3">
-            <div className="w-1 h-3 bg-amber-500 rounded-full" />
-            <p className="text-[10px] tracking-[0.25em] text-amber-600 uppercase">
+            <div className="w-1 h-3 bg-[var(--brand)] rounded-full" />
+            <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">
               זמין היום — {staffInfo?.name}
             </p>
           </div>
@@ -123,11 +123,11 @@ function ChooseServicePageContent() {
               <Link
                 key={i}
                 href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                className="min-w-[96px] bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-2xl flex-shrink-0 p-3 text-center transition-colors shadow-sm"
+                className="min-w-[96px] bg-[var(--brand)/8] hover:bg-[var(--brand)/15] border border-[var(--brand)/30] rounded-2xl flex-shrink-0 p-3 text-center transition-colors shadow-sm"
               >
-                <div className="text-amber-600 font-light text-sm tracking-widest" dir="ltr">{slot.time}</div>
-                <div className="text-[10px] text-amber-500/70 mt-0.5">{slot.dayLabel}</div>
-                <div className="text-[10px] text-amber-500/50 mt-0.5">{slot.duration} דק׳</div>
+                <div className="text-[var(--brand)] font-light text-sm tracking-widest" dir="ltr">{slot.time}</div>
+                <div className="text-[10px] text-[var(--brand)]/70 mt-0.5">{slot.dayLabel}</div>
+                <div className="text-[10px] text-[var(--brand)]/50 mt-0.5">{slot.duration} דק׳</div>
               </Link>
             ))}
           </div>
@@ -157,10 +157,10 @@ function ChooseServicePageContent() {
               <Link
                 key={service.id}
                 href={`/book/time?staffId=${staffId}&serviceId=${service.id}`}
-                className="flex items-stretch bg-white rounded-2xl border border-neutral-100 hover:border-amber-200 hover:shadow-md transition-all group overflow-hidden shadow-sm"
+                className="flex items-stretch bg-white rounded-2xl border border-neutral-100 hover:border-[var(--brand)/30] hover:shadow-md transition-all group overflow-hidden shadow-sm"
               >
                 {/* Gold left-border accent (right in RTL = visual left) */}
-                <div className="w-[3px] bg-amber-400 group-hover:bg-amber-500 flex-shrink-0 transition-colors rounded-r-2xl" />
+                <div className="w-[3px] bg-[var(--brand)] group-hover:bg-[var(--brand)] flex-shrink-0 transition-colors rounded-r-2xl" />
 
                 {/* Content */}
                 <div className="flex items-center justify-between px-4 py-4 flex-1">
@@ -179,12 +179,12 @@ function ChooseServicePageContent() {
 
                   {/* Price */}
                   <div className="text-left flex-shrink-0">
-                    <span className="text-amber-500 text-lg font-light tracking-wide">₪{price}</span>
+                    <span className="text-[var(--brand)] text-lg font-light tracking-wide">₪{price}</span>
                   </div>
                 </div>
 
                 {/* Arrow */}
-                <div className="flex items-center px-3 text-neutral-300 group-hover:text-amber-500 transition-colors text-sm">
+                <div className="flex items-center px-3 text-neutral-300 group-hover:text-[var(--brand)] transition-colors text-sm">
                   ←
                 </div>
               </Link>

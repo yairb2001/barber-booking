@@ -10,6 +10,7 @@ export async function GET() {
       logoUrl: true,
       coverImageUrl: true,
       brandColor: true,
+      bgColor: true,
       phone: true,
       address: true,
       about: true,
