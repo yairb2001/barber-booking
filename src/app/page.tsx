@@ -221,6 +221,13 @@ export default function HomePage() {
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 220);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -270,6 +277,51 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col text-neutral-900 bg-white" dir="rtl">
       <style>{`:root { --brand: ${brandColor}; }`}</style>
+
+      {/* ===== Sticky Header (מופיע בגלילה) ===== */}
+      <div
+        className="fixed top-0 inset-x-0 z-50 transition-all duration-300"
+        style={{
+          transform: scrolled ? "translateY(0)" : "translateY(-100%)",
+          opacity: scrolled ? 1 : 0,
+          background: "rgba(255,255,255,0.92)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(0,0,0,0.07)",
+        }}
+      >
+        <div className="flex items-center gap-3 px-4 py-2.5">
+          {/* לוגו קטן */}
+          {business?.logoUrl && (
+            <div className="w-9 h-9 rounded-full overflow-hidden border border-neutral-200 flex-shrink-0">
+              <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
+            </div>
+          )}
+          {/* שם */}
+          <div className="flex-1 min-w-0">
+            <p
+              className="uppercase text-neutral-900 leading-none"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontWeight: 400,
+                fontSize: "1.15rem",
+                letterSpacing: "0.1em",
+              }}
+            >
+              {business?.name || "DOMINANT"}
+            </p>
+            <p className="text-[10px] text-neutral-400 tracking-[0.3em] mt-0.5">barbershop</p>
+          </div>
+          {/* כפתור קביעת תור */}
+          <Link
+            href="/book"
+            className="flex-shrink-0 text-xs font-semibold tracking-wider uppercase px-4 py-2 rounded-full text-white transition-colors"
+            style={{ backgroundColor: brandColor }}
+          >
+            קבע תור
+          </Link>
+        </div>
+      </div>
 
       {/* ===== Hero ===== */}
       <div className="relative h-[52vh] min-h-[320px] max-h-[480px]">
