@@ -155,10 +155,13 @@ function WorksGallery({ works }: { works: PortfolioWork[] }) {
   if (works.length === 0) return null;
   return (
     <div className="py-6 border-b border-neutral-100">
-      {/* Title */}
-      <div className="flex items-center gap-3 px-5 mb-4">
-        <div className="w-1 h-6 rounded-full flex-shrink-0 bg-[var(--brand)]" />
-        <p className="text-sm font-medium tracking-[0.1em] text-neutral-800">מהעבודות שלנו</p>
+      {/* Title + tagline */}
+      <div className="px-5 mb-4">
+        <div className="flex items-center gap-3 mb-1">
+          <div className="w-1 h-6 rounded-full flex-shrink-0 bg-[var(--brand)]" />
+          <p className="text-sm font-medium tracking-[0.1em] text-neutral-800">מהעבודות שלנו</p>
+        </div>
+        <p className="text-xs text-neutral-400 tracking-wider mr-4">בחר סגנון שאהבת וקבע תור</p>
       </div>
       {/* Swipeable cards */}
       <div
@@ -324,10 +327,10 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Hero centered content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10 pb-8">
+        {/* Hero centered content — pt-12 לדחיפת הלוגו מעט למטה */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10 pt-12 pb-4">
           {/* Logo */}
-          <div className="w-32 h-32 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-6 overflow-hidden shadow-lg">
+          <div className="w-24 h-24 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-5 overflow-hidden shadow-lg">
             {business?.logoUrl ? (
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -337,19 +340,20 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Business name */}
+          {/* Business name — Cormorant Garamond */}
           <h1
-            className="text-4xl font-medium tracking-[0.12em] uppercase text-white mb-1.5"
-            style={{ textShadow: "0 2px 20px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.6)" }}
+            className="uppercase text-white mb-2"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 300,
+              fontSize: "clamp(2.2rem, 8vw, 3.5rem)",
+              letterSpacing: "0.18em",
+              lineHeight: 1.1,
+              textShadow: "0 2px 24px rgba(0,0,0,0.85)",
+            }}
           >
             {business?.name || "DOMINANT"}
           </h1>
-          <p className="text-xs tracking-[0.35em] text-white/55 uppercase font-light mb-3">Barbershop</p>
-
-          {/* Tagline */}
-          <p className="text-sm text-white/80 mb-8 tracking-wide font-light">
-            בחר סגנון שאהבת וקבע תור
-          </p>
 
           {/* CTA */}
           <Link
