@@ -126,7 +126,7 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
         <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
         {stories.map((story, idx) => (
           <button key={story.id} onClick={() => openStory(idx)} className="flex flex-col items-center gap-1 flex-shrink-0">
-            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-500 shadow-sm">
+            <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[var(--brand)] shadow-sm">
               <img
                 src={story.mediaUrl}
                 alt={story.caption || ""}
@@ -250,7 +250,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
           <Link
             key={i}
             href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-            className="min-w-[108px] bg-white hover:bg-amber-50 transition-colors rounded-2xl p-3 border border-neutral-200 flex-shrink-0 group shadow-sm"
+            className="min-w-[108px] bg-white hover:bg-neutral-50 transition-colors rounded-2xl p-3 border border-neutral-200 flex-shrink-0 group shadow-sm"
           >
             <div className="text-[var(--brand)] font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
             <div className="text-[11px] text-neutral-400 mt-0.5">{slot.dayLabel}</div>
@@ -515,7 +515,10 @@ export default function HomePage() {
         </div>
 
         {/* Bottom fade into content */}
-        <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-[#faf9f7] to-transparent" />
+        <div
+          className="absolute bottom-0 inset-x-0 h-24"
+          style={{ background: `linear-gradient(to top, ${business?.bgColor || "#faf9f7"}, transparent)` }}
+        />
       </div>
 
       {/* ===== Stories Carousel ===== */}
