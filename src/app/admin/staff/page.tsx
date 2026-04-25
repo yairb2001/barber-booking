@@ -98,8 +98,10 @@ export default function AdminStaffPage() {
 
   async function uploadAvatarFile(id: string, file: File) {
     setUploadingAvatar(true);
+    const { compressImage } = await import("@/lib/image-compress");
+    const compressed = await compressImage(file, "avatar");
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", compressed);
     const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
     const data = await res.json();
     setUploadingAvatar(false);

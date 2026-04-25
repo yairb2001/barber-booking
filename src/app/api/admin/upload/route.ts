@@ -16,9 +16,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "only images allowed" }, { status: 400 });
   }
 
-  // Max 8MB
-  if (file.size > 8 * 1024 * 1024) {
-    return NextResponse.json({ error: "file too large (max 8MB)" }, { status: 400 });
+  // Max 20MB after client-side compression — generous safety margin
+  if (file.size > 20 * 1024 * 1024) {
+    return NextResponse.json({ error: "file too large (max 20MB)" }, { status: 400 });
   }
 
   // ── Option 1: Vercel Blob (production) ─────────────────────────────────────
