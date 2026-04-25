@@ -340,45 +340,32 @@ export default function HomePage() {
             )}
           </div>
 
-          {/* Business name — split: main large, descriptor small */}
-          {(() => {
-            const full = business?.name || "DOMINANT";
-            const idx = full.search(/\s+(barbershop|barber|shop|studio|salon|beauty|hair)/i);
-            const main = idx > 0 ? full.slice(0, idx) : full;
-            const sub  = idx > 0 ? full.slice(idx + 1) : "";
-            const shadow = "0 1px 3px rgba(0,0,0,1), 0 3px 12px rgba(0,0,0,0.9), 0 8px 32px rgba(0,0,0,0.7)";
-            return (
-              <>
-                <h1
-                  className="uppercase text-white mb-1"
-                  style={{
-                    fontFamily: "var(--font-display)",
-                    fontWeight: 400,
-                    fontSize: "clamp(2.6rem, 9vw, 4rem)",
-                    letterSpacing: "0.22em",
-                    lineHeight: 1.05,
-                    textShadow: shadow,
-                  }}
-                >
-                  {main}
-                </h1>
-                {sub && (
-                  <p
-                    className="uppercase text-white/55 mb-2"
-                    style={{
-                      fontFamily: "var(--font-display)",
-                      fontWeight: 300,
-                      fontSize: "clamp(0.65rem, 2.2vw, 0.8rem)",
-                      letterSpacing: "0.45em",
-                      textShadow: "0 1px 8px rgba(0,0,0,0.9)",
-                    }}
-                  >
-                    {sub}
-                  </p>
-                )}
-              </>
-            );
-          })()}
+          {/* Business name */}
+          <h1
+            className="uppercase text-white mb-1"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 400,
+              fontSize: "clamp(2.6rem, 9vw, 4rem)",
+              letterSpacing: "0.22em",
+              lineHeight: 1.05,
+              textShadow: "0 1px 3px rgba(0,0,0,1), 0 3px 12px rgba(0,0,0,0.9), 0 8px 32px rgba(0,0,0,0.7)",
+            }}
+          >
+            {business?.name || "DOMINANT"}
+          </h1>
+          {/* Descriptor — hardcoded, lowercase, קטן */}
+          <p
+            className="text-white/50 mb-2 tracking-[0.4em]"
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 300,
+              fontSize: "0.72rem",
+              textShadow: "0 1px 8px rgba(0,0,0,0.9)",
+            }}
+          >
+            barbershop
+          </p>
 
           {/* CTA */}
           <Link
