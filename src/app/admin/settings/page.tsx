@@ -261,6 +261,22 @@ export default function AdminSettingsPage() {
   const [bizLoading, setBizLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
+
+  async function uploadImage(file: File, field: "logoUrl" | "coverImageUrl") {
+    const setter = field === "logoUrl" ? setUploadingLogo : setUploadingCover;
+    setter(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.url) setField(field, data.url);
+    } finally {
+      setter(false);
+    }
+  }
 
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
@@ -402,20 +418,58 @@ export default function AdminSettingsPage() {
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <h2 className="font-semibold text-neutral-800 mb-4">תמונות ועיצוב</h2>
               <div className="space-y-4">
+                {/* Logo upload */}
                 <div>
-                  <label className="text-xs text-neutral-500 block mb-1">קישור לוגו</label>
+                  <label className="text-xs text-neutral-500 block mb-2">לוגו העסק</label>
                   <div className="flex gap-3 items-center">
-                    <input value={form.logoUrl} onChange={e => setField("logoUrl", e.target.value)} dir="ltr" placeholder="https://..."
-                      className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                    {form.logoUrl && <img src={form.logoUrl} alt="logo" className="w-10 h-10 rounded-full object-cover" />}
+                    {form.logoUrl ? (
+                      <div className="relative group">
+                        <img src={form.logoUrl} alt="logo" className="w-16 h-16 rounded-full object-cover border-2 border-neutral-200" />
+                        <button onClick={() => setField("logoUrl", "")}
+                          className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition">×</button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 rounded-full border-2 border-dashed border-neutral-300 flex items-center justify-center text-neutral-300 text-2xl">🖼️</div>
+                    )}
+                    <div className="flex-1 space-y-1.5">
+                      <label className="cursor-pointer">
+                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingLogo ? "bg-neutral-100 text-neutral-400" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"}`}>
+                          {uploadingLogo ? "מעלה..." : "📁 בחר תמונה"}
+                        </span>
+                        <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, "logoUrl"); e.target.value = ""; }} />
+                      </label>
+                      <input value={form.logoUrl} onChange={e => setField("logoUrl", e.target.value)} dir="ltr"
+                        placeholder="או הדבק קישור..."
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    </div>
                   </div>
                 </div>
+
+                {/* Cover image upload */}
                 <div>
-                  <label className="text-xs text-neutral-500 block mb-1">קישור תמונת רקע</label>
-                  <div className="flex gap-3 items-center">
-                    <input value={form.coverImageUrl} onChange={e => setField("coverImageUrl", e.target.value)} dir="ltr" placeholder="https://..."
-                      className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
-                    {form.coverImageUrl && <img src={form.coverImageUrl} alt="cover" className="w-16 h-10 rounded-lg object-cover" />}
+                  <label className="text-xs text-neutral-500 block mb-2">תמונת רקע (Hero)</label>
+                  <div className="space-y-2">
+                    {form.coverImageUrl && (
+                      <div className="relative group w-full h-28 rounded-xl overflow-hidden border border-neutral-200">
+                        <img src={form.coverImageUrl} alt="cover" className="w-full h-full object-cover" />
+                        <button onClick={() => setField("coverImageUrl", "")}
+                          className="absolute top-2 left-2 px-2 py-1 bg-red-500 text-white rounded-lg text-xs opacity-0 group-hover:opacity-100 transition">הסר</button>
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <label className="cursor-pointer">
+                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingCover ? "bg-neutral-100 text-neutral-400" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"}`}>
+                          {uploadingCover ? "מעלה..." : "📁 בחר תמונה"}
+                        </span>
+                        <input type="file" accept="image/*" className="hidden" disabled={uploadingCover}
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, "coverImageUrl"); e.target.value = ""; }} />
+                      </label>
+                      <input value={form.coverImageUrl} onChange={e => setField("coverImageUrl", e.target.value)} dir="ltr"
+                        placeholder="או הדבק קישור..."
+                        className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    </div>
+                    <p className="text-[11px] text-neutral-400">מומלץ: תמונה רחבה, לפחות 1200×800px</p>
                   </div>
                 </div>
                 <div>

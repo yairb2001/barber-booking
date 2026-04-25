@@ -145,7 +145,7 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
           {/* Progress bar */}
           <div className="absolute top-0 inset-x-0 h-1 bg-white/20 z-10">
             <div
-              className="h-full bg-amber-500 transition-none"
+              className="h-full bg-[var(--brand)] transition-none"
               style={{ width: `${progress}%` }}
             />
           </div>
@@ -251,7 +251,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
             href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
             className="min-w-[108px] bg-white hover:bg-amber-50 transition-colors rounded-2xl p-3 border border-neutral-200 flex-shrink-0 group shadow-sm"
           >
-            <div className="text-amber-500 font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
+            <div className="text-[var(--brand)] font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
             <div className="text-[11px] text-neutral-400 mt-0.5">{slot.dayLabel}</div>
             <div className="text-[11px] text-neutral-500 truncate mt-0.5">{slot.staffName}</div>
           </Link>
@@ -263,7 +263,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
             key={i}
             className={`h-1.5 rounded-full transition-all duration-300 ${
               i === activeIndex % slots.length
-                ? "bg-amber-500 w-4"
+                ? "bg-[var(--brand)] w-4"
                 : "bg-neutral-200 w-1.5"
             }`}
           />
@@ -290,9 +290,9 @@ function PortfolioGallery({ staff }: { staff: Staff[] }) {
   return (
     <div className="mt-16">
       <div className="text-center mb-8 px-6">
-        <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Gallery</p>
+        <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">Gallery</p>
         <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">עבודות נבחרות</h2>
-        <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+        <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
       </div>
       <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
         <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
@@ -383,10 +383,32 @@ export default function HomePage() {
 
   const brandColor = business?.brandColor || "#D4AF37";
 
-  const socialLinks = business?.socialLinks || {};
+  const rawSocial = business?.socialLinks || {};
+
+  // Auto-format social links: accept phone numbers, usernames, or full URLs
+  function toSocialUrl(key: string, val: string): string {
+    if (!val) return "";
+    if (val.startsWith("http")) return val;
+    if (key === "whatsapp") {
+      const digits = val.replace(/\D/g, "");
+      return `https://wa.me/${digits}`;
+    }
+    if (key === "instagram") return `https://instagram.com/${val.replace("@", "")}`;
+    if (key === "facebook")  return `https://facebook.com/${val.replace("@", "")}`;
+    return val;
+  }
+
+  const socialLinks = {
+    whatsapp:  toSocialUrl("whatsapp",  rawSocial.whatsapp  || ""),
+    instagram: toSocialUrl("instagram", rawSocial.instagram || ""),
+    facebook:  toSocialUrl("facebook",  rawSocial.facebook  || ""),
+    waze:      rawSocial.waze || "",
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#faf9f7] text-neutral-900" dir="rtl">
+    <div className="min-h-screen flex flex-col text-neutral-900" dir="rtl"
+      style={{ backgroundColor: business?.bgColor || "#faf9f7" }}>
+    <style>{`:root { --brand: ${brandColor}; }`}</style>
 
       {/* ===== Hero / Cover ===== */}
       <div className="relative h-screen max-h-[680px] min-h-[520px]">
@@ -507,7 +529,7 @@ export default function HomePage() {
         <div className="px-5 py-10">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-1">Available Now</p>
+              <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-1">Available Now</p>
               <h2 className="text-base tracking-[0.2em] font-light uppercase text-neutral-900">תורים פנויים היום</h2>
             </div>
             <div className="w-px h-8 bg-neutral-200" />
@@ -523,9 +545,9 @@ export default function HomePage() {
       {staff.length > 0 && (
         <div className="py-12">
           <div className="text-center mb-8 px-6">
-            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">The Team</p>
+            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">The Team</p>
             <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">הספרים שלנו</h2>
-            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
           </div>
           <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
@@ -547,11 +569,11 @@ export default function HomePage() {
                       <span className="text-4xl font-light text-neutral-300">{member.name[0]}</span>
                     </div>
                   )}
-                  <div className="absolute inset-0 bg-amber-500/0 group-hover:bg-amber-500/5 transition-colors rounded-2xl" />
+                  <div className="absolute inset-0 bg-[var(--brand)]/0 group-hover:bg-[var(--brand)]/5 transition-colors rounded-2xl" />
                 </div>
                 <div className="text-center">
                   <p className="text-xs tracking-[0.2em] uppercase font-light text-neutral-700">{member.name}</p>
-                  <p className="text-[10px] tracking-[0.15em] text-amber-500 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
+                  <p className="text-[10px] tracking-[0.15em] text-[var(--brand)] mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
                 </div>
               </Link>
             ))}
@@ -569,9 +591,9 @@ export default function HomePage() {
       {announcements.length > 0 && (
         <div className="py-12 px-5">
           <div className="text-center mb-8">
-            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Updates</p>
+            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">Updates</p>
             <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">עדכונים</h2>
-            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
           </div>
           <div className="space-y-3">
             {announcements.map((ann) => (
@@ -580,7 +602,7 @@ export default function HomePage() {
                 className="bg-white rounded-2xl border border-neutral-100 p-5 relative shadow-sm overflow-hidden"
               >
                 {ann.isPinned && (
-                  <div className="absolute top-0 right-0 w-1 h-full bg-amber-500 rounded-r-2xl" />
+                  <div className="absolute top-0 right-0 w-1 h-full bg-[var(--brand)] rounded-r-2xl" />
                 )}
                 <h3 className="text-sm tracking-[0.1em] font-light text-neutral-900 mb-2">{ann.title}</h3>
                 {ann.content && (
@@ -598,9 +620,9 @@ export default function HomePage() {
       {products.length > 0 && (
         <div className="py-12">
           <div className="text-center mb-8 px-6">
-            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">Shop</p>
+            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">Shop</p>
             <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">מוצרים</h2>
-            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
           </div>
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
@@ -629,7 +651,7 @@ export default function HomePage() {
                       {product.description}
                     </p>
                   )}
-                  <div className="text-amber-500 text-sm font-light tracking-wider mt-3">
+                  <div className="text-[var(--brand)] text-sm font-light tracking-wider mt-3">
                     ₪{product.price}
                   </div>
                 </div>
@@ -644,9 +666,9 @@ export default function HomePage() {
         <div className="py-12 px-5">
           <div className="h-px bg-neutral-100 mb-12" />
           <div className="text-center mb-6">
-            <p className="text-[10px] tracking-[0.3em] text-amber-500 uppercase mb-2">About</p>
+            <p className="text-[10px] tracking-[0.3em] text-[var(--brand)] uppercase mb-2">About</p>
             <h2 className="text-xl tracking-[0.15em] font-light uppercase text-neutral-900">אודות</h2>
-            <div className="w-8 h-px bg-amber-400 mx-auto mt-4" />
+            <div className="w-8 h-px bg-[var(--brand)] mx-auto mt-4" />
           </div>
           <p className="text-sm text-neutral-500 text-center leading-relaxed max-w-sm mx-auto font-light">
             {business.about}
