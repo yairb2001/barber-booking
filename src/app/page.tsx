@@ -347,7 +347,7 @@ export default function HomePage() {
               fontFamily: "var(--font-display)",
               fontWeight: 400,
               fontSize: "clamp(2.6rem, 9vw, 4rem)",
-              letterSpacing: "0.22em",
+              letterSpacing: "0.10em",
               lineHeight: 1.05,
               textShadow: "0 1px 3px rgba(0,0,0,1), 0 3px 12px rgba(0,0,0,0.9), 0 8px 32px rgba(0,0,0,0.7)",
             }}
@@ -360,7 +360,7 @@ export default function HomePage() {
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 300,
-              fontSize: "0.72rem",
+              fontSize: "0.82rem",
               textShadow: "0 1px 8px rgba(0,0,0,0.9)",
             }}
           >
