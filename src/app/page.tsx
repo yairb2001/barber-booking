@@ -250,7 +250,7 @@ export default function HomePage() {
       <style>{`:root { --brand: ${brandColor}; }`}</style>
 
       {/* ===== Hero ===== */}
-      <div className="relative min-h-screen max-h-[780px]">
+      <div className="relative h-[52vh] min-h-[320px] max-h-[480px]">
 
         {/* Background */}
         {business?.coverImageUrl ? (
@@ -295,7 +295,7 @@ export default function HomePage() {
         </div>
 
         {/* Hero centered content */}
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10 pb-36">
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10 pb-8">
           {/* Logo */}
           <div className="w-32 h-32 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-6 overflow-hidden shadow-lg">
             {business?.logoUrl ? (
@@ -308,7 +308,10 @@ export default function HomePage() {
           </div>
 
           {/* Business name */}
-          <h1 className="text-3xl font-light tracking-[0.3em] uppercase text-white mb-2 drop-shadow-md">
+          <h1
+            className="text-4xl font-bold tracking-[0.12em] uppercase text-white mb-2"
+            style={{ textShadow: "0 2px 24px rgba(0,0,0,0.9), 0 1px 6px rgba(0,0,0,1)" }}
+          >
             {business?.name || "DOMINANT"}
           </h1>
           <p className="text-[11px] tracking-[0.25em] text-white/60 uppercase mb-3">Barbershop</p>
@@ -329,16 +332,16 @@ export default function HomePage() {
           </Link>
         </div>
 
-        {/* Portfolio marquee — bottom of hero */}
-        {!loading && portfolioWorks.length > 0 && (
-          <div className="absolute bottom-16 inset-x-0 z-10">
-            <HeroMarquee works={portfolioWorks} />
-          </div>
-        )}
-
         {/* Bottom fade */}
-        <div className="absolute bottom-0 inset-x-0 h-20 bg-gradient-to-t from-white to-transparent" />
+        <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-white to-transparent" />
       </div>
+
+      {/* ===== Portfolio Marquee — רצועה מתחת ל-hero ===== */}
+      {!loading && portfolioWorks.length > 0 && (
+        <div className="py-4 border-b border-neutral-100 overflow-hidden bg-white">
+          <HeroMarquee works={portfolioWorks} />
+        </div>
+      )}
 
       {/* ===== Stories ===== */}
       {!loading && stories.length > 0 && (
