@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
+import FooterCTA from "@/components/FooterCTA";
 
 // === Types ===
 type Story = { id: string; mediaUrl: string; caption: string | null };
@@ -284,6 +285,7 @@ export default function HomePage() {
         style={{
           transform: scrolled ? "translateY(0)" : "translateY(-100%)",
           opacity: scrolled ? 1 : 0,
+          pointerEvents: scrolled ? "auto" : "none",
           background: "rgba(255,255,255,0.92)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
@@ -382,7 +384,7 @@ export default function HomePage() {
         {/* Hero centered content — pt-12 לדחיפת הלוגו מעט למטה */}
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6 z-10 pt-12 pb-4">
           {/* Logo */}
-          <div className="w-24 h-24 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-5 overflow-hidden shadow-lg">
+          <div className="w-20 h-20 rounded-full border-2 border-white/60 bg-white/20 backdrop-blur-sm flex items-center justify-center mb-4 overflow-hidden shadow-lg">
             {business?.logoUrl ? (
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
             ) : (
@@ -398,7 +400,7 @@ export default function HomePage() {
             style={{
               fontFamily: "var(--font-display)",
               fontWeight: 400,
-              fontSize: "clamp(2.6rem, 9vw, 4rem)",
+              fontSize: "clamp(1.8rem, 7vw, 2.6rem)",
               letterSpacing: "0.10em",
               lineHeight: 1.05,
               textShadow: "0 1px 3px rgba(0,0,0,1), 0 3px 12px rgba(0,0,0,0.9), 0 8px 32px rgba(0,0,0,0.7)",
@@ -535,8 +537,11 @@ export default function HomePage() {
         </div>
       )}
 
+      {/* ===== Footer CTA ===== */}
+      <FooterCTA />
+
       {/* ===== Footer ===== */}
-      <div className="py-10 text-center">
+      <div className="py-6 text-center">
         <p className="text-[10px] tracking-[0.3em] text-neutral-400 uppercase">
           {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
         </p>

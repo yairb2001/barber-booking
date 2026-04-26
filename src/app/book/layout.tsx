@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import FooterCTA from "@/components/FooterCTA";
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
   const [brand, setBrand] = useState("#D4AF37");
@@ -16,6 +17,7 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
     <>
       <style>{`:root { --brand: ${brand}; }`}</style>
       {children}
+      <FooterCTA />
     </>
   );
 }
