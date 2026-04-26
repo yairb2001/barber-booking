@@ -135,7 +135,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
         {displaySlots.map((slot, i) => (
           <Link key={i}
             href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-            className="min-w-[108px] bg-white hover:bg-neutral-50 transition-colors rounded-2xl p-3 border border-neutral-200 flex-shrink-0 shadow-sm">
+            className="min-w-[108px] bg-white hover:bg-neutral-50 transition-colors rounded-2xl p-3 border border-neutral-200/60 flex-shrink-0 shadow-[0_4px_14px_rgba(0,0,0,0.07)]">
             <div className="text-[var(--brand)] font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
             <div className="text-[11px] text-neutral-400 mt-0.5">{slot.dayLabel}</div>
             <div className="text-[11px] text-neutral-500 truncate mt-0.5">{slot.staffName}</div>
@@ -155,7 +155,7 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
 function WorksGallery({ works }: { works: PortfolioWork[] }) {
   if (works.length === 0) return null;
   return (
-    <div className="py-6 border-b border-neutral-100">
+    <div className="py-6 bg-[#F8F6F3]">
       {/* Title + tagline */}
       <div className="px-5 mb-4">
         <div className="flex items-center gap-3 mb-1">
@@ -172,7 +172,7 @@ function WorksGallery({ works }: { works: PortfolioWork[] }) {
         <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
         {works.map((work, i) => (
           <div key={i} className="flex-shrink-0 w-44 snap-start">
-            <div className="aspect-[3/4] rounded-2xl overflow-hidden relative shadow-sm border border-neutral-100">
+            <div className="aspect-[3/4] rounded-2xl overflow-hidden relative shadow-md border border-neutral-200/50">
               <img
                 src={work.imageUrl}
                 alt={work.staffName}
@@ -433,7 +433,7 @@ export default function HomePage() {
         </div>
 
         {/* Bottom fade */}
-        <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-white to-transparent" />
+        <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-[#F8F6F3] to-transparent" />
       </div>
 
       {/* ===== עבודות הספרים ===== */}
@@ -441,14 +441,14 @@ export default function HomePage() {
 
       {/* ===== Stories ===== */}
       {!loading && stories.length > 0 && (
-        <div className="px-1 pt-4 pb-2 border-b border-neutral-100">
+        <div className="px-1 pt-4 pb-2 bg-white">
           <StoriesCarousel stories={stories} />
         </div>
       )}
 
       {/* ===== תורים מהירים ===== */}
       {!loading && quickSlots.length > 0 && (
-        <div className="px-5 py-8 border-b border-neutral-100">
+        <div className="px-5 py-8 bg-[#F8F6F3]">
           <SectionHeader en="Available Now" he="תורים פנויים היום" brandColor={brandColor} />
           <QuickSlotsCarousel slots={quickSlots} />
         </div>
@@ -456,14 +456,14 @@ export default function HomePage() {
 
       {/* ===== צוות הספרים ===== */}
       {staff.length > 0 && (
-        <div className="py-10 border-b border-neutral-100">
+        <div className="py-10 bg-white">
           <SectionHeader en="The Team" he="הספרים שלנו" brandColor={brandColor} />
           <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {staff.map((member) => (
               <Link key={member.id} href={`/book/service?staffId=${member.id}`}
                 className="min-w-[150px] max-w-[150px] flex-shrink-0 group">
-                <div className="aspect-[3/4] bg-neutral-100 rounded-2xl overflow-hidden mb-3 relative shadow-md border border-neutral-100">
+                <div className="aspect-[3/4] bg-neutral-100 rounded-2xl overflow-hidden mb-3 relative shadow-[0_4px_16px_rgba(0,0,0,0.10)] border border-neutral-200/60">
                   {member.avatarUrl ? (
                     <img src={member.avatarUrl} alt={member.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -486,11 +486,11 @@ export default function HomePage() {
 
       {/* ===== עדכונים ===== */}
       {announcements.length > 0 && (
-        <div className="py-10 px-5 border-b border-neutral-100">
+        <div className="py-10 px-5 bg-[#F8F6F3]">
           <SectionHeader en="Updates" he="עדכונים" brandColor={brandColor} />
           <div className="space-y-3">
             {announcements.map((ann) => (
-              <div key={ann.id} className="bg-neutral-50 rounded-2xl border border-neutral-100 p-4 relative overflow-hidden">
+              <div key={ann.id} className="bg-white rounded-2xl border border-neutral-200/60 p-4 relative overflow-hidden shadow-sm">
                 {ann.isPinned && (
                   <div className="absolute top-0 right-0 w-1 h-full rounded-r-2xl" style={{ backgroundColor: brandColor }} />
                 )}
@@ -504,13 +504,13 @@ export default function HomePage() {
 
       {/* ===== מוצרים ===== */}
       {products.length > 0 && (
-        <div className="py-10 border-b border-neutral-100">
+        <div className="py-10 bg-white">
           <SectionHeader en="Shop" he="מוצרים" brandColor={brandColor} />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {products.map((product) => (
               <div key={product.id}
-                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-100 overflow-hidden flex-shrink-0 shadow-sm">
+                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-200/60 overflow-hidden flex-shrink-0 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
                 <div className="h-36 bg-neutral-50 flex items-center justify-center overflow-hidden rounded-t-2xl">
                   {product.imageUrl ? (
                     <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
@@ -531,7 +531,7 @@ export default function HomePage() {
 
       {/* ===== אודות ===== */}
       {business?.about && (
-        <div className="py-10 px-5 border-b border-neutral-100">
+        <div className="py-10 px-5 bg-[#F8F6F3]">
           <SectionHeader en="About" he="אודות" brandColor={brandColor} />
           <p className="text-sm text-neutral-600 leading-relaxed">{business.about}</p>
         </div>
