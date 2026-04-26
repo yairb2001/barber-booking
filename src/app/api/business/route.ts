@@ -17,6 +17,7 @@ export async function GET() {
       address: true,
       about: true,
       socialLinks: true,
+      settings: true,
       bookingHorizonDays: true,
     },
   });
@@ -30,5 +31,14 @@ export async function GET() {
     ? JSON.parse(business.socialLinks)
     : {};
 
-  return NextResponse.json({ ...business, socialLinks });
+  // Parse theme from settings JSON (default: "light")
+  let theme = "light";
+  try {
+    if (business.settings) {
+      const s = JSON.parse(business.settings);
+      if (s.theme) theme = s.theme;
+    }
+  } catch { /* ignore */ }
+
+  return NextResponse.json({ ...business, settings: undefined, socialLinks, theme });
 }

@@ -286,6 +286,23 @@ export default function AdminSettingsPage() {
     }
   }
 
+  // Theme
+  const [theme, setTheme] = useState("light");
+  const [themeSaving, setThemeSaving] = useState(false);
+
+  async function saveTheme(t: string) {
+    setThemeSaving(true);
+    setTheme(t);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...currentSettings, theme: t } }),
+    });
+    setThemeSaving(false);
+  }
+
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
@@ -322,6 +339,8 @@ export default function AdminSettingsPage() {
           reengageWeeks:       data.reengageWeeks       ?? 6,
           reengageTemplate:    data.reengageTemplate    || "",
         });
+        const settingsObj = data.settings || {};
+        setTheme(settingsObj.theme || "light");
       }
       setBizLoading(false);
     });
@@ -527,6 +546,49 @@ export default function AdminSettingsPage() {
                     <div className="mr-auto px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: form.brandColor, color: form.secondaryColor }}>
                       CTA
                     </div>
+                  </div>
+                </div>
+
+                {/* ── Theme picker ── */}
+                <div className="col-span-2 pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs text-neutral-500 font-medium">עיצוב ממשק הלקוחות</label>
+                    {themeSaving && <span className="text-[11px] text-amber-600">שומר...</span>}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: "light", label: "בהיר", sub: "לבן + קרם", bg: "#ffffff", alt: "#F8F6F3", card: "#ffffff", text: "#171717" },
+                      { id: "dark",  label: "כהה",  sub: "אלגנטי", bg: "#0D0D0D", alt: "#161616", card: "#1E1E1E", text: "#F0F0F0" },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => saveTheme(opt.id)}
+                        className={`relative rounded-xl overflow-hidden border-2 transition-all text-right ${
+                          theme === opt.id ? "border-amber-500 shadow-md" : "border-neutral-200 hover:border-neutral-300"
+                        }`}
+                      >
+                        {/* Mini preview */}
+                        <div className="p-3" style={{ background: opt.bg }}>
+                          <div className="h-2 rounded mb-1.5" style={{ background: opt.alt, width: "70%" }} />
+                          <div className="flex gap-1">
+                            {[1,2,3].map(i => (
+                              <div key={i} className="flex-1 rounded" style={{ height: 28, background: opt.card, border: `1px solid ${opt.id === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}` }} />
+                            ))}
+                          </div>
+                        </div>
+                        {/* Label */}
+                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: opt.bg, borderTop: `1px solid ${opt.id === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"}` }}>
+                          <span className="text-xs font-semibold" style={{ color: opt.text }}>{opt.label}</span>
+                          <span className="text-[10px]" style={{ color: opt.id === "dark" ? "#71717a" : "#a3a3a3" }}>{opt.sub}</span>
+                        </div>
+                        {/* Selected checkmark */}
+                        {theme === opt.id && (
+                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
+                            <span className="text-white text-[10px]">✓</span>
+                          </div>
+                        )}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>

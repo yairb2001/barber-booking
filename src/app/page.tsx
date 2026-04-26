@@ -26,6 +26,7 @@ type BusinessInfo = {
   name: string; logoUrl: string | null; coverImageUrl: string | null;
   brandColor: string | null; bgColor: string | null;
   phone: string | null; address: string | null; about: string | null;
+  theme: string | null;
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string; waze?: string };
 };
 
@@ -135,16 +136,18 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
         {displaySlots.map((slot, i) => (
           <Link key={i}
             href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-            className="min-w-[108px] bg-white hover:bg-neutral-50 transition-colors rounded-2xl p-3 border border-neutral-200/60 flex-shrink-0 shadow-[0_4px_14px_rgba(0,0,0,0.07)]">
+            className="min-w-[108px] transition-opacity hover:opacity-80 rounded-2xl p-3 flex-shrink-0"
+            style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 4px 14px var(--divider)" }}>
             <div className="text-[var(--brand)] font-light text-base tracking-widest" dir="ltr">{slot.time}</div>
-            <div className="text-[11px] text-neutral-400 mt-0.5">{slot.dayLabel}</div>
-            <div className="text-[11px] text-neutral-500 truncate mt-0.5">{slot.staffName}</div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{slot.dayLabel}</div>
+            <div className="text-[11px] truncate mt-0.5" style={{ color: "var(--text-sec)" }}>{slot.staffName}</div>
           </Link>
         ))}
       </div>
       <div className="flex justify-center gap-1.5 mt-3">
         {slots.map((_, i) => (
-          <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === activeIndex % slots.length ? "bg-[var(--brand)] w-4" : "bg-neutral-200 w-1.5"}`} />
+          <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === activeIndex % slots.length ? "w-4" : "w-1.5"}`}
+            style={{ background: i === activeIndex % slots.length ? "var(--brand)" : "var(--divider)" }} />
         ))}
       </div>
     </div>
@@ -155,14 +158,14 @@ function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
 function WorksGallery({ works }: { works: PortfolioWork[] }) {
   if (works.length === 0) return null;
   return (
-    <div className="py-6 bg-[#F8F6F3]">
+    <div className="py-6" style={{ background: "var(--bg-alt)" }}>
       {/* Title + tagline */}
       <div className="px-5 mb-4">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-1 h-6 rounded-full flex-shrink-0 bg-[var(--brand)]" />
-          <p className="text-sm font-medium tracking-[0.1em] text-neutral-800">מהעבודות שלנו</p>
+          <p className="text-sm font-medium tracking-[0.1em]" style={{ color: "var(--text-pri)" }}>מהעבודות שלנו</p>
         </div>
-        <p className="text-xs text-neutral-400 tracking-wider mr-4">בחר סגנון שאהבת וקבע תור</p>
+        <p className="text-xs tracking-wider mr-4" style={{ color: "var(--text-muted)" }}>בחר סגנון שאהבת וקבע תור</p>
       </div>
       {/* Swipeable cards */}
       <div
@@ -207,7 +210,7 @@ function SectionHeader({ en, he, brandColor }: { en: string; he: string; brandCo
       <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ backgroundColor: brandColor }} />
       <div>
         <p className="text-[10px] tracking-[0.25em] text-[var(--brand)] uppercase">{en}</p>
-        <h2 className="text-sm tracking-[0.15em] font-medium text-neutral-800">{he}</h2>
+        <h2 className="text-sm tracking-[0.15em] font-medium" style={{ color: "var(--text-pri)" }}>{he}</h2>
       </div>
     </div>
   );
@@ -252,6 +255,26 @@ export default function HomePage() {
   }, []);
 
   const brandColor = business?.brandColor || "#D4AF37";
+  const isDark = business?.theme === "dark";
+  const T = isDark ? {
+    bg:        "#0D0D0D",
+    bgAlt:     "#161616",
+    card:      "#1E1E1E",
+    textPri:   "#F0F0F0",
+    textSec:   "#A1A1AA",
+    textMuted: "#71717A",
+    divider:   "rgba(255,255,255,0.07)",
+    headerBg:  "rgba(13,13,13,0.92)",
+  } : {
+    bg:        "#ffffff",
+    bgAlt:     "#F8F6F3",
+    card:      "#ffffff",
+    textPri:   "#171717",
+    textSec:   "#525252",
+    textMuted: "#a3a3a3",
+    divider:   "rgba(0,0,0,0.06)",
+    headerBg:  "rgba(255,255,255,0.92)",
+  };
 
   // Portfolio works for marquee
   const portfolioWorks: PortfolioWork[] = staff
@@ -276,8 +299,19 @@ export default function HomePage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col text-neutral-900 bg-white" dir="rtl">
-      <style>{`:root { --brand: ${brandColor}; }`}</style>
+    <div className="min-h-screen flex flex-col" dir="rtl"
+      style={{ background: "var(--bg)", color: "var(--text-pri)" }}>
+      <style>{`:root {
+        --brand: ${brandColor};
+        --bg: ${T.bg};
+        --bg-alt: ${T.bgAlt};
+        --card: ${T.card};
+        --text-pri: ${T.textPri};
+        --text-sec: ${T.textSec};
+        --text-muted: ${T.textMuted};
+        --divider: ${T.divider};
+        --header-bg: ${T.headerBg};
+      }`}</style>
 
       {/* ===== Sticky Header (מופיע בגלילה) ===== */}
       <div
@@ -286,10 +320,10 @@ export default function HomePage() {
           transform: scrolled ? "translateY(0)" : "translateY(-100%)",
           opacity: scrolled ? 1 : 0,
           pointerEvents: scrolled ? "auto" : "none",
-          background: "rgba(255,255,255,0.92)",
+          background: "var(--header-bg)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
-          borderBottom: "1px solid rgba(0,0,0,0.07)",
+          borderBottom: "1px solid var(--divider)",
         }}
       >
         <div className="flex items-center gap-3 px-4 py-2.5">
@@ -302,8 +336,9 @@ export default function HomePage() {
           {/* שם */}
           <div className="flex-1 min-w-0">
             <p
-              className="uppercase text-neutral-900 leading-none"
+              className="uppercase leading-none"
               style={{
+                color: "var(--text-pri)",
                 fontFamily: "var(--font-display)",
                 fontWeight: 400,
                 fontSize: "1.15rem",
@@ -312,7 +347,7 @@ export default function HomePage() {
             >
               {business?.name || "DOMINANT"}
             </p>
-            <p className="text-[10px] text-neutral-400 tracking-[0.3em] mt-0.5">barbershop</p>
+            <p className="text-[10px] tracking-[0.3em] mt-0.5" style={{ color: "var(--text-muted)" }}>barbershop</p>
           </div>
           {/* כפתור קביעת תור */}
           <Link
@@ -433,7 +468,8 @@ export default function HomePage() {
         </div>
 
         {/* Bottom fade */}
-        <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-[#F8F6F3] to-transparent" />
+        <div className="absolute bottom-0 inset-x-0 h-16 pointer-events-none"
+          style={{ background: "linear-gradient(to top, var(--bg-alt), transparent)" }} />
       </div>
 
       {/* ===== עבודות הספרים ===== */}
@@ -441,14 +477,14 @@ export default function HomePage() {
 
       {/* ===== Stories ===== */}
       {!loading && stories.length > 0 && (
-        <div className="px-1 pt-4 pb-2 bg-white">
+        <div className="px-1 pt-4 pb-2" style={{ background: "var(--bg)" }}>
           <StoriesCarousel stories={stories} />
         </div>
       )}
 
       {/* ===== תורים מהירים ===== */}
       {!loading && quickSlots.length > 0 && (
-        <div className="px-5 py-8 bg-[#F8F6F3]">
+        <div className="px-5 py-8" style={{ background: "var(--bg-alt)" }}>
           <SectionHeader en="Available Now" he="תורים פנויים היום" brandColor={brandColor} />
           <QuickSlotsCarousel slots={quickSlots} />
         </div>
@@ -456,14 +492,15 @@ export default function HomePage() {
 
       {/* ===== צוות הספרים ===== */}
       {staff.length > 0 && (
-        <div className="py-10 bg-white">
+        <div className="py-10" style={{ background: "var(--bg)" }}>
           <SectionHeader en="The Team" he="הספרים שלנו" brandColor={brandColor} />
           <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {staff.map((member) => (
               <Link key={member.id} href={`/book/service?staffId=${member.id}`}
                 className="min-w-[150px] max-w-[150px] flex-shrink-0 group">
-                <div className="aspect-[3/4] bg-neutral-100 rounded-2xl overflow-hidden mb-3 relative shadow-[0_4px_16px_rgba(0,0,0,0.10)] border border-neutral-200/60">
+                <div className="aspect-[3/4] rounded-2xl overflow-hidden mb-3 relative shadow-[0_4px_16px_rgba(0,0,0,0.15)]"
+                  style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
                   {member.avatarUrl ? (
                     <img src={member.avatarUrl} alt={member.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -475,7 +512,7 @@ export default function HomePage() {
                   <div className="absolute inset-0 bg-[var(--brand)]/0 group-hover:bg-[var(--brand)]/8 transition-colors rounded-2xl" />
                 </div>
                 <div className="text-center">
-                  <p className="text-xs tracking-[0.15em] font-medium text-neutral-700">{member.name}</p>
+                  <p className="text-xs tracking-[0.15em] font-medium" style={{ color: "var(--text-sec)" }}>{member.name}</p>
                   <p className="text-[10px] text-[var(--brand)] mt-1 opacity-0 group-hover:opacity-100 transition-opacity">בחירה →</p>
                 </div>
               </Link>
@@ -486,16 +523,17 @@ export default function HomePage() {
 
       {/* ===== עדכונים ===== */}
       {announcements.length > 0 && (
-        <div className="py-10 px-5 bg-[#F8F6F3]">
+        <div className="py-10 px-5" style={{ background: "var(--bg-alt)" }}>
           <SectionHeader en="Updates" he="עדכונים" brandColor={brandColor} />
           <div className="space-y-3">
             {announcements.map((ann) => (
-              <div key={ann.id} className="bg-white rounded-2xl border border-neutral-200/60 p-4 relative overflow-hidden shadow-sm">
+              <div key={ann.id} className="rounded-2xl p-4 relative overflow-hidden shadow-sm"
+                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
                 {ann.isPinned && (
                   <div className="absolute top-0 right-0 w-1 h-full rounded-r-2xl" style={{ backgroundColor: brandColor }} />
                 )}
-                <h3 className="text-sm font-medium text-neutral-800 mb-1.5 pr-3">{ann.title}</h3>
-                {ann.content && <p className="text-xs text-neutral-500 leading-relaxed">{ann.content}</p>}
+                <h3 className="text-sm font-medium mb-1.5 pr-3" style={{ color: "var(--text-pri)" }}>{ann.title}</h3>
+                {ann.content && <p className="text-xs leading-relaxed" style={{ color: "var(--text-sec)" }}>{ann.content}</p>}
               </div>
             ))}
           </div>
@@ -504,14 +542,15 @@ export default function HomePage() {
 
       {/* ===== מוצרים ===== */}
       {products.length > 0 && (
-        <div className="py-10 bg-white">
+        <div className="py-10" style={{ background: "var(--bg)" }}>
           <SectionHeader en="Shop" he="מוצרים" brandColor={brandColor} />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
             <style jsx>{`div::-webkit-scrollbar { display: none; }`}</style>
             {products.map((product) => (
               <div key={product.id}
-                className="min-w-[150px] max-w-[160px] bg-white rounded-2xl border border-neutral-200/60 overflow-hidden flex-shrink-0 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                <div className="h-36 bg-neutral-50 flex items-center justify-center overflow-hidden rounded-t-2xl">
+                className="min-w-[150px] max-w-[160px] rounded-2xl overflow-hidden flex-shrink-0 shadow-[0_4px_16px_rgba(0,0,0,0.12)]"
+                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
+                <div className="h-36 flex items-center justify-center overflow-hidden rounded-t-2xl" style={{ background: "var(--bg-alt)" }}>
                   {product.imageUrl ? (
                     <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
                   ) : (
@@ -519,8 +558,8 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="p-3">
-                  <h3 className="text-xs font-medium text-neutral-800">{product.name}</h3>
-                  {product.description && <p className="text-[10px] text-neutral-400 mt-1 line-clamp-2 leading-relaxed">{product.description}</p>}
+                  <h3 className="text-xs font-medium" style={{ color: "var(--text-pri)" }}>{product.name}</h3>
+                  {product.description && <p className="text-[10px] mt-1 line-clamp-2 leading-relaxed" style={{ color: "var(--text-muted)" }}>{product.description}</p>}
                   <div className="text-[var(--brand)] text-sm font-medium mt-2">₪{product.price}</div>
                 </div>
               </div>
@@ -531,9 +570,9 @@ export default function HomePage() {
 
       {/* ===== אודות ===== */}
       {business?.about && (
-        <div className="py-10 px-5 bg-[#F8F6F3]">
+        <div className="py-10 px-5" style={{ background: "var(--bg-alt)" }}>
           <SectionHeader en="About" he="אודות" brandColor={brandColor} />
-          <p className="text-sm text-neutral-600 leading-relaxed">{business.about}</p>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--text-sec)" }}>{business.about}</p>
         </div>
       )}
 
@@ -542,7 +581,7 @@ export default function HomePage() {
 
       {/* ===== Footer ===== */}
       <div className="py-6 text-center">
-        <p className="text-[10px] tracking-[0.3em] text-neutral-400 uppercase">
+        <p className="text-[10px] tracking-[0.3em] uppercase" style={{ color: "var(--text-muted)" }}>
           {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
         </p>
       </div>
