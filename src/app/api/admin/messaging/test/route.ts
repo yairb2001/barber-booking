@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
+import { requireOwner } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const { phone, text } = await req.json();
   if (!phone) {
     return NextResponse.json({ error: "missing phone" }, { status: 400 });

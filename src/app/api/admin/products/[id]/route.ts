@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const body = await req.json();
   const item = await prisma.product.update({
     where: { id: params.id },
@@ -17,7 +20,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json(item);
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   await prisma.product.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
 }

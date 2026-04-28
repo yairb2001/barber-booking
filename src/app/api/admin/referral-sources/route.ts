@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 const DEFAULT_SOURCES = [
   "אינסטגרם", "פייסבוק", "טיקטוק", "גוגל", "חבר הביא חבר", "הגעתי מהרחוב", "אחר",
@@ -14,13 +15,17 @@ function getSources(settings: string | null): string[] {
 }
 
 // GET — return current list
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const biz = await prisma.business.findFirst({ select: { settings: true } });
   return NextResponse.json(getSources(biz?.settings ?? null));
 }
 
 // PUT — overwrite the full list
 export async function PUT(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const body = await req.json();
   if (!Array.isArray(body)) {
     return NextResponse.json({ error: "expected array" }, { status: 400 });

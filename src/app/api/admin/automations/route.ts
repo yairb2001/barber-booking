@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,9 @@ async function getBizId(): Promise<string | null> {
 }
 
 // GET — list all automations for this business
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const bizId = await getBizId();
   if (!bizId) return NextResponse.json([]);
   const automations = await prisma.automation.findMany({
@@ -21,6 +24,8 @@ export async function GET() {
 
 // POST — create an automation
 export async function POST(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const bizId = await getBizId();
   if (!bizId) return NextResponse.json({ error: "No business" }, { status: 500 });
 

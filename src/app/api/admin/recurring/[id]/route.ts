@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRequestSession } from "@/lib/session";
 
 // ── GET — rule + upcoming generated appointments ────────────────────────────
 export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
@@ -13,6 +14,13 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     },
   });
   if (!rule) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Staff scoping: barbers can only view their own rules
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId && rule.staffId !== session.staffId) {
+    return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
+  }
+
   return NextResponse.json(rule);
 }
 
@@ -26,6 +34,12 @@ export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) 
 
   const rule = await prisma.recurringAppointment.findUnique({ where: { id: ctx.params.id } });
   if (!rule) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Staff scoping: barbers can only delete their own rules
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId && rule.staffId !== session.staffId) {
+    return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
+  }
 
   const today = new Date();
   const todayUTC = new Date(today.toISOString().split("T")[0] + "T00:00:00.000Z");

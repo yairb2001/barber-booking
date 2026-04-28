@@ -1,9 +1,12 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const biz = await prisma.business.findFirst({ select: { name: true } });
   const today = new Date().toLocaleDateString("he-IL", {
     weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Jerusalem",

@@ -17,6 +17,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRequestSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -33,12 +34,18 @@ export async function GET(req: NextRequest) {
   const staffId          = searchParams.get("staffId") || null;
   const returnWindowDays = Math.min(Math.max(parseInt(searchParams.get("returnWindowDays") ?? "90", 10), 7), 365);
 
+  // Staff scoping: barbers only see analytics for their own data
+  const session = getRequestSession(req);
+  const effectiveStaffId = (session && !session.isOwner && session.staffId)
+    ? session.staffId
+    : staffId;
+
   if (!fromStr || !toStr)
     return NextResponse.json({ error: "missing from/to" }, { status: 400 });
 
   const fromDate = new Date(fromStr + "T00:00:00.000Z");
   const toDate   = new Date(toStr   + "T23:59:59.999Z");
-  const sf       = staffId ? { staffId } : {};
+  const sf       = effectiveStaffId ? { staffId: effectiveStaffId } : {};
   const cancelledArr = Array.from(CANCELLED);
 
   // Previous calendar month (relative to [from])
@@ -216,7 +223,7 @@ export async function GET(req: NextRequest) {
   type StaffRow = { staffId: string; name: string; revenue: number; appointments: number; newCustomers: number; secondVisit: number };
   const staffSummary: StaffRow[] = [];
 
-  if (!staffId) {
+  if (!effectiveStaffId) {
     const bySt = new Map<string, { name: string; appts: typeof activeAppts }>();
     for (const a of activeAppts) {
       const v = bySt.get(a.staffId) ?? { name: a.staff.name, appts: [] };

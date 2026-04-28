@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForDayOpen } from "@/lib/waitlist-notify";
+import { requireOwnStaffOrOwner } from "@/lib/session";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = requireOwnStaffOrOwner(req, params.id);
+  if (guard) return guard;
+
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
   if (!dateParam) return NextResponse.json(null);
@@ -15,6 +19,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = requireOwnStaffOrOwner(req, params.id);
+  if (guard) return guard;
+
   const body = await req.json();
   const dateStr = body.date.split("T")[0] + "T00:00:00.000Z"; // always UTC midnight
   const date = new Date(dateStr);

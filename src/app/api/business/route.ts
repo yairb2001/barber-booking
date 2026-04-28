@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { resolveTheme } from "@/lib/themes";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,6 @@ export async function GET() {
       slug: true,
       logoUrl: true,
       coverImageUrl: true,
-      brandColor: true,
-      bgColor: true,
       phone: true,
       address: true,
       about: true,
@@ -31,14 +30,17 @@ export async function GET() {
     ? JSON.parse(business.socialLinks)
     : {};
 
-  // Parse theme from settings JSON (default: "light")
-  let theme = "light";
-  try {
-    if (business.settings) {
-      const s = JSON.parse(business.settings);
-      if (s.theme) theme = s.theme;
-    }
-  } catch { /* ignore */ }
+  // Resolve full theme palette from settings
+  const theme = resolveTheme(business.settings);
 
-  return NextResponse.json({ ...business, settings: undefined, socialLinks, theme });
+  return NextResponse.json({
+    ...business,
+    settings: undefined, // strip raw settings — theme is exposed instead
+    socialLinks,
+    theme,         // full palette object: bg, brand, fontDisplay, etc.
+    themeId: theme.id,
+    // Backward compat: legacy fields still expected by some consumers
+    brandColor: theme.brand,
+    bgColor: theme.bg,
+  });
 }

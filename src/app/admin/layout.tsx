@@ -2,34 +2,56 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const navItems = [
+type NavItem = { href: string; label: string; icon: string; exact?: boolean; ownerOnly?: boolean };
+
+// Full menu — `ownerOnly: true` items are hidden from barbers
+const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
-  { href: "/admin/staff",        label: "ספרים",          icon: "✂️" },
-  { href: "/admin/services",     label: "שירותים",        icon: "💈" },
+  { href: "/admin/staff",        label: "ספרים",          icon: "✂️" },                    // barber sees only themselves (filtered by API)
+  { href: "/admin/services",     label: "שירותים",        icon: "💈", ownerOnly: true },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
-  { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
-  { href: "/admin/stories",      label: "סטוריז",         icon: "🎬" },
-  { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖" },
-  { href: "/admin/announcements",label: "עדכונים",        icon: "📌" },
-  { href: "/admin/products",     label: "מוצרים",         icon: "🛍️" },
-  { href: "/admin/settings",     label: "הגדרות",         icon: "⚙️" },
+  { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢", ownerOnly: true },
+  { href: "/admin/stories",      label: "סטוריז",         icon: "🎬", ownerOnly: true },
+  { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
+  { href: "/admin/announcements",label: "עדכונים",        icon: "📌", ownerOnly: true },
+  { href: "/admin/products",     label: "מוצרים",         icon: "🛍️", ownerOnly: true },
+  { href: "/admin/settings",     label: "הגדרות",         icon: "⚙️", ownerOnly: true },
   { href: "/admin/preview",      label: "תצוגת לקוח",    icon: "👁️" },
 ];
 
-// Bottom nav — 4 key items shown directly, rest via "more" drawer
-const bottomNav = [
+// Bottom nav (mobile)
+const bottomNavOwner: NavItem[] = [
   { href: "/admin",           label: "יומן",     icon: "📅", exact: true },
   { href: "/admin/dashboard", label: "דאשבורד",  icon: "📊" },
   { href: "/admin/customers", label: "לקוחות",   icon: "👥" },
   { href: "/admin/settings",  label: "הגדרות",   icon: "⚙️" },
 ];
+const bottomNavBarber: NavItem[] = [
+  { href: "/admin",           label: "יומן",     icon: "📅", exact: true },
+  { href: "/admin/dashboard", label: "דאשבורד",  icon: "📊" },
+  { href: "/admin/customers", label: "לקוחות",   icon: "👥" },
+  { href: "/admin/staff",     label: "הפרופיל",  icon: "👤" },
+];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null } | null>(null);
+
+  useEffect(() => {
+    if (pathname === "/admin/login") return;
+    fetch("/api/admin/me")
+      .then(r => r.ok ? r.json() : null)
+      .then(setMe)
+      .catch(() => setMe(null));
+  }, [pathname]);
+
+  const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
+  const visibleNav = navItems.filter(item => isOwner || !item.ownerOnly);
+  const bottomNav = isOwner ? bottomNavOwner : bottomNavBarber;
 
   if (pathname === "/admin/login") {
     return <div className="min-h-screen bg-neutral-950 text-white" dir="rtl">{children}</div>;
@@ -43,7 +65,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isActive = (item: { href: string; exact?: boolean }) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
 
-  const currentLabel = navItems.find(isActive)?.label ?? "ניהול";
+  const currentLabel = visibleNav.find(isActive)?.label ?? "ניהול";
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-neutral-100 text-neutral-900" dir="rtl">
@@ -66,7 +88,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="px-4 py-4 border-b border-neutral-800 flex items-center justify-between">
           <div>
             <div className="text-amber-400 font-bold text-base">DOMINANT</div>
-            <div className="text-neutral-500 text-xs">ניהול מספרה</div>
+            <div className="text-neutral-500 text-xs">
+              {me ? (isOwner ? "מנהל ראשי" : `שלום ${me.staff?.name || "ספר"}`) : "ניהול מספרה"}
+            </div>
           </div>
           <button
             onClick={() => setDrawerOpen(false)}
@@ -78,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
-          {navItems.map((item) => (
+          {visibleNav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,8 @@ async function getOrCreateConfig(bizId: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const biz = await prisma.business.findFirst({ select: { id: true } });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
@@ -36,6 +39,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const biz = await prisma.business.findFirst({ select: { id: true } });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
@@ -56,6 +61,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { timeToMinutes } from "@/lib/utils";
+import { getRequestSession } from "@/lib/session";
 
 // ── GET — list recurring rules (optionally for a customer) ────────────────────
 export async function GET(req: NextRequest) {
@@ -8,11 +9,18 @@ export async function GET(req: NextRequest) {
   const customerId = searchParams.get("customerId");
   const activeOnly = searchParams.get("active") !== "false";
 
+  // Staff scoping: barbers only see their own recurring rules
+  const session = getRequestSession(req);
+  const where: Record<string, unknown> = {
+    ...(customerId ? { customerId } : {}),
+    ...(activeOnly ? { active: true } : {}),
+  };
+  if (session && !session.isOwner && session.staffId) {
+    where.staffId = session.staffId;
+  }
+
   const rules = await prisma.recurringAppointment.findMany({
-    where: {
-      ...(customerId ? { customerId } : {}),
-      ...(activeOnly ? { active: true } : {}),
-    },
+    where,
     include: { customer: true, staff: true, service: true },
     orderBy: { createdAt: "desc" },
   });
@@ -32,6 +40,12 @@ export async function GET(req: NextRequest) {
 // }
 export async function POST(req: NextRequest) {
   const body = await req.json();
+
+  // Staff scoping: barbers can only create rules for themselves
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId) {
+    body.staffId = session.staffId;
+  }
 
   const business = await prisma.business.findFirst();
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwnStaffOrOwner } from "@/lib/session";
 
 // Save full weekly schedule for a staff member
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = requireOwnStaffOrOwner(req, params.id);
+  if (guard) return guard;
+
   const days: { dayOfWeek: number; isWorking: boolean; start: string; end: string; breakStart?: string; breakEnd?: string }[] =
     await req.json();
 

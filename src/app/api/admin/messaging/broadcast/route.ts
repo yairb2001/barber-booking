@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, applyTemplate } from "@/lib/messaging";
+import { requireOwner } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
 async function fetchFilteredCustomers(business: { id: string }, qs: string) {
@@ -83,6 +84,8 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
 
 // POST /api/admin/messaging/broadcast
 export async function POST(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const body = await req.json();
   const { message, filterQuery, filter = "all", filterValue } = body;
 
@@ -126,7 +129,9 @@ export async function POST(req: NextRequest) {
 }
 
 // GET /api/admin/messaging/broadcast — broadcast history
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const business = await prisma.business.findFirst();
   if (!business) return NextResponse.json([]);
 

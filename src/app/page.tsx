@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
+import { THEMES, type Theme } from "@/lib/themes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = { id: string; mediaUrl: string; caption: string | null };
@@ -21,7 +22,7 @@ type BusinessInfo = {
   name: string; logoUrl: string | null; coverImageUrl: string | null;
   brandColor: string | null; bgColor: string | null;
   phone: string | null; address: string | null; about: string | null;
-  theme: string | null;
+  theme: Theme; // full palette object from API
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string; waze?: string };
 };
 type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null };
@@ -213,17 +214,10 @@ export default function HomePage() {
     }).catch(() => setLoading(false));
   }, []);
 
-  const brandColor = business?.brandColor || "#C9A84C";
-  const isDark = business?.theme === "dark";
-  const T = isDark ? {
-    bg: "#080808", bgAlt: "#111111", card: "#1A1A1A",
-    textPri: "#F2EDE4", textSec: "#9E9994", textMuted: "#5C5650",
-    divider: "rgba(255,255,255,0.07)", headerBg: "rgba(8,8,8,0.92)",
-  } : {
-    bg: "#FAFAF8", bgAlt: "#F3F0EB", card: "#FFFFFF",
-    textPri: "#1A1713", textSec: "#756E65", textMuted: "#A8A29B",
-    divider: "rgba(0,0,0,0.07)", headerBg: "rgba(250,250,248,0.92)",
-  };
+  // Full theme palette comes from /api/business — fallback to default if API hasn't responded yet
+  const T: Theme = business?.theme || THEMES.onyx;
+  const brandColor = T.brand;
+  const isDark = T.isDark;
 
   // Social links
   const rawSocial = business?.socialLinks || {};
@@ -248,16 +242,20 @@ export default function HomePage() {
 
   const cssVars = `
     :root {
-      --brand:      ${brandColor};
-      --bg:         ${T.bg};
-      --bg-alt:     ${T.bgAlt};
-      --card:       ${T.card};
-      --text-pri:   ${T.textPri};
-      --text-sec:   ${T.textSec};
-      --text-muted: ${T.textMuted};
-      --divider:    ${T.divider};
-      --header-bg:  ${T.headerBg};
+      --brand:        ${T.brand};
+      --brand-soft:   ${T.brandSoft};
+      --bg:           ${T.bg};
+      --bg-alt:       ${T.bgAlt};
+      --card:         ${T.card};
+      --text-pri:     ${T.textPri};
+      --text-sec:     ${T.textSec};
+      --text-muted:   ${T.textMuted};
+      --divider:      ${T.divider};
+      --header-bg:    ${T.headerBg};
+      --font-display: ${T.fontDisplay};
+      --font-body:    ${T.fontBody};
     }
+    body { font-family: var(--font-body); }
   `;
 
   return (

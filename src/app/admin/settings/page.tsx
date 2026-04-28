@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -286,21 +287,50 @@ export default function AdminSettingsPage() {
     }
   }
 
-  // Theme
-  const [theme, setTheme] = useState("light");
+  // Theme preset (curated 4-pack — admin picks one, all colors+font come together)
+  const [themeId, setThemeId] = useState<ThemeId>(DEFAULT_THEME);
   const [themeSaving, setThemeSaving] = useState(false);
 
-  async function saveTheme(t: string) {
+  async function saveTheme(t: ThemeId) {
     setThemeSaving(true);
-    setTheme(t);
+    setThemeId(t);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    // Save the new themePreset; also mirror brand/bg/text colors to legacy fields for backward compat
+    const palette = THEMES[t];
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: { ...currentSettings, themePreset: t },
+        brandColor: palette.brand,
+        bgColor: palette.bg,
+        textColor: palette.textPri,
+      }),
+    });
+    setThemeSaving(false);
+  }
+
+  // Owner login phone (separate from public business phone — used to log in as owner)
+  const [ownerLoginPhone, setOwnerLoginPhone] = useState("");
+  const [ownerPhoneSaving, setOwnerPhoneSaving] = useState(false);
+  const [ownerPhoneSaved, setOwnerPhoneSaved] = useState(false);
+
+  async function saveOwnerLoginPhone() {
+    setOwnerPhoneSaving(true);
+    setOwnerPhoneSaved(false);
     const bizData = await fetch("/api/admin/business").then(r => r.json());
     const currentSettings = bizData.settings || {};
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: { ...currentSettings, theme: t } }),
+      body: JSON.stringify({
+        settings: { ...currentSettings, ownerLoginPhone: ownerLoginPhone.trim() },
+      }),
     });
-    setThemeSaving(false);
+    setOwnerPhoneSaving(false);
+    setOwnerPhoneSaved(true);
+    setTimeout(() => setOwnerPhoneSaved(false), 2000);
   }
 
   // Referral sources
@@ -340,7 +370,18 @@ export default function AdminSettingsPage() {
           reengageTemplate:    data.reengageTemplate    || "",
         });
         const settingsObj = data.settings || {};
-        setTheme(settingsObj.theme || "light");
+        // Resolve theme preset (with backward compat for old "theme: light/dark")
+        let resolvedTheme: ThemeId = DEFAULT_THEME;
+        if (settingsObj.themePreset && settingsObj.themePreset in THEMES) {
+          resolvedTheme = settingsObj.themePreset as ThemeId;
+        } else if (settingsObj.theme === "dark") {
+          resolvedTheme = "onyx";
+        } else if (settingsObj.theme === "light") {
+          resolvedTheme = "vintage";
+        }
+        setThemeId(resolvedTheme);
+        // Owner login phone — falls back to public phone if not set
+        setOwnerLoginPhone(settingsObj.ownerLoginPhone || data.phone || "");
       }
       setBizLoading(false);
     });
@@ -499,96 +540,101 @@ export default function AdminSettingsPage() {
                     <p className="text-[11px] text-neutral-400">מומלץ: תמונה רחבה, לפחות 1200×800px</p>
                   </div>
                 </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">צבע ראשי (מותג)</label>
-                  <div className="flex items-center gap-3">
-                    <input type="color" value={form.brandColor} onChange={e => setField("brandColor", e.target.value)}
-                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
-                    <span className="text-sm text-neutral-600 font-mono">{form.brandColor}</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">צבע משני</label>
-                  <div className="flex items-center gap-3">
-                    <input type="color" value={form.secondaryColor} onChange={e => setField("secondaryColor", e.target.value)}
-                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
-                    <span className="text-sm text-neutral-600 font-mono">{form.secondaryColor}</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">צבע רקע</label>
-                  <div className="flex items-center gap-3">
-                    <input type="color" value={form.bgColor} onChange={e => setField("bgColor", e.target.value)}
-                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
-                    <span className="text-sm text-neutral-600 font-mono">{form.bgColor}</span>
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs text-neutral-500 block mb-1">צבע טקסט</label>
-                  <div className="flex items-center gap-3">
-                    <input type="color" value={form.textColor} onChange={e => setField("textColor", e.target.value)}
-                      className="w-10 h-10 rounded-lg border border-neutral-200 cursor-pointer" />
-                    <span className="text-sm text-neutral-600 font-mono">{form.textColor}</span>
-                  </div>
-                </div>
-                {/* Live color preview swatch */}
-                <div className="col-span-2">
-                  <label className="text-xs text-neutral-500 block mb-1">תצוגה מקדימה</label>
-                  <div
-                    className="rounded-xl px-4 py-3 flex items-center gap-3 border border-neutral-200"
-                    style={{ backgroundColor: form.bgColor, color: form.textColor }}
-                  >
-                    <div className="w-8 h-8 rounded-full border-2 flex-shrink-0" style={{ backgroundColor: form.brandColor, borderColor: form.secondaryColor }} />
+                {/* ── Login & access management ── */}
+                <div className="col-span-2 mb-2 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                  <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
-                      <p className="text-sm font-semibold">{form.name || "שם העסק"}</p>
-                      <p className="text-xs opacity-60">תצוגה מקדימה של הצבעים</p>
+                      <label className="text-sm text-neutral-800 font-semibold block">🔐 כניסה למנהל ראשי</label>
+                      <p className="text-[11px] text-neutral-600 mt-0.5">הטלפון שתזין כאן יידרש בעת ההתחברות (יחד עם הסיסמה).</p>
                     </div>
-                    <div className="mr-auto px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: form.brandColor, color: form.secondaryColor }}>
-                      CTA
-                    </div>
+                    {ownerPhoneSaved && <span className="text-[11px] text-green-700 font-semibold">✓ נשמר</span>}
                   </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="tel"
+                      value={ownerLoginPhone}
+                      onChange={e => setOwnerLoginPhone(e.target.value)}
+                      placeholder="050-0000000"
+                      dir="ltr"
+                      className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveOwnerLoginPhone}
+                      disabled={ownerPhoneSaving || !ownerLoginPhone.trim()}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 text-white text-sm font-semibold rounded-lg transition"
+                    >
+                      {ownerPhoneSaving ? "שומר..." : "שמור"}
+                    </button>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-amber-200 flex items-center justify-between">
+                    <span className="text-[12px] text-neutral-700">👥 מנהלים משניים (ספרים עם גישה)</span>
+                    <a href="/admin/staff" className="text-[12px] font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2">
+                      ניהול גישות ←
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-neutral-500 mt-1.5 leading-relaxed">
+                    כל ספר שתגדיר לו סיסמה (דרך עמוד הצוות) יוכל להיכנס עם הטלפון והסיסמה שלו.
+                  </p>
                 </div>
 
-                {/* ── Theme picker ── */}
-                <div className="col-span-2 pt-2">
+                {/* ── Theme presets — single source of truth for all colors + fonts ── */}
+                <div className="col-span-2">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs text-neutral-500 font-medium">עיצוב ממשק הלקוחות</label>
+                    <div>
+                      <label className="text-sm text-neutral-700 font-semibold">חבילת עיצוב</label>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">בחר חבילה — צבעים, פונט וניגודיות באים יחד.</p>
+                    </div>
                     {themeSaving && <span className="text-[11px] text-amber-600">שומר...</span>}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { id: "light", label: "בהיר", sub: "לבן + קרם", bg: "#ffffff", alt: "#F8F6F3", card: "#ffffff", text: "#171717" },
-                      { id: "dark",  label: "כהה",  sub: "אלגנטי", bg: "#0D0D0D", alt: "#161616", card: "#1E1E1E", text: "#F0F0F0" },
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        onClick={() => saveTheme(opt.id)}
-                        className={`relative rounded-xl overflow-hidden border-2 transition-all text-right ${
-                          theme === opt.id ? "border-amber-500 shadow-md" : "border-neutral-200 hover:border-neutral-300"
-                        }`}
-                      >
-                        {/* Mini preview */}
-                        <div className="p-3" style={{ background: opt.bg }}>
-                          <div className="h-2 rounded mb-1.5" style={{ background: opt.alt, width: "70%" }} />
-                          <div className="flex gap-1">
-                            {[1,2,3].map(i => (
-                              <div key={i} className="flex-1 rounded" style={{ height: 28, background: opt.card, border: `1px solid ${opt.id === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}` }} />
-                            ))}
+                    {(Object.values(THEMES)).map(opt => {
+                      const selected = themeId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => saveTheme(opt.id)}
+                          className={`relative rounded-xl overflow-hidden border-2 transition-all text-right ${
+                            selected ? "border-amber-500 shadow-md" : "border-neutral-200 hover:border-neutral-300"
+                          }`}
+                        >
+                          {/* Mini preview — shows actual theme rendering */}
+                          <div className="p-3" style={{ background: opt.bg }}>
+                            {/* Header bar */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="h-1.5 rounded" style={{ background: opt.textPri, width: 32, opacity: 0.7 }} />
+                              <div className="h-3 px-2 rounded-full text-[7px] font-bold flex items-center"
+                                style={{ background: opt.brand, color: opt.bg }}>CTA</div>
+                            </div>
+                            {/* Cards row */}
+                            <div className="flex gap-1 mb-2">
+                              {[1, 2, 3].map(i => (
+                                <div key={i} className="flex-1 rounded p-1" style={{ height: 32, background: opt.card, border: `1px solid ${opt.divider}` }}>
+                                  <div className="h-1 rounded mb-1" style={{ background: opt.brand, width: "30%" }} />
+                                  <div className="h-1 rounded" style={{ background: opt.textSec, width: "70%", opacity: 0.5 }} />
+                                </div>
+                              ))}
+                            </div>
+                            {/* Sample text */}
+                            <p className="text-[9px] leading-tight" style={{ color: opt.textPri, opacity: 0.85, fontFamily: opt.fontDisplay }}>
+                              {opt.name.toUpperCase()}
+                            </p>
                           </div>
-                        </div>
-                        {/* Label */}
-                        <div className="px-3 py-2 flex items-center justify-between" style={{ background: opt.bg, borderTop: `1px solid ${opt.id === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)"}` }}>
-                          <span className="text-xs font-semibold" style={{ color: opt.text }}>{opt.label}</span>
-                          <span className="text-[10px]" style={{ color: opt.id === "dark" ? "#71717a" : "#a3a3a3" }}>{opt.sub}</span>
-                        </div>
-                        {/* Selected checkmark */}
-                        {theme === opt.id && (
-                          <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
-                            <span className="text-white text-[10px]">✓</span>
+                          {/* Label strip */}
+                          <div className="px-3 py-2 flex items-center justify-between bg-white border-t border-neutral-100">
+                            <span className="text-xs font-bold text-neutral-800">{opt.name}</span>
+                            <span className="text-[10px] text-neutral-500">{opt.description}</span>
                           </div>
-                        )}
-                      </button>
-                    ))}
+                          {/* Selected checkmark */}
+                          {selected && (
+                            <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
+                              <span className="text-white text-[10px]">✓</span>
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

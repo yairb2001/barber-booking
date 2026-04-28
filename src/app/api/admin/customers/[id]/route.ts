@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRequestSession, requireOwner } from "@/lib/session";
 
 // GET — full customer record + upcoming appointments + past appointments summary
 export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
@@ -18,6 +19,17 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     },
   });
   if (!customer) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Staff scoping: barbers can only view customers they've served
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId) {
+    const hasAppt = await prisma.appointment.count({
+      where: { customerId: id, staffId: session.staffId },
+    });
+    if (hasAppt === 0) {
+      return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+    }
+  }
 
   const now = new Date();
   const todayUTC = new Date(now.toISOString().slice(0, 10) + "T00:00:00.000Z");
@@ -56,6 +68,18 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
 // PATCH — edit name, toggle block, update notes/referral
 export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   const { id } = ctx.params;
+
+  // Staff scoping: barbers can only edit customers they've served
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId) {
+    const hasAppt = await prisma.appointment.count({
+      where: { customerId: id, staffId: session.staffId },
+    });
+    if (hasAppt === 0) {
+      return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+    }
+  }
+
   const body = await req.json();
 
   const data: Record<string, unknown> = {};
@@ -73,6 +97,9 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
 
 // DELETE — hard delete customer (blocks if there are appointments)
 export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
+
   const { id } = ctx.params;
 
   const apptCount = await prisma.appointment.count({ where: { customerId: id } });

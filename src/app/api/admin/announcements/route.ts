@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const items = await prisma.announcement.findMany({
     orderBy: [{ isPinned: "desc" }, { sortOrder: "asc" }, { createdAt: "desc" }],
   });
@@ -9,6 +12,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const body = await req.json();
   const business = await prisma.business.findFirst();
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });

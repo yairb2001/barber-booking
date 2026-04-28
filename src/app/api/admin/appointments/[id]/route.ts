@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
 import { triggerPostVisitAutomations } from "@/lib/automations";
+import { getRequestSession } from "@/lib/session";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
 
@@ -18,6 +19,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     },
   });
   if (!before) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // Staff scoping: barbers can only modify their own appointments
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId && before.staffId !== session.staffId) {
+    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+  }
+  // And cannot reassign to another barber
+  if (session && !session.isOwner && session.staffId && body.staffId && body.staffId !== session.staffId) {
+    return NextResponse.json({ error: "ספר יכול לעדכן רק תורים של עצמו" }, { status: 403 });
+  }
 
   // Build update data
   const data: Record<string, unknown> = {};

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getRequestSession } from "@/lib/session";
 
 // POST — create a customer manually (independent of booking flow)
 export async function POST(req: NextRequest) {
@@ -44,11 +45,17 @@ export async function GET(req: NextRequest) {
   const recentDays    = searchParams.get("recent_days");
 
   // ── New filter params ──
-  const staffId       = searchParams.get("staffId") || "";      // filter by barber
+  let staffId         = searchParams.get("staffId") || "";      // filter by barber
   const upcoming      = searchParams.get("upcoming") || "";     // today | tomorrow | 3days | week
   const activeDays    = searchParams.get("active_days") || "";  // visited in last N days
   const inactiveDays  = searchParams.get("inactive_days") || "";// no visit for N+ days
   const newDays       = searchParams.get("new_days") || "";     // created in last N days
+
+  // Staff scoping: barbers only see their own customers
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId) {
+    staffId = session.staffId;
+  }
 
   const business = await prisma.business.findFirst();
   if (!business) return NextResponse.json([]);

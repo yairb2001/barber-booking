@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   const body = await req.json();
   const data: Record<string, unknown> = {};
 
@@ -28,9 +31,11 @@ export async function PATCH(
 
 // DELETE — remove an automation
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const guard = requireOwner(req);
+  if (guard) return guard;
   await prisma.automation.delete({ where: { id: params.id } });
   return NextResponse.json({ ok: true });
 }
