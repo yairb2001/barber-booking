@@ -4,10 +4,17 @@ import { verifySession, COOKIE_NAME } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Skip: login page, auth APIs
+  // Public auth endpoints (no session required) — login flow + first-run setup
+  const PUBLIC_AUTH_PATHS = new Set([
+    "/api/admin/auth/login",
+    "/api/admin/auth/logout",
+    "/api/admin/auth/setup",
+    "/api/admin/auth/setup-status",
+  ]);
+
   if (
     pathname === "/admin/login" ||
-    pathname.startsWith("/api/admin/auth/")
+    PUBLIC_AUTH_PATHS.has(pathname)
   ) {
     return NextResponse.next();
   }

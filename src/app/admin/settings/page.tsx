@@ -333,6 +333,42 @@ export default function AdminSettingsPage() {
     setTimeout(() => setOwnerPhoneSaved(false), 2000);
   }
 
+  // ── Change password ──
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
+
+  async function changePassword() {
+    setPwError("");
+    setPwSuccess(false);
+    if (!oldPassword) { setPwError("נא להזין את הסיסמה הנוכחית"); return; }
+    if (!newPassword || newPassword.length < 6) { setPwError("הסיסמה החדשה חייבת להיות לפחות 6 תווים"); return; }
+    if (newPassword !== confirmNewPassword) { setPwError("הסיסמאות החדשות לא תואמות"); return; }
+    setPwSaving(true);
+    try {
+      const res = await fetch("/api/admin/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ oldPassword, newPassword, confirmPassword: confirmNewPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPwError(data.error || "שגיאה");
+      } else {
+        setPwSuccess(true);
+        setOldPassword(""); setNewPassword(""); setConfirmNewPassword("");
+        setTimeout(() => setPwSuccess(false), 3000);
+      }
+    } catch {
+      setPwError("שגיאה בחיבור לשרת");
+    } finally {
+      setPwSaving(false);
+    }
+  }
+
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
@@ -576,6 +612,58 @@ export default function AdminSettingsPage() {
                   <p className="text-[10px] text-neutral-500 mt-1.5 leading-relaxed">
                     כל ספר שתגדיר לו סיסמה (דרך עמוד הצוות) יוכל להיכנס עם הטלפון והסיסמה שלו.
                   </p>
+
+                  {/* ── Change password ── */}
+                  <div className="mt-4 pt-3 border-t border-amber-200">
+                    <p className="text-[12px] text-neutral-800 font-semibold mb-2">🔑 החלפת סיסמה</p>
+                    <div className="space-y-2">
+                      <input
+                        type="password"
+                        value={oldPassword}
+                        onChange={e => setOldPassword(e.target.value)}
+                        placeholder="סיסמה נוכחית"
+                        autoComplete="current-password"
+                        dir="ltr"
+                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      />
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={e => setNewPassword(e.target.value)}
+                        placeholder="סיסמה חדשה (לפחות 6 תווים)"
+                        autoComplete="new-password"
+                        dir="ltr"
+                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      />
+                      <input
+                        type="password"
+                        value={confirmNewPassword}
+                        onChange={e => setConfirmNewPassword(e.target.value)}
+                        placeholder="אימות סיסמה חדשה"
+                        autoComplete="new-password"
+                        dir="ltr"
+                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      />
+                      {pwError && (
+                        <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
+                          {pwError}
+                        </p>
+                      )}
+                      {pwSuccess && (
+                        <p className="text-[11px] text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1.5">
+                          ✓ הסיסמה הוחלפה בהצלחה
+                        </p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={changePassword}
+                        disabled={pwSaving || !oldPassword || !newPassword || !confirmNewPassword}
+                        className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
+                      >
+                        {pwSaving ? "מחליף..." : "החלף סיסמה"}
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* ── Theme presets — single source of truth for all colors + fonts ── */}
