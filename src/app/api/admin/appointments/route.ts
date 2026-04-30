@@ -54,8 +54,24 @@ export async function POST(req: NextRequest) {
     where: { businessId_phone: { businessId: business.id, phone: body.phone } },
   });
   if (!customer) {
+    // For new customers, capture referral attribution (parity with /book/confirm flow)
+    let referredById: string | null = null;
+    if (body.referrerPhone && typeof body.referrerPhone === "string") {
+      const cleanPhone = body.referrerPhone.replace(/\s/g, "");
+      const referrer = await prisma.customer.findUnique({
+        where: { businessId_phone: { businessId: business.id, phone: cleanPhone } },
+        select: { id: true },
+      });
+      if (referrer) referredById = referrer.id;
+    }
     customer = await prisma.customer.create({
-      data: { businessId: business.id, phone: body.phone, name: body.customerName },
+      data: {
+        businessId: business.id,
+        phone: body.phone,
+        name: body.customerName,
+        referralSource: body.referralSource || null,
+        referredById,
+      },
     });
   }
 

@@ -110,16 +110,57 @@ function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
 }
 
 // ── Appointment Block ─────────────────────────────────────────────────────────
-function ApptBlock({ appt, colorClass, onClick }: { appt: Appt; colorClass: string; onClick: () => void }) {
+const LONG_PRESS_MS = 500; // hold this long to enter drag-to-move
+const LONG_PRESS_TOLERANCE_PX = 10; // movement before threshold cancels long-press (it's a scroll, not a hold)
+
+function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving }: {
+  appt: Appt;
+  colorClass: string;
+  onClick: () => void;
+  onLongPress: (clientX: number, clientY: number) => void;
+  isMoving: boolean; // true if THIS appointment is the one being moved → fade out the original
+}) {
   const hh = React.useContext(HHCtx);
   const top = apptTop(appt.startTime, hh);
   const height = apptH(appt.startTime, appt.endTime, hh);
+
+  // Long-press state — refs (no re-render)
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStart = useRef<{ x: number; y: number } | null>(null);
+  const lpFired = useRef(false);
+
+  function clearLP() {
+    if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
+  }
+
   return (
-    <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition overflow-hidden px-1.5 py-1 z-10 ${colorClass}`}
-      style={{ top, height }}
-      onPointerDown={e => e.stopPropagation()}
-      onPointerUp={e => e.stopPropagation()}
-      onClick={e => { e.stopPropagation(); onClick(); }}>
+    <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1.5 py-1 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""}`}
+      style={{ top, height, touchAction: "none" }}
+      onPointerDown={e => {
+        e.stopPropagation();
+        lpStart.current = { x: e.clientX, y: e.clientY };
+        lpFired.current = false;
+        clearLP();
+        lpTimer.current = setTimeout(() => {
+          lpFired.current = true;
+          onLongPress(e.clientX, e.clientY);
+        }, LONG_PRESS_MS);
+      }}
+      onPointerMove={e => {
+        if (lpFired.current || !lpStart.current) return;
+        const dx = Math.abs(e.clientX - lpStart.current.x);
+        const dy = Math.abs(e.clientY - lpStart.current.y);
+        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) clearLP();
+      }}
+      onPointerUp={e => {
+        e.stopPropagation();
+        clearLP();
+        // If long-press didn't fire — it was a tap → open detail modal
+        if (!lpFired.current) onClick();
+        lpStart.current = null;
+        lpFired.current = false;
+      }}
+      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; }}>
       <p className="text-[11px] font-bold leading-tight truncate">{appt.customer.name}</p>
       {height > 36 && <p className="text-[10px] opacity-70 truncate">{appt.service.name}</p>}
       {height > 52 && <p className="text-[10px] opacity-60">{appt.startTime}</p>}
@@ -139,6 +180,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
+  // Referral tracking — required when creating a NEW customer (parity with /book/confirm)
+  const [referralSource, setReferralSource] = useState("");
+  const [referrerPhone, setReferrerPhone] = useState("");
+  const [referralOptions, setReferralOptions] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [conflictMsg, setConflictMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -147,6 +192,14 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
     if (customerQuery.length < 1) { setCustomers([]); return; }
     fetch(`/api/admin/customers?q=${encodeURIComponent(customerQuery)}`).then(r => r.json()).then(setCustomers);
   }, [customerQuery]);
+
+  // Load referral source options once (same list as the customer-facing booking flow)
+  useEffect(() => {
+    fetch("/api/admin/referral-sources")
+      .then(r => r.ok ? r.json() : [])
+      .then(data => { if (Array.isArray(data)) setReferralOptions(data); })
+      .catch(() => {});
+  }, []);
 
   const selectedService = services.find(s => s.id === form.serviceId);
   const endTime = selectedService
@@ -157,12 +210,26 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
     const phone = selectedCustomer?.phone || newCustomer.phone;
     const name = selectedCustomer?.name || newCustomer.name;
     if (!phone || !name) return;
+    // For NEW customers, referral source is required (mirrors customer-facing booking flow)
+    if (customerMode === "new" && !referralSource) {
+      setErrMsg("נא לבחור מקור הגעה ללקוח החדש");
+      return;
+    }
     setErrMsg(null);
     setConflictMsg(null);
     setSaving(true);
     const res = await fetch("/api/admin/appointments", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, startTime: form.time, phone, customerName: name, override }),
+      body: JSON.stringify({
+        ...form,
+        startTime: form.time,
+        phone,
+        customerName: name,
+        // Referral fields are only meaningful for new customers
+        referralSource: customerMode === "new" ? referralSource : undefined,
+        referrerPhone:  customerMode === "new" && referralSource === "חבר הביא חבר" ? referrerPhone.trim() : undefined,
+        override,
+      }),
     });
     setSaving(false);
     if (res.status === 409) {
@@ -348,6 +415,35 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                 <input value={newCustomer.phone} onChange={e => setNewCustomer(p => ({ ...p, phone: e.target.value }))}
                   placeholder="טלפון" dir="ltr"
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+
+                {/* Referral source — required for new customers */}
+                <div className="pt-1">
+                  <label className="text-[11px] text-neutral-500 block mb-1">
+                    מקור הגעה <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={referralSource}
+                    onChange={e => setReferralSource(e.target.value)}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white"
+                  >
+                    <option value="">איך הוא הגיע אלינו?</option>
+                    {referralOptions.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* If "friend referred friend" — collect referrer's phone */}
+                {referralSource === "חבר הביא חבר" && (
+                  <input
+                    value={referrerPhone}
+                    onChange={e => setReferrerPhone(e.target.value)}
+                    placeholder="טלפון של מי שהפנה (אופציונלי)"
+                    dir="ltr"
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm"
+                  />
+                )}
+
                 <p className="text-xs text-neutral-400 mt-1">✓ יתווסף אוטומטית למאגר הלקוחות</p>
               </div>
             )}
@@ -381,7 +477,8 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             </div>
           )}
           <button onClick={() => save(false)} disabled={saving || !!conflictMsg || !form.staffId || !form.serviceId ||
-            !(selectedCustomer || (newCustomer.name && newCustomer.phone))}
+            !(selectedCustomer || (newCustomer.name && newCustomer.phone)) ||
+            (customerMode === "new" && !referralSource)}
             className="w-full bg-amber-500 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-amber-400 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
           </button>
@@ -1224,6 +1321,31 @@ export default function AdminCalendar() {
   const gridRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
+  // ── Drag-to-MOVE existing appointments ──────────────────────────────────────
+  // Triggered by long-press (500ms) on an ApptBlock. The original is faded;
+  // a ghost outline tracks the pointer and snaps to the column/time grid;
+  // on release we PATCH the appointment (with conflict modal on 409).
+  type DragMoveState = {
+    appt: Appt;
+    pointerX: number; pointerY: number;
+    dropTarget: { staffId: string; date: string; startTime: string } | null;
+  };
+  const [dragMove, setDragMove] = useState<DragMoveState | null>(null);
+  const dragMoveRef = useRef<DragMoveState | null>(null);
+  dragMoveRef.current = dragMove;
+
+  // Column refs — keyed by `${staffId}|${date}` so we can identify which column
+  // the pointer is over during a drag-move. Rebuilt on each render based on
+  // current view (day = many staff, week = many days).
+  const colRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Conflict modal that appears when drag-drop hits an occupied slot
+  const [moveConflict, setMoveConflict] = useState<{
+    message: string;
+    appt: Appt;
+    target: { staffId: string; date: string; startTime: string };
+  } | null>(null);
+
   // Update nowY whenever hourHeight changes
   useEffect(() => {
     setNowY(nowPxFn(hourHeight));
@@ -1350,6 +1472,123 @@ export default function AdminCalendar() {
       !["cancelled_by_customer", "cancelled_by_staff"].includes(a.status)
     );
   }
+
+  // ── Drag-to-move helpers ────────────────────────────────────────────────────
+  // Compute which column + start-time the pointer is over by checking each
+  // registered column's bounding rect. Returns null if the pointer is outside
+  // any column (e.g. dragged into the time-axis or out of the grid).
+  const computeDropTarget = useCallback((clientX: number, clientY: number) => {
+    for (const key in colRefs.current) {
+      const el = colRefs.current[key];
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        const [staffId, d] = key.split("|");
+        const yInCol = clientY - rect.top;
+        const startTime = yToTimeFn(yInCol, hourHeightRef.current);
+        return { staffId, date: d, startTime };
+      }
+    }
+    return null;
+  }, []);
+
+  // Persist a move to the API. Reverts the optimistic update on failure.
+  const persistMove = useCallback(async (
+    appt: Appt,
+    target: { staffId: string; date: string; startTime: string },
+    override: boolean,
+  ): Promise<void> => {
+    const res = await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: target.date,
+        startTime: target.startTime,
+        staffId: target.staffId,
+        override,
+      }),
+    });
+    if (res.status === 409) {
+      const j = await res.json().catch(() => ({}));
+      // Revert optimistic update
+      setAppointments(prev => prev.map(a =>
+        a.id === appt.id ? appt : a
+      ));
+      // Show conflict modal — user can accept override or cancel
+      setMoveConflict({
+        message: j.error || "השעה תפוסה",
+        appt,
+        target,
+      });
+      return;
+    }
+    if (!res.ok) {
+      // Revert + reload
+      setAppointments(prev => prev.map(a => a.id === appt.id ? appt : a));
+      loadAppointments();
+      return;
+    }
+    // Success — reload to sync with backend (handles endTime, etc.)
+    loadAppointments();
+  }, [loadAppointments]);
+
+  // Long-press fired on an ApptBlock — enter drag-move mode.
+  function startMoveDrag(appt: Appt, clientX: number, clientY: number) {
+    setDragMove({ appt, pointerX: clientX, pointerY: clientY, dropTarget: null });
+    // Haptic feedback (iOS Safari + Android Chrome)
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate?.(30);
+    }
+  }
+
+  // Drop handler — finalize the move (or revert if dropped at origin / outside).
+  const finalizeMoveDrag = useCallback((target: { staffId: string; date: string; startTime: string } | null) => {
+    const drag = dragMoveRef.current;
+    setDragMove(null);
+    if (!drag || !target) return;
+    const origDate = drag.appt.date.slice(0, 10);
+    const origStaff = drag.appt.staff.id;
+    const origStart = drag.appt.startTime;
+    // No change → no-op
+    if (target.staffId === origStaff && target.date === origDate && target.startTime === origStart) return;
+
+    // Optimistic update — move the appointment in local state immediately
+    const duration = toMin(drag.appt.endTime) - toMin(drag.appt.startTime);
+    const newEnd = minToTime(toMin(target.startTime) + duration);
+    const newStaff = allStaff.find(s => s.id === target.staffId);
+    setAppointments(prev => prev.map(a => a.id === drag.appt.id ? {
+      ...a,
+      startTime: target.startTime,
+      endTime: newEnd,
+      date: target.date + "T00:00:00.000Z",
+      staff: { id: target.staffId, name: newStaff?.name || a.staff.name },
+    } : a));
+
+    // Persist (will revert on failure)
+    persistMove(drag.appt, target, false).catch(console.error);
+  }, [allStaff, persistMove]);
+
+  // Global pointermove + pointerup listeners — only attached while dragging
+  useEffect(() => {
+    if (!dragMove) return;
+    const onMove = (e: PointerEvent) => {
+      e.preventDefault();
+      const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
+    };
+    const onUp = (e: PointerEvent) => {
+      const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      finalizeMoveDrag(dropTarget);
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [dragMove !== null, computeDropTarget, finalizeMoveDrag]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag to create (desktop/mouse only) ─────────────────────────────────────
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
@@ -1500,8 +1739,12 @@ export default function AdminCalendar() {
                     const colDrag = drag?.staffId === s.id && drag?.date === date ? drag : null;
                     const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
                     const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === date ? draftAppt : null;
+                    const colKey = `${s.id}|${date}`;
+                    const isDropTarget = dragMove?.dropTarget?.staffId === s.id && dragMove?.dropTarget?.date === date;
                     return (
-                      <div key={s.id} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
+                      <div key={s.id}
+                        ref={el => { colRefs.current[colKey] = el; }}
+                        className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
                         onClick={e => { if (!colDraft) handleGridClick(e, s.id, date); else setDraftAppt(null); }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
                         onPointerMove={e => handlePointerMove(e, s.id, date)}
@@ -1519,6 +1762,19 @@ export default function AdminCalendar() {
                             )}
                           </div>
                         )}
+                        {/* Drag-to-MOVE drop ghost — shows where the appointment will land */}
+                        {isDropTarget && dragMove && (
+                          <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30 flex flex-col items-center justify-center px-1.5"
+                            style={{
+                              top: apptTop(dragMove.dropTarget!.startTime, hourHeight),
+                              height: apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight),
+                              borderColor: "#10b981",
+                              background: "rgba(16,185,129,0.18)",
+                            }}>
+                            <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
+                            <p className="text-[10px] text-emerald-800">{s.name} · {dragMove.dropTarget!.startTime}</p>
+                          </div>
+                        )}
                         {/* Draft appointment block (Google Calendar style) */}
                         {colDraft && (
                           <DraftApptBlock
@@ -1533,7 +1789,9 @@ export default function AdminCalendar() {
                         )}
                         {getAppts(s.id, date).map(a => (
                           <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                            onClick={() => setSelectedAppt(a)} />
+                            isMoving={dragMove?.appt.id === a.id}
+                            onClick={() => setSelectedAppt(a)}
+                            onLongPress={(x, y) => startMoveDrag(a, x, y)} />
                         ))}
                       </div>
                     );
@@ -1545,8 +1803,12 @@ export default function AdminCalendar() {
                     const colDrag = drag?.staffId === s.id && drag?.date === d ? drag : null;
                     const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
                     const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === d ? draftAppt : null;
+                    const colKey = `${s.id}|${d}`;
+                    const isDropTarget = dragMove?.dropTarget?.staffId === s.id && dragMove?.dropTarget?.date === d;
                     return (
-                      <div key={d} className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
+                      <div key={d}
+                        ref={el => { colRefs.current[colKey] = el; }}
+                        className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => { if (!colDraft) handleGridClick(e, s.id, d); else setDraftAppt(null); }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
                         onPointerMove={e => handlePointerMove(e, s.id, d)}
@@ -1563,6 +1825,19 @@ export default function AdminCalendar() {
                             )}
                           </div>
                         )}
+                        {/* Drag-to-MOVE drop ghost */}
+                        {isDropTarget && dragMove && (
+                          <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30 flex flex-col items-center justify-center px-1.5"
+                            style={{
+                              top: apptTop(dragMove.dropTarget!.startTime, hourHeight),
+                              height: apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight),
+                              borderColor: "#10b981",
+                              background: "rgba(16,185,129,0.18)",
+                            }}>
+                            <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
+                            <p className="text-[10px] text-emerald-800">{fmtShort(d)} · {dragMove.dropTarget!.startTime}</p>
+                          </div>
+                        )}
                         {colDraft && (
                           <DraftApptBlock
                             startY={colDraft.startY}
@@ -1576,7 +1851,9 @@ export default function AdminCalendar() {
                         )}
                         {getAppts(s.id, d).map(a => (
                           <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                            onClick={() => setSelectedAppt(a)} />
+                            isMoving={dragMove?.appt.id === a.id}
+                            onClick={() => setSelectedAppt(a)}
+                            onLongPress={(x, y) => startMoveDrag(a, x, y)} />
                         ))}
                       </div>
                     );
@@ -1698,6 +1975,37 @@ export default function AdminCalendar() {
         />
       )}
       {dayMenu && <DayPanel date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
+
+      {/* ── Drag-move conflict modal ── */}
+      {moveConflict && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => { setMoveConflict(null); loadAppointments(); }}>
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl shrink-0">⚠️</div>
+              <div className="flex-1">
+                <h3 className="font-bold text-neutral-900 text-base">השעה תפוסה</h3>
+                <p className="text-sm text-neutral-600 mt-1 leading-relaxed">{moveConflict.message}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setMoveConflict(null); loadAppointments(); }}
+                className="flex-1 bg-white border border-neutral-300 text-neutral-700 rounded-xl py-2.5 text-sm font-semibold hover:bg-neutral-50 transition">
+                השאר במקום
+              </button>
+              <button
+                onClick={async () => {
+                  const { appt, target } = moveConflict;
+                  setMoveConflict(null);
+                  await persistMove(appt, target, true);
+                }}
+                className="flex-1 bg-amber-500 text-neutral-950 rounded-xl py-2.5 text-sm font-bold hover:bg-amber-400 transition">
+                להעביר בכל זאת
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
