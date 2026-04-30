@@ -221,6 +221,14 @@ export const DEFAULT_APPOINTMENT_MOVED_TEMPLATE =
 
 אם יש בעיה — נא להודיע. אחרת נתראה! 🙏`;
 
+export const DEFAULT_DELAY_NOTIFICATION_TEMPLATE =
+`שלום {{name}} 👋
+
+עדכון מ*{{business}}* ✂️
+התור שלך ב-{{time}} מתעכב בכ-*{{delay_minutes}} דקות*.
+
+מצטערים על אי הנוחות 🙏`;
+
 /** All editable template definitions (used by the /admin/templates UI). */
 export const TEMPLATE_DEFS = {
   confirmation: {
@@ -323,6 +331,18 @@ export const TEMPLATE_DEFS = {
       { key: "time",     label: "שעה החדשה" },
       { key: "staff",    label: "שם הספר" },
       { key: "service",  label: "שם השירות" },
+    ],
+  },
+  delay_notification: {
+    label: "עדכון עיכוב",
+    description: "נשלח ללקוח כשהספר מתעכב ורוצה לעדכן אותו כמה דקות לפני.",
+    field: "delayNotificationTemplate" as const,
+    default: DEFAULT_DELAY_NOTIFICATION_TEMPLATE,
+    variables: [
+      { key: "name",          label: "שם הלקוח" },
+      { key: "business",      label: "שם העסק" },
+      { key: "time",          label: "שעת התור המקורית" },
+      { key: "delay_minutes", label: "מספר דקות עיכוב" },
     ],
   },
 } as const;
@@ -468,5 +488,27 @@ export function appointmentMovedText(
     time:     params.newTime,
     staff:    params.newStaffName,
     service:  params.serviceName,
+  });
+}
+
+/**
+ * Sent to a customer when the barber is running late and the admin
+ * wants to let them know how many minutes the delay will be.
+ */
+export function delayNotificationText(
+  params: {
+    customerName: string;
+    businessName: string;
+    appointmentTime: string;
+    delayMinutes: number;
+  },
+  customTemplate?: string | null,
+): string {
+  const tmpl = customTemplate || DEFAULT_DELAY_NOTIFICATION_TEMPLATE;
+  return applyTemplate(tmpl, {
+    name:          params.customerName,
+    business:      params.businessName,
+    time:          params.appointmentTime,
+    delay_minutes: String(params.delayMinutes),
   });
 }

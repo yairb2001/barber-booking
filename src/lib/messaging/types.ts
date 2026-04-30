@@ -18,7 +18,9 @@ export type MessageKind =
   | "swap_confirmation"  // sent to both customers when admin approves the swap
   | "swap_cancelled"     // sent when a proposal is cancelled
   // Drag-to-move follow-up
-  | "appointment_moved"; // sent to a customer when their appointment is moved by admin
+  | "appointment_moved"  // sent to a customer when their appointment is moved by admin
+  // Delay notifications
+  | "delay_notification"; // sent to a customer when the barber is running late
 
 export type MessageStatus =
   | "queued"

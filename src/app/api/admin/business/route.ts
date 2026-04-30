@@ -68,6 +68,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.appointmentMovedTemplate !== undefined && {
         appointmentMovedTemplate: body.appointmentMovedTemplate || null,
       }),
+      ...(body.delayNotificationTemplate !== undefined && {
+        delayNotificationTemplate: body.delayNotificationTemplate || null,
+      }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {
         bookingHorizonDays: Number(body.bookingHorizonDays) || 30,

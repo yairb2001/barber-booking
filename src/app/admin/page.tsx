@@ -207,6 +207,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   return (
     <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1.5 py-1 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: "none", ...extraStyle }}
+      onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
         if (!longPressEnabled) return; // no long-press in swap mode
@@ -666,6 +667,12 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [proposalsAsPrimary, setProposalsAsPrimary] = useState<SwapProposal[]>([]);
   const [proposalAsCandidate, setProposalAsCandidate] = useState<SwapProposal | null>(null);
 
+  // Delay notification
+  const [showDelayInput, setShowDelayInput] = useState(false);
+  const [delayMinutes, setDelayMinutes] = useState("");
+  const [delaySending, setDelaySending] = useState(false);
+  const [delaySent, setDelaySent] = useState(false);
+
   useEffect(() => {
     fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
   }, []);
@@ -716,6 +723,24 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ staffNote }),
     });
     setSavingNote(false);
+  }
+
+  async function sendDelayNotification() {
+    const mins = parseInt(delayMinutes, 10);
+    if (!mins || mins <= 0) return;
+    setDelaySending(true);
+    const r = await fetch(`/api/admin/appointments/${appt.id}/notify-delay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ delayMinutes: mins }),
+    });
+    setDelaySending(false);
+    if (r.ok) {
+      setDelaySent(true);
+      setShowDelayInput(false);
+      setDelayMinutes("");
+      setTimeout(() => setDelaySent(false), 3000);
+    }
   }
 
   const cleanPhone = appt.customer.phone.replace(/\D/g, "");
@@ -967,6 +992,46 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               onClick={() => onEnterSwapMode(appt.id)}
               className="w-full py-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-sm font-bold transition flex items-center justify-center gap-2">
               🔄 החלף / העבר תור (בחר מועמדים או שעה ריקה)
+            </button>
+          )}
+        </div>
+
+        {/* Delay notification */}
+        <div className="px-5 py-3 border-b border-neutral-100">
+          {delaySent ? (
+            <p className="text-sm text-emerald-600 font-medium text-center">✓ עדכון עיכוב נשלח ללקוח</p>
+          ) : showDelayInput ? (
+            <div className="space-y-2">
+              <p className="text-xs text-neutral-500">כמה דקות עיכוב לעדכן את הלקוח?</p>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  value={delayMinutes}
+                  onChange={e => setDelayMinutes(e.target.value)}
+                  placeholder="דקות"
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  autoFocus
+                />
+                <button
+                  onClick={sendDelayNotification}
+                  disabled={delaySending || !delayMinutes}
+                  className="bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold px-4 rounded-lg disabled:opacity-50 transition">
+                  {delaySending ? "..." : "שלח"}
+                </button>
+                <button
+                  onClick={() => { setShowDelayInput(false); setDelayMinutes(""); }}
+                  className="text-neutral-400 hover:text-neutral-600 px-2 rounded-lg hover:bg-neutral-50 transition">
+                  ✕
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowDelayInput(true)}
+              className="w-full py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm font-medium transition flex items-center justify-center gap-2">
+              ⏱ עדכון עיכוב
             </button>
           )}
         </div>
@@ -1974,6 +2039,7 @@ export default function AdminCalendar() {
 
   // ── Drag to create (desktop/mouse only) ─────────────────────────────────────
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
+    if (swapMode) return; // in swap mode, grid clicks are handled by handleGridClick (toggle move slot)
     if (e.pointerType !== "mouse") return; // touch handled by onClick below
     if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -2285,7 +2351,7 @@ export default function AdminCalendar() {
       const height = (swapPrimaryDuration / 60) * hourHeight;
       return (
         <div key={`move-${slot.startTime}`}
-          className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-20 flex flex-col items-center justify-center px-1.5"
+          className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed z-20 flex flex-col items-center justify-center px-1.5"
           style={{
             top, height,
             borderColor: "#3b82f6",
@@ -2293,6 +2359,13 @@ export default function AdminCalendar() {
           }}>
           <p className="text-[10px] font-bold text-blue-900 leading-tight">✓ העברה לכאן</p>
           <p className="text-[10px] text-blue-700">{slot.startTime}</p>
+          {/* Deselect button — always reachable, has pointer-events-auto */}
+          <button
+            className="absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold leading-none hover:bg-blue-600 transition"
+            onClick={e => { e.stopPropagation(); toggleSwapMoveSlot(slot.staffId, slot.date, slot.startTime); }}
+            title="הסר">
+            ✕
+          </button>
         </div>
       );
     });
