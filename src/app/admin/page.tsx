@@ -1496,25 +1496,91 @@ function GridLines() {
 // ── Drag state for creating appointments ─────────────────────────────────────
 type DragState = { staffId: string; date: string; startY: number; endY: number } | null;
 
+// ── Draft Move-Slot Block (swap mode: pick a free time with precision) ────────
+// Shown when admin taps an empty slot in swap mode. Draggable, so the user can
+// fine-tune the exact minute before confirming. On confirm, adds a "move"
+// candidate to the current swap proposal.
+function DraftMoveSlotBlock({
+  startY, durationMinutes,
+  onMove, onConfirm, onDismiss, onDragMoved,
+}: {
+  startY: number;
+  durationMinutes: number;   // must match primary appointment length
+  onMove: (y: number) => void;
+  onConfirm: (startTime: string) => void;
+  onDismiss: () => void;
+  onDragMoved?: () => void;
+}) {
+  const hh = React.useContext(HHCtx);
+  const totalH = TOTAL_HOURS * hh;
+  const blockH = Math.max((durationMinutes / 60) * hh, 36);
+  const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
+  const startTime = yToTimeFn(clampedTop, hh);
+  const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
+
+  return (
+    <div
+      className="absolute left-0.5 right-0.5 z-30 select-none cursor-grab active:cursor-grabbing"
+      style={{ top: clampedTop, height: blockH, touchAction: "none" }}
+      onPointerDown={e => {
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragRef.current = { clientY: e.clientY, startY: clampedTop };
+      }}
+      onPointerMove={e => {
+        if (!dragRef.current) return;
+        const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
+        onMove(newY);
+      }}
+      onPointerUp={e => {
+        e.stopPropagation();
+        if (dragRef.current && Math.abs(e.clientY - dragRef.current.clientY) > 5) {
+          onDragMoved?.();
+        }
+        dragRef.current = null;
+      }}
+      onPointerCancel={() => { dragRef.current = null; }}
+      onClick={e => e.stopPropagation()}>
+
+      <div
+        className="w-full h-full rounded-lg flex flex-col justify-between px-2 py-1.5 border-2 border-dashed"
+        style={{ borderColor: "#3b82f6", background: "rgba(59,130,246,0.18)", backdropFilter: "blur(4px)" }}>
+        {/* Top row: time + dismiss */}
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold text-blue-900">{startTime} ↕ גרור לדיוק</span>
+          <button className="text-blue-400 hover:text-blue-700 text-xs leading-none"
+            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+        </div>
+        {/* Bottom row: confirm */}
+        <button
+          className="text-[11px] font-semibold text-white bg-blue-500 hover:bg-blue-600 rounded-md px-2 py-1 transition text-center"
+          onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
+          + הוסף העברה לכאן
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Draft Appointment Block (Google-Calendar style click-to-place) ─────────────
 function DraftApptBlock({
   startY, staffName,
-  onMove, onConfirm, onAddBreak, onDismiss,
+  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved,
 }: {
   startY: number; staffName: string; date: string;
   onMove: (y: number) => void;
   onConfirm: () => void;
   onAddBreak: () => void;
   onDismiss: () => void;
+  onDragMoved?: () => void;  // called when block was actually dragged (not just tapped)
 }) {
   const hh = React.useContext(HHCtx);
   const totalH = TOTAL_HOURS * hh;
-  const blockH = 32; // compact, minimalist
+  const blockH = 36; // compact, minimalist — 36px fits buttons comfortably
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const time = yToTimeFn(clampedTop, hh);
   const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
-  // staffName/date are not displayed in compact mode but kept in the API for now
-  void staffName;
+  void staffName; // not displayed in compact mode
 
   return (
     <div
@@ -1530,23 +1596,33 @@ function DraftApptBlock({
         const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
         onMove(newY);
       }}
-      onPointerUp={e => { e.stopPropagation(); dragRef.current = null; }}
-      onPointerCancel={() => { dragRef.current = null; }}>
+      onPointerUp={e => {
+        e.stopPropagation();
+        if (dragRef.current && Math.abs(e.clientY - dragRef.current.clientY) > 5) {
+          // Real drag ended — the browser will fire a click on whatever grid cell
+          // is under the cursor. Tell the parent to ignore it.
+          onDragMoved?.();
+        }
+        dragRef.current = null;
+      }}
+      onPointerCancel={() => { dragRef.current = null; }}
+      onClick={e => e.stopPropagation()}>
 
       {/* Compact, semi-transparent pill — single row */}
       <div
-        className="w-full h-full rounded-md bg-white/70 backdrop-blur-sm border border-amber-300/60 flex items-center gap-1 px-1.5"
-        style={{ borderRight: "2px solid rgba(245,158,11,0.7)" }}>
+        className="w-full h-full rounded-md bg-white/80 backdrop-blur-sm border border-amber-300/70 flex items-center gap-1.5 px-2"
+        style={{ borderRight: "2.5px solid rgba(245,158,11,0.85)" }}>
         <button
-          className="text-neutral-300 hover:text-neutral-500 text-xs leading-none shrink-0 px-0.5"
+          className="text-neutral-300 hover:text-neutral-500 text-xs leading-none shrink-0"
           onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         <button
-          className="flex-1 text-[11px] font-medium text-amber-700 hover:text-amber-800 truncate"
+          className="flex-1 text-[11px] font-semibold text-amber-700 hover:text-amber-800 truncate text-right"
           onClick={e => { e.stopPropagation(); onConfirm(); }}>
           + קבע ב־{time}
         </button>
+        {/* Coffee break button — slightly prominent */}
         <button
-          className="text-neutral-400 hover:text-neutral-600 text-[11px] shrink-0 px-0.5 opacity-60 hover:opacity-100"
+          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-neutral-100 hover:bg-amber-100 border border-neutral-200 hover:border-amber-300 text-[14px] transition"
           title="הוסף הפסקה"
           onClick={e => { e.stopPropagation(); onAddBreak(); }}>
           ☕
@@ -1571,6 +1647,7 @@ export default function AdminCalendar() {
   const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
+  const [draftMoveSlot, setDraftMoveSlot] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
   // ── Zoom & drag ──────────────────────────────────────────────────────────────
@@ -1600,6 +1677,12 @@ export default function AdminCalendar() {
   // the pointer is over during a drag-move. Rebuilt on each render based on
   // current view (day = many staff, week = many days).
   const colRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // When a DraftApptBlock or DraftMoveSlotBlock is dragged, the browser fires a
+  // `click` on the grid after mouseup (because the mouse ends up outside the
+  // 32px block). This ref lets us swallow that one ghost click so the block
+  // doesn't immediately disappear after dragging.
+  const suppressNextGridClick = useRef(false);
 
   // Conflict modal that appears when drag-drop hits an occupied slot
   const [moveConflict, setMoveConflict] = useState<{
@@ -1766,6 +1849,7 @@ export default function AdminCalendar() {
   }
   function cancelSwapMode() {
     setSwapMode(null);
+    setDraftMoveSlot(null);
   }
   function toggleSwapCandidate(apptId: string) {
     setSwapMode(prev => {
@@ -2066,11 +2150,16 @@ export default function AdminCalendar() {
     if (drag !== null) return; // already handled by pointer events
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    // In swap mode, an empty-slot tap toggles a "move" candidate instead of
-    // opening the new-appointment draft.
+    // In swap mode, an empty-slot tap opens a draggable draft move-slot
+    // so the user can fine-tune the time before confirming (important on mobile
+    // where finger-precision is limited). If a draft is already open for this
+    // column, dismiss it; otherwise open a new one.
     if (swapMode) {
-      const startTime = yToTimeFn(y, hourHeight);
-      toggleSwapMoveSlot(staffId, d, startTime);
+      if (draftMoveSlot?.staffId === staffId && draftMoveSlot?.date === d) {
+        setDraftMoveSlot(null);
+        return;
+      }
+      setDraftMoveSlot({ staffId, date: d, startY: y });
       return;
     }
     setDraftAppt({ staffId, date: d, startY: y });
@@ -2183,13 +2272,18 @@ export default function AdminCalendar() {
                     const colDrag = drag?.staffId === s.id && drag?.date === date ? drag : null;
                     const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
                     const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === date ? draftAppt : null;
+                    const colDraftMove = draftMoveSlot?.staffId === s.id && draftMoveSlot?.date === date ? draftMoveSlot : null;
                     const colKey = `${s.id}|${date}`;
                     const isDropTarget = dragMove?.dropTarget?.staffId === s.id && dragMove?.dropTarget?.date === date;
                     return (
                       <div key={s.id}
                         ref={el => { colRefs.current[colKey] = el; }}
                         className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
-                        onClick={e => { if (!colDraft) handleGridClick(e, s.id, date); else setDraftAppt(null); }}
+                        onClick={e => {
+                          if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
+                          if (colDraft) { setDraftAppt(null); return; }
+                          handleGridClick(e, s.id, date);
+                        }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
                         onPointerMove={e => handlePointerMove(e, s.id, date)}
                         onPointerUp={e => handlePointerUp(e, s.id, date)}
@@ -2229,6 +2323,17 @@ export default function AdminCalendar() {
                             onConfirm={() => { setNewAppt({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
+                            onDragMoved={() => { suppressNextGridClick.current = true; }}
+                          />
+                        )}
+                        {colDraftMove && (
+                          <DraftMoveSlotBlock
+                            startY={colDraftMove.startY}
+                            durationMinutes={swapPrimaryDuration}
+                            onMove={y => setDraftMoveSlot(prev => prev ? { ...prev, startY: y } : null)}
+                            onConfirm={startTime => { toggleSwapMoveSlot(s.id, date, startTime); setDraftMoveSlot(null); }}
+                            onDismiss={() => setDraftMoveSlot(null)}
+                            onDragMoved={() => { suppressNextGridClick.current = true; }}
                           />
                         )}
                         {getAppts(s.id, date).map(a => (
@@ -2249,13 +2354,18 @@ export default function AdminCalendar() {
                     const colDrag = drag?.staffId === s.id && drag?.date === d ? drag : null;
                     const dragDist = colDrag ? Math.abs(colDrag.endY - colDrag.startY) : 0;
                     const colDraft = draftAppt?.staffId === s.id && draftAppt?.date === d ? draftAppt : null;
+                    const colDraftMove = draftMoveSlot?.staffId === s.id && draftMoveSlot?.date === d ? draftMoveSlot : null;
                     const colKey = `${s.id}|${d}`;
                     const isDropTarget = dragMove?.dropTarget?.staffId === s.id && dragMove?.dropTarget?.date === d;
                     return (
                       <div key={d}
                         ref={el => { colRefs.current[colKey] = el; }}
                         className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
-                        onClick={e => { if (!colDraft) handleGridClick(e, s.id, d); else setDraftAppt(null); }}
+                        onClick={e => {
+                          if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
+                          if (colDraft) { setDraftAppt(null); return; }
+                          handleGridClick(e, s.id, d);
+                        }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
                         onPointerMove={e => handlePointerMove(e, s.id, d)}
                         onPointerUp={e => handlePointerUp(e, s.id, d)}
@@ -2293,6 +2403,17 @@ export default function AdminCalendar() {
                             onConfirm={() => { setNewAppt({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
+                            onDragMoved={() => { suppressNextGridClick.current = true; }}
+                          />
+                        )}
+                        {colDraftMove && (
+                          <DraftMoveSlotBlock
+                            startY={colDraftMove.startY}
+                            durationMinutes={swapPrimaryDuration}
+                            onMove={y => setDraftMoveSlot(prev => prev ? { ...prev, startY: y } : null)}
+                            onConfirm={startTime => { toggleSwapMoveSlot(s.id, d, startTime); setDraftMoveSlot(null); }}
+                            onDismiss={() => setDraftMoveSlot(null)}
+                            onDragMoved={() => { suppressNextGridClick.current = true; }}
                           />
                         )}
                         {getAppts(s.id, d).map(a => (
