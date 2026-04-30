@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
-import { sendMessage, swapConfirmationText } from "@/lib/messaging";
+import { sendMessage, swapConfirmationText, appointmentMovedText } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 /**
  * POST /api/admin/swap-proposals/[id]/approve
  *
- * Executes the swap. Both appointments swap their (staffId, date, startTime,
- * endTime). The proposal is marked "approved"; sibling proposals (other
- * candidates for the same primary) are auto-cancelled. Confirmation
- * messages fire-and-forget to both customers.
+ * Executes a customer-accepted proposal. Two paths:
+ *   - kind="swap": both appointments swap (staff/date/startTime/endTime) atomically;
+ *                  confirmation messages fire to both customers.
+ *   - kind="move": primary appointment relocates to the empty target slot;
+ *                  one confirmation goes to primary's customer.
  *
- * Idempotent: if the proposal is already `approved`, returns 400.
+ * Sibling proposals (other candidates of the same primary) are auto-cancelled.
+ *
+ * Idempotent: if proposal already approved/cancelled/expired, returns 400.
  */
 
 const HEBREW_DATE_OPTS: Intl.DateTimeFormatOptions = {
@@ -44,31 +47,86 @@ export async function POST(
   if (!proposal) return NextResponse.json({ error: "הצעה לא נמצאה" }, { status: 404 });
 
   if (proposal.status !== "accepted_by_customer") {
-    return NextResponse.json(
-      { error: "ניתן לאשר רק הצעה שהלקוח כבר אישר" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "ניתן לאשר רק הצעה שהלקוח כבר אישר" }, { status: 400 });
   }
 
   const business = await prisma.business.findUnique({ where: { id: proposal.businessId } });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 500 });
 
   const p = proposal.primary;
-  const c = proposal.candidate;
 
-  // Compute swapped slot details. Each appointment KEEPS its own service
-  // (and therefore its own duration) — only the (staff, date, startTime) move.
+  // ── kind: "move" — relocate primary, no second appointment involved ─────
+  if (proposal.kind === "move") {
+    if (!proposal.targetStaffId || !proposal.targetDate || !proposal.targetStartTime) {
+      return NextResponse.json({ error: "נתוני יעד חסרים בהצעה" }, { status: 500 });
+    }
+    const pDur = timeToMinutes(p.endTime) - timeToMinutes(p.startTime);
+    const newPrimary = {
+      staffId:   proposal.targetStaffId,
+      date:      proposal.targetDate,
+      startTime: proposal.targetStartTime,
+      endTime:   minToTime(timeToMinutes(proposal.targetStartTime) + pDur),
+    };
+
+    await prisma.$transaction([
+      prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
+      prisma.swapProposal.update({
+        where: { id: proposal.id },
+        data:  { status: "approved", approvedAt: new Date() },
+      }),
+      // Cancel sibling proposals of this primary
+      prisma.swapProposal.updateMany({
+        where: {
+          primaryAppointmentId: p.id,
+          status: { in: ["pending_response", "accepted_by_customer"] },
+          id: { not: proposal.id },
+        },
+        data: { status: "cancelled" },
+      }),
+    ]);
+
+    // Confirmation to primary's customer (reuses appointment_moved template)
+    const newStaff = await prisma.staff.findUnique({
+      where: { id: newPrimary.staffId },
+      select: { name: true },
+    });
+    const text = appointmentMovedText({
+      customerName: p.customer.name,
+      businessName: business.name,
+      newDateLabel: hebDate(newPrimary.date),
+      newTime: newPrimary.startTime,
+      newStaffName: newStaff?.name || p.staff.name,
+      serviceName: p.service.name,
+    }, business.appointmentMovedTemplate);
+    sendMessage({
+      businessId: business.id,
+      appointmentId: p.id,
+      customerPhone: p.customer.phone,
+      kind: "appointment_moved",
+      body: text,
+    }).catch(err => console.error("move_confirmation send failed:", err));
+
+    const primaryFinal = await prisma.appointment.findUnique({
+      where: { id: p.id },
+      include: { customer: true, staff: true, service: true },
+    });
+    return NextResponse.json({ ok: true, kind: "move", primary: primaryFinal });
+  }
+
+  // ── kind: "swap" — trade with candidate appointment ─────────────────────
+  if (!proposal.candidate) {
+    return NextResponse.json({ error: "מועמד החלפה חסר" }, { status: 500 });
+  }
+  const c = proposal.candidate;
   const pDur = timeToMinutes(p.endTime) - timeToMinutes(p.startTime);
   const cDur = timeToMinutes(c.endTime) - timeToMinutes(c.startTime);
 
-  // After swap: primary moves into candidate's slot
   const newPrimary = {
     staffId:   c.staffId,
     date:      c.date,
     startTime: c.startTime,
     endTime:   minToTime(timeToMinutes(c.startTime) + pDur),
   };
-  // Candidate moves into primary's slot
   const newCandidate = {
     staffId:   p.staffId,
     date:      p.date,
@@ -76,21 +134,13 @@ export async function POST(
     endTime:   minToTime(timeToMinutes(p.startTime) + cDur),
   };
 
-  // Atomic swap + bookkeeping
   await prisma.$transaction([
-    prisma.appointment.update({
-      where: { id: p.id },
-      data:  newPrimary,
-    }),
-    prisma.appointment.update({
-      where: { id: c.id },
-      data:  newCandidate,
-    }),
+    prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
+    prisma.appointment.update({ where: { id: c.id }, data: newCandidate }),
     prisma.swapProposal.update({
       where: { id: proposal.id },
       data:  { status: "approved", approvedAt: new Date() },
     }),
-    // Cancel sibling proposals — other candidates for the same primary
     prisma.swapProposal.updateMany({
       where: {
         primaryAppointmentId: p.id,
@@ -101,9 +151,7 @@ export async function POST(
     }),
   ]);
 
-  // ── Send confirmations (fire-and-forget) ──
-  // For each customer, the "new" slot is the OTHER appointment's old slot.
-  // Pull staff names by id (one query, both staff).
+  // Both customers get a confirmation with their new slot
   const staffIds = Array.from(new Set([p.staffId, c.staffId]));
   const staffRecords = await prisma.staff.findMany({
     where: { id: { in: staffIds } },
@@ -111,26 +159,23 @@ export async function POST(
   });
   const staffNameById = new Map(staffRecords.map(s => [s.id, s.name]));
 
-  // Primary customer gets the slot that USED to be candidate's
   const primaryConfirm = swapConfirmationText({
-    customerName:   p.customer.name,
-    businessName:   business.name,
-    newDateLabel:   hebDate(newPrimary.date),
-    newTime:        newPrimary.startTime,
-    newStaffName:   staffNameById.get(newPrimary.staffId) || p.staff.name,
-    serviceName:    p.service.name,
+    customerName: p.customer.name,
+    businessName: business.name,
+    newDateLabel: hebDate(newPrimary.date),
+    newTime:      newPrimary.startTime,
+    newStaffName: staffNameById.get(newPrimary.staffId) || p.staff.name,
+    serviceName:  p.service.name,
   }, business.swapConfirmationTemplate);
-  // Candidate customer gets the slot that USED to be primary's
   const candidateConfirm = swapConfirmationText({
-    customerName:   c.customer.name,
-    businessName:   business.name,
-    newDateLabel:   hebDate(newCandidate.date),
-    newTime:        newCandidate.startTime,
-    newStaffName:   staffNameById.get(newCandidate.staffId) || c.staff.name,
-    serviceName:    c.service.name,
+    customerName: c.customer.name,
+    businessName: business.name,
+    newDateLabel: hebDate(newCandidate.date),
+    newTime:      newCandidate.startTime,
+    newStaffName: staffNameById.get(newCandidate.staffId) || c.staff.name,
+    serviceName:  c.service.name,
   }, business.swapConfirmationTemplate);
 
-  // Fire-and-forget — don't block the response on WhatsApp delivery
   Promise.all([
     sendMessage({
       businessId: business.id,
@@ -148,7 +193,6 @@ export async function POST(
     }),
   ]).catch(err => console.error("swap_confirmation send failed:", err));
 
-  // Reload final state to return
   const [primaryFinal, candidateFinal] = await Promise.all([
     prisma.appointment.findUnique({
       where: { id: p.id },
@@ -160,5 +204,5 @@ export async function POST(
     }),
   ]);
 
-  return NextResponse.json({ ok: true, primary: primaryFinal, candidate: candidateFinal });
+  return NextResponse.json({ ok: true, kind: "swap", primary: primaryFinal, candidate: candidateFinal });
 }

@@ -52,20 +52,33 @@ type ViewType = "day" | "3day" | "week" | "month";
 
 // Swap-flow types ────────────────────────────────────────────────────────────
 type SwapStatus = "pending_response" | "accepted_by_customer" | "rejected_by_customer" | "approved" | "cancelled" | "expired";
+type SwapKind = "swap" | "move";
 type SwapProposal = {
   id: string;
+  kind: SwapKind;
   status: SwapStatus;
   primaryAppointmentId: string;
-  candidateAppointmentId: string;
+  candidateAppointmentId: string | null;
+  targetStaffId: string | null;
+  targetDate: string | null;
+  targetStartTime: string | null;
   rawResponse: string | null;
   createdAt: string;
   respondedAt: string | null;
   approvedAt: string | null;
   expiresAt: string;
   primary:   Appt;
-  candidate: Appt;
+  candidate: Appt | null;
 };
 const SWAP_OPEN_STATUSES: SwapStatus[] = ["pending_response", "accepted_by_customer"];
+
+// Selection in "swap mode" — admin picks a mix of swap and move candidates
+type SwapModeCandidate =
+  | { kind: "swap"; appointmentId: string }
+  | { kind: "move"; staffId: string; date: string; startTime: string };
+function moveKey(c: { staffId: string; date: string; startTime: string }): string {
+  return `${c.staffId}|${c.date}|${c.startTime}`;
+}
 type WaitlistEntry = {
   id: string;
   customer: { name: string; phone: string };
@@ -886,17 +899,29 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               <p className="text-xs font-semibold text-blue-900">
                 🔄 ההצעה שלך לחיפוש החלפה ({proposalsAsPrimary.length} מועמדים)
               </p>
-              <ul className="space-y-1.5 max-h-48 overflow-y-auto">
+              <ul className="space-y-1.5 max-h-56 overflow-y-auto">
                 {proposalsAsPrimary.map(p => {
-                  const cd = new Date(p.candidate.date).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" });
+                  // Discriminate label based on proposal kind
+                  const isMove = p.kind === "move";
+                  const targetDateStr = isMove
+                    ? (p.targetDate ? new Date(p.targetDate).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) : "")
+                    : (p.candidate ? new Date(p.candidate.date).toLocaleDateString("he-IL", { weekday: "short", day: "numeric", month: "numeric" }) : "");
+                  const targetTime = isMove ? (p.targetStartTime || "") : (p.candidate?.startTime || "");
+                  const headerLabel = isMove
+                    ? "🕒 העברה לשעה ריקה"
+                    : (p.candidate?.customer.name || "—");
+                  const subLabel = isMove ? "מעבר לזמן פנוי ביומן" : "החלפה עם לקוח";
                   return (
-                    <li key={p.id} className="bg-white rounded-lg px-2.5 py-2 border border-blue-100">
+                    <li key={p.id} className={`rounded-lg px-2.5 py-2 border ${isMove ? "bg-blue-50 border-blue-200" : "bg-white border-blue-100"}`}>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-neutral-800 truncate">
-                            {p.candidate.customer.name}
+                            {headerLabel}
                           </p>
-                          <p className="text-[11px] text-neutral-500">{cd} · {p.candidate.startTime}</p>
+                          <p className="text-[11px] text-neutral-500">
+                            {targetDateStr} · {targetTime}
+                            <span className="text-neutral-400"> · {subLabel}</span>
+                          </p>
                         </div>
                         {p.status === "pending_response" && (
                           <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded font-bold">⏳ ממתין</span>
@@ -924,7 +949,9 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                       {p.status === "accepted_by_customer" && (
                         <button onClick={() => onApproveSwap(p.id)}
                           className="w-full mt-1.5 py-1.5 rounded bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold">
-                          🤝 אשר החלפה (יבוצע ויישלח אישור לשני הלקוחות)
+                          {isMove
+                            ? "🤝 אשר העברה (יבוצע ויישלח אישור ללקוח)"
+                            : "🤝 אשר החלפה (יבוצע ויישלח אישור לשני הלקוחות)"}
                         </button>
                       )}
                     </li>
@@ -939,7 +966,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <button
               onClick={() => onEnterSwapMode(appt.id)}
               className="w-full py-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-sm font-bold transition flex items-center justify-center gap-2">
-              🔄 החלף תור (בחר מועמדים)
+              🔄 החלף / העבר תור (בחר מועמדים או שעה ריקה)
             </button>
           )}
         </div>
@@ -1530,9 +1557,13 @@ export default function AdminCalendar() {
   // ── Swap flow ────────────────────────────────────────────────────────────────
   const [swapProposals, setSwapProposals] = useState<SwapProposal[]>([]);
   // When `swapMode` is active, the calendar enters "select candidates" mode:
-  // tapping any other appointment toggles it as a candidate. Long-press / drag
-  // are disabled while swapMode is active.
-  const [swapMode, setSwapMode] = useState<{ primaryApptId: string; candidateIds: string[] } | null>(null);
+  // tapping any other appointment toggles it as a SWAP candidate; tapping an
+  // empty time slot toggles it as a MOVE candidate. Long-press / drag are
+  // disabled while swapMode is active.
+  const [swapMode, setSwapMode] = useState<{
+    primaryApptId: string;
+    candidates: SwapModeCandidate[];
+  } | null>(null);
   const [swapSubmitting, setSwapSubmitting] = useState(false);
 
   // Drag-to-move follow-up — after a successful drop ask if customer should be notified
@@ -1556,17 +1587,24 @@ export default function AdminCalendar() {
   function swapStateFor(apptId: string): ApptBlockSwapState {
     if (swapMode) {
       if (apptId === swapMode.primaryApptId) return { kind: "swap-mode-primary" };
-      if (swapMode.candidateIds.includes(apptId)) return { kind: "swap-mode-selected" };
+      const isSelected = swapMode.candidates.some(c => c.kind === "swap" && c.appointmentId === apptId);
+      if (isSelected) return { kind: "swap-mode-selected" };
       if (getOpenProposalAsPrimary(apptId) || getOpenProposalAsCandidate(apptId)) return { kind: "swap-mode-disabled" };
       return { kind: "swap-mode-eligible" };
     }
-    // Not in swap mode — show passive indicators for involved appts
     const asP = getOpenProposalAsPrimary(apptId);
     const asC = getOpenProposalAsCandidate(apptId);
     const involved = asP || asC;
     if (!involved) return { kind: "none" };
     if (involved.status === "accepted_by_customer") return { kind: "swap-agreed" };
     return { kind: "pending-swap" };
+  }
+
+  // Lookup: is this empty slot already selected as a "move" candidate?
+  function isSelectedMoveSlot(staffId: string, date: string, startTime: string): boolean {
+    if (!swapMode) return false;
+    const key = moveKey({ staffId, date, startTime });
+    return swapMode.candidates.some(c => c.kind === "move" && moveKey(c) === key);
   }
 
   // Click on an appointment block — swap-mode selection or normal detail open
@@ -1669,7 +1707,7 @@ export default function AdminCalendar() {
 
   // ── Swap-mode handlers ─────────────────────────────────────────────────────
   function enterSwapMode(primaryApptId: string) {
-    setSwapMode({ primaryApptId, candidateIds: [] });
+    setSwapMode({ primaryApptId, candidates: [] });
     setSelectedAppt(null); // close any open detail modal
   }
   function cancelSwapMode() {
@@ -1678,23 +1716,43 @@ export default function AdminCalendar() {
   function toggleSwapCandidate(apptId: string) {
     setSwapMode(prev => {
       if (!prev) return null;
-      // Can't pick the primary as a candidate
       if (apptId === prev.primaryApptId) return prev;
-      // Can't pick an appt that already has an open proposal
       if (getOpenProposalAsPrimary(apptId) || getOpenProposalAsCandidate(apptId)) return prev;
-      const has = prev.candidateIds.includes(apptId);
-      if (has) return { ...prev, candidateIds: prev.candidateIds.filter(id => id !== apptId) };
-      if (prev.candidateIds.length >= 5) return prev; // cap at 5
-      return { ...prev, candidateIds: [...prev.candidateIds, apptId] };
+      const idx = prev.candidates.findIndex(c => c.kind === "swap" && c.appointmentId === apptId);
+      if (idx >= 0) {
+        return { ...prev, candidates: prev.candidates.filter((_, i) => i !== idx) };
+      }
+      if (prev.candidates.length >= 5) return prev;
+      return { ...prev, candidates: [...prev.candidates, { kind: "swap", appointmentId: apptId }] };
+    });
+  }
+  function toggleSwapMoveSlot(staffId: string, date: string, startTime: string) {
+    setSwapMode(prev => {
+      if (!prev) return null;
+      const key = moveKey({ staffId, date, startTime });
+      const idx = prev.candidates.findIndex(c => c.kind === "move" && moveKey(c) === key);
+      if (idx >= 0) {
+        return { ...prev, candidates: prev.candidates.filter((_, i) => i !== idx) };
+      }
+      if (prev.candidates.length >= 5) return prev;
+      return { ...prev, candidates: [...prev.candidates, { kind: "move", staffId, date, startTime }] };
     });
   }
   async function submitSwap() {
-    if (!swapMode || swapMode.candidateIds.length === 0) return;
+    if (!swapMode || swapMode.candidates.length === 0) return;
     setSwapSubmitting(true);
+    // Translate to API body shape
+    const body = {
+      candidates: swapMode.candidates.map(c =>
+        c.kind === "swap"
+          ? { type: "swap", appointmentId: c.appointmentId }
+          : { type: "move", staffId: c.staffId, date: c.date, startTime: c.startTime }
+      ),
+    };
     const res = await fetch(`/api/admin/appointments/${swapMode.primaryApptId}/swap`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidateIds: swapMode.candidateIds }),
+      body: JSON.stringify(body),
     });
     setSwapSubmitting(false);
     if (!res.ok) {
@@ -1703,7 +1761,7 @@ export default function AdminCalendar() {
       return;
     }
     setSwapMode(null);
-    loadAppointments(); // refresh proposals + visual indicators
+    loadAppointments();
   }
 
   // Mark a candidate's response (manual — admin sees customer's WA reply)
@@ -1953,6 +2011,13 @@ export default function AdminCalendar() {
     if (drag !== null) return; // already handled by pointer events
     const rect = e.currentTarget.getBoundingClientRect();
     const y = e.clientY - rect.top;
+    // In swap mode, an empty-slot tap toggles a "move" candidate instead of
+    // opening the new-appointment draft.
+    if (swapMode) {
+      const startTime = yToTimeFn(y, hourHeight);
+      toggleSwapMoveSlot(staffId, d, startTime);
+      return;
+    }
     setDraftAppt({ staffId, date: d, startY: y });
   }
 
@@ -2118,6 +2183,7 @@ export default function AdminCalendar() {
                             onClick={() => handleApptClick(a)}
                             onLongPress={(x, y) => startMoveDrag(a, x, y)} />
                         ))}
+                        {renderMoveSlotMarkers(s.id, date)}
                       </div>
                     );
                   })
@@ -2181,6 +2247,7 @@ export default function AdminCalendar() {
                             onClick={() => handleApptClick(a)}
                             onLongPress={(x, y) => startMoveDrag(a, x, y)} />
                         ))}
+                        {renderMoveSlotMarkers(s.id, d)}
                       </div>
                     );
                   })
@@ -2200,35 +2267,72 @@ export default function AdminCalendar() {
 
   // Look up the primary appt (when in swap mode) for the banner label
   const swapPrimary = swapMode ? appointments.find(a => a.id === swapMode.primaryApptId) : null;
+  // Primary's duration — used to render move-slot ghost markers at the right size
+  const swapPrimaryDuration = swapPrimary
+    ? toMin(swapPrimary.endTime) - toMin(swapPrimary.startTime)
+    : 30;
+
+  // Render a list of "move-slot" markers for a given column. Used inline in
+  // each column's JSX, so we just return an array of <div>s.
+  function renderMoveSlotMarkers(staffId: string, dateStr: string) {
+    if (!swapMode) return null;
+    const slots = swapMode.candidates.filter(
+      (c): c is Extract<SwapModeCandidate, { kind: "move" }> =>
+        c.kind === "move" && c.staffId === staffId && c.date === dateStr
+    );
+    return slots.map(slot => {
+      const top = apptTop(slot.startTime, hourHeight);
+      const height = (swapPrimaryDuration / 60) * hourHeight;
+      return (
+        <div key={`move-${slot.startTime}`}
+          className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-20 flex flex-col items-center justify-center px-1.5"
+          style={{
+            top, height,
+            borderColor: "#3b82f6",
+            background: "rgba(59,130,246,0.15)",
+          }}>
+          <p className="text-[10px] font-bold text-blue-900 leading-tight">✓ העברה לכאן</p>
+          <p className="text-[10px] text-blue-700">{slot.startTime}</p>
+        </div>
+      );
+    });
+  }
 
   return (
     <div className="flex flex-col h-full bg-white">
       {/* ── Swap mode banner ── */}
-      {swapMode && (
-        <div className="bg-amber-50 border-b-2 border-amber-400 px-3 py-2.5 flex items-center gap-3 shrink-0">
-          <span className="text-amber-900 text-base">🔄</span>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-amber-900 truncate">
-              מצב החלפה: {swapPrimary ? `${swapPrimary.customer.name} (${swapPrimary.startTime})` : "..."}
-            </p>
-            <p className="text-[11px] text-amber-700">
-              בחר עד 5 תורים להציע ({swapMode.candidateIds.length} נבחרו)
-            </p>
+      {swapMode && (() => {
+        const swapCount = swapMode.candidates.filter(c => c.kind === "swap").length;
+        const moveCount = swapMode.candidates.filter(c => c.kind === "move").length;
+        const total = swapMode.candidates.length;
+        return (
+          <div className="bg-amber-50 border-b-2 border-amber-400 px-3 py-2.5 flex items-center gap-3 shrink-0">
+            <span className="text-amber-900 text-base">🔄</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-bold text-amber-900 truncate">
+                מצב החלפה: {swapPrimary ? `${swapPrimary.customer.name} (${swapPrimary.startTime})` : "..."}
+              </p>
+              <p className="text-[11px] text-amber-700">
+                {total === 0
+                  ? "לחץ על תור (החלפה עם לקוח) או על שעה ריקה (העברה)"
+                  : `${total} נבחרו · ${swapCount} החלפות · ${moveCount} העברות לשעה ריקה`}
+              </p>
+            </div>
+            <button
+              onClick={cancelSwapMode}
+              disabled={swapSubmitting}
+              className="px-3 py-1.5 rounded-lg text-xs text-neutral-600 hover:bg-neutral-100">
+              ביטול
+            </button>
+            <button
+              onClick={submitSwap}
+              disabled={total === 0 || swapSubmitting}
+              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
+              {swapSubmitting ? "שולח..." : `שלח ל-${total}`}
+            </button>
           </div>
-          <button
-            onClick={cancelSwapMode}
-            disabled={swapSubmitting}
-            className="px-3 py-1.5 rounded-lg text-xs text-neutral-600 hover:bg-neutral-100">
-            ביטול
-          </button>
-          <button
-            onClick={submitSwap}
-            disabled={swapMode.candidateIds.length === 0 || swapSubmitting}
-            className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
-            {swapSubmitting ? "שולח..." : `שלח ל-${swapMode.candidateIds.length}`}
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Top bar ── */}
       <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-1.5">

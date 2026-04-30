@@ -35,6 +35,7 @@ model Business {
   reminder2hTemplate      String?  @map("reminder_2h_template")
   confirmationTemplate    String?  @map("confirmation_template")
   swapProposalTemplate    String?  @map("swap_proposal_template")
+  moveProposalTemplate    String?  @map("move_proposal_template")
   swapConfirmationTemplate String? @map("swap_confirmation_template")
   appointmentMovedTemplate String? @map("appointment_moved_template")
   // ── Re-engagement automation ──
@@ -251,28 +252,43 @@ model Appointment {
   @@map("appointments")
 }
 
-// === הצעת החלפת תורים ===
-// One row per (primary appointment, candidate appointment) pair. When admin
-// initiates a swap from appointment A targeting candidates B, C, D, three rows
-// are created. Each row tracks a single customer's response.
+// === הצעת החלפת/העברת תורים ===
+// Two flavors discriminated by `kind`:
+//   "swap" — the customer is asked to TRADE slots with another customer (the
+//            classic case). `candidateAppointmentId` is the other customer's
+//            appointment. Approving the proposal swaps both appointments'
+//            slot+staff atomically.
+//   "move" — the customer is asked to MOVE to a free slot (no other customer
+//            involved). `candidateAppointmentId` is null and the target slot
+//            lives on `targetStaffId` + `targetDate` + `targetStartTime`.
+//            Approving the proposal just relocates the primary appointment.
+//
+// One row per (primary, candidate) — when admin offers 3 candidates we create
+// 3 rows. The first to reach `accepted_by_customer` is the one the admin is
+// invited to approve; siblings get auto-cancelled on approval.
 //
 // Lifecycle:
 //   pending_response     → message sent, awaiting customer reply
 //   accepted_by_customer → customer said yes (manually marked OR detected by bot)
 //   rejected_by_customer → customer said no
-//   approved             → admin clicked "approve" and the swap was executed
+//   approved             → admin clicked "approve" and the change was executed
 //   cancelled            → admin or system cancelled
 //   expired              → 24h passed without response
-//
-// Per primary appointment there can be multiple `pending_response` rows in
-// parallel. The first to reach `accepted_by_customer` is the candidate the
-// admin is invited to approve. Once `approved`, all sibling rows are auto
-// `cancelled`.
 model SwapProposal {
   id                     String    @id @default(uuid())
   businessId             String    @map("business_id")
   primaryAppointmentId   String    @map("primary_appointment_id")
-  candidateAppointmentId String    @map("candidate_appointment_id")
+
+  // Discriminator (default "swap" for backward-compat with existing rows)
+  kind                   String    @default("swap") // "swap" | "move"
+
+  // For kind=swap: the appointment to trade with
+  candidateAppointmentId String?   @map("candidate_appointment_id")
+  // For kind=move: the empty slot to relocate to
+  targetStaffId          String?   @map("target_staff_id")
+  targetDate             DateTime? @map("target_date")
+  targetStartTime        String?   @map("target_start_time")
+
   status                 String    @default("pending_response")
   rawResponse            String?   @map("raw_response") // free-text customer reply, if captured
   createdAt              DateTime  @default(now()) @map("created_at")
@@ -280,9 +296,9 @@ model SwapProposal {
   approvedAt             DateTime? @map("approved_at")
   expiresAt              DateTime  @map("expires_at") // createdAt + 24h
 
-  business  Business    @relation(fields: [businessId], references: [id])
-  primary   Appointment @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
-  candidate Appointment @relation("SwapCandidate", fields: [candidateAppointmentId], references: [id])
+  business  Business     @relation(fields: [businessId], references: [id])
+  primary   Appointment  @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
+  candidate Appointment? @relation("SwapCandidate", fields: [candidateAppointmentId], references: [id])
 
   @@index([businessId, status])
   @@index([primaryAppointmentId, status])

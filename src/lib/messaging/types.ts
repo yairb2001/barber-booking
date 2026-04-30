@@ -14,6 +14,7 @@ export type MessageKind =
   | "post_every_visit"
   // Swap-flow messages
   | "swap_proposal"      // sent to candidate customers asking if they'd trade
+  | "move_proposal"      // sent to a customer asking if they'd move to a free slot
   | "swap_confirmation"  // sent to both customers when admin approves the swap
   | "swap_cancelled"     // sent when a proposal is cancelled
   // Drag-to-move follow-up

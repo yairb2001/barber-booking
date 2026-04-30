@@ -180,6 +180,23 @@ export const DEFAULT_SWAP_PROPOSAL_TEMPLATE =
 
 מסכים? ענה *כן* או *לא* 🙏`;
 
+export const DEFAULT_MOVE_PROPOSAL_TEMPLATE =
+`שלום {{name}} 👋
+
+*{{business}}* ✂️
+אנחנו צריכים להזיז את התור שלך.
+
+התור הנוכחי שלך:
+📅 {{current_date}}
+🕒 {{current_time}}
+
+יש לך אפשרות לעבור ל:
+📅 {{proposed_date}}
+🕒 {{proposed_time}}
+💈 {{proposed_staff}}
+
+מתאים? ענה *כן* או *לא* 🙏`;
+
 export const DEFAULT_SWAP_CONFIRMATION_TEMPLATE =
 `שלום {{name}} ✓
 
@@ -263,6 +280,21 @@ export const TEMPLATE_DEFS = {
       { key: "proposed_date",  label: "תאריך התור המוצע במקום" },
       { key: "proposed_time",  label: "שעת התור המוצע" },
       { key: "proposed_staff", label: "ספר של התור המוצע" },
+    ],
+  },
+  move_proposal: {
+    label: "הצעת מעבר לשעה ריקה (לא החלפה עם לקוח אחר)",
+    description: "נשלח ללקוח כשאתה מציע לו לעבור לזמן פנוי אחר ביומן (לא דורש החלפה עם לקוח אחר).",
+    field: "moveProposalTemplate" as const,
+    default: DEFAULT_MOVE_PROPOSAL_TEMPLATE,
+    variables: [
+      { key: "name",           label: "שם הלקוח" },
+      { key: "business",       label: "שם העסק" },
+      { key: "current_date",   label: "תאריך התור הנוכחי שלו" },
+      { key: "current_time",   label: "שעת התור הנוכחי שלו" },
+      { key: "proposed_date",  label: "תאריך השעה הריקה" },
+      { key: "proposed_time",  label: "שעה הריקה" },
+      { key: "proposed_staff", label: "ספר של השעה הריקה" },
     ],
   },
   swap_confirmation: {
@@ -354,6 +386,36 @@ export function swapProposalText(
     proposed_date:  params.primaryDateLabel,
     proposed_time:  params.primaryTime,
     proposed_staff: params.primaryStaffName,
+  });
+}
+
+/**
+ * Sent to a customer asking if they'd move their appointment to a free slot
+ * (no other customer involved — the slot is empty in the schedule). Used
+ * when the barber needs to free up a specific time and the admin offers
+ * the customer one or more alternative times.
+ */
+export function moveProposalText(
+  params: {
+    customerName: string;
+    businessName: string;
+    currentDateLabel: string;
+    currentTime: string;
+    proposedDateLabel: string;
+    proposedTime: string;
+    proposedStaffName: string;
+  },
+  customTemplate?: string | null,
+): string {
+  const tmpl = customTemplate || DEFAULT_MOVE_PROPOSAL_TEMPLATE;
+  return applyTemplate(tmpl, {
+    name:           params.customerName,
+    business:       params.businessName,
+    current_date:   params.currentDateLabel,
+    current_time:   params.currentTime,
+    proposed_date:  params.proposedDateLabel,
+    proposed_time:  params.proposedTime,
+    proposed_staff: params.proposedStaffName,
   });
 }
 

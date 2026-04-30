@@ -59,6 +59,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.swapProposalTemplate !== undefined && {
         swapProposalTemplate: body.swapProposalTemplate || null,
       }),
+      ...(body.moveProposalTemplate !== undefined && {
+        moveProposalTemplate: body.moveProposalTemplate || null,
+      }),
       ...(body.swapConfirmationTemplate !== undefined && {
         swapConfirmationTemplate: body.swapConfirmationTemplate || null,
       }),
