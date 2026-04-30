@@ -11,7 +11,13 @@ export type MessageKind =
   | "agent_reply"
   | "reengage"
   | "post_first_visit"
-  | "post_every_visit";
+  | "post_every_visit"
+  // Swap-flow messages
+  | "swap_proposal"      // sent to candidate customers asking if they'd trade
+  | "swap_confirmation"  // sent to both customers when admin approves the swap
+  | "swap_cancelled"     // sent when a proposal is cancelled
+  // Drag-to-move follow-up
+  | "appointment_moved"; // sent to a customer when their appointment is moved by admin
 
 export type MessageStatus =
   | "queued"

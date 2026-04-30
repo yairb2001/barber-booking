@@ -173,3 +173,90 @@ export function confirmationText(params: {
   lines.push(``, `נתראה!`);
   return lines.join("\n");
 }
+
+// ── Swap-flow templates ──────────────────────────────────────────────────────
+
+/**
+ * Sent to candidate customer asking if they'd trade their slot for the
+ * primary customer's slot. The customer is expected to reply "כן" or "לא"
+ * (free-text — admin reads the reply and marks the response in the UI).
+ */
+export function swapProposalText(params: {
+  candidateName: string;
+  businessName: string;
+  candidateDateLabel: string;
+  candidateTime: string;
+  primaryDateLabel: string;
+  primaryTime: string;
+  primaryStaffName: string;
+}): string {
+  return [
+    `שלום ${params.candidateName} 👋`,
+    ``,
+    `*${params.businessName}* ✂️`,
+    `מבקשים ממך לשקול החלפת תור.`,
+    ``,
+    `התור הנוכחי שלך:`,
+    `📅 ${params.candidateDateLabel}`,
+    `🕒 ${params.candidateTime}`,
+    ``,
+    `התור המוצע במקומו:`,
+    `📅 ${params.primaryDateLabel}`,
+    `🕒 ${params.primaryTime}`,
+    `💈 ${params.primaryStaffName}`,
+    ``,
+    `מסכים? ענה *כן* או *לא* 🙏`,
+  ].join("\n");
+}
+
+/**
+ * Sent to BOTH customers when admin approves the swap.
+ * Confirms each customer's NEW slot details.
+ */
+export function swapConfirmationText(params: {
+  customerName: string;
+  businessName: string;
+  newDateLabel: string;
+  newTime: string;
+  newStaffName: string;
+  serviceName: string;
+}): string {
+  return [
+    `שלום ${params.customerName} ✓`,
+    ``,
+    `ההחלפה אושרה ב*${params.businessName}* 🤝`,
+    ``,
+    `התור החדש שלך:`,
+    `📅 ${params.newDateLabel}`,
+    `🕒 ${params.newTime}`,
+    `💈 ${params.serviceName} אצל ${params.newStaffName}`,
+    ``,
+    `תודה על הגמישות 🙏`,
+  ].join("\n");
+}
+
+/**
+ * Sent to a customer when admin moves their appointment to a new slot
+ * (via drag-to-move) and chooses to notify them.
+ */
+export function appointmentMovedText(params: {
+  customerName: string;
+  businessName: string;
+  newDateLabel: string;
+  newTime: string;
+  newStaffName: string;
+  serviceName: string;
+}): string {
+  return [
+    `שלום ${params.customerName} 👋`,
+    ``,
+    `התור שלך ב*${params.businessName}* עודכן.`,
+    ``,
+    `הזמן החדש:`,
+    `📅 ${params.newDateLabel}`,
+    `🕒 ${params.newTime}`,
+    `💈 ${params.serviceName} אצל ${params.newStaffName}`,
+    ``,
+    `אם יש בעיה — נא להודיע. אחרת נתראה! 🙏`,
+  ].join("\n");
+}

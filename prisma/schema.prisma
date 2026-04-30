@@ -61,6 +61,7 @@ model Business {
   stories        Story[]
   conversations  Conversation[]
   agentConfig    AgentConfig?
+  swapProposals  SwapProposal[]
 
   @@map("businesses")
 }
@@ -239,8 +240,50 @@ model Appointment {
   service        Service  @relation(fields: [serviceId], references: [id])
   recurring      RecurringAppointment? @relation(fields: [recurringId], references: [id])
 
+  swapsAsPrimary   SwapProposal[] @relation("SwapPrimary")
+  swapsAsCandidate SwapProposal[] @relation("SwapCandidate")
+
   @@index([recurringId])
   @@map("appointments")
+}
+
+// === הצעת החלפת תורים ===
+// One row per (primary appointment, candidate appointment) pair. When admin
+// initiates a swap from appointment A targeting candidates B, C, D, three rows
+// are created. Each row tracks a single customer's response.
+//
+// Lifecycle:
+//   pending_response     → message sent, awaiting customer reply
+//   accepted_by_customer → customer said yes (manually marked OR detected by bot)
+//   rejected_by_customer → customer said no
+//   approved             → admin clicked "approve" and the swap was executed
+//   cancelled            → admin or system cancelled
+//   expired              → 24h passed without response
+//
+// Per primary appointment there can be multiple `pending_response` rows in
+// parallel. The first to reach `accepted_by_customer` is the candidate the
+// admin is invited to approve. Once `approved`, all sibling rows are auto
+// `cancelled`.
+model SwapProposal {
+  id                     String    @id @default(uuid())
+  businessId             String    @map("business_id")
+  primaryAppointmentId   String    @map("primary_appointment_id")
+  candidateAppointmentId String    @map("candidate_appointment_id")
+  status                 String    @default("pending_response")
+  rawResponse            String?   @map("raw_response") // free-text customer reply, if captured
+  createdAt              DateTime  @default(now()) @map("created_at")
+  respondedAt            DateTime? @map("responded_at")
+  approvedAt             DateTime? @map("approved_at")
+  expiresAt              DateTime  @map("expires_at") // createdAt + 24h
+
+  business  Business    @relation(fields: [businessId], references: [id])
+  primary   Appointment @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
+  candidate Appointment @relation("SwapCandidate", fields: [candidateAppointmentId], references: [id])
+
+  @@index([businessId, status])
+  @@index([primaryAppointmentId, status])
+  @@index([candidateAppointmentId, status])
+  @@map("swap_proposals")
 }
 
 // === תור קבוע (recurring) ===
