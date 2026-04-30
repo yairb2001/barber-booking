@@ -1509,10 +1509,12 @@ function DraftApptBlock({
 }) {
   const hh = React.useContext(HHCtx);
   const totalH = TOTAL_HOURS * hh;
-  const blockH = Math.max(hh * 0.5, 60);
+  const blockH = 32; // compact, minimalist
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const time = yToTimeFn(clampedTop, hh);
   const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
+  // staffName/date are not displayed in compact mode but kept in the API for now
+  void staffName;
 
   return (
     <div
@@ -1531,37 +1533,24 @@ function DraftApptBlock({
       onPointerUp={e => { e.stopPropagation(); dragRef.current = null; }}
       onPointerCancel={() => { dragRef.current = null; }}>
 
-      {/* Shadow card */}
-      <div className="w-full h-full rounded-xl bg-white shadow-xl border border-neutral-200 flex flex-col overflow-hidden"
-        style={{ borderRight: "3px solid #f59e0b" }}>
-
-        {/* Top row — time + close */}
-        <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
-          <span className="text-[12px] font-semibold text-neutral-800">{time}</span>
-          <button
-            className="text-neutral-400 hover:text-neutral-600 text-sm leading-none"
-            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-        </div>
-
-        {/* Staff name */}
-        {blockH > 72 && (
-          <p className="text-[10px] text-neutral-400 px-2.5 truncate">✂️ {staffName}</p>
-        )}
-
-        {/* Actions */}
-        <div className="flex gap-1.5 px-2 pb-2 mt-auto">
-          <button
-            className="flex-1 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-neutral-950 rounded-lg text-[11px] font-semibold py-1.5 transition"
-            onClick={e => { e.stopPropagation(); onConfirm(); }}>
-            קבע תור
-          </button>
-          <button
-            className="text-neutral-400 hover:text-neutral-600 text-sm px-2 rounded-lg hover:bg-neutral-50 transition"
-            title="הוסף הפסקה"
-            onClick={e => { e.stopPropagation(); onAddBreak(); }}>
-            ☕
-          </button>
-        </div>
+      {/* Compact, semi-transparent pill — single row */}
+      <div
+        className="w-full h-full rounded-md bg-white/70 backdrop-blur-sm border border-amber-300/60 flex items-center gap-1 px-1.5"
+        style={{ borderRight: "2px solid rgba(245,158,11,0.7)" }}>
+        <button
+          className="text-neutral-300 hover:text-neutral-500 text-xs leading-none shrink-0 px-0.5"
+          onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+        <button
+          className="flex-1 text-[11px] font-medium text-amber-700 hover:text-amber-800 truncate"
+          onClick={e => { e.stopPropagation(); onConfirm(); }}>
+          + קבע ב־{time}
+        </button>
+        <button
+          className="text-neutral-400 hover:text-neutral-600 text-[11px] shrink-0 px-0.5 opacity-60 hover:opacity-100"
+          title="הוסף הפסקה"
+          onClick={e => { e.stopPropagation(); onAddBreak(); }}>
+          ☕
+        </button>
       </div>
     </div>
   );
