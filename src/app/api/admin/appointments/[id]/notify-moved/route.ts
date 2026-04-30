@@ -40,7 +40,7 @@ export async function POST(
     newTime: appt.startTime,
     newStaffName: appt.staff.name,
     serviceName: appt.service.name,
-  });
+  }, business.appointmentMovedTemplate);
 
   const result = await sendMessage({
     businessId: business.id,

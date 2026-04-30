@@ -30,9 +30,13 @@ model Business {
   greenApiToken         String? @map("green_api_token")
   // ── Feature flags ──
   features       String?  // JSON: { reminders: true, reminder_24h: true, reminder_2h: false, agent: false }
-  // ── Reminder message templates (null = use built-in default) ──
-  reminder24hTemplate   String?  @map("reminder_24h_template")
-  reminder2hTemplate    String?  @map("reminder_2h_template")
+  // ── Message templates (null = use built-in default) ──
+  reminder24hTemplate     String?  @map("reminder_24h_template")
+  reminder2hTemplate      String?  @map("reminder_2h_template")
+  confirmationTemplate    String?  @map("confirmation_template")
+  swapProposalTemplate    String?  @map("swap_proposal_template")
+  swapConfirmationTemplate String? @map("swap_confirmation_template")
+  appointmentMovedTemplate String? @map("appointment_moved_template")
   // ── Re-engagement automation ──
   reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
   reengageWeeks         Int      @default(6)     @map("reengage_weeks")

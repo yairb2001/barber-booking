@@ -46,12 +46,24 @@ export async function PATCH(req: NextRequest) {
       ...(body.greenApiInstanceId !== undefined && { greenApiInstanceId: body.greenApiInstanceId }),
       ...(body.greenApiToken !== undefined && { greenApiToken: body.greenApiToken }),
       ...(body.features !== undefined && { features: JSON.stringify(body.features) }),
-      // Reminder templates (null = use built-in default)
+      // Message templates (null = use built-in default)
       ...(body.reminder24hTemplate !== undefined && {
         reminder24hTemplate: body.reminder24hTemplate || null,
       }),
       ...(body.reminder2hTemplate !== undefined && {
         reminder2hTemplate: body.reminder2hTemplate || null,
+      }),
+      ...(body.confirmationTemplate !== undefined && {
+        confirmationTemplate: body.confirmationTemplate || null,
+      }),
+      ...(body.swapProposalTemplate !== undefined && {
+        swapProposalTemplate: body.swapProposalTemplate || null,
+      }),
+      ...(body.swapConfirmationTemplate !== undefined && {
+        swapConfirmationTemplate: body.swapConfirmationTemplate || null,
+      }),
+      ...(body.appointmentMovedTemplate !== undefined && {
+        appointmentMovedTemplate: body.appointmentMovedTemplate || null,
       }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {

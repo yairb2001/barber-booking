@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
       endTime: appointment.endTime,
       price: appointment.price,
       address: business.address,
-    });
+    }, business.confirmationTemplate);
     // Fire-and-forget: don't await, don't block the response
     sendMessage({
       businessId: business.id,

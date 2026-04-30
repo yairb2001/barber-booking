@@ -154,7 +154,7 @@ export async function POST(request: Request) {
       endTime,
       price,
       address: business.address,
-    });
+    }, business.confirmationTemplate);
     sendMessage({
       businessId: staff.businessId,
       appointmentId: appointment.id,

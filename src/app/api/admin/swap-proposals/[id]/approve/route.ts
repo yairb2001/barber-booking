@@ -119,7 +119,7 @@ export async function POST(
     newTime:        newPrimary.startTime,
     newStaffName:   staffNameById.get(newPrimary.staffId) || p.staff.name,
     serviceName:    p.service.name,
-  });
+  }, business.swapConfirmationTemplate);
   // Candidate customer gets the slot that USED to be primary's
   const candidateConfirm = swapConfirmationText({
     customerName:   c.customer.name,
@@ -128,7 +128,7 @@ export async function POST(
     newTime:        newCandidate.startTime,
     newStaffName:   staffNameById.get(newCandidate.staffId) || c.staff.name,
     serviceName:    c.service.name,
-  });
+  }, business.swapConfirmationTemplate);
 
   // Fire-and-forget — don't block the response on WhatsApp delivery
   Promise.all([

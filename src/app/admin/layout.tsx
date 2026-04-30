@@ -14,6 +14,7 @@ const navItems: NavItem[] = [
   { href: "/admin/services",     label: "שירותים",        icon: "💈", ownerOnly: true },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢", ownerOnly: true },
+  { href: "/admin/templates",    label: "תבניות הודעות",  icon: "📝", ownerOnly: true },
   { href: "/admin/stories",      label: "סטוריז",         icon: "🎬", ownerOnly: true },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
   { href: "/admin/announcements",label: "עדכונים",        icon: "📌", ownerOnly: true },

@@ -132,7 +132,7 @@ export async function POST(
       primaryDateLabel,
       primaryTime: primary.startTime,
       primaryStaffName: primary.staff.name,
-    });
+    }, business.swapProposalTemplate);
     sendJobs.push({
       candidateAppointmentId: candidate.id,
       phone: candidate.customer.phone,
