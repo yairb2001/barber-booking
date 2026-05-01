@@ -82,7 +82,7 @@ export default function CustomersPage() {
       <div className="mb-4">
         <input value={q} onChange={e => setQ(e.target.value)}
           placeholder="חפש לפי שם או טלפון..."
-          className="w-full max-w-sm border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white" />
+          className="w-full max-w-sm border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white" />
       </div>
 
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
@@ -188,23 +188,23 @@ function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <div>
             <label className="text-xs text-neutral-500">שם מלא *</label>
             <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">טלפון *</label>
             <input value={phone} onChange={e => setPhone(e.target.value)} dir="ltr"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">מאיפה הגיע (אופציונלי)</label>
             <input value={referralSource} onChange={e => setReferralSource(e.target.value)}
               placeholder="חבר המליץ, אינסטגרם, וכו׳"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">הערות (אופציונלי)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
           {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
         </div>
@@ -319,7 +319,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             {editingName ? (
               <div className="flex gap-2">
                 <input value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 <button onClick={saveName} disabled={busy} className="text-xs bg-neutral-900 text-white px-3 rounded-lg">שמור</button>
                 <button onClick={() => { setEditingName(false); setNameDraft(detail.name); }} className="text-xs text-neutral-500 px-2">ביטול</button>
               </div>
@@ -393,7 +393,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             <div className="space-y-2">
               <textarea value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={3}
                 placeholder="העדפות שיער, אלרגיות, הערות..."
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               <div className="flex gap-2">
                 <button onClick={saveNotes} disabled={busy}
                   className="bg-neutral-900 text-white rounded-lg px-3 py-1.5 text-xs">שמור</button>

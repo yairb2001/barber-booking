@@ -160,7 +160,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
           <span className="font-semibold text-neutral-900">{staff.name}</span>
         </div>
         <button onClick={save} disabled={saving}
-          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${saved ? "bg-emerald-100 text-emerald-700" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
+          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${saved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
           {saving ? "שומר..." : saved ? "✓ נשמר" : "שמור"}
         </button>
       </div>
@@ -183,10 +183,10 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
                   <div className="flex items-center gap-2" dir="ltr">
                     <span className="text-xs text-neutral-400">מ</span>
                     <input type="time" dir="ltr" value={day.start} onChange={e => updateDay(dow, { start: e.target.value })}
-                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                     <span className="text-xs text-neutral-400">—</span>
                     <input type="time" dir="ltr" value={day.end} onChange={e => updateDay(dow, { end: e.target.value })}
-                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                     <span className="text-xs text-neutral-400">עד</span>
                   </div>
 
@@ -199,10 +199,10 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
                     {day.hasBreak && (
                       <div className="flex items-center gap-2" dir="ltr">
                         <input type="time" dir="ltr" value={day.breakStart} onChange={e => updateDay(dow, { breakStart: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                         <span className="text-xs text-neutral-400">—</span>
                         <input type="time" dir="ltr" value={day.breakEnd} onChange={e => updateDay(dow, { breakEnd: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
                       </div>
                     )}
                   </div>
@@ -223,7 +223,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
             <p className="text-[11px] text-neutral-400 mt-0.5">ריק = ברירת מחדל של העסק</p>
           </div>
           <button onClick={saveBookingSettings} disabled={bookingSaving}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
             {bookingSaving ? "שומר..." : bookingSaved ? "✓ נשמר" : "שמור"}
           </button>
         </div>
@@ -234,7 +234,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
               <input type="number" min={1} max={365} value={horizonDays}
                 onChange={e => setHorizonDays(e.target.value)}
                 placeholder="גלובלי"
-                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-300" />
               <span className="text-xs text-neutral-400">ימים</span>
             </div>
           </div>
@@ -244,7 +244,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
               <input type="number" min={0} max={1440} value={leadMins}
                 onChange={e => setLeadMins(e.target.value)}
                 placeholder="גלובלי"
-                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300" />
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-teal-300" />
               <span className="text-xs text-neutral-400">דקות</span>
             </div>
           </div>
@@ -480,12 +480,12 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הגדרות עסק</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/staff"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">✂️</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">ספרים</span>
             </Link>
             <Link href="/admin/services"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">💈</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">שירותים</span>
             </Link>
@@ -497,17 +497,17 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">עיצוב דף הבית</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/stories"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">📸</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">סטוריז</span>
             </Link>
             <Link href="/admin/products"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">🛍️</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">מוצרים</span>
             </Link>
             <Link href="/admin/announcements"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">📢</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">עדכונים</span>
             </Link>
@@ -519,7 +519,7 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הודעות</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/templates"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-xl">💬</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">תבניות הודעות</span>
             </Link>
@@ -553,22 +553,22 @@ export default function AdminSettingsPage() {
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">שם העסק</label>
                   <input value={form.name} onChange={e => setField("name", e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">טלפון</label>
                   <input value={form.phone} onChange={e => setField("phone", e.target.value)} dir="ltr"
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">כתובת</label>
                   <input value={form.address} onChange={e => setField("address", e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">אודות</label>
                   <textarea value={form.about} onChange={e => setField("about", e.target.value)} rows={3}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
                 </div>
               </div>
             </div>
@@ -600,7 +600,7 @@ export default function AdminSettingsPage() {
                       </label>
                       <input value={form.logoUrl} onChange={e => setField("logoUrl", e.target.value)} dir="ltr"
                         placeholder="או הדבק קישור..."
-                        className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400" />
                     </div>
                   </div>
                 </div>
@@ -626,7 +626,7 @@ export default function AdminSettingsPage() {
                       </label>
                       <input value={form.coverImageUrl} onChange={e => setField("coverImageUrl", e.target.value)} dir="ltr"
                         placeholder="או הדבק קישור..."
-                        className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                        className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400" />
                     </div>
                     <p className="text-[11px] text-neutral-400">מומלץ: תמונה רחבה, לפחות 1200×800px</p>
                   </div>
@@ -647,7 +647,7 @@ export default function AdminSettingsPage() {
                       onChange={e => setOwnerLoginPhone(e.target.value)}
                       placeholder="050-0000000"
                       dir="ltr"
-                      className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
+                      className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                     />
                     <button
                       type="button"
@@ -679,7 +679,7 @@ export default function AdminSettingsPage() {
                         placeholder="סיסמה נוכחית"
                         autoComplete="current-password"
                         dir="ltr"
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                       />
                       <input
                         type="password"
@@ -688,7 +688,7 @@ export default function AdminSettingsPage() {
                         placeholder="סיסמה חדשה (לפחות 6 תווים)"
                         autoComplete="new-password"
                         dir="ltr"
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                       />
                       <input
                         type="password"
@@ -697,7 +697,7 @@ export default function AdminSettingsPage() {
                         placeholder="אימות סיסמה חדשה"
                         autoComplete="new-password"
                         dir="ltr"
-                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
                       />
                       {pwError && (
                         <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
@@ -794,7 +794,7 @@ export default function AdminSettingsPage() {
                       type="number" min={1} max={365}
                       value={form.bookingHorizonDays}
                       onChange={e => setField("bookingHorizonDays", Number(e.target.value))}
-                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     />
                     <span className="text-sm text-neutral-500">ימים</span>
                   </div>
@@ -810,7 +810,7 @@ export default function AdminSettingsPage() {
                       type="number" min={0} max={1440}
                       value={form.minBookingLeadMinutes}
                       onChange={e => setField("minBookingLeadMinutes", Number(e.target.value))}
-                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     />
                     <span className="text-sm text-neutral-500">דקות</span>
                   </div>
@@ -857,7 +857,7 @@ export default function AdminSettingsPage() {
                 <input value={newSource} onChange={e => setNewSource(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addSource()}
                   placeholder="הוסף אופציה חדשה..."
-                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 <button onClick={addSource}
                   className="bg-slate-900 text-white px-4 rounded-xl text-sm font-medium hover:bg-slate-700">
                   + הוסף
@@ -878,14 +878,14 @@ export default function AdminSettingsPage() {
                   <div key={key}>
                     <label className="text-xs text-neutral-500 block mb-1">{icon} {label}</label>
                     <input value={(form.socialLinks as Record<string, string>)[key] || ""} onChange={e => setSocial(key, e.target.value)} dir="ltr" placeholder={placeholder}
-                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   </div>
                 ))}
               </div>
             </div>
 
             <button onClick={saveBiz} disabled={saving}
-              className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
+              className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
               {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
             </button>
           </div>
@@ -1266,7 +1266,7 @@ function WhatsAppTab({
 
       {/* Save */}
       <button onClick={onSaved} disabled={saving}
-        className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
+        className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
         {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
       </button>
 
@@ -1339,7 +1339,7 @@ function ReengagePanelSettings({
       {dirty && (
         <button onClick={() => { onSave({ inactiveWeeks: weeks, excludeWithFutureAppt: exclude, segment }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+          className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1380,12 +1380,12 @@ function PostFirstPanelSettings({
         <input type="url" value={ctaUrl} dir="ltr"
           onChange={e => { setCtaUrl(e.target.value); setDirty(true); }}
           placeholder={CTA_OPTIONS.find(o => o.value === ctaType)?.placeholder}
-          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
       </div>
       {dirty && (
         <button onClick={() => { onSave({ ctaType, ctaUrl }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+          className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1430,7 +1430,7 @@ function PostEveryPanelSettings({
       {dirty && (
         <button onClick={() => { onSave({ segment, minVisits }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+          className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1491,7 +1491,7 @@ function AutoPanel({
             <textarea value={display}
               onChange={e => { setLocalTpl(e.target.value); setTplDirty(true); }}
               rows={5} dir="rtl"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
             />
             <div className="flex flex-wrap gap-1.5">
               {vars.map(v => (
@@ -1505,7 +1505,7 @@ function AutoPanel({
               {tplDirty && (
                 <button onClick={() => { onSave({ template: localTpl || null }); setTplDirty(false); }}
                   disabled={saving}
-                  className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+                  className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
                   {saving ? "שומר..." : "שמור תבנית"}
                 </button>
               )}

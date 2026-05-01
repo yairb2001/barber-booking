@@ -118,7 +118,7 @@ export default function AdminLoginPage() {
             onChange={(e) => setPhone(e.target.value)}
             placeholder="050-0000000"
             autoFocus
-            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-slate-900"
+            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-teal-500"
             dir="ltr"
           />
         </div>
@@ -131,7 +131,7 @@ export default function AdminLoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-slate-900"
+            className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-teal-500"
             dir="ltr"
           />
         </div>
@@ -143,7 +143,7 @@ export default function AdminLoginPage() {
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-slate-900"
+              className="w-full bg-neutral-800 border border-neutral-700 rounded-lg px-3 py-2.5 text-white placeholder:text-neutral-600 focus:outline-none focus:border-teal-500"
               dir="ltr"
             />
           </div>
@@ -158,7 +158,7 @@ export default function AdminLoginPage() {
         <button
           type="submit"
           disabled={submitting || !password || !phone || (isSetupMode && !confirmPassword)}
-          className="w-full bg-slate-900 hover:bg-slate-700 disabled:bg-neutral-700 disabled:text-neutral-500 text-neutral-950 font-bold py-3 rounded-xl transition"
+          className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-neutral-700 disabled:text-neutral-500 text-white font-bold py-3 rounded-xl transition"
         >
           {submitting ? (isSetupMode ? "יוצר..." : "נכנס...") : (isSetupMode ? "צור סיסמה והיכנס" : "כניסה")}
         </button>

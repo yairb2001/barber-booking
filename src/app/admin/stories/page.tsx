@@ -115,7 +115,7 @@ export default function AdminStoriesPage() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
+          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
         >
           + סטורי חדש
         </button>
@@ -242,7 +242,7 @@ export default function AdminStoriesPage() {
                 <input
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   dir="ltr"
                   placeholder="https://..."
                 />
@@ -264,7 +264,7 @@ export default function AdminStoriesPage() {
                 <input
                   value={newCaption}
                   onChange={(e) => setNewCaption(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   placeholder="כיתוב לסטורי..."
                 />
               </div>
@@ -274,7 +274,7 @@ export default function AdminStoriesPage() {
                   type="datetime-local"
                   value={newExpiry}
                   onChange={(e) => setNewExpiry(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   dir="ltr"
                 />
               </div>
@@ -283,7 +283,7 @@ export default function AdminStoriesPage() {
               <button
                 onClick={addStory}
                 disabled={saving || uploading || !newUrl.trim()}
-                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}
               </button>

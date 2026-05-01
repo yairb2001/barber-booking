@@ -22,7 +22,7 @@ function todayISO() {
 const STATUS_OPTIONS = [
   { value: "confirmed", label: "מאושר", color: "bg-emerald-100 text-emerald-700" },
   { value: "pending", label: "ממתין", color: "bg-slate-100 text-slate-700" },
-  { value: "completed", label: "הושלם", color: "bg-blue-100 text-blue-700" },
+  { value: "completed", label: "הושלם", color: "bg-teal-100 text-teal-700" },
   { value: "cancelled_by_staff", label: "בוטל", color: "bg-red-100 text-red-500" },
   { value: "no_show", label: "לא הגיע", color: "bg-neutral-100 text-neutral-500" },
 ];

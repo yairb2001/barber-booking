@@ -72,7 +72,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const bottomNav = isOwner ? bottomNavOwner : bottomNavBarber;
 
   if (pathname === "/admin/login") {
-    return <div className="min-h-screen bg-slate-50 text-slate-900" dir="rtl">{children}</div>;
+    return <div className="min-h-screen bg-slate-50 text-slate-900 font-heebo" dir="rtl">{children}</div>;
   }
 
   const handleLogout = async () => {
@@ -89,7 +89,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const currentLabel = visibleNav.find(isActive)?.label ?? "ניהול";
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 text-slate-900" dir="rtl">
+    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 text-slate-900 font-heebo" dir="rtl">
 
       {/* ── Mobile drawer backdrop ── */}
       {drawerOpen && (

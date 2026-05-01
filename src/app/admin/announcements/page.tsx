@@ -81,7 +81,7 @@ export default function AdminAnnouncementsPage() {
         </div>
         <button
           onClick={() => { setEditing(null); setForm(empty); setShowAdd(true); }}
-          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
+          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
         >
           + עדכון חדש
         </button>
@@ -137,7 +137,7 @@ export default function AdminAnnouncementsPage() {
                 <input
                   value={form.title}
                   onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
               </div>
               <div>
@@ -146,7 +146,7 @@ export default function AdminAnnouncementsPage() {
                   value={form.content}
                   onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
                   rows={3}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
                 />
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -163,7 +163,7 @@ export default function AdminAnnouncementsPage() {
               <button
                 onClick={save}
                 disabled={saving || !form.title.trim()}
-                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "שמור"}
               </button>

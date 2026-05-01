@@ -89,7 +89,7 @@ export default function AdminServicesPage() {
         </div>
         <button
           onClick={() => { setEditing(null); setForm(empty); setShowAdd(true); }}
-          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
+          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
         >
           + שירות חדש
         </button>
@@ -170,7 +170,7 @@ export default function AdminServicesPage() {
                 <input
                   value={form.name}
                   onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
               </div>
               <div>
@@ -178,7 +178,7 @@ export default function AdminServicesPage() {
                 <input
                   value={form.description}
                   onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -188,7 +188,7 @@ export default function AdminServicesPage() {
                     type="number"
                     value={form.price}
                     onChange={(e) => setForm((p) => ({ ...p, price: e.target.value }))}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     dir="ltr"
                   />
                 </div>
@@ -199,7 +199,7 @@ export default function AdminServicesPage() {
                     step="5"
                     value={form.durationMinutes}
                     onChange={(e) => setForm((p) => ({ ...p, durationMinutes: e.target.value }))}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     dir="ltr"
                   />
                 </div>
@@ -218,7 +218,7 @@ export default function AdminServicesPage() {
               <button
                 onClick={save}
                 disabled={saving || !form.name.trim() || !form.price}
-                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "שמור"}
               </button>

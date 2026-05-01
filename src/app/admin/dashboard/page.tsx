@@ -331,7 +331,7 @@ function BarberCard({ row, selected, onClick }: {
         </div>
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">לקוחות חדשים</p>
-          <p className="text-lg font-bold text-blue-600">{row.newCustomers}</p>
+          <p className="text-lg font-bold text-teal-600">{row.newCustomers}</p>
         </div>
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">ביקור שני</p>
@@ -454,7 +454,7 @@ export default function Dashboard() {
             <StatCard
               label="לקוחות חדשים"
               value={a.newCustomers}
-              color="text-blue-600"
+              color="text-teal-600"
               badge={selStaff ? "אצל הספר" : "בעסק"}
             />
             <StatCard label="לקוחות חוזרים" value={secondVisitCustomers} color="text-emerald-600" sub="ביקרו שוב החודש" />

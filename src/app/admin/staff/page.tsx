@@ -176,7 +176,7 @@ export default function AdminStaffPage() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
+          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
         >
           + ספר חדש
         </button>
@@ -284,7 +284,7 @@ export default function AdminStaffPage() {
                       onChange={(e) => setAvatarUrlDraft(e.target.value)}
                       placeholder="https://..."
                       dir="ltr"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-700"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
                     />
                   </div>
 
@@ -301,7 +301,7 @@ export default function AdminStaffPage() {
                     <button
                       onClick={() => saveAvatar(s.id)}
                       disabled={saving || uploadingAvatar || !avatarUrlDraft}
-                      className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition"
+                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
                     >
                       {saving ? "שומר..." : "שמור תמונה"}
                     </button>
@@ -330,7 +330,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.name}
                   onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   placeholder="שם הספר"
                 />
               </div>
@@ -339,7 +339,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.phone}
                   onChange={(e) => setNewStaff((p) => ({ ...p, phone: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   dir="ltr"
                 />
               </div>
@@ -348,7 +348,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.avatarUrl}
                   onChange={(e) => setNewStaff((p) => ({ ...p, avatarUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   dir="ltr"
                   placeholder="https://..."
                 />
@@ -367,7 +367,7 @@ export default function AdminStaffPage() {
               <button
                 onClick={addStaff}
                 disabled={saving || !newStaff.name.trim()}
-                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}
               </button>
@@ -511,7 +511,7 @@ export default function AdminStaffPage() {
               <button
                 onClick={saveSchedule}
                 disabled={saving}
-                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "שמור לוח שנה"}
               </button>

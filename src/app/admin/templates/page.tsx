@@ -178,7 +178,7 @@ export default function TemplatesPage() {
                 onChange={e => setVal(k, e.target.value)}
                 rows={8}
                 dir="rtl"
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 font-mono leading-relaxed resize-y"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 font-mono leading-relaxed resize-y"
                 placeholder={def.default}
               />
               <p className="text-[10px] text-neutral-400 mt-1">

@@ -195,7 +195,7 @@ export default function AdminAgentPage() {
               <input
                 value={config.agentName}
                 onChange={e => setConfig(c => c ? { ...c, agentName: e.target.value } : c)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 placeholder="הסוכן"
               />
             </label>
@@ -205,7 +205,7 @@ export default function AdminAgentPage() {
               <input
                 value={config.escalatePhone ?? ""}
                 onChange={e => setConfig(c => c ? { ...c, escalatePhone: e.target.value } : c)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 placeholder="0501234567"
                 dir="ltr"
               />
@@ -219,7 +219,7 @@ export default function AdminAgentPage() {
                 max={1440}
                 value={config.maxIdleMinutes}
                 onChange={e => setConfig(c => c ? { ...c, maxIdleMinutes: parseInt(e.target.value) || 30 } : c)}
-                className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 dir="ltr"
               />
             </label>
@@ -244,9 +244,9 @@ export default function AdminAgentPage() {
             </div>
 
             {/* Hint */}
-            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2 text-xs text-blue-700 space-y-1">
+            <div className="bg-teal-50 border border-teal-100 rounded-xl px-3 py-2 text-xs text-teal-700 space-y-1">
               <p className="font-medium">💡 טיפים לעריכה:</p>
-              <ul className="list-disc list-inside space-y-0.5 text-blue-600">
+              <ul className="list-disc list-inside space-y-0.5 text-teal-600">
                 <li>לחץ "טען ברירת מחדל" לקבל את הפרומפט הנוכחי לעריכה</li>
                 <li>אפשר לשנות את הטון, להוסיף כללים, לקבוע מה הסוכן עושה ולא עושה</li>
                 <li>השינויים נשמרים עם כפתור "שמור" למטה</li>
@@ -257,7 +257,7 @@ export default function AdminAgentPage() {
               value={config.systemPrompt ?? ""}
               onChange={e => setConfig(c => c ? { ...c, systemPrompt: e.target.value || null } : c)}
               rows={14}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-y font-mono leading-relaxed"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-y font-mono leading-relaxed"
               placeholder="ריק = שימוש בברירת מחדל&#10;&#10;לחץ 'טען ברירת מחדל' כדי לראות ולערוך את הפרומפט הנוכחי..."
               dir="rtl"
             />
@@ -307,20 +307,20 @@ export default function AdminAgentPage() {
               <input
                 value={newQ}
                 onChange={e => setNewQ(e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 placeholder="מה שעות הפעילות?"
               />
               <textarea
                 value={newA}
                 onChange={e => setNewA(e.target.value)}
                 rows={2}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
                 placeholder="אנחנו פתוחים ראשון עד חמישי 09:00–20:00, שישי 08:00–14:00"
               />
               <button
                 onClick={addFAQ}
                 disabled={!newQ.trim() || !newA.trim()}
-                className="bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-40"
+                className="bg-teal-600 text-white px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-teal-700 disabled:opacity-40"
               >
                 הוסף
               </button>
@@ -346,7 +346,7 @@ export default function AdminAgentPage() {
             <button
               onClick={saveConfig}
               disabled={saving}
-              className="bg-slate-900 text-neutral-950 px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition min-w-24"
+              className="bg-teal-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition min-w-24"
             >
               {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
             </button>
@@ -465,7 +465,7 @@ export default function AdminAgentPage() {
                           <div
                             className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
                               msg.role === "user"
-                                ? "bg-slate-900 text-neutral-950 rounded-tr-sm"
+                                ? "bg-teal-600 text-white rounded-tr-sm"
                                 : "bg-neutral-100 text-neutral-800 rounded-tl-sm"
                             }`}
                           >

@@ -13,7 +13,7 @@ const HHCtx = React.createContext(DEFAULT_HOUR_HEIGHT);
 
 const COLORS = [
   { bg: "bg-violet-500", light: "bg-violet-100 text-violet-900 border-violet-300" },
-  { bg: "bg-blue-500",   light: "bg-blue-100 text-blue-900 border-blue-300" },
+  { bg: "bg-sky-500",    light: "bg-sky-100 text-sky-900 border-sky-300" },
   { bg: "bg-emerald-500",light: "bg-emerald-100 text-emerald-900 border-emerald-300" },
   { bg: "bg-indigo-500", light: "bg-indigo-100 text-indigo-900 border-indigo-300" },
   { bg: "bg-rose-500",   light: "bg-rose-100 text-rose-900 border-rose-300" },
@@ -203,8 +203,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     ringClass = "ring-2 ring-slate-900 ring-offset-1";
     badge = { text: "המקור", cls: "bg-slate-900 text-white" };
   } else if (swapState.kind === "swap-mode-selected") {
-    ringClass = "ring-2 ring-blue-500 ring-offset-1";
-    badge = { text: "✓ נבחר", cls: "bg-blue-500 text-white" };
+    ringClass = "ring-2 ring-teal-500 ring-offset-1";
+    badge = { text: "✓ נבחר", cls: "bg-teal-500 text-white" };
   } else if (swapState.kind === "swap-mode-eligible") {
     extraStyle = { opacity: 0.85 };
     badge = { text: "+ הוסף", cls: "bg-white/90 text-neutral-700 border border-neutral-300" };
@@ -570,7 +570,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           <button onClick={() => save(false)} disabled={saving || !!conflictMsg || !form.staffId || !form.serviceId ||
             !(selectedCustomer || (newCustomer.name && newCustomer.phone)) ||
             (customerMode === "new" && !referralSource)}
-            className="w-full bg-slate-900 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-slate-700 disabled:opacity-40 transition">
+            className="w-full bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
           </button>
         </div>
@@ -641,7 +641,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
         </div>
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}
-            className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+            className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
             {saving ? "שומר..." : "הוסף הפסקה"}
           </button>
           <button onClick={onClose} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">ביטול</button>
@@ -655,7 +655,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
 const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   confirmed:           { label: "מאושר",    badgeClass: "bg-emerald-100 text-emerald-700" },
   pending:             { label: "ממתין",    badgeClass: "bg-slate-100 text-slate-700" },
-  completed:           { label: "הושלם",    badgeClass: "bg-blue-100 text-blue-700" },
+  completed:           { label: "הושלם",    badgeClass: "bg-teal-100 text-teal-700" },
   cancelled_by_staff:  { label: "בוטל",     badgeClass: "bg-red-100 text-red-500" },
   cancelled_by_customer: { label: "בוטל ע״י לקוח", badgeClass: "bg-red-100 text-red-500" },
   no_show:             { label: "לא הגיע", badgeClass: "bg-neutral-100 text-neutral-500" },
@@ -846,7 +846,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {editingReferral ? (
             <div className="flex gap-2">
               <select value={referralSource} onChange={e => setReferralSource(e.target.value)}
-                className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white">
+                className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 bg-white">
                 <option value="">לא צוין</option>
                 {referralOptions.map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
@@ -879,7 +879,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <p className="text-xs text-neutral-400 mb-1.5">הערת ספר</p>
           <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
             placeholder="הוסף הערה פנימית..."
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-slate-300" />
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
           {staffNote !== (appt.staffNote || "") && (
             <button onClick={saveNote} disabled={savingNote}
               className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
@@ -894,7 +894,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <div className="grid grid-cols-2 gap-2">
             {[
               { v: "confirmed",          l: "✓ מאשר",    c: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
-              { v: "completed",          l: "✔ הושלם",   c: "bg-blue-50 text-blue-700 border border-blue-200" },
+              { v: "completed",          l: "✔ הושלם",   c: "bg-teal-50 text-teal-700 border border-teal-200" },
               { v: "no_show",            l: "לא הגיע",  c: "bg-neutral-50 text-neutral-600 border border-neutral-200" },
               { v: "cancelled_by_staff", l: "בטל תור",  c: "bg-red-50 text-red-600 border border-red-200" },
             ].map(({ v, l, c }) => (
@@ -935,8 +935,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
           {/* Case 2: this appointment is the PRIMARY in active proposals — show candidate list + actions */}
           {proposalsAsPrimary.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-2 mb-3">
-              <p className="text-xs font-semibold text-blue-900">
+            <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 space-y-2 mb-3">
+              <p className="text-xs font-semibold text-teal-900">
                 🔄 ההצעה שלך לחיפוש החלפה ({proposalsAsPrimary.length} מועמדים)
               </p>
               <ul className="space-y-1.5 max-h-56 overflow-y-auto">
@@ -952,7 +952,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                     : (p.candidate?.customer.name || "—");
                   const subLabel = isMove ? "מעבר לזמן פנוי ביומן" : "החלפה עם לקוח";
                   return (
-                    <li key={p.id} className={`rounded-lg px-2.5 py-2 border ${isMove ? "bg-blue-50 border-blue-200" : "bg-white border-blue-100"}`}>
+                    <li key={p.id} className={`rounded-lg px-2.5 py-2 border ${isMove ? "bg-teal-50 border-teal-200" : "bg-white border-teal-100"}`}>
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-neutral-800 truncate">
@@ -1026,13 +1026,13 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   value={delayMinutes}
                   onChange={e => setDelayMinutes(e.target.value)}
                   placeholder="דקות"
-                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-teal-300"
                   autoFocus
                 />
                 <button
                   onClick={sendDelayNotification}
                   disabled={delaySending || !delayMinutes}
-                  className="bg-slate-900 hover:bg-slate-700 text-neutral-950 text-sm font-semibold px-4 rounded-lg disabled:opacity-50 transition">
+                  className="bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold px-4 rounded-lg disabled:opacity-50 transition">
                   {delaySending ? "..." : "שלח"}
                 </button>
                 <button
@@ -1158,7 +1158,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">תאריך</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} dir="ltr"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
 
           {/* Time + Duration */}
@@ -1166,13 +1166,13 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">שעת התחלה</label>
               <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} dir="ltr"
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">משך (דקות)</label>
               <input type="number" min={5} step={5} value={duration}
                 onChange={e => setDuration(Number(e.target.value))}
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
             </div>
           </div>
           <div className="text-xs text-neutral-400" dir="ltr">
@@ -1183,7 +1183,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">ספר</label>
             <select value={staffId} onChange={e => setStaffId(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700">
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
@@ -1192,7 +1192,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">סוג תור</label>
             <select value={serviceId} onChange={e => onServiceChange(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700">
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
               {allServices.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name} (₪{s.price}, {s.durationMinutes} דק)
@@ -1205,14 +1205,14 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">מחיר (₪)</label>
             <input type="number" min={0} value={price} onChange={e => setPrice(Number(e.target.value))}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
 
           {/* Customer note */}
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">הערת לקוח</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
           </div>
 
           {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
@@ -1378,7 +1378,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               )}
               <div className="flex gap-2">
                 <button onClick={saveHours} disabled={saving}
-                  className="flex-1 bg-slate-900 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  className="flex-1 bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {saving ? "שומר..." : "שמור"}
                 </button>
                 <button onClick={closeDay} disabled={saving}
@@ -1412,7 +1412,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               </button>
               {breaks.length > 0 && (
                 <button onClick={saveHours} disabled={saving}
-                  className="w-full bg-slate-900 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {saving ? "שומר..." : "שמור הפסקות"}
                 </button>
               )}
@@ -1436,7 +1436,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                           <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
                         )}
                         {w.isFlexible && (
-                          <span className="text-[11px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
+                          <span className="text-[11px] bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
                         )}
                       </div>
                     </div>
@@ -1457,7 +1457,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                   {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <button onClick={addToWaitlist} disabled={!newWaiting.phone || !newWaiting.serviceId}
-                  className="w-full bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
+                  className="w-full bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
                   + הוסף לרשימה
                 </button>
               </div>
@@ -1562,13 +1562,13 @@ function DraftMoveSlotBlock({
         style={{ borderColor: "#3b82f6", background: "rgba(59,130,246,0.18)", backdropFilter: "blur(4px)" }}>
         {/* Top row: time + dismiss */}
         <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-blue-900">{startTime} ↕ גרור לדיוק</span>
-          <button className="text-blue-400 hover:text-blue-700 text-xs leading-none"
+          <span className="text-[11px] font-bold text-teal-900">{startTime} ↕ גרור לדיוק</span>
+          <button className="text-teal-400 hover:text-teal-700 text-xs leading-none"
             onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         </div>
         {/* Bottom row: confirm */}
         <button
-          className="text-[11px] font-semibold text-white bg-blue-500 hover:bg-blue-600 rounded-md px-2 py-1 transition text-center"
+          className="text-[11px] font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-md px-2 py-1 transition text-center"
           onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
           + הוסף העברה לכאן
         </button>
@@ -2229,9 +2229,9 @@ export default function AdminCalendar() {
             const dayAppts = appointments.filter(a => a.date.startsWith(cell));
             const isToday = cell === todayISO();
             return (
-              <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-slate-50 border-2 border-slate-700" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
+              <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-teal-50 border-2 border-teal-400" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
                 onClick={() => { setDate(cell); setView("day"); setDayMenu({ date: cell, staffId: allStaff[0]?.id || "" }); }}>
-                <span className={`text-sm font-semibold ${isToday ? "text-slate-800" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
+                <span className={`text-sm font-semibold ${isToday ? "text-teal-700" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
                 <div className="mt-1 space-y-0.5">
                   {dayAppts.slice(0, 3).map((a, ai) => (
                     <div key={a.id} className={`text-[10px] rounded px-1 truncate ${COLORS[ai % COLORS.length].light}`}>
@@ -2276,8 +2276,8 @@ export default function AdminCalendar() {
                 return (
                   <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
                     onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
-                    <span className={`text-xs font-semibold ${isToday ? "text-slate-800" : "text-neutral-500"}`}>{fmtShort(d)}</span>
-                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-slate-900 mt-0.5" />}
+                    <span className={`text-xs font-semibold ${isToday ? "text-teal-700" : "text-neutral-500"}`}>{fmtShort(d)}</span>
+                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 mt-0.5" />}
                     {waitlistCounts[d] > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                         {waitlistCounts[d]}
@@ -2505,11 +2505,11 @@ export default function AdminCalendar() {
             borderColor: "#3b82f6",
             background: "rgba(59,130,246,0.15)",
           }}>
-          <p className="text-[10px] font-bold text-blue-900 leading-tight">✓ העברה לכאן</p>
-          <p className="text-[10px] text-blue-700">{slot.startTime}</p>
+          <p className="text-[10px] font-bold text-teal-900 leading-tight">✓ העברה לכאן</p>
+          <p className="text-[10px] text-teal-700">{slot.startTime}</p>
           {/* Deselect button — always reachable, has pointer-events-auto */}
           <button
-            className="absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-blue-500 text-white text-[9px] font-bold leading-none hover:bg-blue-600 transition"
+            className="absolute top-0.5 left-0.5 w-4 h-4 flex items-center justify-center rounded-full bg-teal-500 text-white text-[9px] font-bold leading-none hover:bg-teal-600 transition"
             onClick={e => { e.stopPropagation(); toggleSwapMoveSlot(slot.staffId, slot.date, slot.startTime); }}
             title="הסר">
             ✕
@@ -2527,13 +2527,13 @@ export default function AdminCalendar() {
         const moveCount = swapMode.candidates.filter(c => c.kind === "move").length;
         const total = swapMode.candidates.length;
         return (
-          <div className="bg-slate-50 border-b-2 border-slate-700 px-3 py-2.5 flex items-center gap-3 shrink-0">
-            <span className="text-slate-900 text-base">🔄</span>
+          <div className="bg-teal-50 border-b-2 border-teal-300 px-3 py-2.5 flex items-center gap-3 shrink-0">
+            <span className="text-teal-700 text-base">🔄</span>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-slate-900 truncate">
+              <p className="text-xs font-bold text-teal-900 truncate">
                 מצב החלפה: {swapPrimary ? `${swapPrimary.customer.name} (${swapPrimary.startTime})` : "..."}
               </p>
-              <p className="text-[11px] text-slate-700">
+              <p className="text-[11px] text-teal-700">
                 {total === 0
                   ? "לחץ על תור (החלפה עם לקוח) או על שעה ריקה (העברה)"
                   : `${total} נבחרו · ${swapCount} החלפות · ${moveCount} העברות לשעה ריקה`}
@@ -2559,7 +2559,7 @@ export default function AdminCalendar() {
       <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-1.5">
         {/* Navigation */}
         <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">◀</button>
-        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-slate-800 hover:underline px-1 shrink-0">היום</button>
+        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-teal-600 hover:text-teal-700 hover:underline px-1 shrink-0">היום</button>
         <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">▶</button>
 
         {/* Date label */}
@@ -2624,7 +2624,7 @@ export default function AdminCalendar() {
         {view === "day" && (
           <div className="relative shrink-0">
             <button onClick={() => setShowFilter(!showFilter)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-slate-900 text-neutral-950 border-slate-700" : "bg-white border-neutral-200 text-neutral-600"}`}>
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600"}`}>
               ✂️ {visibleStaff.length === allStaff.length ? "הכל" : `${visibleStaff.length}`}
             </button>
             {showFilter && (
@@ -2649,7 +2649,7 @@ export default function AdminCalendar() {
 
         {/* New appointment button */}
         <button onClick={() => setNewAppt({ staffId: allStaff[0]?.id || "", date, time: "10:00" })}
-          className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-neutral-950 rounded-lg text-xs font-semibold hover:bg-slate-700 transition shrink-0">
+          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
           + תור
         </button>
       </div>
@@ -2694,7 +2694,7 @@ export default function AdminCalendar() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setNotifyMove(null)}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 text-xl shrink-0">📲</div>
+              <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-600 text-xl shrink-0">📲</div>
               <div className="flex-1">
                 <h3 className="font-bold text-neutral-900 text-base">לעדכן את הלקוח?</h3>
                 <p className="text-sm text-neutral-600 mt-1 leading-relaxed">
@@ -2713,7 +2713,7 @@ export default function AdminCalendar() {
               <button
                 onClick={() => notifyMoveCustomer(notifyMove)}
                 disabled={notifySending}
-                className="flex-1 bg-blue-500 hover:bg-blue-600 text-white rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 transition">
+                className="flex-1 bg-teal-500 hover:bg-teal-600 text-white rounded-xl py-2.5 text-sm font-bold disabled:opacity-50 transition">
                 {notifySending ? "שולח..." : "כן, שלח וואצאפ"}
               </button>
             </div>
@@ -2756,7 +2756,7 @@ export default function AdminCalendar() {
                     });
                   }
                 }}
-                className="flex-1 bg-slate-900 text-neutral-950 rounded-xl py-2.5 text-sm font-bold hover:bg-slate-700 transition">
+                className="flex-1 bg-teal-600 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-teal-700 transition">
                 להעביר בכל זאת
               </button>
             </div>
