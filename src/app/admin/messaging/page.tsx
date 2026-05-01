@@ -420,7 +420,7 @@ function FilterRow({
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <span className="text-base">{emoji}</span>
         <span className={`text-sm font-medium ${active ? "text-slate-900" : "text-neutral-700"}`}>{label}</span>
-        <div className={`mr-auto w-4 h-4 rounded-full border-2 flex items-center justify-center transition ${active ? "border-slate-900 bg-slate-900" : "border-neutral-300"}`}>
+        <div className={`mr-auto w-4 h-4 rounded-full border-2 flex items-center justify-center transition ${active ? "border-teal-600 bg-teal-600" : "border-neutral-300"}`}>
           {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
         </div>
       </div>

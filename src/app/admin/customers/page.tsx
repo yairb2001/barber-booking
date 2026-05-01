@@ -675,7 +675,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
                 <button key={v} onClick={() => setFrequencyWeeks(v)}
                   className={`flex-1 border rounded-xl py-2 text-xs font-medium ${
                     frequencyWeeks === v
-                      ? "bg-slate-900 text-white border-slate-900"
+                      ? "bg-teal-600 text-white border-teal-600"
                       : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50"
                   }`}>
                   {l}

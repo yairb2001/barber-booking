@@ -207,7 +207,7 @@ export default function TemplatesPage() {
                 type="button"
                 onClick={() => saveTemplate(k)}
                 disabled={!isDirty || state.saving}
-                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition">
+                className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition">
                 {state.saving ? "שומר..." : "שמור"}
               </button>
             </div>

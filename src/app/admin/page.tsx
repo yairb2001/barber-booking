@@ -201,7 +201,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   let extraStyle: React.CSSProperties = {};
   if (swapState.kind === "swap-mode-primary") {
     ringClass = "ring-2 ring-slate-900 ring-offset-1";
-    badge = { text: "המקור", cls: "bg-slate-900 text-white" };
+    badge = { text: "המקור", cls: "bg-teal-600 text-white" };
   } else if (swapState.kind === "swap-mode-selected") {
     ringClass = "ring-2 ring-teal-500 ring-offset-1";
     badge = { text: "✓ נבחר", cls: "bg-teal-500 text-white" };
@@ -350,7 +350,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           {/* Pre-filled summary banner when opened from grid click */}
           {fromGrid && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-base shrink-0">
+              <div className="w-9 h-9 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold text-base shrink-0">
                 {staff.name[0]}
               </div>
               <div className="flex-1 min-w-0">
@@ -557,7 +557,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               <p className="text-slate-900">{conflictMsg}</p>
               <div className="flex gap-2">
                 <button onClick={() => save(true)} disabled={saving}
-                  className="flex-1 bg-slate-900 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-slate-800">
+                  className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-teal-700">
                   כן, קבע בכל זאת
                 </button>
                 <button onClick={() => setConflictMsg(null)}
@@ -1222,7 +1222,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
               <p className="text-slate-900">{conflict}</p>
               <div className="flex gap-2">
                 <button onClick={() => save(true)} disabled={saving}
-                  className="flex-1 bg-slate-900 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-slate-800">
+                  className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-teal-700">
                   כן, שמור בכל זאת
                 </button>
                 <button onClick={() => setConflict(null)}
@@ -1342,7 +1342,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         <div className="flex border-b border-neutral-100 px-3 pt-1">
           {([["hours","שעות"],["breaks","הפסקות"],["waitlist","המתנה"]] as const).map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === key ? "border-slate-900 text-slate-700" : "border-transparent text-neutral-500"}`}>
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === key ? "border-teal-600 text-slate-700" : "border-transparent text-neutral-500"}`}>
               {label}
               {key === "waitlist" && waitlist.length > 0 && (
                 <span className="mr-1 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5">{waitlist.length}</span>
@@ -2329,7 +2329,7 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} />
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
-                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-slate-900 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
                               <span className="text-[10px] font-bold text-slate-900 leading-tight">
@@ -2410,7 +2410,7 @@ export default function AdminCalendar() {
                         onPointerCancel={() => setDrag(null)}>
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} />
                         {colDrag && dragDist >= 6 && (
-                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-slate-900 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
                               <span className="text-[10px] font-bold text-slate-900 leading-tight">
@@ -2548,7 +2548,7 @@ export default function AdminCalendar() {
             <button
               onClick={submitSwap}
               disabled={total === 0 || swapSubmitting}
-              className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
+              className="px-4 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
               {swapSubmitting ? "שולח..." : `שלח ל-${total}`}
             </button>
           </div>

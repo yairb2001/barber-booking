@@ -131,7 +131,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               onClick={() => setDrawerOpen(false)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${
                 isActive(item)
-                  ? "bg-slate-900 text-white font-semibold"
+                  ? "bg-teal-50 text-teal-700 font-semibold"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
@@ -187,7 +187,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               key={item.href}
               href={item.href}
               className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition ${
-                isActive(item) ? "text-slate-900 font-semibold" : "text-slate-400 hover:text-slate-600"
+                isActive(item) ? "text-teal-600 font-semibold" : "text-slate-400 hover:text-slate-600"
               }`}
             >
               <span className="text-xl leading-none">{item.icon}</span>

@@ -151,7 +151,7 @@ function RevenueChart({ data, todayISO }: { data: { date: string; revenue: numbe
               <div>{d.count} תורים</div>
             </div>
             <div
-              className={`w-full rounded-t transition-all ${isToday ? "bg-slate-900" : "bg-slate-200 group-hover:bg-slate-700"}`}
+              className={`w-full rounded-t transition-all ${isToday ? "bg-teal-600" : "bg-slate-200 group-hover:bg-slate-700"}`}
               style={{ height: `${Math.max(pct, 2)}%` }}
             />
             {(dayNum % 5 === 0 || dayNum === 1) && (
@@ -191,7 +191,7 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
             <button key={w.days} onClick={() => onWindowChange(w.days)}
               className={`text-xs px-2.5 py-1 rounded-lg border transition ${
                 windowDays === w.days
-                  ? "bg-slate-900 border-slate-900 text-white font-semibold"
+                  ? "bg-teal-600 border-teal-600 text-white font-semibold"
                   : "border-neutral-200 text-neutral-500 hover:border-slate-300"
               }`}>
               {w.label}
@@ -309,10 +309,10 @@ function BarberCard({ row, selected, onClick }: {
   return (
     <button onClick={onClick}
       className={`text-right w-full rounded-2xl border p-5 transition ${
-        selected ? "border-slate-900 bg-slate-50 shadow-sm" : "border-neutral-200 bg-white hover:border-slate-300"
+        selected ? "border-teal-600 bg-slate-50 shadow-sm" : "border-neutral-200 bg-white hover:border-slate-300"
       }`}>
       <div className="flex items-center gap-3 mb-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${selected ? "bg-slate-900" : "bg-slate-700"}`}>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${selected ? "bg-teal-600" : "bg-slate-400"}`}>
           {row.name[0]}
         </div>
         <div className="text-right">
@@ -421,14 +421,14 @@ export default function Dashboard() {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setSelStaff(null)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-              !selStaff ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+              !selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
             }`}>
             כל הספרים
           </button>
           {allStaff.map(s => (
             <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
               className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-                selStaff === s.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+                selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
               }`}>
               {s.name}
             </button>

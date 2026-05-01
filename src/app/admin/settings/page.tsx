@@ -171,7 +171,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
             <div className="flex items-center gap-3 flex-wrap">
               {/* Toggle */}
               <button onClick={() => updateDay(dow, { isWorking: !day.isWorking })}
-                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.isWorking ? "bg-slate-900" : "bg-neutral-200"}`}>
+                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.isWorking ? "bg-teal-600" : "bg-neutral-200"}`}>
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${day.isWorking ? "right-0.5" : "left-0.5"}`} />
               </button>
 
@@ -653,7 +653,7 @@ export default function AdminSettingsPage() {
                       type="button"
                       onClick={saveOwnerLoginPhone}
                       disabled={ownerPhoneSaving || !ownerLoginPhone.trim()}
-                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 text-white text-sm font-semibold rounded-lg transition"
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-neutral-300 text-white text-sm font-semibold rounded-lg transition"
                     >
                       {ownerPhoneSaving ? "שומר..." : "שמור"}
                     </button>
@@ -713,7 +713,7 @@ export default function AdminSettingsPage() {
                         type="button"
                         onClick={changePassword}
                         disabled={pwSaving || !oldPassword || !newPassword || !confirmNewPassword}
-                        className="w-full px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
+                        className="w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
                       >
                         {pwSaving ? "מחליף..." : "החלף סיסמה"}
                       </button>
@@ -739,7 +739,7 @@ export default function AdminSettingsPage() {
                           type="button"
                           onClick={() => saveTheme(opt.id)}
                           className={`relative rounded-xl overflow-hidden border-2 transition-all text-right ${
-                            selected ? "border-slate-900 shadow-md" : "border-neutral-200 hover:border-neutral-300"
+                            selected ? "border-teal-600 shadow-md" : "border-neutral-200 hover:border-neutral-300"
                           }`}
                         >
                           {/* Mini preview — shows actual theme rendering */}
@@ -771,7 +771,7 @@ export default function AdminSettingsPage() {
                           </div>
                           {/* Selected checkmark */}
                           {selected && (
-                            <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-slate-900 flex items-center justify-center">
+                            <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center">
                               <span className="text-white text-[10px]">✓</span>
                             </div>
                           )}
@@ -859,7 +859,7 @@ export default function AdminSettingsPage() {
                   placeholder="הוסף אופציה חדשה..."
                   className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 <button onClick={addSource}
-                  className="bg-slate-900 text-white px-4 rounded-xl text-sm font-medium hover:bg-slate-700">
+                  className="bg-teal-600 text-white px-4 rounded-xl text-sm font-medium hover:bg-teal-700">
                   + הוסף
                 </button>
               </div>
@@ -1330,7 +1330,7 @@ function ReengagePanelSettings({
         <div className="flex gap-2">
           {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
             </button>
           ))}
@@ -1369,7 +1369,7 @@ function PostFirstPanelSettings({
         <div className="flex gap-2">
           {CTA_OPTIONS.map(opt => (
             <button key={opt.value} onClick={() => { setCtaType(opt.value); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {opt.label}
             </button>
           ))}
@@ -1410,7 +1410,7 @@ function PostEveryPanelSettings({
         <div className="flex gap-2">
           {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
             </button>
           ))}
