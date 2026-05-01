@@ -36,6 +36,21 @@ const yToTimeFn = (y: number, hh: number) => {
   return minToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 5, mins)));
 };
 
+// ── Saved calendar preferences (view / zoom / week barber) ───────────────────
+// Stored in localStorage so the calendar opens in the same state next time.
+const PREFS_KEY = "admin.calendar.prefs";
+type CalendarPrefs = { view?: "day" | "3day" | "week" | "month"; hourHeight?: number; weekBarber?: string };
+const loadPrefs = (): CalendarPrefs => {
+  if (typeof window === "undefined") return {};
+  try { const raw = localStorage.getItem(PREFS_KEY); return raw ? JSON.parse(raw) : {}; }
+  catch { return {}; }
+};
+const savePrefs = (patch: Partial<CalendarPrefs>) => {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify({ ...loadPrefs(), ...patch })); }
+  catch { /* quota / disabled — ignore */ }
+};
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type Staff = { id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[] };
@@ -1753,6 +1768,24 @@ export default function AdminCalendar() {
     setSelectedAppt(a);
   }
 
+  // ── Restore saved view/zoom on mount, persist on change ─────────────────────
+  // Default state (above) is what server rendered; the actual saved prefs are
+  // applied here on the client to avoid hydration mismatch.
+  useEffect(() => {
+    const prefs = loadPrefs();
+    if (prefs.view && (["day","3day","week","month"] as ViewType[]).includes(prefs.view)) {
+      setView(prefs.view);
+    }
+    if (typeof prefs.hourHeight === "number" && prefs.hourHeight >= 28 && prefs.hourHeight <= 220) {
+      setHourHeight(prefs.hourHeight);
+    }
+    // weekBarber is restored later, after the staff list loads
+  }, []);
+
+  useEffect(() => { savePrefs({ view }); }, [view]);
+  useEffect(() => { savePrefs({ hourHeight }); }, [hourHeight]);
+  useEffect(() => { if (weekBarber) savePrefs({ weekBarber }); }, [weekBarber]);
+
   // Update nowY whenever hourHeight changes
   useEffect(() => {
     setNowY(nowPxFn(hourHeight));
@@ -1810,7 +1843,12 @@ export default function AdminCalendar() {
     ]).then(([st, sv]) => {
       setAllStaff(st);
       setVisibleStaff(st.map((s: Staff) => s.id));
-      if (st.length) setWeekBarber(st[0].id);
+      if (st.length) {
+        // Prefer the previously selected barber if they're still in the staff list
+        const saved = loadPrefs().weekBarber;
+        const validSaved = saved && st.some((s: Staff) => s.id === saved) ? saved : st[0].id;
+        setWeekBarber(validSaved);
+      }
       setServices(sv);
     });
   }, []);
@@ -2546,6 +2584,30 @@ export default function AdminCalendar() {
             className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
             {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+        )}
+
+        {/* Zoom controls — hidden on month (no hourHeight there) */}
+        {view !== "month" && (
+          <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0" aria-label="זום יומן">
+            <button
+              onClick={() => setHourHeight(h => Math.max(28, h - 20))}
+              disabled={hourHeight <= 28}
+              className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition"
+              aria-label="הקטן יומן"
+              title="הקטן יומן"
+            >
+              −
+            </button>
+            <button
+              onClick={() => setHourHeight(h => Math.min(220, h + 20))}
+              disabled={hourHeight >= 220}
+              className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition"
+              aria-label="הגדל יומן"
+              title="הגדל יומן"
+            >
+              +
+            </button>
+          </div>
         )}
 
         {/* View switcher — compact on mobile */}
