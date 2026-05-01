@@ -4,47 +4,35 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type NavItem = { href: string; label: string; icon: string; exact?: boolean; ownerOnly?: boolean };
-type NavSection = {
-  sectionLabel?: string;
-  ownerOnlySection?: boolean;  // hides entire section from barbers
-  items: NavItem[];
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  exact?: boolean;
+  ownerOnly?: boolean;
+  barberOnly?: boolean;
 };
 
-// Full menu — grouped by function
-const navSections: NavSection[] = [
-  {
-    items: [
-      { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
-      { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
-      { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
-      { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢", ownerOnly: true },
-      { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
-    ],
-  },
-  {
-    sectionLabel: "דף הבית",
-    ownerOnlySection: true,
-    items: [
-      { href: "/admin/stories",       label: "סטוריז",       icon: "🎬" },
-      { href: "/admin/announcements", label: "עדכונים",      icon: "📌" },
-      { href: "/admin/products",      label: "מוצרים",       icon: "🛍️" },
-    ],
-  },
-  {
-    sectionLabel: "הגדרות",
-    items: [
-      { href: "/admin/staff",     label: "ספרים",         icon: "✂️" },
-      { href: "/admin/services",  label: "שירותים",       icon: "💈", ownerOnly: true },
-      { href: "/admin/templates", label: "תבניות הודעות", icon: "📝", ownerOnly: true },
-      { href: "/admin/settings",  label: "הגדרות עסק",    icon: "⚙️", ownerOnly: true },
-    ],
-  },
-  {
-    items: [
-      { href: "/admin/preview", label: "תצוגת לקוח", icon: "👁️" },
-    ],
-  },
+// Pages that live "inside" Business Settings — the Settings nav item stays highlighted on these
+const SETTINGS_SUB_PATHS = [
+  "/admin/staff",
+  "/admin/services",
+  "/admin/templates",
+  "/admin/stories",
+  "/admin/products",
+  "/admin/announcements",
+];
+
+// Sidebar — flat list. Everything that's a sub-page of settings is reached from inside /admin/settings.
+const navItems: NavItem[] = [
+  { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
+  { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
+  { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
+  { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢", ownerOnly: true },
+  { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
+  { href: "/admin/staff",        label: "הפרופיל",        icon: "👤", barberOnly: true },
+  { href: "/admin/settings",     label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
+  { href: "/admin/preview",      label: "תצוגת לקוח",     icon: "👁️" },
 ];
 
 // Bottom nav (mobile)
@@ -76,15 +64,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
-  // Filter sections and items based on role
-  const visibleSections = navSections
-    .map(section => ({
-      ...section,
-      items: section.items.filter(item => isOwner || !item.ownerOnly),
-    }))
-    .filter(section => !(section.ownerOnlySection && !isOwner) && section.items.length > 0);
-
-  const allVisibleItems = visibleSections.flatMap(s => s.items);
+  const visibleNav = navItems.filter(item => {
+    if (item.ownerOnly && !isOwner) return false;
+    if (item.barberOnly && isOwner) return false;
+    return true;
+  });
   const bottomNav = isOwner ? bottomNavOwner : bottomNavBarber;
 
   if (pathname === "/admin/login") {
@@ -96,10 +80,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     window.location.href = "/admin/login";
   };
 
-  const isActive = (item: { href: string; exact?: boolean }) =>
-    item.exact ? pathname === item.href : pathname.startsWith(item.href);
+  const isActive = (item: { href: string; exact?: boolean }) => {
+    // Sub-pages of business settings keep "הגדרות עסק" highlighted
+    if (item.href === "/admin/settings" && SETTINGS_SUB_PATHS.some(p => pathname.startsWith(p))) return true;
+    return item.exact ? pathname === item.href : pathname.startsWith(item.href);
+  };
 
-  const currentLabel = allVisibleItems.find(isActive)?.label ?? "ניהול";
+  const currentLabel = visibleNav.find(isActive)?.label ?? "ניהול";
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-neutral-100 text-neutral-900" dir="rtl">
@@ -135,32 +122,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        <nav className="flex-1 py-3 px-2 overflow-y-auto">
-          {visibleSections.map((section, si) => (
-            <div key={si} className={si > 0 ? "mt-4" : ""}>
-              {section.sectionLabel && (
-                <div className="px-3 mb-1 text-[10px] font-semibold text-neutral-500 uppercase tracking-wider">
-                  {section.sectionLabel}
-                </div>
-              )}
-              <div className="space-y-0.5">
-                {section.items.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setDrawerOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${
-                      isActive(item)
-                        ? "bg-amber-500 text-neutral-950 font-semibold"
-                        : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
-                    }`}
-                  >
-                    <span className="text-base">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
+        <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
+          {visibleNav.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={() => setDrawerOpen(false)}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${
+                isActive(item)
+                  ? "bg-amber-500 text-neutral-950 font-semibold"
+                  : "text-neutral-400 hover:bg-neutral-800 hover:text-white"
+              }`}
+            >
+              <span className="text-base">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
           ))}
         </nav>
 

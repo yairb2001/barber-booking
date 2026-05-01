@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 
@@ -469,7 +470,61 @@ export default function AdminSettingsPage() {
     <div className="p-8 overflow-auto h-full">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral-900">הגדרות</h1>
-        <p className="text-neutral-500 text-sm mt-1">ניהול פרטי עסק ושעות עבודה</p>
+        <p className="text-neutral-500 text-sm mt-1">ניהול פרטי עסק, שעות עבודה ותכנים</p>
+      </div>
+
+      {/* ── Sub-section hub ── */}
+      <div className="mb-6 space-y-3">
+        {/* הגדרות עסק */}
+        <div>
+          <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הגדרות עסק</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Link href="/admin/staff"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">✂️</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">ספרים</span>
+            </Link>
+            <Link href="/admin/services"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">💈</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">שירותים</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* עיצוב דף הבית */}
+        <div>
+          <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">עיצוב דף הבית</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Link href="/admin/stories"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">📸</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">סטוריז</span>
+            </Link>
+            <Link href="/admin/products"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">🛍️</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">מוצרים</span>
+            </Link>
+            <Link href="/admin/announcements"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">📢</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">עדכונים</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* הודעות */}
+        <div>
+          <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הודעות</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <Link href="/admin/templates"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              <span className="text-xl">💬</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">תבניות הודעות</span>
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
