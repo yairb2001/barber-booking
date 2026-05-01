@@ -195,7 +195,7 @@ export default function AdminAgentPage() {
               <input
                 value={config.agentName}
                 onChange={e => setConfig(c => c ? { ...c, agentName: e.target.value } : c)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                 placeholder="הסוכן"
               />
             </label>
@@ -205,7 +205,7 @@ export default function AdminAgentPage() {
               <input
                 value={config.escalatePhone ?? ""}
                 onChange={e => setConfig(c => c ? { ...c, escalatePhone: e.target.value } : c)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                 placeholder="0501234567"
                 dir="ltr"
               />
@@ -219,7 +219,7 @@ export default function AdminAgentPage() {
                 max={1440}
                 value={config.maxIdleMinutes}
                 onChange={e => setConfig(c => c ? { ...c, maxIdleMinutes: parseInt(e.target.value) || 30 } : c)}
-                className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                 dir="ltr"
               />
             </label>
@@ -237,7 +237,7 @@ export default function AdminAgentPage() {
               <button
                 onClick={loadDefaultPrompt}
                 disabled={loadingDefault}
-                className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 transition disabled:opacity-50"
+                className="shrink-0 text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100 transition disabled:opacity-50"
               >
                 {loadingDefault ? "טוען..." : "📋 טען ברירת מחדל"}
               </button>
@@ -257,7 +257,7 @@ export default function AdminAgentPage() {
               value={config.systemPrompt ?? ""}
               onChange={e => setConfig(c => c ? { ...c, systemPrompt: e.target.value || null } : c)}
               rows={14}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-y font-mono leading-relaxed"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-y font-mono leading-relaxed"
               placeholder="ריק = שימוש בברירת מחדל&#10;&#10;לחץ 'טען ברירת מחדל' כדי לראות ולערוך את הפרומפט הנוכחי..."
               dir="rtl"
             />
@@ -307,20 +307,20 @@ export default function AdminAgentPage() {
               <input
                 value={newQ}
                 onChange={e => setNewQ(e.target.value)}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                 placeholder="מה שעות הפעילות?"
               />
               <textarea
                 value={newA}
                 onChange={e => setNewA(e.target.value)}
                 rows={2}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
                 placeholder="אנחנו פתוחים ראשון עד חמישי 09:00–20:00, שישי 08:00–14:00"
               />
               <button
                 onClick={addFAQ}
                 disabled={!newQ.trim() || !newA.trim()}
-                className="bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-amber-400 disabled:opacity-40"
+                className="bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg text-sm font-medium hover:bg-slate-700 disabled:opacity-40"
               >
                 הוסף
               </button>
@@ -328,10 +328,10 @@ export default function AdminAgentPage() {
           </div>
 
           {/* Webhook info */}
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 space-y-2">
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2">
             <h2 className="font-semibold text-neutral-800">🔗 כתובת Webhook ל-Green API</h2>
             <div
-              className="bg-white border border-amber-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
+              className="bg-white border border-slate-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
               dir="ltr"
               onClick={() => navigator.clipboard?.writeText(WEBHOOK_URL)}
               title="לחץ להעתקה"
@@ -346,7 +346,7 @@ export default function AdminAgentPage() {
             <button
               onClick={saveConfig}
               disabled={saving}
-              className="bg-amber-500 text-neutral-950 px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50 transition min-w-24"
+              className="bg-slate-900 text-neutral-950 px-6 py-2.5 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition min-w-24"
             >
               {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
             </button>
@@ -394,7 +394,7 @@ export default function AdminAgentPage() {
                       key={conv.id}
                       onClick={() => setSelectedConv(conv)}
                       className={`w-full text-right p-3 border-b border-neutral-50 hover:bg-neutral-50 transition ${
-                        selectedConv?.id === conv.id ? "bg-amber-50 border-amber-100" : ""
+                        selectedConv?.id === conv.id ? "bg-slate-50 border-slate-100" : ""
                       }`}
                     >
                       <div className="flex items-center justify-between mb-0.5">
@@ -465,12 +465,12 @@ export default function AdminAgentPage() {
                           <div
                             className={`max-w-xs rounded-2xl px-4 py-2.5 text-sm ${
                               msg.role === "user"
-                                ? "bg-amber-500 text-neutral-950 rounded-tr-sm"
+                                ? "bg-slate-900 text-neutral-950 rounded-tr-sm"
                                 : "bg-neutral-100 text-neutral-800 rounded-tl-sm"
                             }`}
                           >
                             <p className="whitespace-pre-wrap">{msg.content}</p>
-                            <p className={`text-[10px] mt-1 ${msg.role === "user" ? "text-amber-800" : "text-neutral-400"}`}>
+                            <p className={`text-[10px] mt-1 ${msg.role === "user" ? "text-slate-800" : "text-neutral-400"}`}>
                               {new Date(msg.createdAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
                             </p>
                           </div>
@@ -490,7 +490,7 @@ export default function AdminAgentPage() {
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; cls: string }> = {
     active:    { label: "פעיל",   cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-    escalated: { label: "הסלמה", cls: "bg-amber-50 text-amber-700 border-amber-200" },
+    escalated: { label: "הסלמה", cls: "bg-slate-50 text-slate-700 border-slate-200" },
     resolved:  { label: "סגור",  cls: "bg-neutral-50 text-neutral-400 border-neutral-200" },
   };
   const s = map[status] ?? { label: status, cls: "bg-neutral-50 text-neutral-400 border-neutral-200" };

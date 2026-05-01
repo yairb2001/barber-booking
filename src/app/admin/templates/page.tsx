@@ -129,7 +129,7 @@ export default function TemplatesPage() {
       <div className="bg-white rounded-2xl border border-neutral-200 p-5">
         <h1 className="text-xl font-bold text-neutral-900 mb-1">📝 תבניות הודעות</h1>
         <p className="text-sm text-neutral-600 leading-relaxed">
-          ערוך את כל ההודעות שהמערכת שולחת ללקוחות. השתמש ב-<code className="bg-neutral-100 px-1 rounded text-amber-700 font-mono">{"{{משתנה}}"}</code> כדי להחליף ערכים דינמיים — לחץ על משתנה כדי להוסיף אותו במיקום הסמן.
+          ערוך את כל ההודעות שהמערכת שולחת ללקוחות. השתמש ב-<code className="bg-neutral-100 px-1 rounded text-slate-700 font-mono">{"{{משתנה}}"}</code> כדי להחליף ערכים דינמיים — לחץ על משתנה כדי להוסיף אותו במיקום הסמן.
         </p>
       </div>
 
@@ -154,7 +154,7 @@ export default function TemplatesPage() {
             </div>
 
             {/* Variables row */}
-            <div className="px-5 py-3 bg-amber-50/50 border-b border-amber-100">
+            <div className="px-5 py-3 bg-slate-50/50 border-b border-slate-100">
               <p className="text-[11px] text-neutral-500 mb-2">משתנים זמינים — לחץ להוספה:</p>
               <div className="flex flex-wrap gap-1.5">
                 {def.variables.map(v => (
@@ -162,7 +162,7 @@ export default function TemplatesPage() {
                     key={v.key}
                     type="button"
                     onClick={() => insertVar(k, v.key)}
-                    className="text-[11px] bg-white hover:bg-amber-100 border border-amber-200 text-amber-900 rounded-full px-2.5 py-1 font-mono transition"
+                    className="text-[11px] bg-white hover:bg-slate-100 border border-slate-200 text-slate-900 rounded-full px-2.5 py-1 font-mono transition"
                     title={v.label}>
                     {`{{${v.key}}}`}
                   </button>
@@ -178,7 +178,7 @@ export default function TemplatesPage() {
                 onChange={e => setVal(k, e.target.value)}
                 rows={8}
                 dir="rtl"
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 font-mono leading-relaxed resize-y"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 font-mono leading-relaxed resize-y"
                 placeholder={def.default}
               />
               <p className="text-[10px] text-neutral-400 mt-1">
@@ -207,7 +207,7 @@ export default function TemplatesPage() {
                 type="button"
                 onClick={() => saveTemplate(k)}
                 disabled={!isDirty || state.saving}
-                className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition">
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition">
                 {state.saving ? "שומר..." : "שמור"}
               </button>
             </div>

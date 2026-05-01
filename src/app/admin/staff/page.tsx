@@ -176,7 +176,7 @@ export default function AdminStaffPage() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="bg-amber-500 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 transition"
+          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
         >
           + ספר חדש
         </button>
@@ -195,7 +195,7 @@ export default function AdminStaffPage() {
                 {s.avatarUrl ? (
                   <img src={s.avatarUrl} alt={s.name} className="w-12 h-12 rounded-full object-cover" />
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-lg">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold text-lg">
                     {s.name[0]}
                   </div>
                 )}
@@ -210,7 +210,7 @@ export default function AdminStaffPage() {
                       setEditingAvatarId(s.id);
                       setAvatarUrlDraft(s.avatarUrl || "");
                     }}
-                    className="text-xs px-3 py-1.5 rounded-full border border-amber-200 text-amber-700 hover:bg-amber-50 transition"
+                    className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
                   >
                     ✏️ תמונה
                   </button>
@@ -218,7 +218,7 @@ export default function AdminStaffPage() {
                     onClick={() => toggleQuickPool(s.id, s.inQuickPool)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${
                       s.inQuickPool
-                        ? "bg-amber-50 border-amber-300 text-amber-700"
+                        ? "bg-slate-50 border-slate-300 text-slate-700"
                         : "border-neutral-200 text-neutral-400"
                     }`}
                   >
@@ -257,13 +257,13 @@ export default function AdminStaffPage() {
 
               {/* Inline avatar editor — file upload or URL */}
               {editingAvatarId === s.id && (
-                <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-100 space-y-3">
+                <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
                   {/* File upload */}
                   <div>
                     <label className="text-xs text-neutral-500 block mb-1.5">העלאה מהמכשיר</label>
                     <label className="flex items-center gap-2 cursor-pointer">
                       <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed text-sm font-medium transition
-                        ${uploadingAvatar ? "border-amber-300 text-amber-400 bg-white" : "border-amber-400 text-amber-700 bg-white hover:bg-amber-50"}`}>
+                        ${uploadingAvatar ? "border-slate-300 text-slate-700 bg-white" : "border-slate-700 text-slate-700 bg-white hover:bg-slate-50"}`}>
                         {uploadingAvatar ? "⏳ מעלה..." : "📷 בחר תמונה מהמכשיר"}
                       </div>
                       <input
@@ -284,14 +284,14 @@ export default function AdminStaffPage() {
                       onChange={(e) => setAvatarUrlDraft(e.target.value)}
                       placeholder="https://..."
                       dir="ltr"
-                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-slate-700"
                     />
                   </div>
 
                   {/* Preview */}
                   {avatarUrlDraft && (
                     <div className="flex items-center gap-3">
-                      <img src={avatarUrlDraft} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-amber-300" />
+                      <img src={avatarUrlDraft} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-slate-300" />
                       <span className="text-xs text-neutral-500">תצוגה מקדימה</span>
                     </div>
                   )}
@@ -301,7 +301,7 @@ export default function AdminStaffPage() {
                     <button
                       onClick={() => saveAvatar(s.id)}
                       disabled={saving || uploadingAvatar || !avatarUrlDraft}
-                      className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50 transition"
+                      className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50 transition"
                     >
                       {saving ? "שומר..." : "שמור תמונה"}
                     </button>
@@ -330,7 +330,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.name}
                   onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   placeholder="שם הספר"
                 />
               </div>
@@ -339,7 +339,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.phone}
                   onChange={(e) => setNewStaff((p) => ({ ...p, phone: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   dir="ltr"
                 />
               </div>
@@ -348,7 +348,7 @@ export default function AdminStaffPage() {
                 <input
                   value={newStaff.avatarUrl}
                   onChange={(e) => setNewStaff((p) => ({ ...p, avatarUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   dir="ltr"
                   placeholder="https://..."
                 />
@@ -358,7 +358,7 @@ export default function AdminStaffPage() {
                   type="checkbox"
                   checked={newStaff.inQuickPool}
                   onChange={(e) => setNewStaff((p) => ({ ...p, inQuickPool: e.target.checked }))}
-                  className="accent-amber-500"
+                  className="accent-slate-900"
                 />
                 <span className="text-sm text-neutral-700">הוסף לתורים המהירים בדף הבית</span>
               </label>
@@ -367,7 +367,7 @@ export default function AdminStaffPage() {
               <button
                 onClick={addStaff}
                 disabled={saving || !newStaff.name.trim()}
-                className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
+                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}
               </button>
@@ -392,7 +392,7 @@ export default function AdminStaffPage() {
               {setPasswordFor.phone ? ` (${setPasswordFor.phone})` : ""} והסיסמה הזו
             </p>
             {!setPasswordFor.phone && (
-              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+              <p className="text-xs text-slate-800 bg-slate-50 rounded-lg px-3 py-2 mb-3">
                 ⚠️ לא הוגדר טלפון לספר זה — הוסף טלפון קודם
               </p>
             )}
@@ -511,7 +511,7 @@ export default function AdminStaffPage() {
               <button
                 onClick={saveSchedule}
                 disabled={saving}
-                className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
+                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "שמור לוח שנה"}
               </button>

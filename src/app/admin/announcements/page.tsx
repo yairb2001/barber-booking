@@ -81,7 +81,7 @@ export default function AdminAnnouncementsPage() {
         </div>
         <button
           onClick={() => { setEditing(null); setForm(empty); setShowAdd(true); }}
-          className="bg-amber-500 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 transition"
+          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
         >
           + עדכון חדש
         </button>
@@ -99,7 +99,7 @@ export default function AdminAnnouncementsPage() {
           {items.map((item) => (
             <div
               key={item.id}
-              className={`bg-white rounded-2xl border p-5 ${item.isPinned ? "border-amber-200 bg-amber-50/30" : "border-neutral-200"}`}
+              className={`bg-white rounded-2xl border p-5 ${item.isPinned ? "border-slate-200 bg-slate-50/30" : "border-neutral-200"}`}
             >
               <div className="flex items-start gap-3">
                 <span className="text-xl mt-0.5">{item.isPinned ? "📌" : "📣"}</span>
@@ -111,12 +111,12 @@ export default function AdminAnnouncementsPage() {
                   <button
                     onClick={() => togglePin(item.id, item.isPinned)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                      item.isPinned ? "bg-amber-100 border-amber-300 text-amber-700" : "border-neutral-200 text-neutral-400"
+                      item.isPinned ? "bg-slate-100 border-slate-300 text-slate-700" : "border-neutral-200 text-neutral-400"
                     }`}
                   >
                     {item.isPinned ? "מוצמד" : "הצמד"}
                   </button>
-                  <button onClick={() => openEdit(item)} className="text-xs text-amber-600 hover:underline px-1">ערוך</button>
+                  <button onClick={() => openEdit(item)} className="text-xs text-slate-800 hover:underline px-1">ערוך</button>
                   <button onClick={() => del(item.id)} className="text-xs text-red-400 hover:underline px-1">מחק</button>
                 </div>
               </div>
@@ -137,7 +137,7 @@ export default function AdminAnnouncementsPage() {
                 <input
                   value={form.title}
                   onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                 />
               </div>
               <div>
@@ -146,7 +146,7 @@ export default function AdminAnnouncementsPage() {
                   value={form.content}
                   onChange={(e) => setForm((p) => ({ ...p, content: e.target.value }))}
                   rows={3}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
                 />
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -154,7 +154,7 @@ export default function AdminAnnouncementsPage() {
                   type="checkbox"
                   checked={form.isPinned}
                   onChange={(e) => setForm((p) => ({ ...p, isPinned: e.target.checked }))}
-                  className="accent-amber-500"
+                  className="accent-slate-900"
                 />
                 <span className="text-sm text-neutral-700">📌 הצמד בראש הרשימה</span>
               </label>
@@ -163,7 +163,7 @@ export default function AdminAnnouncementsPage() {
               <button
                 onClick={save}
                 disabled={saving || !form.title.trim()}
-                className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
+                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "שמור"}
               </button>

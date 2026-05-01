@@ -82,7 +82,7 @@ export default function CustomersPage() {
       <div className="mb-4">
         <input value={q} onChange={e => setQ(e.target.value)}
           placeholder="חפש לפי שם או טלפון..."
-          className="w-full max-w-sm border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white" />
+          className="w-full max-w-sm border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white" />
       </div>
 
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
@@ -188,23 +188,23 @@ function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
           <div>
             <label className="text-xs text-neutral-500">שם מלא *</label>
             <input value={name} onChange={e => setName(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">טלפון *</label>
             <input value={phone} onChange={e => setPhone(e.target.value)} dir="ltr"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">מאיפה הגיע (אופציונלי)</label>
             <input value={referralSource} onChange={e => setReferralSource(e.target.value)}
               placeholder="חבר המליץ, אינסטגרם, וכו׳"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
           <div>
             <label className="text-xs text-neutral-500">הערות (אופציונלי)</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm mt-1 focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
           {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
         </div>
@@ -319,7 +319,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             {editingName ? (
               <div className="flex gap-2">
                 <input value={nameDraft} onChange={e => setNameDraft(e.target.value)}
-                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-lg font-bold focus:outline-none focus:ring-2 focus:ring-slate-700" />
                 <button onClick={saveName} disabled={busy} className="text-xs bg-neutral-900 text-white px-3 rounded-lg">שמור</button>
                 <button onClick={() => { setEditingName(false); setNameDraft(detail.name); }} className="text-xs text-neutral-500 px-2">ביטול</button>
               </div>
@@ -346,7 +346,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             <span>📞</span> חיוג מהיר
           </a>
           <button onClick={() => setRecurringOpen(true)}
-            className="flex items-center justify-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl py-3 text-sm">
+            className="flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl py-3 text-sm">
             <span>🔁</span> תור קבוע
           </button>
           <a href={`https://wa.me/${detail.phone.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
@@ -384,7 +384,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold">מידע על הלקוח</h4>
             {!editingNotes && (
-              <button onClick={() => setEditingNotes(true)} className="text-xs text-amber-600 hover:underline">
+              <button onClick={() => setEditingNotes(true)} className="text-xs text-slate-800 hover:underline">
                 {notesValue ? "ערוך" : "הוסף מידע"}
               </button>
             )}
@@ -393,7 +393,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             <div className="space-y-2">
               <textarea value={notesDraft} onChange={e => setNotesDraft(e.target.value)} rows={3}
                 placeholder="העדפות שיער, אלרגיות, הערות..."
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
               <div className="flex gap-2">
                 <button onClick={saveNotes} disabled={busy}
                   className="bg-neutral-900 text-white rounded-lg px-3 py-1.5 text-xs">שמור</button>
@@ -402,7 +402,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
               </div>
             </div>
           ) : notesValue ? (
-            <p className="text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-xl p-3 whitespace-pre-wrap">{notesValue}</p>
+            <p className="text-sm text-neutral-700 bg-slate-50 border border-slate-100 rounded-xl p-3 whitespace-pre-wrap">{notesValue}</p>
           ) : (
             <p className="text-xs text-neutral-400 italic">אין מידע נוסף</p>
           )}
@@ -448,7 +448,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
                 </div>
                 <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${detail.rewards.productGiftEarned ? "bg-emerald-400" : "bg-amber-400"}`}
+                    className={`h-full rounded-full transition-all ${detail.rewards.productGiftEarned ? "bg-emerald-400" : "bg-slate-700"}`}
                     style={{ width: `${Math.min((detail.rewards.confirmedReferrals / 2) * 100, 100)}%` }}
                   />
                 </div>
@@ -465,7 +465,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
                 </div>
                 <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${detail.rewards.freeHaircutEarned ? "bg-emerald-400" : "bg-amber-400"}`}
+                    className={`h-full rounded-full transition-all ${detail.rewards.freeHaircutEarned ? "bg-emerald-400" : "bg-slate-700"}`}
                     style={{ width: `${Math.min((detail.rewards.confirmedReferrals / 3) * 100, 100)}%` }}
                   />
                 </div>
@@ -507,7 +507,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             className={`flex-1 rounded-xl py-2.5 text-sm font-medium ${
               detail.isBlocked
                 ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                : "bg-slate-50 text-slate-700 hover:bg-slate-100"
             }`}>
             {detail.isBlocked ? "🔓 בטל חסימה" : "🚫 חסום משתמש"}
           </button>
@@ -604,7 +604,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
             נוצרו <b>{result.created}</b> תורים עבור {customerName}
           </p>
           {result.skipped > 0 && (
-            <p className="text-xs text-amber-600 mb-3">
+            <p className="text-xs text-slate-800 mb-3">
               {result.skipped} תאריכים דולגו עקב התנגשויות
             </p>
           )}
@@ -675,7 +675,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
                 <button key={v} onClick={() => setFrequencyWeeks(v)}
                   className={`flex-1 border rounded-xl py-2 text-xs font-medium ${
                     frequencyWeeks === v
-                      ? "bg-amber-500 text-white border-amber-500"
+                      ? "bg-slate-900 text-white border-slate-900"
                       : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50"
                   }`}>
                   {l}

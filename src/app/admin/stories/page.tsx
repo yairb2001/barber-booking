@@ -115,7 +115,7 @@ export default function AdminStoriesPage() {
         </div>
         <button
           onClick={() => setShowAdd(true)}
-          className="bg-amber-500 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 transition"
+          className="bg-slate-900 text-neutral-950 px-4 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 transition"
         >
           + סטורי חדש
         </button>
@@ -154,7 +154,7 @@ export default function AdminStoriesPage() {
                 )}
                 <p className="text-xs text-neutral-400 truncate" dir="ltr">{story.mediaUrl}</p>
                 {story.expiresAt && (
-                  <p className="text-[11px] text-amber-600 mt-0.5">
+                  <p className="text-[11px] text-slate-800 mt-0.5">
                     פג תוקף: {new Date(story.expiresAt).toLocaleDateString("he-IL")}
                   </p>
                 )}
@@ -223,7 +223,7 @@ export default function AdminStoriesPage() {
                 <label className="text-xs text-neutral-500 block mb-1.5">העלאה מהמכשיר</label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed text-sm font-medium w-full justify-center transition
-                    ${uploading ? "border-amber-300 text-amber-400 bg-amber-50" : "border-amber-400 text-amber-700 bg-amber-50 hover:bg-amber-100"}`}>
+                    ${uploading ? "border-slate-300 text-slate-700 bg-slate-50" : "border-slate-700 text-slate-700 bg-slate-50 hover:bg-slate-100"}`}>
                     {uploading ? "⏳ מעלה תמונה..." : "📷 בחר תמונה מהמכשיר"}
                   </div>
                   <input
@@ -242,7 +242,7 @@ export default function AdminStoriesPage() {
                 <input
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   dir="ltr"
                   placeholder="https://..."
                 />
@@ -264,7 +264,7 @@ export default function AdminStoriesPage() {
                 <input
                   value={newCaption}
                   onChange={(e) => setNewCaption(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   placeholder="כיתוב לסטורי..."
                 />
               </div>
@@ -274,7 +274,7 @@ export default function AdminStoriesPage() {
                   type="datetime-local"
                   value={newExpiry}
                   onChange={(e) => setNewExpiry(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                   dir="ltr"
                 />
               </div>
@@ -283,7 +283,7 @@ export default function AdminStoriesPage() {
               <button
                 onClick={addStory}
                 disabled={saving || uploading || !newUrl.trim()}
-                className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-amber-400 disabled:opacity-50"
+                className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold hover:bg-slate-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}
               </button>

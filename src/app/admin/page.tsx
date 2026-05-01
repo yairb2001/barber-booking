@@ -15,7 +15,7 @@ const COLORS = [
   { bg: "bg-violet-500", light: "bg-violet-100 text-violet-900 border-violet-300" },
   { bg: "bg-blue-500",   light: "bg-blue-100 text-blue-900 border-blue-300" },
   { bg: "bg-emerald-500",light: "bg-emerald-100 text-emerald-900 border-emerald-300" },
-  { bg: "bg-amber-500",  light: "bg-amber-100 text-amber-900 border-amber-300" },
+  { bg: "bg-indigo-500", light: "bg-indigo-100 text-indigo-900 border-indigo-300" },
   { bg: "bg-rose-500",   light: "bg-rose-100 text-rose-900 border-rose-300" },
   { bg: "bg-cyan-500",   light: "bg-cyan-100 text-cyan-900 border-cyan-300" },
 ];
@@ -200,8 +200,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   let badge: { text: string; cls: string } | null = null;
   let extraStyle: React.CSSProperties = {};
   if (swapState.kind === "swap-mode-primary") {
-    ringClass = "ring-2 ring-amber-500 ring-offset-1";
-    badge = { text: "המקור", cls: "bg-amber-500 text-white" };
+    ringClass = "ring-2 ring-slate-900 ring-offset-1";
+    badge = { text: "המקור", cls: "bg-slate-900 text-white" };
   } else if (swapState.kind === "swap-mode-selected") {
     ringClass = "ring-2 ring-blue-500 ring-offset-1";
     badge = { text: "✓ נבחר", cls: "bg-blue-500 text-white" };
@@ -349,20 +349,20 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
 
           {/* Pre-filled summary banner when opened from grid click */}
           {fromGrid && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-amber-400 flex items-center justify-center text-white font-bold text-base shrink-0">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white font-bold text-base shrink-0">
                 {staff.name[0]}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-amber-900 text-sm">{staff.name}</p>
-                <p className="text-xs text-amber-700">
+                <p className="font-semibold text-slate-900 text-sm">{staff.name}</p>
+                <p className="text-xs text-slate-700">
                   {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })}
                   {" · "}
                   {form.time}
                   {endTime && ` – ${endTime}`}
                 </p>
               </div>
-              <div className="text-amber-400 text-lg">✂️</div>
+              <div className="text-slate-700 text-lg">✂️</div>
             </div>
           )}
 
@@ -398,7 +398,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
                 <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
-                  className="w-full border border-amber-200 bg-amber-50 rounded-lg px-3 py-2 text-sm text-amber-900" dir="ltr" />
+                  className="w-full border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm text-slate-900" dir="ltr" />
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שעה</label>
@@ -407,14 +407,14 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                     const [h, m] = form.time.split(":").map(Number);
                     const total = Math.max(DAY_START * 60, h * 60 + m - 5);
                     setForm(p => ({ ...p, time: minToTime(total) }));
-                  }} className="w-8 h-9 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 flex items-center justify-center text-sm">−</button>
+                  }} className="w-8 h-9 border border-slate-200 bg-slate-50 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center justify-center text-sm">−</button>
                   <input type="time" value={form.time} onChange={e => setForm(p => ({ ...p, time: e.target.value }))}
-                    className="flex-1 border border-amber-200 bg-amber-50 rounded-lg px-2 py-2 text-sm text-amber-900" dir="ltr" />
+                    className="flex-1 border border-slate-200 bg-slate-50 rounded-lg px-2 py-2 text-sm text-slate-900" dir="ltr" />
                   <button type="button" onClick={() => {
                     const [h, m] = form.time.split(":").map(Number);
                     const total = Math.min(DAY_END * 60, h * 60 + m + 5);
                     setForm(p => ({ ...p, time: minToTime(total) }));
-                  }} className="w-8 h-9 border border-amber-200 bg-amber-50 rounded-lg text-amber-700 hover:bg-amber-100 flex items-center justify-center text-sm">+</button>
+                  }} className="w-8 h-9 border border-slate-200 bg-slate-50 rounded-lg text-slate-700 hover:bg-slate-100 flex items-center justify-center text-sm">+</button>
                 </div>
               </div>
             </div>
@@ -424,9 +424,9 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           {fromGrid ? (
             <div>
               <label className="text-xs text-neutral-500 block mb-1">ספר</label>
-              <div className="flex items-center gap-2 border border-amber-200 bg-amber-50 rounded-lg px-3 py-2">
-                <span className="text-sm font-medium text-amber-900 flex-1">{selectedStaff?.name}</span>
-                <button onClick={() => {/* allow changing */}} className="text-xs text-amber-500 underline"
+              <div className="flex items-center gap-2 border border-slate-200 bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-sm font-medium text-slate-900 flex-1">{selectedStaff?.name}</span>
+                <button onClick={() => {/* allow changing */}} className="text-xs text-slate-900 underline"
                   title="שנה ספר">
                 </button>
               </div>
@@ -459,11 +459,11 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               <label className="text-xs text-neutral-500">לקוח</label>
               <div className="flex gap-2 text-xs">
                 <button onClick={() => setCustomerMode("search")}
-                  className={`px-2 py-0.5 rounded-full ${customerMode === "search" ? "bg-amber-100 text-amber-700" : "text-neutral-400"}`}>
+                  className={`px-2 py-0.5 rounded-full ${customerMode === "search" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
                   חיפוש
                 </button>
                 <button onClick={() => setCustomerMode("new")}
-                  className={`px-2 py-0.5 rounded-full ${customerMode === "new" ? "bg-amber-100 text-amber-700" : "text-neutral-400"}`}>
+                  className={`px-2 py-0.5 rounded-full ${customerMode === "new" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
                   לקוח חדש
                 </button>
               </div>
@@ -553,15 +553,15 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{errMsg}</div>
           )}
           {conflictMsg && (
-            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-              <p className="text-amber-900">{conflictMsg}</p>
+            <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+              <p className="text-slate-900">{conflictMsg}</p>
               <div className="flex gap-2">
                 <button onClick={() => save(true)} disabled={saving}
-                  className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-amber-600">
+                  className="flex-1 bg-slate-900 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-slate-800">
                   כן, קבע בכל זאת
                 </button>
                 <button onClick={() => setConflictMsg(null)}
-                  className="flex-1 bg-white border border-amber-300 text-amber-700 rounded-lg py-1.5 text-xs">
+                  className="flex-1 bg-white border border-slate-300 text-slate-700 rounded-lg py-1.5 text-xs">
                   ביטול
                 </button>
               </div>
@@ -570,7 +570,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           <button onClick={() => save(false)} disabled={saving || !!conflictMsg || !form.staffId || !form.serviceId ||
             !(selectedCustomer || (newCustomer.name && newCustomer.phone)) ||
             (customerMode === "new" && !referralSource)}
-            className="w-full bg-amber-500 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-amber-400 disabled:opacity-40 transition">
+            className="w-full bg-slate-900 text-neutral-950 py-3 rounded-xl font-semibold hover:bg-slate-700 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
           </button>
         </div>
@@ -641,7 +641,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
         </div>
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}
-            className="flex-1 bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+            className="flex-1 bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
             {saving ? "שומר..." : "הוסף הפסקה"}
           </button>
           <button onClick={onClose} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">ביטול</button>
@@ -654,7 +654,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
 // ── Appointment Detail Modal ───────────────────────────────────────────────────
 const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   confirmed:           { label: "מאושר",    badgeClass: "bg-emerald-100 text-emerald-700" },
-  pending:             { label: "ממתין",    badgeClass: "bg-amber-100 text-amber-700" },
+  pending:             { label: "ממתין",    badgeClass: "bg-slate-100 text-slate-700" },
   completed:           { label: "הושלם",    badgeClass: "bg-blue-100 text-blue-700" },
   cancelled_by_staff:  { label: "בוטל",     badgeClass: "bg-red-100 text-red-500" },
   cancelled_by_customer: { label: "בוטל ע״י לקוח", badgeClass: "bg-red-100 text-red-500" },
@@ -820,7 +820,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </div>
           <div>
             <p className="text-xs text-neutral-400 mb-0.5">מחיר</p>
-            <p className="font-bold text-amber-600">₪{appt.price}</p>
+            <p className="font-bold text-slate-800">₪{appt.price}</p>
           </div>
         </div>
 
@@ -838,7 +838,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <p className="text-xs text-neutral-400">מקור הגעה</p>
             {!editingReferral && (
               <button onClick={() => setEditingReferral(true)}
-                className="text-xs text-amber-600 hover:underline">
+                className="text-xs text-slate-800 hover:underline">
                 {referralSource ? "ערוך" : "הוסף"}
               </button>
             )}
@@ -846,7 +846,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {editingReferral ? (
             <div className="flex gap-2">
               <select value={referralSource} onChange={e => setReferralSource(e.target.value)}
-                className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 bg-white">
+                className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300 bg-white">
                 <option value="">לא צוין</option>
                 {referralOptions.map(opt => (
                   <option key={opt} value={opt}>{opt}</option>
@@ -879,10 +879,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <p className="text-xs text-neutral-400 mb-1.5">הערת ספר</p>
           <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
             placeholder="הוסף הערה פנימית..."
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-300" />
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-slate-300" />
           {staffNote !== (appt.staffNote || "") && (
             <button onClick={saveNote} disabled={savingNote}
-              className="mt-1 text-xs text-amber-600 hover:underline disabled:opacity-50">
+              className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
               {savingNote ? "שומר..." : "שמור הערה"}
             </button>
           )}
@@ -908,11 +908,11 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         <div className="px-5 py-3 border-b border-neutral-100">
           {/* Case 1: appointment is currently a candidate in someone else's swap proposal */}
           {proposalAsCandidate && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2 mb-3">
-              <p className="text-xs font-semibold text-amber-900">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 mb-3">
+              <p className="text-xs font-semibold text-slate-900">
                 🔄 הוצעה החלפה ללקוח זה
               </p>
-              <p className="text-[12px] text-amber-800 leading-relaxed">
+              <p className="text-[12px] text-slate-800 leading-relaxed">
                 לקוח אחר ({proposalAsCandidate.primary.customer.name}) מבקש להחליף לתור הזה.
                 סטטוס: {proposalAsCandidate.status === "pending_response" ? "ממתין לתשובה" : "אישר את ההחלפה"}.
               </p>
@@ -1005,7 +1005,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {proposalsAsPrimary.length === 0 && !proposalAsCandidate && (
             <button
               onClick={() => onEnterSwapMode(appt.id)}
-              className="w-full py-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-900 text-sm font-bold transition flex items-center justify-center gap-2">
+              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 text-sm font-bold transition flex items-center justify-center gap-2">
               🔄 החלף / העבר תור (בחר מועמדים או שעה ריקה)
             </button>
           )}
@@ -1026,13 +1026,13 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   value={delayMinutes}
                   onChange={e => setDelayMinutes(e.target.value)}
                   placeholder="דקות"
-                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-amber-300"
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-slate-300"
                   autoFocus
                 />
                 <button
                   onClick={sendDelayNotification}
                   disabled={delaySending || !delayMinutes}
-                  className="bg-amber-500 hover:bg-amber-400 text-neutral-950 text-sm font-semibold px-4 rounded-lg disabled:opacity-50 transition">
+                  className="bg-slate-900 hover:bg-slate-700 text-neutral-950 text-sm font-semibold px-4 rounded-lg disabled:opacity-50 transition">
                   {delaySending ? "..." : "שלח"}
                 </button>
                 <button
@@ -1158,7 +1158,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">תאריך</label>
             <input type="date" value={date} onChange={e => setDate(e.target.value)} dir="ltr"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
 
           {/* Time + Duration */}
@@ -1166,13 +1166,13 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">שעת התחלה</label>
               <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} dir="ltr"
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
             </div>
             <div>
               <label className="text-xs text-neutral-500 mb-1 block">משך (דקות)</label>
               <input type="number" min={5} step={5} value={duration}
                 onChange={e => setDuration(Number(e.target.value))}
-                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
             </div>
           </div>
           <div className="text-xs text-neutral-400" dir="ltr">
@@ -1183,7 +1183,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">ספר</label>
             <select value={staffId} onChange={e => setStaffId(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700">
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
@@ -1192,7 +1192,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">סוג תור</label>
             <select value={serviceId} onChange={e => onServiceChange(e.target.value)}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700">
               {allServices.map(s => (
                 <option key={s.id} value={s.id}>
                   {s.name} (₪{s.price}, {s.durationMinutes} דק)
@@ -1205,28 +1205,28 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">מחיר (₪)</label>
             <input type="number" min={0} value={price} onChange={e => setPrice(Number(e.target.value))}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
 
           {/* Customer note */}
           <div>
             <label className="text-xs text-neutral-500 mb-1 block">הערת לקוח</label>
             <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
           </div>
 
           {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{err}</div>}
 
           {conflict && (
-            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
-              <p className="text-amber-900">{conflict}</p>
+            <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+              <p className="text-slate-900">{conflict}</p>
               <div className="flex gap-2">
                 <button onClick={() => save(true)} disabled={saving}
-                  className="flex-1 bg-amber-500 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-amber-600">
+                  className="flex-1 bg-slate-900 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-slate-800">
                   כן, שמור בכל זאת
                 </button>
                 <button onClick={() => setConflict(null)}
-                  className="flex-1 bg-white border border-amber-300 text-amber-700 rounded-lg py-1.5 text-xs">
+                  className="flex-1 bg-white border border-slate-300 text-slate-700 rounded-lg py-1.5 text-xs">
                   ביטול
                 </button>
               </div>
@@ -1342,7 +1342,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         <div className="flex border-b border-neutral-100 px-3 pt-1">
           {([["hours","שעות"],["breaks","הפסקות"],["waitlist","המתנה"]] as const).map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === key ? "border-amber-500 text-amber-700" : "border-transparent text-neutral-500"}`}>
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition ${tab === key ? "border-slate-900 text-slate-700" : "border-transparent text-neutral-500"}`}>
               {label}
               {key === "waitlist" && waitlist.length > 0 && (
                 <span className="mr-1 bg-red-500 text-white text-[10px] rounded-full px-1.5 py-0.5">{waitlist.length}</span>
@@ -1378,7 +1378,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               )}
               <div className="flex gap-2">
                 <button onClick={saveHours} disabled={saving}
-                  className="flex-1 bg-amber-500 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  className="flex-1 bg-slate-900 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {saving ? "שומר..." : "שמור"}
                 </button>
                 <button onClick={closeDay} disabled={saving}
@@ -1407,12 +1407,12 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                 </div>
               ))}
               <button onClick={addBreak}
-                className="w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-2 rounded-xl text-sm hover:border-amber-300 hover:text-amber-600 transition">
+                className="w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-2 rounded-xl text-sm hover:border-slate-300 hover:text-slate-800 transition">
                 + הוסף הפסקה
               </button>
               {breaks.length > 0 && (
                 <button onClick={saveHours} disabled={saving}
-                  className="w-full bg-amber-500 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  className="w-full bg-slate-900 text-neutral-950 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {saving ? "שומר..." : "שמור הפסקות"}
                 </button>
               )}
@@ -1433,7 +1433,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                       <p className="text-xs text-neutral-500">{w.service.name}</p>
                       <div className="flex gap-1.5 mt-1 flex-wrap">
                         {timeLabel && (
-                          <span className="text-[11px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
+                          <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
                         )}
                         {w.isFlexible && (
                           <span className="text-[11px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
@@ -1457,7 +1457,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                   {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
                 <button onClick={addToWaitlist} disabled={!newWaiting.phone || !newWaiting.serviceId}
-                  className="w-full bg-amber-500 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
+                  className="w-full bg-slate-900 text-neutral-950 py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
                   + הוסף לרשימה
                 </button>
               </div>
@@ -1625,19 +1625,19 @@ function DraftApptBlock({
 
       {/* Compact, semi-transparent pill — single row */}
       <div
-        className="w-full h-full rounded-md bg-white/80 backdrop-blur-sm border border-amber-300/70 flex items-center gap-1.5 px-2"
+        className="w-full h-full rounded-md bg-white/80 backdrop-blur-sm border border-slate-300/70 flex items-center gap-1.5 px-2"
         style={{ borderRight: "2.5px solid rgba(245,158,11,0.85)" }}>
         <button
           className="text-neutral-300 hover:text-neutral-500 text-xs leading-none shrink-0"
           onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         <button
-          className="flex-1 text-[11px] font-semibold text-amber-700 hover:text-amber-800 truncate text-right"
+          className="flex-1 text-[11px] font-semibold text-slate-700 hover:text-slate-800 truncate text-right"
           onClick={e => { e.stopPropagation(); onConfirm(); }}>
           + קבע ב־{time}
         </button>
         {/* Coffee break button — slightly prominent */}
         <button
-          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-neutral-100 hover:bg-amber-100 border border-neutral-200 hover:border-amber-300 text-[14px] transition"
+          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-neutral-100 hover:bg-slate-100 border border-neutral-200 hover:border-slate-300 text-[14px] transition"
           title="הוסף הפסקה"
           onClick={e => { e.stopPropagation(); onAddBreak(); }}>
           ☕
@@ -2229,9 +2229,9 @@ export default function AdminCalendar() {
             const dayAppts = appointments.filter(a => a.date.startsWith(cell));
             const isToday = cell === todayISO();
             return (
-              <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-amber-50 border-2 border-amber-400" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
+              <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-slate-50 border-2 border-slate-700" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
                 onClick={() => { setDate(cell); setView("day"); setDayMenu({ date: cell, staffId: allStaff[0]?.id || "" }); }}>
-                <span className={`text-sm font-semibold ${isToday ? "text-amber-600" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
+                <span className={`text-sm font-semibold ${isToday ? "text-slate-800" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
                 <div className="mt-1 space-y-0.5">
                   {dayAppts.slice(0, 3).map((a, ai) => (
                     <div key={a.id} className={`text-[10px] rounded px-1 truncate ${COLORS[ai % COLORS.length].light}`}>
@@ -2276,8 +2276,8 @@ export default function AdminCalendar() {
                 return (
                   <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
                     onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
-                    <span className={`text-xs font-semibold ${isToday ? "text-amber-600" : "text-neutral-500"}`}>{fmtShort(d)}</span>
-                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-amber-500 mt-0.5" />}
+                    <span className={`text-xs font-semibold ${isToday ? "text-slate-800" : "text-neutral-500"}`}>{fmtShort(d)}</span>
+                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-slate-900 mt-0.5" />}
                     {waitlistCounts[d] > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                         {waitlistCounts[d]}
@@ -2329,10 +2329,10 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} />
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
-                          <div className="absolute left-0.5 right-0.5 bg-amber-300/40 border-2 border-dashed border-amber-500 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-slate-900 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
-                              <span className="text-[10px] font-bold text-amber-900 leading-tight">
+                              <span className="text-[10px] font-bold text-slate-900 leading-tight">
                                 {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
                               </span>
                             )}
@@ -2410,10 +2410,10 @@ export default function AdminCalendar() {
                         onPointerCancel={() => setDrag(null)}>
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} />
                         {colDrag && dragDist >= 6 && (
-                          <div className="absolute left-0.5 right-0.5 bg-amber-300/40 border-2 border-dashed border-amber-500 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
+                          <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-slate-900 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
-                              <span className="text-[10px] font-bold text-amber-900 leading-tight">
+                              <span className="text-[10px] font-bold text-slate-900 leading-tight">
                                 {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
                               </span>
                             )}
@@ -2527,13 +2527,13 @@ export default function AdminCalendar() {
         const moveCount = swapMode.candidates.filter(c => c.kind === "move").length;
         const total = swapMode.candidates.length;
         return (
-          <div className="bg-amber-50 border-b-2 border-amber-400 px-3 py-2.5 flex items-center gap-3 shrink-0">
-            <span className="text-amber-900 text-base">🔄</span>
+          <div className="bg-slate-50 border-b-2 border-slate-700 px-3 py-2.5 flex items-center gap-3 shrink-0">
+            <span className="text-slate-900 text-base">🔄</span>
             <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-amber-900 truncate">
+              <p className="text-xs font-bold text-slate-900 truncate">
                 מצב החלפה: {swapPrimary ? `${swapPrimary.customer.name} (${swapPrimary.startTime})` : "..."}
               </p>
-              <p className="text-[11px] text-amber-700">
+              <p className="text-[11px] text-slate-700">
                 {total === 0
                   ? "לחץ על תור (החלפה עם לקוח) או על שעה ריקה (העברה)"
                   : `${total} נבחרו · ${swapCount} החלפות · ${moveCount} העברות לשעה ריקה`}
@@ -2548,7 +2548,7 @@ export default function AdminCalendar() {
             <button
               onClick={submitSwap}
               disabled={total === 0 || swapSubmitting}
-              className="px-4 py-1.5 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
+              className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 text-white rounded-lg text-xs font-bold transition">
               {swapSubmitting ? "שולח..." : `שלח ל-${total}`}
             </button>
           </div>
@@ -2559,13 +2559,13 @@ export default function AdminCalendar() {
       <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-1.5">
         {/* Navigation */}
         <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">◀</button>
-        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-amber-600 hover:underline px-1 shrink-0">היום</button>
+        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-slate-800 hover:underline px-1 shrink-0">היום</button>
         <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">▶</button>
 
         {/* Date label */}
         {view === "day" ? (
           <button
-            className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate text-right hover:text-amber-600 transition"
+            className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate text-right hover:text-slate-800 transition"
             onClick={() => setDayMenu({ date, staffId: displayedStaff[0]?.id || allStaff[0]?.id || "" })}>
             {dateLabel}
           </button>
@@ -2624,20 +2624,20 @@ export default function AdminCalendar() {
         {view === "day" && (
           <div className="relative shrink-0">
             <button onClick={() => setShowFilter(!showFilter)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-amber-500 text-neutral-950 border-amber-400" : "bg-white border-neutral-200 text-neutral-600"}`}>
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-slate-900 text-neutral-950 border-slate-700" : "bg-white border-neutral-200 text-neutral-600"}`}>
               ✂️ {visibleStaff.length === allStaff.length ? "הכל" : `${visibleStaff.length}`}
             </button>
             {showFilter && (
               <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-neutral-200 p-2 w-48 z-30">
                 <div className="flex items-center justify-between mb-1 px-1">
                   <span className="text-xs font-semibold text-neutral-700">ספרים</span>
-                  <button onClick={() => setVisibleStaff(allStaff.map(s => s.id))} className="text-[11px] text-amber-600">הכל</button>
+                  <button onClick={() => setVisibleStaff(allStaff.map(s => s.id))} className="text-[11px] text-slate-800">הכל</button>
                 </div>
                 {allStaff.map((s, si) => (
                   <label key={s.id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-lg hover:bg-neutral-50">
                     <input type="checkbox" checked={visibleStaff.includes(s.id)}
                       onChange={e => setVisibleStaff(prev => e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id))}
-                      className="accent-amber-500" />
+                      className="accent-slate-900" />
                     <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${COLORS[si % COLORS.length].bg}`}>{s.name[0]}</div>
                     <span className="text-xs text-neutral-800">{s.name}</span>
                   </label>
@@ -2649,7 +2649,7 @@ export default function AdminCalendar() {
 
         {/* New appointment button */}
         <button onClick={() => setNewAppt({ staffId: allStaff[0]?.id || "", date, time: "10:00" })}
-          className="flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-neutral-950 rounded-lg text-xs font-semibold hover:bg-amber-400 transition shrink-0">
+          className="flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-neutral-950 rounded-lg text-xs font-semibold hover:bg-slate-700 transition shrink-0">
           + תור
         </button>
       </div>
@@ -2726,7 +2726,7 @@ export default function AdminCalendar() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => { setMoveConflict(null); loadAppointments(); }}>
           <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-5 space-y-4" onClick={e => e.stopPropagation()}>
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 text-xl shrink-0">⚠️</div>
+              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-800 text-xl shrink-0">⚠️</div>
               <div className="flex-1">
                 <h3 className="font-bold text-neutral-900 text-base">השעה תפוסה</h3>
                 <p className="text-sm text-neutral-600 mt-1 leading-relaxed">{moveConflict.message}</p>
@@ -2756,7 +2756,7 @@ export default function AdminCalendar() {
                     });
                   }
                 }}
-                className="flex-1 bg-amber-500 text-neutral-950 rounded-xl py-2.5 text-sm font-bold hover:bg-amber-400 transition">
+                className="flex-1 bg-slate-900 text-neutral-950 rounded-xl py-2.5 text-sm font-bold hover:bg-slate-700 transition">
                 להעביר בכל זאת
               </button>
             </div>

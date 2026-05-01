@@ -169,13 +169,13 @@ export default function MessagingPage() {
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setStaffId("")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${!staffId ? "bg-amber-500 text-neutral-950 border-amber-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${!staffId ? "bg-slate-900 text-neutral-950 border-slate-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
                 כל הלקוחות
               </button>
               {allStaff.map(s => (
                 <button key={s.id}
                   onClick={() => setStaffId(s.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${staffId === s.id ? "bg-amber-500 text-neutral-950 border-amber-400" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${staffId === s.id ? "bg-slate-900 text-neutral-950 border-slate-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
                   ✂️ {s.name}
                 </button>
               ))}
@@ -207,7 +207,7 @@ export default function MessagingPage() {
                     {UPCOMING_OPTIONS.map(opt => (
                       <button key={opt.value}
                         onClick={e => { e.stopPropagation(); setUpcoming(opt.value); }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${upcoming === opt.value ? "bg-amber-500 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${upcoming === opt.value ? "bg-slate-900 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
                         {opt.label}
                       </button>
                     ))}
@@ -226,7 +226,7 @@ export default function MessagingPage() {
                     {ACTIVE_OPTIONS.map(n => (
                       <button key={n}
                         onClick={e => { e.stopPropagation(); setActiveDays(n); }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${activeDays === n ? "bg-amber-500 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${activeDays === n ? "bg-slate-900 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
                         {daysLabel(n)}
                       </button>
                     ))}
@@ -245,7 +245,7 @@ export default function MessagingPage() {
                     {INACTIVE_OPTIONS.map(n => (
                       <button key={n}
                         onClick={e => { e.stopPropagation(); setInactiveDays(n); }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${inactiveDays === n ? "bg-amber-500 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${inactiveDays === n ? "bg-slate-900 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
                         {daysLabel(n)}
                       </button>
                     ))}
@@ -264,7 +264,7 @@ export default function MessagingPage() {
                     {NEW_OPTIONS.map(n => (
                       <button key={n}
                         onClick={e => { e.stopPropagation(); setNewDays(n); }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${newDays === n ? "bg-amber-500 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${newDays === n ? "bg-slate-900 text-neutral-950" : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"}`}>
                         {daysLabel(n)}
                       </button>
                     ))}
@@ -297,7 +297,7 @@ export default function MessagingPage() {
               placeholder={`שלום {{name}} 👋\n\nיש לנו חדשות שמחות...`}
               rows={7}
               dir="rtl"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
             />
             <div className="flex flex-wrap gap-1.5 mt-2">
               <button
@@ -324,11 +324,11 @@ export default function MessagingPage() {
             <button
               onClick={() => setConfirm(true)}
               disabled={!message.trim() || totalCount === 0}
-              className="w-full py-3 rounded-xl text-sm font-semibold bg-amber-500 text-neutral-950 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed transition">
+              className="w-full py-3 rounded-xl text-sm font-semibold bg-slate-900 text-neutral-950 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition">
               📤 שלח הודעה
             </button>
           ) : (
-            <div className="bg-white border-2 border-amber-400 rounded-2xl p-5 space-y-3">
+            <div className="bg-white border-2 border-slate-700 rounded-2xl p-5 space-y-3">
               <p className="font-semibold text-neutral-900 text-sm">אשר שליחה</p>
               <p className="text-sm text-neutral-600">
                 <span className="font-medium text-neutral-800">{filterSummary()}</span>
@@ -341,7 +341,7 @@ export default function MessagingPage() {
               </div>
               <div className="flex gap-3">
                 <button onClick={handleSend} disabled={sending}
-                  className="flex-1 py-2.5 rounded-xl bg-amber-500 text-neutral-950 font-semibold text-sm hover:bg-amber-400 disabled:opacity-50 transition">
+                  className="flex-1 py-2.5 rounded-xl bg-slate-900 text-neutral-950 font-semibold text-sm hover:bg-slate-700 disabled:opacity-50 transition">
                   {sending ? "שולח..." : "כן, שלח"}
                 </button>
                 <button onClick={() => setConfirm(false)} disabled={sending}
@@ -415,12 +415,12 @@ function FilterRow({
 }) {
   return (
     <div
-      className={`rounded-xl border cursor-pointer transition ${active ? "border-amber-300 bg-amber-50" : "border-neutral-100 bg-neutral-50 hover:border-neutral-200"}`}
+      className={`rounded-xl border cursor-pointer transition ${active ? "border-slate-300 bg-slate-50" : "border-neutral-100 bg-neutral-50 hover:border-neutral-200"}`}
       onClick={onClick}>
       <div className="flex items-center gap-2.5 px-3 py-2.5">
         <span className="text-base">{emoji}</span>
-        <span className={`text-sm font-medium ${active ? "text-amber-900" : "text-neutral-700"}`}>{label}</span>
-        <div className={`mr-auto w-4 h-4 rounded-full border-2 flex items-center justify-center transition ${active ? "border-amber-500 bg-amber-500" : "border-neutral-300"}`}>
+        <span className={`text-sm font-medium ${active ? "text-slate-900" : "text-neutral-700"}`}>{label}</span>
+        <div className={`mr-auto w-4 h-4 rounded-full border-2 flex items-center justify-center transition ${active ? "border-slate-900 bg-slate-900" : "border-neutral-300"}`}>
           {active && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
         </div>
       </div>

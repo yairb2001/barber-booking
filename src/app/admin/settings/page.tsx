@@ -156,11 +156,11 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
     <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center font-bold text-amber-700">{staff.name[0]}</div>
+          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-700">{staff.name[0]}</div>
           <span className="font-semibold text-neutral-900">{staff.name}</span>
         </div>
         <button onClick={save} disabled={saving}
-          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${saved ? "bg-emerald-100 text-emerald-700" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+          className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${saved ? "bg-emerald-100 text-emerald-700" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
           {saving ? "שומר..." : saved ? "✓ נשמר" : "שמור"}
         </button>
       </div>
@@ -171,7 +171,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
             <div className="flex items-center gap-3 flex-wrap">
               {/* Toggle */}
               <button onClick={() => updateDay(dow, { isWorking: !day.isWorking })}
-                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.isWorking ? "bg-amber-500" : "bg-neutral-200"}`}>
+                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${day.isWorking ? "bg-slate-900" : "bg-neutral-200"}`}>
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${day.isWorking ? "right-0.5" : "left-0.5"}`} />
               </button>
 
@@ -183,10 +183,10 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
                   <div className="flex items-center gap-2" dir="ltr">
                     <span className="text-xs text-neutral-400">מ</span>
                     <input type="time" dir="ltr" value={day.start} onChange={e => updateDay(dow, { start: e.target.value })}
-                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
                     <span className="text-xs text-neutral-400">—</span>
                     <input type="time" dir="ltr" value={day.end} onChange={e => updateDay(dow, { end: e.target.value })}
-                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                      className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
                     <span className="text-xs text-neutral-400">עד</span>
                   </div>
 
@@ -199,10 +199,10 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
                     {day.hasBreak && (
                       <div className="flex items-center gap-2" dir="ltr">
                         <input type="time" dir="ltr" value={day.breakStart} onChange={e => updateDay(dow, { breakStart: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
                         <span className="text-xs text-neutral-400">—</span>
                         <input type="time" dir="ltr" value={day.breakEnd} onChange={e => updateDay(dow, { breakEnd: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-slate-300" />
                       </div>
                     )}
                   </div>
@@ -223,7 +223,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
             <p className="text-[11px] text-neutral-400 mt-0.5">ריק = ברירת מחדל של העסק</p>
           </div>
           <button onClick={saveBookingSettings} disabled={bookingSaving}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
             {bookingSaving ? "שומר..." : bookingSaved ? "✓ נשמר" : "שמור"}
           </button>
         </div>
@@ -234,7 +234,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
               <input type="number" min={1} max={365} value={horizonDays}
                 onChange={e => setHorizonDays(e.target.value)}
                 placeholder="גלובלי"
-                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300" />
               <span className="text-xs text-neutral-400">ימים</span>
             </div>
           </div>
@@ -244,7 +244,7 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
               <input type="number" min={0} max={1440} value={leadMins}
                 onChange={e => setLeadMins(e.target.value)}
                 placeholder="גלובלי"
-                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-amber-300" />
+                className="w-20 border border-neutral-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-slate-300" />
               <span className="text-xs text-neutral-400">דקות</span>
             </div>
           </div>
@@ -480,12 +480,12 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הגדרות עסק</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/staff"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">✂️</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">ספרים</span>
             </Link>
             <Link href="/admin/services"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">💈</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">שירותים</span>
             </Link>
@@ -497,17 +497,17 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">עיצוב דף הבית</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/stories"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">📸</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">סטוריז</span>
             </Link>
             <Link href="/admin/products"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">🛍️</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">מוצרים</span>
             </Link>
             <Link href="/admin/announcements"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">📢</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">עדכונים</span>
             </Link>
@@ -519,7 +519,7 @@ export default function AdminSettingsPage() {
           <p className="text-xs font-medium text-neutral-400 mb-2 px-0.5">הודעות</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             <Link href="/admin/templates"
-              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-amber-400 hover:shadow-sm transition group">
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-slate-700 hover:shadow-sm transition group">
               <span className="text-xl">💬</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">תבניות הודעות</span>
             </Link>
@@ -553,22 +553,22 @@ export default function AdminSettingsPage() {
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">שם העסק</label>
                   <input value={form.name} onChange={e => setField("name", e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
                 </div>
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">טלפון</label>
                   <input value={form.phone} onChange={e => setField("phone", e.target.value)} dir="ltr"
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">כתובת</label>
                   <input value={form.address} onChange={e => setField("address", e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-xs text-neutral-500 block mb-1">אודות</label>
                   <textarea value={form.about} onChange={e => setField("about", e.target.value)} rows={3}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none" />
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none" />
                 </div>
               </div>
             </div>
@@ -592,7 +592,7 @@ export default function AdminSettingsPage() {
                     )}
                     <div className="flex-1 space-y-1.5">
                       <label className="cursor-pointer">
-                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingLogo ? "bg-neutral-100 text-neutral-400" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"}`}>
+                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingLogo ? "bg-neutral-100 text-neutral-400" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}>
                           {uploadingLogo ? "מעלה..." : "📁 בחר תמונה"}
                         </span>
                         <input type="file" accept="image/*" className="hidden" disabled={uploadingLogo}
@@ -600,7 +600,7 @@ export default function AdminSettingsPage() {
                       </label>
                       <input value={form.logoUrl} onChange={e => setField("logoUrl", e.target.value)} dir="ltr"
                         placeholder="או הדבק קישור..."
-                        className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-700" />
                     </div>
                   </div>
                 </div>
@@ -618,7 +618,7 @@ export default function AdminSettingsPage() {
                     )}
                     <div className="flex gap-2">
                       <label className="cursor-pointer">
-                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingCover ? "bg-neutral-100 text-neutral-400" : "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"}`}>
+                        <span className={`inline-block px-3 py-1.5 rounded-lg text-xs font-medium border transition ${uploadingCover ? "bg-neutral-100 text-neutral-400" : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"}`}>
                           {uploadingCover ? "מעלה..." : "📁 בחר תמונה"}
                         </span>
                         <input type="file" accept="image/*" className="hidden" disabled={uploadingCover}
@@ -626,13 +626,13 @@ export default function AdminSettingsPage() {
                       </label>
                       <input value={form.coverImageUrl} onChange={e => setField("coverImageUrl", e.target.value)} dir="ltr"
                         placeholder="או הדבק קישור..."
-                        className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                        className="flex-1 border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-700" />
                     </div>
                     <p className="text-[11px] text-neutral-400">מומלץ: תמונה רחבה, לפחות 1200×800px</p>
                   </div>
                 </div>
                 {/* ── Login & access management ── */}
-                <div className="col-span-2 mb-2 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                <div className="col-span-2 mb-2 p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <label className="text-sm text-neutral-800 font-semibold block">🔐 כניסה למנהל ראשי</label>
@@ -647,20 +647,20 @@ export default function AdminSettingsPage() {
                       onChange={e => setOwnerLoginPhone(e.target.value)}
                       placeholder="050-0000000"
                       dir="ltr"
-                      className="flex-1 border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                      className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
                     />
                     <button
                       type="button"
                       onClick={saveOwnerLoginPhone}
                       disabled={ownerPhoneSaving || !ownerLoginPhone.trim()}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 text-white text-sm font-semibold rounded-lg transition"
+                      className="px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 text-white text-sm font-semibold rounded-lg transition"
                     >
                       {ownerPhoneSaving ? "שומר..." : "שמור"}
                     </button>
                   </div>
-                  <div className="mt-3 pt-3 border-t border-amber-200 flex items-center justify-between">
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
                     <span className="text-[12px] text-neutral-700">👥 מנהלים משניים (ספרים עם גישה)</span>
-                    <a href="/admin/staff" className="text-[12px] font-semibold text-amber-700 hover:text-amber-900 underline underline-offset-2">
+                    <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
                       ניהול גישות ←
                     </a>
                   </div>
@@ -669,7 +669,7 @@ export default function AdminSettingsPage() {
                   </p>
 
                   {/* ── Change password ── */}
-                  <div className="mt-4 pt-3 border-t border-amber-200">
+                  <div className="mt-4 pt-3 border-t border-slate-200">
                     <p className="text-[12px] text-neutral-800 font-semibold mb-2">🔑 החלפת סיסמה</p>
                     <div className="space-y-2">
                       <input
@@ -679,7 +679,7 @@ export default function AdminSettingsPage() {
                         placeholder="סיסמה נוכחית"
                         autoComplete="current-password"
                         dir="ltr"
-                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
                       />
                       <input
                         type="password"
@@ -688,7 +688,7 @@ export default function AdminSettingsPage() {
                         placeholder="סיסמה חדשה (לפחות 6 תווים)"
                         autoComplete="new-password"
                         dir="ltr"
-                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
                       />
                       <input
                         type="password"
@@ -697,7 +697,7 @@ export default function AdminSettingsPage() {
                         placeholder="אימות סיסמה חדשה"
                         autoComplete="new-password"
                         dir="ltr"
-                        className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700 bg-white"
                       />
                       {pwError && (
                         <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">
@@ -713,7 +713,7 @@ export default function AdminSettingsPage() {
                         type="button"
                         onClick={changePassword}
                         disabled={pwSaving || !oldPassword || !newPassword || !confirmNewPassword}
-                        className="w-full px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
+                        className="w-full px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-neutral-300 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition"
                       >
                         {pwSaving ? "מחליף..." : "החלף סיסמה"}
                       </button>
@@ -728,7 +728,7 @@ export default function AdminSettingsPage() {
                       <label className="text-sm text-neutral-700 font-semibold">חבילת עיצוב</label>
                       <p className="text-[11px] text-neutral-500 mt-0.5">בחר חבילה — צבעים, פונט וניגודיות באים יחד.</p>
                     </div>
-                    {themeSaving && <span className="text-[11px] text-amber-600">שומר...</span>}
+                    {themeSaving && <span className="text-[11px] text-slate-800">שומר...</span>}
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {(Object.values(THEMES)).map(opt => {
@@ -739,7 +739,7 @@ export default function AdminSettingsPage() {
                           type="button"
                           onClick={() => saveTheme(opt.id)}
                           className={`relative rounded-xl overflow-hidden border-2 transition-all text-right ${
-                            selected ? "border-amber-500 shadow-md" : "border-neutral-200 hover:border-neutral-300"
+                            selected ? "border-slate-900 shadow-md" : "border-neutral-200 hover:border-neutral-300"
                           }`}
                         >
                           {/* Mini preview — shows actual theme rendering */}
@@ -771,7 +771,7 @@ export default function AdminSettingsPage() {
                           </div>
                           {/* Selected checkmark */}
                           {selected && (
-                            <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-amber-500 flex items-center justify-center">
+                            <div className="absolute top-2 left-2 w-5 h-5 rounded-full bg-slate-900 flex items-center justify-center">
                               <span className="text-white text-[10px]">✓</span>
                             </div>
                           )}
@@ -794,7 +794,7 @@ export default function AdminSettingsPage() {
                       type="number" min={1} max={365}
                       value={form.bookingHorizonDays}
                       onChange={e => setField("bookingHorizonDays", Number(e.target.value))}
-                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                     />
                     <span className="text-sm text-neutral-500">ימים</span>
                   </div>
@@ -810,7 +810,7 @@ export default function AdminSettingsPage() {
                       type="number" min={0} max={1440}
                       value={form.minBookingLeadMinutes}
                       onChange={e => setField("minBookingLeadMinutes", Number(e.target.value))}
-                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700"
                     />
                     <span className="text-sm text-neutral-500">דקות</span>
                   </div>
@@ -857,9 +857,9 @@ export default function AdminSettingsPage() {
                 <input value={newSource} onChange={e => setNewSource(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addSource()}
                   placeholder="הוסף אופציה חדשה..."
-                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                  className="flex-1 border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
                 <button onClick={addSource}
-                  className="bg-amber-500 text-white px-4 rounded-xl text-sm font-medium hover:bg-amber-400">
+                  className="bg-slate-900 text-white px-4 rounded-xl text-sm font-medium hover:bg-slate-700">
                   + הוסף
                 </button>
               </div>
@@ -878,14 +878,14 @@ export default function AdminSettingsPage() {
                   <div key={key}>
                     <label className="text-xs text-neutral-500 block mb-1">{icon} {label}</label>
                     <input value={(form.socialLinks as Record<string, string>)[key] || ""} onChange={e => setSocial(key, e.target.value)} dir="ltr" placeholder={placeholder}
-                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
                   </div>
                 ))}
               </div>
             </div>
 
             <button onClick={saveBiz} disabled={saving}
-              className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+              className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
               {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
             </button>
           </div>
@@ -966,7 +966,7 @@ function ReminderTemplateEditor({
       {expanded && (
         <div className="px-4 pb-4 border-t border-neutral-100 pt-3 space-y-2">
           {proNote && (
-            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700">
               <span>⚠️</span>
               <span>{proNote}</span>
             </div>
@@ -1107,7 +1107,7 @@ function ReengageEditor({
             </button>
           )}
 
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700">
             ⚠️ הגדר cron יומי שיפנה ל: <code className="font-mono">/api/cron/reengage?secret=CRON_SECRET</code>
           </div>
         </div>
@@ -1155,7 +1155,7 @@ function WhatsAppTab({
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${configured ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${configured ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>
             {configured ? "✓ מחובר" : "לא מוגדר"}
           </span>
         </div>
@@ -1245,7 +1245,7 @@ function WhatsAppTab({
             <div>
               <p className="text-sm font-semibold text-neutral-800">סוכן AI</p>
               <p className="text-xs text-neutral-500 mb-1">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
-              <a href="/admin/agent" className="text-xs text-amber-600 hover:text-amber-700 font-medium underline">
+              <a href="/admin/agent" className="text-xs text-slate-800 hover:text-slate-700 font-medium underline">
                 עבור להגדרות הסוכן ←
               </a>
             </div>
@@ -1266,7 +1266,7 @@ function WhatsAppTab({
 
       {/* Save */}
       <button onClick={onSaved} disabled={saving}
-        className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-amber-500 text-neutral-950 hover:bg-amber-400"} disabled:opacity-50`}>
+        className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-slate-900 text-neutral-950 hover:bg-slate-700"} disabled:opacity-50`}>
         {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
       </button>
 
@@ -1315,8 +1315,8 @@ function ReengagePanelSettings({
         <div className="flex items-center gap-3">
           <input type="range" min={2} max={24} value={weeks}
             onChange={e => { setWeeks(Number(e.target.value)); setDirty(true); }}
-            className="flex-1 accent-amber-500" />
-          <span className="text-amber-600 font-bold text-sm w-24 text-center">{weeks} שבועות</span>
+            className="flex-1 accent-slate-900" />
+          <span className="text-slate-800 font-bold text-sm w-24 text-center">{weeks} שבועות</span>
         </div>
       </div>
       <label className="flex items-center gap-2 cursor-pointer">
@@ -1330,7 +1330,7 @@ function ReengagePanelSettings({
         <div className="flex gap-2">
           {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
             </button>
           ))}
@@ -1339,7 +1339,7 @@ function ReengagePanelSettings({
       {dirty && (
         <button onClick={() => { onSave({ inactiveWeeks: weeks, excludeWithFutureAppt: exclude, segment }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1369,7 +1369,7 @@ function PostFirstPanelSettings({
         <div className="flex gap-2">
           {CTA_OPTIONS.map(opt => (
             <button key={opt.value} onClick={() => { setCtaType(opt.value); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {opt.label}
             </button>
           ))}
@@ -1380,12 +1380,12 @@ function PostFirstPanelSettings({
         <input type="url" value={ctaUrl} dir="ltr"
           onChange={e => { setCtaUrl(e.target.value); setDirty(true); }}
           placeholder={CTA_OPTIONS.find(o => o.value === ctaType)?.placeholder}
-          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" />
+          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-700" />
       </div>
       {dirty && (
         <button onClick={() => { onSave({ ctaType, ctaUrl }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1410,7 +1410,7 @@ function PostEveryPanelSettings({
         <div className="flex gap-2">
           {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
-              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-amber-500 bg-amber-50 text-amber-700" : "border-neutral-200 text-neutral-500 hover:border-amber-300"}`}>
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-slate-900 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
             </button>
           ))}
@@ -1422,15 +1422,15 @@ function PostEveryPanelSettings({
           <div className="flex items-center gap-3">
             <input type="range" min={2} max={10} value={minVisits}
               onChange={e => { setMinVisits(Number(e.target.value)); setDirty(true); }}
-              className="flex-1 accent-amber-500" />
-            <span className="text-amber-600 font-bold text-sm w-12 text-center">{minVisits}+</span>
+              className="flex-1 accent-slate-900" />
+            <span className="text-slate-800 font-bold text-sm w-12 text-center">{minVisits}+</span>
           </div>
         </div>
       )}
       {dirty && (
         <button onClick={() => { onSave({ segment, minVisits }); setDirty(false); }}
           disabled={saving}
-          className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+          className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
         </button>
       )}
@@ -1491,7 +1491,7 @@ function AutoPanel({
             <textarea value={display}
               onChange={e => { setLocalTpl(e.target.value); setTplDirty(true); }}
               rows={5} dir="rtl"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-slate-700 resize-none"
             />
             <div className="flex flex-wrap gap-1.5">
               {vars.map(v => (
@@ -1505,7 +1505,7 @@ function AutoPanel({
               {tplDirty && (
                 <button onClick={() => { onSave({ template: localTpl || null }); setTplDirty(false); }}
                   disabled={saving}
-                  className="text-xs bg-amber-500 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-amber-400 disabled:opacity-50">
+                  className="text-xs bg-slate-900 text-neutral-950 px-4 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
                   {saving ? "שומר..." : "שמור תבנית"}
                 </button>
               )}
@@ -1650,7 +1650,7 @@ function AutomationsTab() {
         />
       </AutoPanel>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-700">
         ⚠️ <strong>החזרת לקוחות</strong> דורשת cron יומי על:{" "}
         <code className="font-mono">/api/cron/reengage</code>
       </div>

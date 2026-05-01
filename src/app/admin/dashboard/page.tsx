@@ -59,7 +59,7 @@ function StatCard({ label, value, sub, color = "text-neutral-900", badge }: {
     <div className="bg-white rounded-2xl border border-neutral-200 p-5 flex flex-col justify-between min-h-[110px]">
       <div className="flex items-start justify-between">
         <p className="text-xs text-neutral-500">{label}</p>
-        {badge && <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">{badge}</span>}
+        {badge && <span className="text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-full">{badge}</span>}
       </div>
       <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
@@ -84,14 +84,14 @@ function HBarChart({ data }: { data: SourceRow[] }) {
               <span className="text-neutral-500 text-xs">{total}</span>
             </div>
             <div className="h-2.5 bg-neutral-100 rounded-full overflow-hidden flex">
-              <div className="h-full bg-amber-400 transition-all" style={{ width: `${newPct}%` }} />
+              <div className="h-full bg-slate-700 transition-all" style={{ width: `${newPct}%` }} />
               <div className="h-full bg-emerald-400 transition-all" style={{ width: `${retPct}%` }} />
             </div>
           </div>
         );
       })}
       <div className="flex gap-4 mt-3 text-xs text-neutral-500">
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-amber-400" />חדשים</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-slate-700" />חדשים</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-2 rounded-full bg-emerald-400" />חוזרים</span>
       </div>
     </div>
@@ -121,7 +121,7 @@ function SourceTable({ data }: { data: SourceRow[] }) {
               <td className="py-2.5 text-center font-semibold text-emerald-600">{row.returned}</td>
               <td className="py-2.5 text-center">
                 {row.new > 0 ? (
-                  <span className={`font-bold ${rate >= 40 ? "text-emerald-600" : rate >= 20 ? "text-amber-600" : "text-neutral-400"}`}>
+                  <span className={`font-bold ${rate >= 40 ? "text-emerald-600" : rate >= 20 ? "text-slate-800" : "text-neutral-400"}`}>
                     {rate}%
                   </span>
                 ) : <span className="text-neutral-300">—</span>}
@@ -151,11 +151,11 @@ function RevenueChart({ data, todayISO }: { data: { date: string; revenue: numbe
               <div>{d.count} תורים</div>
             </div>
             <div
-              className={`w-full rounded-t transition-all ${isToday ? "bg-amber-500" : "bg-amber-200 group-hover:bg-amber-400"}`}
+              className={`w-full rounded-t transition-all ${isToday ? "bg-slate-900" : "bg-slate-200 group-hover:bg-slate-700"}`}
               style={{ height: `${Math.max(pct, 2)}%` }}
             />
             {(dayNum % 5 === 0 || dayNum === 1) && (
-              <span className={`text-[8px] ${isToday ? "text-amber-600 font-bold" : "text-neutral-400"}`}>{dayNum}</span>
+              <span className={`text-[8px] ${isToday ? "text-slate-800 font-bold" : "text-neutral-400"}`}>{dayNum}</span>
             )}
           </div>
         );
@@ -191,8 +191,8 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
             <button key={w.days} onClick={() => onWindowChange(w.days)}
               className={`text-xs px-2.5 py-1 rounded-lg border transition ${
                 windowDays === w.days
-                  ? "bg-amber-500 border-amber-500 text-white font-semibold"
-                  : "border-neutral-200 text-neutral-500 hover:border-amber-300"
+                  ? "bg-slate-900 border-slate-900 text-white font-semibold"
+                  : "border-neutral-200 text-neutral-500 hover:border-slate-300"
               }`}>
               {w.label}
             </button>
@@ -204,7 +204,7 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
       ) : (
         <>
           <div className="flex items-end gap-3 mb-3">
-            <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-amber-500" : "text-red-400"}`}>
+            <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
               {pct}%
             </span>
             <span className="text-sm text-neutral-500 mb-1.5">
@@ -213,7 +213,7 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
           </div>
           <div className="h-3 bg-neutral-100 rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-amber-400" : "bg-red-400"}`}
+              className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -245,7 +245,7 @@ function CohortCard({ cohort }: { cohort: Analytics["prevMonthCohort"] }) {
       <h3 className="font-semibold text-neutral-800 text-sm mb-1">קוהורט חודש שעבר</h3>
       <p className="text-xs text-neutral-400 mb-4">לקוחות חדשים מחודש שעבר שחזרו החודש</p>
       <div className="flex items-end gap-3 mb-3">
-        <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-amber-500" : "text-red-400"}`}>
+        <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
           {pct}%
         </span>
         <span className="text-sm text-neutral-500 mb-1.5">
@@ -254,7 +254,7 @@ function CohortCard({ cohort }: { cohort: Analytics["prevMonthCohort"] }) {
       </div>
       <div className="h-3 bg-neutral-100 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-amber-400" : "bg-red-400"}`}
+          className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -270,7 +270,7 @@ function ActivityBreakdownCard({ breakdown }: { breakdown: Analytics["activityBr
   const { total, oneTime, active, regulars } = breakdown;
   const rows = [
     { label: "חד-פעמיים",    count: oneTime,  color: "bg-neutral-300",  text: "text-neutral-500",   pct: total > 0 ? Math.round((oneTime  / total) * 100) : 0 },
-    { label: "פעילים (2+ ביקורים)", count: active,   color: "bg-amber-400",    text: "text-amber-600",    pct: total > 0 ? Math.round((active   / total) * 100) : 0 },
+    { label: "פעילים (2+ ביקורים)", count: active,   color: "bg-slate-700",    text: "text-slate-800",    pct: total > 0 ? Math.round((active   / total) * 100) : 0 },
     { label: "קובעים (3+ ביקורים)", count: regulars, color: "bg-emerald-500",  text: "text-emerald-600",  pct: total > 0 ? Math.round((regulars / total) * 100) : 0 },
   ];
   return (
@@ -309,10 +309,10 @@ function BarberCard({ row, selected, onClick }: {
   return (
     <button onClick={onClick}
       className={`text-right w-full rounded-2xl border p-5 transition ${
-        selected ? "border-amber-500 bg-amber-50 shadow-sm" : "border-neutral-200 bg-white hover:border-amber-300"
+        selected ? "border-slate-900 bg-slate-50 shadow-sm" : "border-neutral-200 bg-white hover:border-slate-300"
       }`}>
       <div className="flex items-center gap-3 mb-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${selected ? "bg-amber-500" : "bg-amber-400"}`}>
+        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${selected ? "bg-slate-900" : "bg-slate-700"}`}>
           {row.name[0]}
         </div>
         <div className="text-right">
@@ -323,7 +323,7 @@ function BarberCard({ row, selected, onClick }: {
       <div className="grid grid-cols-2 gap-3 text-right">
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">הכנסה</p>
-          <p className="text-lg font-bold text-amber-600">₪{row.revenue.toLocaleString("he-IL")}</p>
+          <p className="text-lg font-bold text-slate-800">₪{row.revenue.toLocaleString("he-IL")}</p>
         </div>
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">תורים</p>
@@ -411,7 +411,7 @@ export default function Dashboard() {
             className="text-neutral-400 hover:text-neutral-700 px-1 disabled:opacity-30">▶</button>
           {!isCurrentMonth && (
             <button onClick={() => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); }}
-              className="text-xs text-amber-600 hover:underline mr-1">החודש</button>
+              className="text-xs text-slate-800 hover:underline mr-1">החודש</button>
           )}
         </div>
       </div>
@@ -421,14 +421,14 @@ export default function Dashboard() {
         <div className="flex gap-2 flex-wrap">
           <button onClick={() => setSelStaff(null)}
             className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-              !selStaff ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-amber-300"
+              !selStaff ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
             }`}>
             כל הספרים
           </button>
           {allStaff.map(s => (
             <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
               className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-                selStaff === s.id ? "bg-amber-500 border-amber-500 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-amber-300"
+                selStaff === s.id ? "bg-slate-900 border-slate-900 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
               }`}>
               {s.name}
             </button>
@@ -447,7 +447,7 @@ export default function Dashboard() {
             <StatCard
               label="הכנסה חודשית"
               value={`₪${a.totalRevenue.toLocaleString("he-IL")}`}
-              color="text-amber-600"
+              color="text-slate-800"
               sub={a.totalAppointments > 0 ? `ממוצע ₪${Math.round(a.totalRevenue / a.totalAppointments)} לתור` : undefined}
             />
             <StatCard label="תורים החודש" value={a.totalAppointments} color="text-neutral-900" />
