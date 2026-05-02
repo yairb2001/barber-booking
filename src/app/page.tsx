@@ -19,7 +19,7 @@ type Staff = {
 type Announcement = { id: string; title: string; content: string | null; isPinned: boolean };
 type Product = { id: string; name: string; description: string | null; price: number; imageUrl: string | null };
 type BusinessInfo = {
-  name: string; logoUrl: string | null; coverImageUrl: string | null;
+  name: string; logoUrl: string | null; coverImageUrl: string | null; heroVideoUrl: string | null;
   brandColor: string | null; bgColor: string | null;
   phone: string | null; address: string | null; about: string | null;
   theme: Theme; // full palette object from API
@@ -302,8 +302,15 @@ export default function HomePage() {
       ══════════════════════════════════════════════════════ */}
       <section className="relative flex flex-col" style={{ minHeight: "100svh" }}>
 
-        {/* BG image */}
-        {business?.coverImageUrl ? (
+        {/* BG: video > image > gradient */}
+        {business?.heroVideoUrl ? (
+          <video
+            src={business.heroVideoUrl}
+            autoPlay muted loop playsInline
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ objectPosition: "center 20%" }}
+          />
+        ) : business?.coverImageUrl ? (
           <img src={business.coverImageUrl} alt=""
             className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
         ) : (
@@ -495,7 +502,7 @@ export default function HomePage() {
           QUICK SLOTS — available now
       ══════════════════════════════════════════════════════ */}
       {!loading && quickSlots.length > 0 && (
-        <section style={{ background: "var(--bg-alt)" }} className="px-5 py-10">
+        <section id="quick-slots" style={{ background: "var(--bg-alt)" }} className="px-5 py-10">
           <div className="flex items-center gap-3 mb-6">
             <div>
               <p className="text-[10px] tracking-[0.35em] uppercase font-medium mb-1.5" style={{ color: "var(--brand)" }}>Available Now</p>
@@ -597,6 +604,26 @@ export default function HomePage() {
           {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
         </p>
       </div>
+
+      {/* ══ Pulse banner — shown when there are quick slots ══ */}
+      {!loading && quickSlots.length > 0 && (
+        <div className="fixed bottom-6 left-4 z-40 pointer-events-auto">
+          <a href="#quick-slots"
+            className="relative flex items-center gap-2.5 px-5 py-3 rounded-full text-white text-[13px] font-bold shadow-2xl active:scale-95 transition-transform"
+            style={{
+              background: brandColor,
+              boxShadow: `0 4px 24px rgba(${parseInt(brandColor.slice(1,3)||"C9",16)},${parseInt(brandColor.slice(3,5)||"A8",16)},${parseInt(brandColor.slice(5,7)||"4C",16)},0.5)`,
+              animation: "quick-pulse 2.5s ease-in-out infinite",
+            }}>
+            {/* Ping dot */}
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+            </span>
+            ⚡ יש תורים פנויים עכשיו
+          </a>
+        </div>
+      )}
     </div>
   );
 }

@@ -370,6 +370,9 @@ export default function AdminSettingsPage() {
     }
   }
 
+  // Hero video URL (stored in business.settings)
+  const [heroVideoUrl, setHeroVideoUrl] = useState("");
+
   // Calendar display hours
   const [calStartHour, setCalStartHour] = useState(8);
   const [calEndHour, setCalEndHour] = useState(21);
@@ -444,6 +447,8 @@ export default function AdminSettingsPage() {
         // Calendar hours
         if (typeof settingsObj.calendarStartHour === "number") setCalStartHour(settingsObj.calendarStartHour);
         if (typeof settingsObj.calendarEndHour   === "number") setCalEndHour(settingsObj.calendarEndHour);
+        // Hero video
+        if (typeof settingsObj.heroVideoUrl === "string") setHeroVideoUrl(settingsObj.heroVideoUrl);
       }
       setBizLoading(false);
     });
@@ -484,7 +489,14 @@ export default function AdminSettingsPage() {
 
   async function saveBiz() {
     setSaving(true);
-    await fetch("/api/admin/business", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
+    // Fetch current settings so we don't overwrite unrelated keys (calendar hours, theme, etc.)
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, settings: { ...currentSettings, heroVideoUrl } }),
+    });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
 
@@ -656,6 +668,23 @@ export default function AdminSettingsPage() {
                     <p className="text-[11px] text-neutral-400">מומלץ: תמונה רחבה, לפחות 1200×800px</p>
                   </div>
                 </div>
+
+                {/* ── Hero Video URL ── */}
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-2">סרטון Hero (רקע דף הבית)</label>
+                  <input
+                    value={heroVideoUrl}
+                    onChange={e => setHeroVideoUrl(e.target.value)}
+                    dir="ltr"
+                    placeholder="https://example.com/video.mp4"
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <p className="text-[11px] text-neutral-400 mt-1">קובץ mp4/webm שיישמע בשקט ויירוץ בלופ מאחורי הלוגו. אם ריק — תוצג תמונת הכיסוי.</p>
+                  {heroVideoUrl && (
+                    <button onClick={() => setHeroVideoUrl("")} className="mt-1 text-[11px] text-red-400 hover:text-red-600">הסר סרטון</button>
+                  )}
+                </div>
+
                 {/* ── Login & access management ── */}
                 <div className="col-span-2 mb-2 p-4 rounded-xl bg-slate-50 border border-slate-200">
                   <div className="flex items-start justify-between gap-3 mb-3">

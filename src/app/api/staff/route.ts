@@ -24,15 +24,20 @@ export async function GET() {
           caption: true,
         },
       },
+      staffServices: { take: 1, select: { serviceId: true } },
     },
   });
 
+  // Only expose staff who have at least one service assigned
+  const staffWithServices = staff.filter(s => s.staffServices.length > 0);
+
   // Expose per-barber booking config as parsed fields (fall back to null if not set)
-  const result = staff.map(s => {
+  const result = staffWithServices.map(s => {
     let bookingConfig: Record<string, unknown> = {};
     try { if (s.settings) bookingConfig = JSON.parse(s.settings); } catch { /* ignore */ }
     return {
       ...s,
+      staffServices: undefined, // don't expose
       settings: undefined, // don't expose raw JSON
       bookingHorizonDays:    bookingConfig.bookingHorizonDays    ?? null,
       minBookingLeadMinutes: bookingConfig.minBookingLeadMinutes ?? null,

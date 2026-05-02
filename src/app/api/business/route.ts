@@ -33,6 +33,15 @@ export async function GET() {
   // Resolve full theme palette from settings
   const theme = resolveTheme(business.settings);
 
+  // Extract heroVideoUrl from settings JSON
+  let heroVideoUrl: string | null = null;
+  try {
+    const settingsObj = business.settings ? JSON.parse(business.settings) : {};
+    if (typeof settingsObj.heroVideoUrl === "string" && settingsObj.heroVideoUrl) {
+      heroVideoUrl = settingsObj.heroVideoUrl;
+    }
+  } catch { /* ignore */ }
+
   return NextResponse.json({
     ...business,
     settings: undefined, // strip raw settings — theme is exposed instead
@@ -42,5 +51,7 @@ export async function GET() {
     // Backward compat: legacy fields still expected by some consumers
     brandColor: theme.brand,
     bgColor: theme.bg,
+    // Hero video (optional)
+    heroVideoUrl,
   });
 }

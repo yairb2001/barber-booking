@@ -26,6 +26,13 @@ export async function GET(request: Request) {
     ? { id: staffIdFilter, isAvailable: true }
     : { inQuickPool: true, isAvailable: true };
 
+  // Get the default service first (needed for filtering)
+  const defaultServiceForFilter = await prisma.service.findFirst({
+    where: { isVisible: true },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true },
+  });
+
   const poolStaff = await prisma.staff.findMany({
     where: staffWhere,
     orderBy: { poolPriority: "asc" },
@@ -34,14 +41,21 @@ export async function GET(request: Request) {
       name: true,
       avatarUrl: true,
       poolPriority: true,
+      // Only include staff who have the default service assigned
+      staffServices: defaultServiceForFilter
+        ? { where: { serviceId: defaultServiceForFilter.id }, take: 1, select: { serviceId: true } }
+        : { take: 1, select: { serviceId: true } },
     },
   });
 
-  if (poolStaff.length === 0) {
+  // Filter out pool staff who don't have the default service
+  const eligiblePoolStaff = poolStaff.filter(s => s.staffServices.length > 0);
+
+  if (eligiblePoolStaff.length === 0) {
     return NextResponse.json([]);
   }
 
-  // Get the default service (first service)
+  // Get the default service (first service) — full record for slot generation
   const defaultService = await prisma.service.findFirst({
     where: { isVisible: true },
     orderBy: { sortOrder: "asc" },
@@ -78,7 +92,7 @@ export async function GET(request: Request) {
       dayOffset === 0 ? "היום" : dayOffset === 1 ? "מחר"
         : date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
 
-    for (const staff of poolStaff) {
+    for (const staff of eligiblePoolStaff) {
       const override = await prisma.staffScheduleOverride.findUnique({
         where: { staffId_date: { staffId: staff.id, date } },
       });
