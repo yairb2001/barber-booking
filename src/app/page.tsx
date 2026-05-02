@@ -22,7 +22,7 @@ type BusinessInfo = {
   name: string; logoUrl: string | null; coverImageUrl: string | null; heroVideoUrl: string | null;
   brandColor: string | null; bgColor: string | null;
   phone: string | null; address: string | null; about: string | null;
-  theme: Theme; // full palette object from API
+  theme: Theme;
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string; waze?: string };
 };
 type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null };
@@ -57,11 +57,11 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
 
   return (
     <>
-      <div className="flex gap-4 px-5 py-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+      <div className="flex gap-3 px-5 py-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {stories.map((story, idx) => (
           <button key={story.id} onClick={() => openStory(idx)} className="flex flex-col items-center gap-1.5 flex-shrink-0">
-            <div className="w-[58px] h-[58px] rounded-full p-[2px]"
-              style={{ background: `linear-gradient(135deg, var(--brand), rgba(201,168,76,0.4))` }}>
+            <div className="w-[56px] h-[56px] rounded-full p-[2.5px]"
+              style={{ background: `linear-gradient(135deg, var(--brand), rgba(180,140,50,0.3))` }}>
               <div className="w-full h-full rounded-full overflow-hidden" style={{ border: "2px solid var(--bg)" }}>
                 <img src={story.mediaUrl} alt="" className="w-full h-full object-cover" />
               </div>
@@ -109,71 +109,17 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
   );
 }
 
-// ── Quick Slots ────────────────────────────────────────────────────────────────
-function QuickSlotsCarousel({ slots }: { slots: QuickSlot[] }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const autoScrollRef = useRef<NodeJS.Timeout | null>(null);
-
-  const startAutoScroll = useCallback(() => {
-    if (autoScrollRef.current) clearInterval(autoScrollRef.current);
-    autoScrollRef.current = setInterval(() => setActiveIndex(p => (p + 1) % slots.length), 3000);
-  }, [slots.length]);
-
-  useEffect(() => {
-    if (!slots.length) return;
-    startAutoScroll();
-    return () => { if (autoScrollRef.current) clearInterval(autoScrollRef.current); };
-  }, [slots.length, startAutoScroll]);
-
-  useEffect(() => {
-    if (!scrollRef.current || !slots.length) return;
-    scrollRef.current.scrollTo({ left: activeIndex * 120, behavior: "smooth" });
-  }, [activeIndex, slots.length]);
-
-  if (!slots.length) return null;
-  const displaySlots = [...slots, ...slots, ...slots];
-
-  return (
-    <div>
-      <div ref={scrollRef} className="flex gap-2.5 overflow-x-auto pb-1"
-        style={{ scrollbarWidth: "none" }}
-        onTouchStart={() => autoScrollRef.current && clearInterval(autoScrollRef.current)}
-        onTouchEnd={startAutoScroll}>
-        {displaySlots.map((slot, i) => (
-          <Link key={i}
-            href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-            className="flex-shrink-0 min-w-[112px] rounded-2xl p-3.5 active:scale-95 transition-transform"
-            style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
-            <p className="text-base font-semibold tracking-widest leading-none mb-1.5" dir="ltr"
-              style={{ color: "var(--brand)" }}>{slot.time}</p>
-            <p className="text-[11px] leading-none mb-0.5" style={{ color: "var(--text-sec)" }}>{slot.dayLabel}</p>
-            <p className="text-[10px] truncate" style={{ color: "var(--text-muted)" }}>{slot.staffName}</p>
-          </Link>
-        ))}
-      </div>
-      <div className="flex justify-center gap-1.5 mt-3">
-        {slots.map((_, i) => (
-          <div key={i} onClick={() => setActiveIndex(i)} className="rounded-full transition-all duration-300 cursor-pointer"
-            style={{
-              width: i === activeIndex % slots.length ? 16 : 6,
-              height: 6,
-              background: i === activeIndex % slots.length ? "var(--brand)" : "var(--divider)",
-            }} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ── Section Label ──────────────────────────────────────────────────────────────
-function SecLabel({ en, he }: { en: string; he: string }) {
+function SecLabel({ en, he, action }: { en: string; he: string; action?: React.ReactNode }) {
   return (
-    <div className="px-5 mb-6">
-      <p className="text-[10px] tracking-[0.35em] uppercase mb-1.5 font-medium" style={{ color: "var(--brand)" }}>{en}</p>
-      <h2 className="font-light leading-none" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(1.4rem,5vw,1.8rem)", color: "var(--text-pri)" }}>
-        {he}
-      </h2>
+    <div className="px-5 mb-5 flex items-end justify-between">
+      <div>
+        <p className="text-[10px] tracking-[0.35em] uppercase mb-1 font-medium" style={{ color: "var(--brand)" }}>{en}</p>
+        <h2 className="font-semibold leading-tight" style={{ fontFamily: "var(--font-display)", fontSize: "1.25rem", color: "var(--text-pri)" }}>
+          {he}
+        </h2>
+      </div>
+      {action}
     </div>
   );
 }
@@ -190,7 +136,7 @@ export default function HomePage() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.75);
+    const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -214,12 +160,10 @@ export default function HomePage() {
     }).catch(() => setLoading(false));
   }, []);
 
-  // Full theme palette comes from /api/business — fallback to default if API hasn't responded yet
   const T: Theme = business?.theme || THEMES.onyx;
   const brandColor = T.brand;
   const isDark = T.isDark;
 
-  // Social links
   const rawSocial = business?.socialLinks || {};
   function toUrl(key: string, val: string): string {
     if (!val) return "";
@@ -239,6 +183,11 @@ export default function HomePage() {
   const portfolioWorks: PortfolioWork[] = staff
     .filter(s => s.portfolio.length > 0)
     .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl })));
+
+  // Parse brandColor RGB for glow effects
+  const br = parseInt(brandColor.slice(1,3) || "C9", 16);
+  const bg2 = parseInt(brandColor.slice(3,5) || "A8", 16);
+  const bb = parseInt(brandColor.slice(5,7) || "4C", 16);
 
   const cssVars = `
     :root {
@@ -263,9 +212,7 @@ export default function HomePage() {
       style={{ background: "var(--bg)", color: "var(--text-pri)" }}>
       <style>{cssVars}</style>
 
-      {/* ══════════════════════════════════════════════════════
-          STICKY HEADER
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ STICKY HEADER (appears on scroll) ══════════════════════════════════ */}
       <header className="fixed top-0 inset-x-0 z-50 transition-all duration-500"
         style={{
           transform: scrolled ? "translateY(0)" : "translateY(-110%)",
@@ -283,33 +230,25 @@ export default function HomePage() {
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
             </div>
           )}
-          <div className="flex-1 min-w-0">
-            <p className="uppercase leading-none tracking-[0.12em]"
-              style={{ fontFamily: "var(--font-display)", fontWeight: 400, fontSize: "1.05rem", color: "var(--text-pri)" }}>
-              {business?.name || "DOMINANT"}
-            </p>
-          </div>
+          <p className="flex-1 uppercase leading-none tracking-[0.14em]"
+            style={{ fontFamily: "var(--font-display)", fontWeight: 500, fontSize: "1rem", color: "var(--text-pri)" }}>
+            {business?.name || "DOMINANT"}
+          </p>
           <Link href="/book"
-            className="flex-shrink-0 text-[11px] font-bold tracking-[0.15em] uppercase px-5 py-2.5 rounded-full text-white"
+            className="flex-shrink-0 text-[11px] font-bold tracking-[0.15em] uppercase px-5 py-2.5 rounded-full text-black"
             style={{ background: brandColor }}>
             קבע תור
           </Link>
         </div>
       </header>
 
-      {/* ══════════════════════════════════════════════════════
-          HERO — full viewport
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ HERO — full viewport ═════════════════════════════════════════════════ */}
       <section className="relative flex flex-col" style={{ minHeight: "100svh" }}>
 
-        {/* BG: video > image > gradient */}
+        {/* Background: video → image → gradient */}
         {business?.heroVideoUrl ? (
-          <video
-            src={business.heroVideoUrl}
-            autoPlay muted loop playsInline
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ objectPosition: "center 20%" }}
-          />
+          <video src={business.heroVideoUrl} autoPlay muted loop playsInline
+            className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
         ) : business?.coverImageUrl ? (
           <img src={business.coverImageUrl} alt=""
             className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
@@ -317,9 +256,9 @@ export default function HomePage() {
           <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0A0A0A 0%,#1A1510 100%)" }} />
         )}
 
-        {/* Multi-stop overlay */}
+        {/* Dark overlay */}
         <div className="absolute inset-0 pointer-events-none"
-          style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.1) 30%, rgba(0,0,0,0.55) 65%, rgba(0,0,0,0.95) 100%)" }} />
+          style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.15) 35%, rgba(0,0,0,0.6) 70%, rgba(0,0,0,0.97) 100%)" }} />
 
         {/* ── Social icons ── */}
         <div className="relative z-10 flex justify-between items-start px-5 pt-14">
@@ -328,7 +267,7 @@ export default function HomePage() {
               <a href={social.waze} target="_blank" rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                 style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                <svg viewBox="0 0 24 24" className="w-4.5 h-4.5 w-[18px] h-[18px]"><path fill="#33CCFF" d="M12 2C6.486 2 2 6.486 2 12c0 1.527.35 2.97.97 4.26L2 22l5.74-.97A9.953 9.953 0 0012 22c5.514 0 10-4.486 10-10S17.514 2 12 2zm-2 9a1 1 0 110-2 1 1 0 010 2zm4 0a1 1 0 110-2 1 1 0 010 2zm-5 3s1 2 3 2 3-2 3-2H9z" /></svg>
+                <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]"><path fill="#33CCFF" d="M12 2C6.486 2 2 6.486 2 12c0 1.527.35 2.97.97 4.26L2 22l5.74-.97A9.953 9.953 0 0012 22c5.514 0 10-4.486 10-10S17.514 2 12 2zm-2 9a1 1 0 110-2 1 1 0 010 2zm4 0a1 1 0 110-2 1 1 0 010 2zm-5 3s1 2 3 2 3-2 3-2H9z" /></svg>
               </a>
             )}
             {social.facebook && (
@@ -367,83 +306,203 @@ export default function HomePage() {
         </div>
 
         {/* ── Center content ── */}
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pb-8">
-          {/* Logo ring */}
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-4 pb-4">
+          {/* Logo */}
           {business?.logoUrl && (
-            <div className="mb-6 rounded-full overflow-hidden"
+            <div className="mb-5 rounded-full overflow-hidden"
               style={{
-                width: 72, height: 72,
-                border: `1.5px solid rgba(255,255,255,0.25)`,
-                boxShadow: `0 0 30px rgba(${parseInt(brandColor.slice(1,3),16)},${parseInt(brandColor.slice(3,5),16)},${parseInt(brandColor.slice(5,7),16)},0.25)`,
+                width: 88, height: 88,
+                border: `2px solid rgba(255,255,255,0.2)`,
+                boxShadow: `0 0 40px rgba(${br},${bg2},${bb},0.35), 0 8px 32px rgba(0,0,0,0.6)`,
               }}>
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
             </div>
           )}
 
           {/* Business name */}
-          <h1 className="text-white uppercase mb-1 leading-none"
+          <h1 className="text-white uppercase leading-none mb-2"
             style={{
               fontFamily: "var(--font-display)",
-              fontWeight: 300,
-              fontSize: "clamp(2.4rem, 11vw, 5rem)",
-              letterSpacing: "0.14em",
-              textShadow: `0 0 60px rgba(${parseInt(brandColor.slice(1,3)||"C9",16)},${parseInt(brandColor.slice(3,5)||"A8",16)},${parseInt(brandColor.slice(5,7)||"4C",16)}, 0.3), 0 2px 20px rgba(0,0,0,0.8)`,
+              fontWeight: 600,
+              fontSize: "clamp(2.2rem, 10vw, 4.5rem)",
+              letterSpacing: "0.12em",
+              textShadow: `0 0 60px rgba(${br},${bg2},${bb},0.4), 0 2px 24px rgba(0,0,0,0.9)`,
             }}>
             {business?.name || "DOMINANT"}
           </h1>
-          <p className="text-white/40 tracking-[0.5em] text-[11px] mb-10"
-            style={{ fontFamily: "var(--font-display)", fontWeight: 300 }}>
+          <p className="text-white/35 tracking-[0.55em] text-[10px] mb-8"
+            style={{ fontFamily: "var(--font-display)", fontWeight: 300, textTransform: "uppercase" }}>
             barbershop
           </p>
 
           {/* CTA */}
           <Link href="/book"
-            className="inline-flex items-center gap-3 font-semibold text-[13px] tracking-[0.18em] uppercase px-8 py-4 rounded-full text-black active:scale-95 transition-transform"
-            style={{ background: brandColor, boxShadow: `0 8px 32px rgba(${parseInt(brandColor.slice(1,3)||"C9",16)},${parseInt(brandColor.slice(3,5)||"A8",16)},${parseInt(brandColor.slice(5,7)||"4C",16)},0.45)` }}>
-            זמן תור עכשיו ←
+            className="inline-flex items-center gap-2.5 font-bold text-[13px] tracking-[0.2em] uppercase px-10 py-4 rounded-full text-black active:scale-95 transition-transform"
+            style={{
+              background: brandColor,
+              boxShadow: `0 8px 32px rgba(${br},${bg2},${bb},0.5), 0 2px 8px rgba(0,0,0,0.4)`,
+            }}>
+            קבע תור עכשיו
           </Link>
         </div>
 
-        {/* Bottom fade into next section */}
-        <div className="absolute bottom-0 inset-x-0 h-24 pointer-events-none"
-          style={{ background: `linear-gradient(to top, ${T.bg}, transparent)` }} />
+        {/* ── QUICK SLOTS — visible inside hero, no scrolling needed ── */}
+        {!loading && quickSlots.length > 0 && (
+          <div className="relative z-10 px-4 pb-6">
+            {/* Header row */}
+            <div className="flex items-center gap-2.5 mb-3 px-1">
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+              </span>
+              <span className="text-white text-[11px] tracking-[0.3em] uppercase font-semibold">
+                תורים פנויים עכשיו
+              </span>
+              <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.12)" }} />
+              <Link href="/book" className="text-[11px] text-white/50 tracking-wide hover:text-white/80 transition-colors">
+                כל התורים ←
+              </Link>
+            </div>
 
-        {/* Scroll hint */}
-        <div className="relative z-10 flex justify-center pb-6">
-          <div className="flex flex-col items-center gap-1 opacity-40">
-            <div className="w-px h-6" style={{ background: "white" }} />
-            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+            {/* Slot cards */}
+            <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+              {quickSlots.map((slot, i) => (
+                <Link
+                  key={i}
+                  href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                  className="flex-shrink-0 rounded-2xl p-3.5 active:scale-95 transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.10)",
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    minWidth: 108,
+                    animation: `slot-glow 3s ease-in-out ${(i % 4) * 0.4}s infinite`,
+                  }}>
+                  {/* Time — prominent */}
+                  <p className="text-[18px] font-bold tracking-widest text-white leading-none mb-1.5" dir="ltr">
+                    {slot.time}
+                  </p>
+                  {/* Day label */}
+                  <p className="text-[11px] font-medium text-white/75">{slot.dayLabel}</p>
+                  {/* Barber name */}
+                  <p className="text-[10px] text-white/45 truncate mt-0.5">{slot.staffName}</p>
+                </Link>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Scroll hint — only shown when no quick slots */}
+        {(loading || quickSlots.length === 0) && (
+          <div className="relative z-10 flex justify-center pb-8">
+            <div className="flex flex-col items-center gap-1 opacity-30">
+              <div className="w-px h-6 bg-white" />
+              <div className="w-1.5 h-1.5 rounded-full bg-white" />
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* ══════════════════════════════════════════════════════
-          PORTFOLIO — immediately after hero
-      ══════════════════════════════════════════════════════ */}
-      {!loading && portfolioWorks.length > 0 && (
-        <section style={{ background: "var(--bg-alt)" }} className="py-10 overflow-hidden">
-          <div className="flex items-end justify-between px-5 mb-5">
-            <div>
-              <p className="text-[10px] tracking-[0.35em] uppercase font-medium mb-1.5" style={{ color: "var(--brand)" }}>Portfolio</p>
-              <h2 className="font-light leading-none" style={{ fontFamily: "var(--font-display)", fontSize: "clamp(1.4rem,5vw,1.8rem)", color: "var(--text-pri)" }}>
-                מהעבודות שלנו
-              </h2>
-            </div>
-            <Link href="/book" className="text-[11px] tracking-[0.15em] font-medium" style={{ color: "var(--brand)" }}>
-              בחר סגנון →
-            </Link>
-          </div>
+      {/* ══ STORIES ════════════════════════════════════════════════════════════ */}
+      {!loading && stories.length > 0 && (
+        <section style={{ background: "var(--bg)" }} className="pt-6 pb-2">
+          <p className="text-[10px] tracking-[0.35em] uppercase font-semibold px-5 mb-3" style={{ color: "var(--brand)" }}>Stories</p>
+          <StoriesCarousel stories={stories} />
+        </section>
+      )}
 
+      {/* ══ STAFF — choose your barber ═════════════════════════════════════════ */}
+      {staff.length > 0 && (
+        <section style={{ background: "var(--bg-alt)" }} className="py-10">
+          <SecLabel en="The Team" he="הספרים שלנו"
+            action={
+              <Link href="/book" className="text-[11px] font-medium tracking-wider" style={{ color: "var(--brand)" }}>
+                קבע תור →
+              </Link>
+            }
+          />
+          <div className="flex gap-3 overflow-x-auto px-5 pb-2 snap-x" style={{ scrollbarWidth: "none" }}>
+            {staff.map(member => {
+              const slot = quickSlots.find(s => s.staffId === member.id);
+              const hasToday = slot?.dayLabel === "היום";
+              return (
+                <Link key={member.id} href={`/book/service?staffId=${member.id}`}
+                  className="flex-shrink-0 snap-start active:scale-[0.97] transition-transform rounded-3xl overflow-hidden"
+                  style={{
+                    width: 155,
+                    background: "var(--card)",
+                    border: `1px solid var(--divider)`,
+                    boxShadow: isDark ? "0 4px 20px rgba(0,0,0,0.4)" : "0 2px 12px rgba(0,0,0,0.07)",
+                  }}>
+                  {/* Portrait photo */}
+                  <div className="relative" style={{ aspectRatio: "1/1" }}>
+                    {member.avatarUrl ? (
+                      <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-4xl font-light"
+                        style={{ background: "var(--bg-alt)", color: "var(--text-muted)" }}>
+                        {member.name[0]}
+                      </div>
+                    )}
+                    {/* Gradient overlay */}
+                    <div className="absolute inset-0"
+                      style={{ background: "linear-gradient(to top, rgba(0,0,0,0.55) 0%, transparent 55%)" }} />
+                    {/* Slot badge */}
+                    {slot && (
+                      <div className="absolute top-2 right-2 px-2 py-1 rounded-full"
+                        style={{ background: brandColor }}>
+                        <span className="text-[10px] font-bold text-black" dir="ltr">⚡ {slot.time}</span>
+                      </div>
+                    )}
+                    {/* Available dot */}
+                    {hasToday && (
+                      <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {/* Name + slot info */}
+                  <div className="px-3.5 py-3">
+                    <p className="font-semibold text-sm truncate" style={{ color: "var(--text-pri)" }}>{member.name}</p>
+                    {slot ? (
+                      <p className="text-[11px] mt-0.5 font-medium" style={{ color: "var(--brand)" }}>
+                        {slot.dayLabel} · {slot.time}
+                      </p>
+                    ) : (
+                      <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>לחץ לתאום תור</p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ══ PORTFOLIO ══════════════════════════════════════════════════════════ */}
+      {!loading && portfolioWorks.length > 0 && (
+        <section style={{ background: "var(--bg)" }} className="py-10 overflow-hidden">
+          <SecLabel en="Portfolio" he="מהעבודות שלנו"
+            action={
+              <Link href="/book" className="text-[11px] font-medium tracking-wider" style={{ color: "var(--brand)" }}>
+                בחר סגנון →
+              </Link>
+            }
+          />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: "none" }}>
             {portfolioWorks.map((work, i) => (
               <Link key={i} href="/book" className="flex-shrink-0 snap-start active:scale-[0.97] transition-transform"
-                style={{ width: 170 }}>
+                style={{ width: 160 }}>
                 <div className="rounded-2xl overflow-hidden relative" style={{ aspectRatio: "3/4" }}>
                   <img src={work.imageUrl} alt={work.staffName}
                     className="w-full h-full object-cover"
                     onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                   <div className="absolute inset-0"
-                    style={{ background: "linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.75) 100%)" }} />
+                    style={{ background: "linear-gradient(180deg, transparent 40%, rgba(0,0,0,0.8) 100%)" }} />
                   <div className="absolute bottom-3 right-3 left-3 flex items-center gap-2">
                     {work.staffAvatar ? (
                       <img src={work.staffAvatar} alt="" className="w-6 h-6 rounded-full object-cover flex-shrink-0"
@@ -452,7 +511,7 @@ export default function HomePage() {
                       <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] text-white font-bold"
                         style={{ background: brandColor }}>{work.staffName[0]}</div>
                     )}
-                    <span className="text-[11px] text-white/90 font-medium truncate">{work.staffName}</span>
+                    <span className="text-[11px] text-white font-medium truncate">{work.staffName}</span>
                   </div>
                 </div>
               </Link>
@@ -461,82 +520,18 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ══════════════════════════════════════════════════════
-          STAFF — choose your barber
-      ══════════════════════════════════════════════════════ */}
-      {staff.length > 0 && (
-        <section style={{ background: "var(--bg)" }} className="py-10">
-          <SecLabel en="The Team" he="הספרים שלנו" />
-          <div className="flex gap-4 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none" }}>
-            {staff.map(member => (
-              <Link key={member.id} href={`/book/service?staffId=${member.id}`}
-                className="flex-shrink-0 active:scale-[0.97] transition-transform" style={{ width: 130 }}>
-                {/* Portrait photo */}
-                <div className="rounded-2xl overflow-hidden relative mb-3"
-                  style={{ aspectRatio: "3/4", border: `1px solid ${T.divider}`, boxShadow: isDark ? "0 8px 30px rgba(0,0,0,0.5)" : "0 4px 20px rgba(0,0,0,0.08)" }}>
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-4xl font-light"
-                      style={{ background: "var(--bg-alt)", color: "var(--text-muted)" }}>
-                      {member.name[0]}
-                    </div>
-                  )}
-                  {/* Bottom overlay */}
-                  <div className="absolute inset-0 pointer-events-none"
-                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 50%)" }} />
-                  <div className="absolute bottom-2.5 inset-x-0 text-center">
-                    <span className="text-[10px] font-semibold tracking-[0.2em] uppercase"
-                      style={{ color: brandColor }}>בחר →</span>
-                  </div>
-                </div>
-                <p className="text-center text-[12px] font-medium tracking-[0.08em]"
-                  style={{ color: "var(--text-pri)" }}>{member.name}</p>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          QUICK SLOTS — available now
-      ══════════════════════════════════════════════════════ */}
-      {!loading && quickSlots.length > 0 && (
-        <section id="quick-slots" style={{ background: "var(--bg-alt)" }} className="px-5 py-10">
-          <div className="flex items-center gap-3 mb-6">
-            <div>
-              <p className="text-[10px] tracking-[0.35em] uppercase font-medium mb-1.5" style={{ color: "var(--brand)" }}>Available Now</p>
-              <h2 className="font-light leading-none flex items-center gap-2.5"
-                style={{ fontFamily: "var(--font-display)", fontSize: "clamp(1.4rem,5vw,1.8rem)", color: "var(--text-pri)" }}>
-                תורים פנויים
-                <span className="inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: "#4ADE80" }} />
-              </h2>
-            </div>
-          </div>
-          <QuickSlotsCarousel slots={quickSlots} />
-        </section>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          STORIES
-      ══════════════════════════════════════════════════════ */}
-      {!loading && stories.length > 0 && (
-        <section style={{ background: "var(--bg)" }} className="pt-6 pb-4">
-          <p className="text-[10px] tracking-[0.35em] uppercase font-medium px-5 mb-3" style={{ color: "var(--brand)" }}>Stories</p>
-          <StoriesCarousel stories={stories} />
-        </section>
-      )}
-
-      {/* ══════════════════════════════════════════════════════
-          ANNOUNCEMENTS
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ ANNOUNCEMENTS ══════════════════════════════════════════════════════ */}
       {announcements.length > 0 && (
         <section style={{ background: "var(--bg-alt)" }} className="py-10 px-5">
           <SecLabel en="Updates" he="עדכונים" />
           <div className="space-y-3">
             {announcements.map(ann => (
               <div key={ann.id} className="rounded-2xl p-4 relative overflow-hidden"
-                style={{ background: "var(--card)", border: `1px solid ${T.divider}`, boxShadow: isDark ? "0 4px 20px rgba(0,0,0,0.3)" : "0 2px 12px rgba(0,0,0,0.05)" }}>
+                style={{
+                  background: "var(--card)",
+                  border: `1px solid var(--divider)`,
+                  boxShadow: isDark ? "0 4px 20px rgba(0,0,0,0.3)" : "0 2px 10px rgba(0,0,0,0.05)",
+                }}>
                 {ann.isPinned && (
                   <div className="absolute top-0 right-0 bottom-0 w-[3px] rounded-r-2xl" style={{ background: brandColor }} />
                 )}
@@ -554,18 +549,20 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ══════════════════════════════════════════════════════
-          PRODUCTS — shop
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ PRODUCTS ═══════════════════════════════════════════════════════════ */}
       {products.length > 0 && (
         <section style={{ background: "var(--bg)" }} className="py-10">
           <SecLabel en="Shop" he="מוצרים" />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none" }}>
             {products.map(product => (
               <div key={product.id} className="flex-shrink-0 rounded-2xl overflow-hidden active:scale-[0.97] transition-transform"
-                style={{ width: 155, background: "var(--card)", border: `1px solid ${T.divider}`, boxShadow: isDark ? "0 6px 24px rgba(0,0,0,0.4)" : "0 4px 16px rgba(0,0,0,0.07)" }}>
-                <div className="h-36 flex items-center justify-center overflow-hidden"
-                  style={{ background: "var(--bg-alt)" }}>
+                style={{
+                  width: 155,
+                  background: "var(--card)",
+                  border: `1px solid var(--divider)`,
+                  boxShadow: isDark ? "0 6px 24px rgba(0,0,0,0.4)" : "0 4px 16px rgba(0,0,0,0.07)",
+                }}>
+                <div className="h-36 flex items-center justify-center overflow-hidden" style={{ background: "var(--bg-alt)" }}>
                   {product.imageUrl ? (
                     <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
                   ) : (
@@ -573,11 +570,11 @@ export default function HomePage() {
                   )}
                 </div>
                 <div className="p-3.5">
-                  <p className="text-[13px] font-medium mb-1 leading-tight" style={{ color: "var(--text-pri)" }}>{product.name}</p>
+                  <p className="text-[13px] font-semibold mb-1 leading-tight" style={{ color: "var(--text-pri)" }}>{product.name}</p>
                   {product.description && (
                     <p className="text-[11px] line-clamp-2 leading-relaxed mb-2" style={{ color: "var(--text-muted)" }}>{product.description}</p>
                   )}
-                  <p className="text-[15px] font-bold" style={{ color: brandColor }}>₪{product.price}</p>
+                  <p className="text-[16px] font-bold" style={{ color: brandColor }}>₪{product.price}</p>
                 </div>
               </div>
             ))}
@@ -585,9 +582,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ══════════════════════════════════════════════════════
-          ABOUT
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ ABOUT ══════════════════════════════════════════════════════════════ */}
       {business?.about && (
         <section style={{ background: "var(--bg-alt)" }} className="py-10 px-5">
           <SecLabel en="About" he="אודות" />
@@ -595,35 +590,13 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ══════════════════════════════════════════════════════
-          FOOTER
-      ══════════════════════════════════════════════════════ */}
+      {/* ══ FOOTER ═════════════════════════════════════════════════════════════ */}
       <FooterCTA />
-      <div className="py-8 text-center" style={{ background: "var(--bg)", borderTop: `1px solid ${T.divider}` }}>
+      <div className="py-8 text-center" style={{ background: "var(--bg)", borderTop: `1px solid var(--divider)` }}>
         <p className="text-[10px] tracking-[0.3em] uppercase" style={{ color: "var(--text-muted)" }}>
           {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
         </p>
       </div>
-
-      {/* ══ Pulse banner — shown when there are quick slots ══ */}
-      {!loading && quickSlots.length > 0 && (
-        <div className="fixed bottom-6 left-4 z-40 pointer-events-auto">
-          <a href="#quick-slots"
-            className="relative flex items-center gap-2.5 px-5 py-3 rounded-full text-white text-[13px] font-bold shadow-2xl active:scale-95 transition-transform"
-            style={{
-              background: brandColor,
-              boxShadow: `0 4px 24px rgba(${parseInt(brandColor.slice(1,3)||"C9",16)},${parseInt(brandColor.slice(3,5)||"A8",16)},${parseInt(brandColor.slice(5,7)||"4C",16)},0.5)`,
-              animation: "quick-pulse 2.5s ease-in-out infinite",
-            }}>
-            {/* Ping dot */}
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-60" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
-            </span>
-            ⚡ יש תורים פנויים עכשיו
-          </a>
-        </div>
-      )}
     </div>
   );
 }
