@@ -1612,10 +1612,9 @@ function DraftApptBlock({
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  // On a phone, narrow week-view columns can't fit the 3 buttons horizontally
-  // without wrapping them awkwardly — switch to a taller vertical stack.
-  // 104px gives enough room for the header row + two full-width buttons + gaps.
-  const blockH = isMobile ? 104 : 36;
+  // On mobile, just show a thin draggable pill — action buttons live in the
+  // fixed bottom bar rendered at screen level (see FloatingDraftBar).
+  const blockH = isMobile ? 28 : 36;
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
@@ -1650,30 +1649,15 @@ function DraftApptBlock({
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
-        // ── Mobile: vertical stack so each control is touchable in narrow columns
+        // ── Mobile: thin draggable pill — buttons are in the fixed bottom bar
         <div
-          className="w-full h-full rounded-lg bg-white/95 backdrop-blur-sm border border-slate-300 shadow-sm flex flex-col gap-1 p-1.5"
-          style={{ borderRight: "3px solid rgba(13, 148, 136, 0.85)" }}>
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-slate-800">{time}</span>
-            <button
-              className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xs leading-none"
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-          </div>
+          className="w-full h-full rounded-md bg-teal-600/90 backdrop-blur-sm flex items-center justify-between px-2 shadow"
+          style={{ borderRight: "3px solid rgba(13, 148, 136, 1)" }}>
+          <span className="text-[11px] font-bold text-white" dir="ltr">{time}</span>
           <button
-            className="flex-1 text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-md transition text-center"
+            className="w-5 h-5 flex items-center justify-center rounded text-white/70 hover:text-white text-xs leading-none"
             onPointerDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onConfirm(); }}>
-            + קבע תור
-          </button>
-          <button
-            className="text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md py-1 transition flex items-center justify-center gap-1"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onAddBreak(); }}>
-            <span>☕</span>
-            <span>הוסף הפסקה</span>
-          </button>
+            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         </div>
       ) : (
         // ── Desktop: compact horizontal pill
@@ -1726,6 +1710,7 @@ export default function AdminCalendar() {
   const [draftMoveSlot, setDraftMoveSlot] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
+  const isMobile = useIsMobile();
   // ── Zoom & drag ──────────────────────────────────────────────────────────────
   const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
   const [drag, setDrag] = useState<DragState>(null);
@@ -1734,6 +1719,19 @@ export default function AdminCalendar() {
   const totalHours = calEnd - calStart;
   const totalHeight = totalHours * hourHeight;
   const [nowY, setNowY] = useState(() => nowPxFn(DEFAULT_HOUR_HEIGHT, DAY_START));
+
+  // ── Draft appointment action handlers (used by fixed mobile bottom bar) ──────
+  const handleDraftConfirm = React.useCallback(() => {
+    if (!draftAppt) return;
+    setNewAppt({ staffId: draftAppt.staffId, date: draftAppt.date, time: yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) });
+    setDraftAppt(null);
+  }, [draftAppt, hourHeight, calStart, calEnd]);
+  const handleDraftBreak = React.useCallback(() => {
+    if (!draftAppt) return;
+    setAddBreak({ staffId: draftAppt.staffId, date: draftAppt.date, time: yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) });
+    setDraftAppt(null);
+  }, [draftAppt, hourHeight, calStart, calEnd]);
+  const draftTime = draftAppt ? yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) : null;
   const gridRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
@@ -2978,6 +2976,33 @@ export default function AdminCalendar() {
                 }}
                 className="flex-1 bg-teal-600 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-teal-700 transition">
                 להעביר בכל זאת
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mobile floating draft action bar ── */}
+      {isMobile && draftAppt && draftTime && (
+        <div className="fixed bottom-[60px] inset-x-0 z-50 px-4 pb-2 pointer-events-none">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden pointer-events-auto">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100">
+              <span className="text-xs text-slate-400">תור ב-</span>
+              <span className="text-sm font-bold text-slate-800" dir="ltr">{draftTime}</span>
+              <button
+                className="mr-auto text-slate-400 hover:text-slate-700 text-sm px-1"
+                onClick={() => setDraftAppt(null)}>✕</button>
+            </div>
+            <div className="flex gap-2 p-3">
+              <button
+                onClick={handleDraftConfirm}
+                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm py-3 rounded-xl transition shadow-sm">
+                + קבע תור
+              </button>
+              <button
+                onClick={handleDraftBreak}
+                className="flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm py-3 px-4 rounded-xl transition flex items-center gap-1.5">
+                <span>☕</span><span>הפסקה</span>
               </button>
             </div>
           </div>
