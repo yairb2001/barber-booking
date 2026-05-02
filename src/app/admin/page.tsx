@@ -4,12 +4,28 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_HOUR_HEIGHT = 64;
-const DAY_START = 8;
-const DAY_END = 21;
+const DAY_START = 8;  // fallback default — overridden by business settings
+const DAY_END = 21;   // fallback default — overridden by business settings
 const TOTAL_HOURS = DAY_END - DAY_START;
 
 // Context for dynamic hourHeight (pinch-to-zoom)
 const HHCtx = React.createContext(DEFAULT_HOUR_HEIGHT);
+// Context for calendar display range (calendarStartHour / calendarEndHour from settings)
+const HourRangeCtx = React.createContext({ start: DAY_START, end: DAY_END });
+
+// Detects narrow viewports so draft blocks etc. can switch to a vertical
+// stacked layout instead of the squished horizontal pill that happens in
+// week-view columns on a phone.
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < breakpoint);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 const COLORS = [
   { bg: "bg-violet-500", light: "bg-violet-100 text-violet-900 border-violet-300" },
@@ -28,12 +44,12 @@ const addDays = (iso: string, n: number) => { const d = new Date(iso); d.setDate
 const dayOfWeek = (iso: string) => new Date(iso).getDay();
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
-const apptTop = (t: string, hh: number) => ((toMin(t) - DAY_START * 60) / 60) * hh;
+const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
 const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
-const nowPxFn = (hh: number) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - DAY_START * 60) / 60) * hh; };
-const yToTimeFn = (y: number, hh: number) => {
-  const mins = Math.round((y / hh) * 60 / 5) * 5 + DAY_START * 60;
-  return minToTime(Math.max(DAY_START * 60, Math.min(DAY_END * 60 - 5, mins)));
+const nowPxFn = (hh: number, ds = DAY_START) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - ds * 60) / 60) * hh; };
+const yToTimeFn = (y: number, hh: number, ds = DAY_START, de = DAY_END) => {
+  const mins = Math.round((y / hh) * 60 / 5) * 5 + ds * 60;
+  return minToTime(Math.max(ds * 60, Math.min(de * 60 - 5, mins)));
 };
 
 // ── Saved calendar preferences (view / zoom / week barber) ───────────────────
@@ -122,10 +138,11 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
 function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
   const hh = React.useContext(HHCtx);
+  const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const working = getWorkingRanges(staff, dow);
   const breaks = getBreakRanges(staff, dow);
-  const dayStartMin = DAY_START * 60;
-  const dayEndMin = DAY_END * 60;
+  const dayStartMin = calStart * 60;
+  const dayEndMin = calEnd * 60;
   if (working.length === 0) {
     return <div className="absolute inset-0 bg-neutral-100/80 pointer-events-none" />;
   }
@@ -351,10 +368,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           {fromGrid && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 flex items-center gap-3">
               <div className="w-9 h-9 rounded-full bg-teal-500 flex items-center justify-center text-white font-bold text-base shrink-0">
-                {staff.name[0]}
+                {(selectedStaff?.name || staff?.name || "?")[0]}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-slate-900 text-sm">{staff.name}</p>
+                <p className="font-semibold text-slate-900 text-sm">{selectedStaff?.name || staff?.name}</p>
                 <p className="text-xs text-slate-700">
                   {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })}
                   {" · "}
@@ -420,27 +437,18 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             </div>
           )}
 
-          {/* Staff */}
-          {fromGrid ? (
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">ספר</label>
-              <div className="flex items-center gap-2 border border-slate-200 bg-slate-50 rounded-lg px-3 py-2">
-                <span className="text-sm font-medium text-slate-900 flex-1">{selectedStaff?.name}</span>
-                <button onClick={() => {/* allow changing */}} className="text-xs text-slate-900 underline"
-                  title="שנה ספר">
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label className="text-xs text-neutral-500 block mb-1">ספר</label>
-              <select value={form.staffId} onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
-                <option value="">בחר ספר...</option>
-                {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-          )}
+          {/* Staff — always a dropdown so the barber can be changed */}
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">
+              ספר
+              {fromGrid && <span className="text-teal-600 font-medium"> · ניתן לשנות</span>}
+            </label>
+            <select value={form.staffId} onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 cursor-pointer">
+              {!fromGrid && <option value="">בחר ספר...</option>}
+              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
 
           {/* Service */}
           <div>
@@ -692,13 +700,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
   }, []);
 
-  // Load swap proposals involving this appointment
-  useEffect(() => {
+  // Load swap proposals involving this appointment.
+  // Wrapped in a callable so we can refresh in-place after marking responses,
+  // without forcing the user to close & reopen the modal.
+  const refreshProposals = useCallback(() => {
     fetch(`/api/admin/swap-proposals?status=open&primaryAppointmentId=${appt.id}`)
       .then(r => r.ok ? r.json() : [])
       .then((d: SwapProposal[]) => setProposalsAsPrimary(Array.isArray(d) ? d : []))
       .catch(() => {});
-    // Also check if this appt is a candidate in someone else's swap
     fetch(`/api/admin/swap-proposals?status=open`)
       .then(r => r.ok ? r.json() : [])
       .then((all: SwapProposal[]) => {
@@ -709,6 +718,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       })
       .catch(() => {});
   }, [appt.id]);
+
+  useEffect(() => { refreshProposals(); }, [refreshProposals]);
 
   const meta = STATUS_META[appt.status] || { label: appt.status, badgeClass: "bg-neutral-100 text-neutral-500" };
 
@@ -972,15 +983,15 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                       </div>
                       {p.status === "pending_response" && (
                         <div className="grid grid-cols-3 gap-1 mt-1.5">
-                          <button onClick={() => onMarkSwap(p.id, "mark_accepted").then(() => onReload?.())}
+                          <button onClick={() => onMarkSwap(p.id, "mark_accepted").then(() => { refreshProposals(); onReload?.(); })}
                             className="py-1 rounded text-[10px] bg-emerald-500 hover:bg-emerald-600 text-white font-bold">
                             ✓ הסכים
                           </button>
-                          <button onClick={() => onMarkSwap(p.id, "mark_rejected").then(() => onReload?.())}
+                          <button onClick={() => onMarkSwap(p.id, "mark_rejected").then(() => { refreshProposals(); onReload?.(); })}
                             className="py-1 rounded text-[10px] bg-red-100 hover:bg-red-200 text-red-700 font-bold">
                             ✗ דחה
                           </button>
-                          <button onClick={() => onMarkSwap(p.id, "cancel").then(() => onReload?.())}
+                          <button onClick={() => onMarkSwap(p.id, "cancel").then(() => { refreshProposals(); onReload?.(); })}
                             className="py-1 rounded text-[10px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600">
                             בטל
                           </button>
@@ -1472,12 +1483,14 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
 // ── Time Column ───────────────────────────────────────────────────────────────
 function TimeColumn() {
   const hh = React.useContext(HHCtx);
-  const totalHeight = TOTAL_HOURS * hh;
+  const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
+  const totalHours = calEnd - calStart;
+  const totalHeight = totalHours * hh;
   return (
     <div className="w-14 shrink-0 relative select-none" style={{ height: totalHeight }}>
-      {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
+      {Array.from({ length: totalHours + 1 }, (_, i) => (
         <div key={i} className="absolute right-2 text-[11px] text-neutral-400 font-mono" style={{ top: i * hh - 7 }}>
-          {String(DAY_START + i).padStart(2, "0")}:00
+          {String(calStart + i).padStart(2, "0")}:00
         </div>
       ))}
     </div>
@@ -1487,8 +1500,9 @@ function TimeColumn() {
 // ── Grid Lines (15-minute intervals) ──────────────────────────────────────────
 function GridLines() {
   const hh = React.useContext(HHCtx);
+  const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   // 4 segments per hour (15 min each)
-  const segments = TOTAL_HOURS * 4;
+  const segments = (calEnd - calStart) * 4;
   return (
     <div className="absolute inset-0 pointer-events-none">
       {Array.from({ length: segments + 1 }, (_, i) => {
@@ -1527,10 +1541,11 @@ function DraftMoveSlotBlock({
   onDragMoved?: () => void;
 }) {
   const hh = React.useContext(HHCtx);
-  const totalH = TOTAL_HOURS * hh;
+  const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
+  const totalH = (calEnd - calStart) * hh;
   const blockH = Math.max((durationMinutes / 60) * hh, 36);
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
-  const startTime = yToTimeFn(clampedTop, hh);
+  const startTime = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
 
   return (
@@ -1538,6 +1553,8 @@ function DraftMoveSlotBlock({
       className="absolute left-0.5 right-0.5 z-30 select-none cursor-grab active:cursor-grabbing"
       style={{ top: clampedTop, height: blockH, touchAction: "none" }}
       onPointerDown={e => {
+        // Don't hijack clicks that land on buttons — let them fire normally
+        if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         dragRef.current = { clientY: e.clientY, startY: clampedTop };
@@ -1559,16 +1576,18 @@ function DraftMoveSlotBlock({
 
       <div
         className="w-full h-full rounded-lg flex flex-col justify-between px-2 py-1.5 border-2 border-dashed"
-        style={{ borderColor: "#3b82f6", background: "rgba(59,130,246,0.18)", backdropFilter: "blur(4px)" }}>
+        style={{ borderColor: "#0d9488", background: "rgba(20, 184, 166, 0.15)", backdropFilter: "blur(4px)" }}>
         {/* Top row: time + dismiss */}
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold text-teal-900">{startTime} ↕ גרור לדיוק</span>
-          <button className="text-teal-400 hover:text-teal-700 text-xs leading-none"
+          <button className="text-teal-500 hover:text-teal-800 text-xs leading-none p-1"
+            onPointerDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         </div>
         {/* Bottom row: confirm */}
         <button
-          className="text-[11px] font-semibold text-white bg-teal-500 hover:bg-teal-600 rounded-md px-2 py-1 transition text-center"
+          className="text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-md px-2 py-1 transition text-center"
+          onPointerDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
           + הוסף העברה לכאן
         </button>
@@ -1590,10 +1609,15 @@ function DraftApptBlock({
   onDragMoved?: () => void;  // called when block was actually dragged (not just tapped)
 }) {
   const hh = React.useContext(HHCtx);
-  const totalH = TOTAL_HOURS * hh;
-  const blockH = 36; // compact, minimalist — 36px fits buttons comfortably
+  const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
+  const isMobile = useIsMobile();
+  const totalH = (calEnd - calStart) * hh;
+  // On a phone, narrow week-view columns can't fit the 3 buttons horizontally
+  // without wrapping them awkwardly — switch to a taller vertical stack.
+  // 104px gives enough room for the header row + two full-width buttons + gaps.
+  const blockH = isMobile ? 104 : 36;
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
-  const time = yToTimeFn(clampedTop, hh);
+  const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
   void staffName; // not displayed in compact mode
 
@@ -1602,6 +1626,8 @@ function DraftApptBlock({
       className="absolute left-1 right-1 z-30 select-none cursor-grab active:cursor-grabbing"
       style={{ top: clampedTop, height: blockH, touchAction: "none" }}
       onPointerDown={e => {
+        // Don't hijack clicks that land on buttons — let them fire normally
+        if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
         dragRef.current = { clientY: e.clientY, startY: clampedTop };
@@ -1623,26 +1649,56 @@ function DraftApptBlock({
       onPointerCancel={() => { dragRef.current = null; }}
       onClick={e => e.stopPropagation()}>
 
-      {/* Compact, semi-transparent pill — single row */}
-      <div
-        className="w-full h-full rounded-md bg-white/80 backdrop-blur-sm border border-slate-300/70 flex items-center gap-1.5 px-2"
-        style={{ borderRight: "2.5px solid rgba(245,158,11,0.85)" }}>
-        <button
-          className="text-neutral-300 hover:text-neutral-500 text-xs leading-none shrink-0"
-          onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-        <button
-          className="flex-1 text-[11px] font-semibold text-slate-700 hover:text-slate-800 truncate text-right"
-          onClick={e => { e.stopPropagation(); onConfirm(); }}>
-          + קבע ב־{time}
-        </button>
-        {/* Coffee break button — slightly prominent */}
-        <button
-          className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-neutral-100 hover:bg-slate-100 border border-neutral-200 hover:border-slate-300 text-[14px] transition"
-          title="הוסף הפסקה"
-          onClick={e => { e.stopPropagation(); onAddBreak(); }}>
-          ☕
-        </button>
-      </div>
+      {isMobile ? (
+        // ── Mobile: vertical stack so each control is touchable in narrow columns
+        <div
+          className="w-full h-full rounded-lg bg-white/95 backdrop-blur-sm border border-slate-300 shadow-sm flex flex-col gap-1 p-1.5"
+          style={{ borderRight: "3px solid rgba(13, 148, 136, 0.85)" }}>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-bold text-slate-800">{time}</span>
+            <button
+              className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xs leading-none"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+          </div>
+          <button
+            className="flex-1 text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-md transition text-center"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onConfirm(); }}>
+            + קבע תור
+          </button>
+          <button
+            className="text-[11px] font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-md py-1 transition flex items-center justify-center gap-1"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onAddBreak(); }}>
+            <span>☕</span>
+            <span>הוסף הפסקה</span>
+          </button>
+        </div>
+      ) : (
+        // ── Desktop: compact horizontal pill
+        <div
+          className="w-full h-full rounded-md bg-white/85 backdrop-blur-sm border border-slate-300/70 flex items-center gap-1.5 px-2"
+          style={{ borderRight: "2.5px solid rgba(13, 148, 136, 0.85)" }}>
+          <button
+            className="text-slate-400 hover:text-slate-700 text-xs leading-none shrink-0 p-1"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+          <button
+            className="flex-1 text-[11px] font-semibold text-slate-700 hover:text-slate-900 truncate text-right"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onConfirm(); }}>
+            + קבע ב־{time}
+          </button>
+          <button
+            className="shrink-0 w-7 h-7 flex items-center justify-center rounded-md bg-slate-100 hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-[14px] transition"
+            title="הוסף הפסקה"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onAddBreak(); }}>
+            ☕
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -1654,7 +1710,12 @@ export default function AdminCalendar() {
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [visibleStaff, setVisibleStaff] = useState<string[]>([]);
+  // activeBarber is shared across ALL views (day/week/3day) — used for the "+ תור" button default
   const [weekBarber, setWeekBarber] = useState<string>("");
+  const [dayBarber, setDayBarber] = useState<string>("");
+  // Calendar display hours — loaded from business settings
+  const [calStart, setCalStart] = useState(DAY_START);
+  const [calEnd, setCalEnd] = useState(DAY_END);
   const [appointments, setAppointments] = useState<Appt[]>([]);
   const [loading, setLoading] = useState(true);
   const [showFilter, setShowFilter] = useState(false);
@@ -1670,8 +1731,9 @@ export default function AdminCalendar() {
   const [drag, setDrag] = useState<DragState>(null);
   const hourHeightRef = useRef(DEFAULT_HOUR_HEIGHT);
   hourHeightRef.current = hourHeight;
-  const totalHeight = TOTAL_HOURS * hourHeight;
-  const [nowY, setNowY] = useState(() => nowPxFn(DEFAULT_HOUR_HEIGHT));
+  const totalHours = calEnd - calStart;
+  const totalHeight = totalHours * hourHeight;
+  const [nowY, setNowY] = useState(() => nowPxFn(DEFAULT_HOUR_HEIGHT, DAY_START));
   const gridRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
@@ -1687,6 +1749,23 @@ export default function AdminCalendar() {
   const [dragMove, setDragMove] = useState<DragMoveState | null>(null);
   const dragMoveRef = useRef<DragMoveState | null>(null);
   dragMoveRef.current = dragMove;
+
+  // Guard against double-finalize: when the user taps the in-drag ✓/✕ buttons
+  // their onPointerDown fires before the global pointerup, so without this flag
+  // finalizeMoveDrag would run twice and create a duplicate pendingMove.
+  const isDragProcessed = useRef(false);
+
+  // After a drop, we DON'T immediately PATCH the API. We hold the proposed
+  // target in `pendingMove` and show a small confirmation card with three
+  // actions: confirm (commits the move), continue (re-enters drag mode for
+  // fine-tuning), and cancel (drops the proposal entirely). This prevents
+  // accidental moves on mobile where a long-press easily turns into a sloppy
+  // release.
+  type PendingMove = {
+    appt: Appt;
+    target: { staffId: string; date: string; startTime: string };
+  };
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
   // Column refs — keyed by `${staffId}|${date}` so we can identify which column
   // the pointer is over during a drag-move. Rebuilt on each render based on
@@ -1786,12 +1865,12 @@ export default function AdminCalendar() {
   useEffect(() => { savePrefs({ hourHeight }); }, [hourHeight]);
   useEffect(() => { if (weekBarber) savePrefs({ weekBarber }); }, [weekBarber]);
 
-  // Update nowY whenever hourHeight changes
+  // Update nowY whenever hourHeight or calStart changes
   useEffect(() => {
-    setNowY(nowPxFn(hourHeight));
-    const t = setInterval(() => setNowY(nowPxFn(hourHeightRef.current)), 60_000);
+    setNowY(nowPxFn(hourHeight, calStart));
+    const t = setInterval(() => setNowY(nowPxFn(hourHeightRef.current, calStart)), 60_000);
     return () => clearInterval(t);
-  }, [hourHeight]);
+  }, [hourHeight, calStart]);
 
   // Pinch-to-zoom touch handler on the grid container
   useEffect(() => {
@@ -1835,12 +1914,13 @@ export default function AdminCalendar() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load staff + services once
+  // Load staff + services + calendar settings once
   useEffect(() => {
     Promise.all([
       fetch("/api/admin/staff").then(r => r.json()),
       fetch("/api/admin/services").then(r => r.json()),
-    ]).then(([st, sv]) => {
+      fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([st, sv, biz]) => {
       setAllStaff(st);
       setVisibleStaff(st.map((s: Staff) => s.id));
       if (st.length) {
@@ -1848,8 +1928,17 @@ export default function AdminCalendar() {
         const saved = loadPrefs().weekBarber;
         const validSaved = saved && st.some((s: Staff) => s.id === saved) ? saved : st[0].id;
         setWeekBarber(validSaved);
+        setDayBarber(validSaved); // day view defaults to same barber
       }
       setServices(sv);
+      // Load calendar display hours from business settings JSON
+      if (biz?.settings) {
+        try {
+          const s = JSON.parse(biz.settings);
+          if (typeof s.calendarStartHour === "number") setCalStart(s.calendarStartHour);
+          if (typeof s.calendarEndHour   === "number") setCalEnd(s.calendarEndHour);
+        } catch { /* ignore */ }
+      }
     });
   }, []);
 
@@ -1989,7 +2078,7 @@ export default function AdminCalendar() {
   }, [loadAppointments]);
 
   useEffect(() => {
-    if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowPxFn(hourHeightRef.current) - 120, 0);
+    if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowPxFn(hourHeightRef.current, calStart) - 120, 0);
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch waitlist counts for visible dates
@@ -2037,7 +2126,7 @@ export default function AdminCalendar() {
       if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
         const [staffId, d] = key.split("|");
         const yInCol = clientY - rect.top;
-        const startTime = yToTimeFn(yInCol, hourHeightRef.current);
+        const startTime = yToTimeFn(yInCol, hourHeightRef.current, calStart, calEnd);
         return { staffId, date: d, startTime };
       }
     }
@@ -2089,6 +2178,7 @@ export default function AdminCalendar() {
 
   // Long-press fired on an ApptBlock — enter drag-move mode.
   function startMoveDrag(appt: Appt, clientX: number, clientY: number) {
+    isDragProcessed.current = false; // reset for a fresh drag
     setDragMove({ appt, pointerX: clientX, pointerY: clientY, dropTarget: null });
     // Haptic feedback (iOS Safari + Android Chrome)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -2096,10 +2186,22 @@ export default function AdminCalendar() {
     }
   }
 
-  // Drop handler — finalize the move (or revert if dropped at origin / outside).
+  // Drop handler — does NOT commit the move. Instead, hands off to
+  // `pendingMove` so the user gets one more chance to confirm/adjust/cancel
+  // before any API call. The original appointment stays in place visually.
   const finalizeMoveDrag = useCallback((target: { staffId: string; date: string; startTime: string } | null) => {
+    // Prevent double-fire: the in-drag ✓/✕ buttons use onPointerDown which
+    // fires before the global window pointerup — without this guard, the
+    // global handler would run a second finalizeMoveDrag call on the same drop.
+    if (isDragProcessed.current) return;
+    isDragProcessed.current = true;
+
     const drag = dragMoveRef.current;
     setDragMove(null);
+    // Block the synthetic click that fires on the grid cell under the cursor
+    // right after pointerup — otherwise it would create a DraftApptBlock on
+    // top of the drop location.
+    suppressNextGridClick.current = true;
     if (!drag || !target) return;
     const origDate = drag.appt.date.slice(0, 10);
     const origStaff = drag.appt.staff.id;
@@ -2107,36 +2209,53 @@ export default function AdminCalendar() {
     // No change → no-op
     if (target.staffId === origStaff && target.date === origDate && target.startTime === origStart) return;
 
-    // Optimistic update — move the appointment in local state immediately
-    const duration = toMin(drag.appt.endTime) - toMin(drag.appt.startTime);
-    const newEnd = minToTime(toMin(target.startTime) + duration);
-    const newStaff = allStaff.find(s => s.id === target.staffId);
-    const movedAppt: Appt = {
-      ...drag.appt,
-      startTime: target.startTime,
-      endTime: newEnd,
-      date: target.date + "T00:00:00.000Z",
-      staff: { id: target.staffId, name: newStaff?.name || drag.appt.staff.name },
-    };
-    setAppointments(prev => prev.map(a => a.id === drag.appt.id ? movedAppt : a));
+    setPendingMove({ appt: drag.appt, target });
+  }, []);
 
-    // Persist (will revert on failure). On success — open the "notify customer?" modal.
-    persistMove(drag.appt, target, false).then(succeeded => {
+  // Commit a confirmed pending move: optimistic local update + PATCH.
+  const commitPendingMove = useCallback(async () => {
+    const pending = pendingMove;
+    if (!pending) return;
+    setPendingMove(null);
+    const duration = toMin(pending.appt.endTime) - toMin(pending.appt.startTime);
+    const newEnd = minToTime(toMin(pending.target.startTime) + duration);
+    const newStaff = allStaff.find(s => s.id === pending.target.staffId);
+    const movedAppt: Appt = {
+      ...pending.appt,
+      startTime: pending.target.startTime,
+      endTime: newEnd,
+      date: pending.target.date + "T00:00:00.000Z",
+      staff: { id: pending.target.staffId, name: newStaff?.name || pending.appt.staff.name },
+    };
+    setAppointments(prev => prev.map(a => a.id === pending.appt.id ? movedAppt : a));
+    try {
+      const succeeded = await persistMove(pending.appt, pending.target, false);
       if (succeeded) setNotifyMove(movedAppt);
-    }).catch(console.error);
-  }, [allStaff, persistMove]);
+    } catch (err) {
+      console.error(err);
+    }
+  }, [pendingMove, allStaff, persistMove]);
+
+  // Dismiss the pending card without committing — the appointment stays at
+  // its original spot and the user can long-press again to redo the move.
+  // (Resuming an in-flight drag from a tap-released state isn't reliable
+  // across input devices, so we keep this affordance simple.)
+  const continuePendingMove = useCallback(() => {
+    setPendingMove(null);
+  }, []);
 
   // Global pointermove + pointerup listeners — only attached while dragging
   useEffect(() => {
     if (!dragMove) return;
     const onMove = (e: PointerEvent) => {
+      if (isDragProcessed.current) return; // already handled via button tap
       e.preventDefault();
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
-      finalizeMoveDrag(dropTarget);
+      finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
     };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
@@ -2177,7 +2296,7 @@ export default function AdminCalendar() {
     } else {
       // Long drag → open modal immediately with start time
       const startY = Math.min(drag.startY, drag.endY);
-      setNewAppt({ staffId, date: d, time: yToTimeFn(startY, hourHeight) });
+      setNewAppt({ staffId, date: d, time: yToTimeFn(startY, hourHeight, calStart, calEnd) });
       setDraftAppt(null);
     }
     setDrag(null);
@@ -2293,6 +2412,7 @@ export default function AdminCalendar() {
         {/* Scrollable grid — vertical + horizontal on mobile */}
         <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto">
           <HHCtx.Provider value={hourHeight}>
+          <HourRangeCtx.Provider value={{ start: calStart, end: calEnd }}>
             <div className="flex" style={{ height: totalHeight, minWidth: gridMinWidth }}>
               <TimeColumn />
               <div className="flex flex-1 relative">
@@ -2468,6 +2588,7 @@ export default function AdminCalendar() {
                 }
               </div>
             </div>
+          </HourRangeCtx.Provider>
           </HHCtx.Provider>
         </div>
       </div>
@@ -2502,8 +2623,8 @@ export default function AdminCalendar() {
           className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed z-20 flex flex-col items-center justify-center px-1.5"
           style={{
             top, height,
-            borderColor: "#3b82f6",
-            background: "rgba(59,130,246,0.15)",
+            borderColor: "#0d9488",
+            background: "rgba(20, 184, 166, 0.15)",
           }}>
           <p className="text-[10px] font-bold text-teal-900 leading-tight">✓ העברה לכאן</p>
           <p className="text-[10px] text-teal-700">{slot.startTime}</p>
@@ -2585,6 +2706,13 @@ export default function AdminCalendar() {
             {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
+        {/* Day view barber picker — so "+ תור" defaults to the right barber */}
+        {view === "day" && allStaff.length > 1 && (
+          <select value={dayBarber} onChange={e => setDayBarber(e.target.value)}
+            className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
+            {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
 
         {/* Zoom controls — hidden on month (no hourHeight there) */}
         {view !== "month" && (
@@ -2648,7 +2776,17 @@ export default function AdminCalendar() {
         )}
 
         {/* New appointment button */}
-        <button onClick={() => setNewAppt({ staffId: allStaff[0]?.id || "", date, time: "10:00" })}
+        <button onClick={() => {
+          // Default to whichever barber is currently "in focus":
+          // • week/3day view → the barber selected in the barber picker
+          // • day view → the barber selected in the day picker (dayBarber)
+          // • month view → first staff as fallback
+          const defaultStaffId =
+            (view === "week" || view === "3day") ? (weekBarber || allStaff[0]?.id || "") :
+            view === "day" ? (dayBarber || displayedStaff[0]?.id || allStaff[0]?.id || "") :
+            (allStaff[0]?.id || "");
+          setNewAppt({ staffId: defaultStaffId, date, time: "10:00" });
+        }}
           className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
           + תור
         </button>
@@ -2688,6 +2826,88 @@ export default function AdminCalendar() {
         />
       )}
       {dayMenu && <DayPanel date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
+
+      {/* ── In-drag action bar ── */}
+      {/* Floats at the bottom of the screen WHILE the user is actively dragging */}
+      {/* an appointment. On mobile this is the primary way to confirm/cancel    */}
+      {/* because the user can tap a button with a second finger (or release and  */}
+      {/* tap quickly). On desktop it's a handy status pill. Only shown when the  */}
+      {/* pointer is over a valid drop column (dropTarget != null).               */}
+      {dragMove?.dropTarget && (
+        <div className="fixed inset-x-0 bottom-0 z-[45] pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-2 px-3 py-3 sm:py-2"
+            style={{ background: "linear-gradient(to top, rgba(255,255,255,0.92) 70%, transparent)" }}>
+            {/* Cancel drag — releases without setting pendingMove */}
+            <button
+              className="w-12 h-12 sm:w-9 sm:h-9 shrink-0 bg-white border border-red-300 rounded-xl text-red-500 text-lg sm:text-sm font-bold shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+              onPointerDown={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Mark processed so global pointerup is a no-op, then cancel
+                finalizeMoveDrag(null);
+              }}>
+              ✕
+            </button>
+            {/* Confirm drop — leads to pendingMove card for final approval */}
+            <button
+              className="flex-1 h-12 sm:h-9 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+              onPointerDown={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Read target before any state changes
+                const target = dragMoveRef.current?.dropTarget ?? null;
+                finalizeMoveDrag(target);
+              }}>
+              <span>✓</span>
+              <span>קבע ב‑{dragMove.dropTarget.startTime}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Pending-move confirmation card (drag-to-MOVE) ── */}
+      {/* Renders as a centered floating sheet so it works equally on phone */}
+      {/* (where a "release here" affordance is critical) and desktop. */}
+      {pendingMove && (() => {
+        const targetStaff = allStaff.find(s => s.id === pendingMove.target.staffId);
+        const dateLabel = new Date(pendingMove.target.date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+        return (
+          <div className="fixed inset-x-0 bottom-0 sm:inset-0 z-[55] flex items-end sm:items-center justify-center p-3 sm:p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-slate-200 p-4 space-y-3 pointer-events-auto safe-bottom">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-teal-100 flex items-center justify-center text-teal-700 text-lg shrink-0">↔️</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-sm">להעביר את התור?</p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {pendingMove.appt.customer.name} → <span className="font-semibold text-slate-800">{targetStaff?.name || pendingMove.appt.staff.name}</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {dateLabel} · {pendingMove.target.startTime}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => setPendingMove(null)}
+                  className="py-2 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition">
+                  ✕ ביטול
+                </button>
+                <button
+                  onClick={continuePendingMove}
+                  className="py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition"
+                  title="סגור ואחזור לדייק במיקום">
+                  ↻ אדייק שוב
+                </button>
+                <button
+                  onClick={commitPendingMove}
+                  className="py-2 rounded-lg bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 transition">
+                  ✓ אישור
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Notify-customer-after-drag modal ── */}
       {notifyMove && (

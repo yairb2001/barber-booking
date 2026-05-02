@@ -507,3 +507,17 @@ model PortfolioItem {
 
   @@map("portfolio_items")
 }
+
+// === קודי OTP לאימות בעת קביעת תור ===
+model OtpCode {
+  id          String    @id @default(uuid())
+  businessId  String    @map("business_id")
+  phone       String
+  code        String
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([businessId, phone, code])
+  @@map("otp_codes")
+}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { TEMPLATE_DEFS, type TemplateKey } from "@/lib/messaging";
 
@@ -125,6 +126,9 @@ export default function TemplatesPage() {
 
   return (
     <div className="max-w-3xl mx-auto p-4 space-y-4" dir="rtl">
+      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 transition-colors">
+        → הגדרות עסק
+      </Link>
       {/* Header */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-5">
         <h1 className="text-xl font-bold text-neutral-900 mb-1">📝 תבניות הודעות</h1>

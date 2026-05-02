@@ -116,6 +116,36 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   );
 }
 
+// ── App download banner shown after successful booking ─────────────────────────
+function AppDownloadBanner({ appStoreUrl, playStoreUrl }: {
+  appStoreUrl?: string;
+  playStoreUrl?: string;
+}) {
+  if (!appStoreUrl && !playStoreUrl) return null;
+  return (
+    <div className="bg-gradient-to-br from-neutral-900 to-neutral-800 rounded-2xl p-5 text-white shadow-md">
+      <p className="text-xs tracking-[0.15em] uppercase text-neutral-400 mb-1">חבר מביא חבר 📱</p>
+      <p className="text-sm font-light leading-relaxed mb-4">
+        הורד את האפליקציה שלנו ותיהנה מתוכנית חבר מביא חבר — כל 2 חברים שתביא מוצר במתנה, 3 חברים תספורת חינם!
+      </p>
+      <div className="flex gap-2">
+        {appStoreUrl && (
+          <a href={appStoreUrl} target="_blank" rel="noopener noreferrer"
+            className="flex-1 bg-white text-neutral-900 text-[11px] font-semibold tracking-wide text-center py-2.5 rounded-xl hover:bg-neutral-100 transition">
+            🍎 App Store
+          </a>
+        )}
+        {playStoreUrl && (
+          <a href={playStoreUrl} target="_blank" rel="noopener noreferrer"
+            className="flex-1 bg-white text-neutral-900 text-[11px] font-semibold tracking-wide text-center py-2.5 rounded-xl hover:bg-neutral-100 transition">
+            🤖 Google Play
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────────
 function ConfirmPageContent() {
   const searchParams = useSearchParams();
@@ -136,8 +166,32 @@ function ConfirmPageContent() {
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
 
+  // OTP state
+  const [otpSent,     setOtpSent]     = useState(false);
+  const [otpCode,     setOtpCode]     = useState("");
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpToken,    setOtpToken]    = useState("");
+  const [otpSending,  setOtpSending]  = useState(false);
+  const [otpVerifying,setOtpVerifying]= useState(false);
+  const [otpError,    setOtpError]    = useState("");
+
+  // Business info (for businessId + app store URLs)
+  const [businessId,   setBusinessId]   = useState<string>("");
+  const [appStoreUrl,  setAppStoreUrl]  = useState<string>("");
+  const [playStoreUrl, setPlayStoreUrl] = useState<string>("");
+
   useEffect(() => {
     fetch("/api/referral-sources").then((r) => r.json()).then(setReferralOptions).catch(() => {});
+    fetch("/api/business").then(r => r.json()).then(biz => {
+      if (biz?.id) setBusinessId(biz.id);
+      if (biz?.settings) {
+        try {
+          const s = typeof biz.settings === "string" ? JSON.parse(biz.settings) : biz.settings;
+          if (s.appStoreUrl)  setAppStoreUrl(s.appStoreUrl);
+          if (s.playStoreUrl) setPlayStoreUrl(s.playStoreUrl);
+        } catch { /* ignore */ }
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -158,6 +212,15 @@ function ConfirmPageContent() {
     }
   }, [staffId, serviceId]);
 
+  // When phone changes, reset OTP state
+  useEffect(() => {
+    setOtpSent(false);
+    setOtpCode("");
+    setOtpVerified(false);
+    setOtpToken("");
+    setOtpError("");
+  }, [phone]);
+
   const dateObj   = date ? new Date(date + "T00:00:00") : null;
   const dateLabel = dateObj
     ? dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })
@@ -165,8 +228,50 @@ function ConfirmPageContent() {
   const price    = serviceInfo ? serviceInfo.customPrice ?? serviceInfo.price : 0;
   const duration = serviceInfo ? serviceInfo.customDuration ?? serviceInfo.durationMinutes : 0;
 
+  // ── OTP: send code ──────────────────────────────────────────────────────────
+  async function sendOtp() {
+    if (!phone) { setOtpError("הזן מספר טלפון תחילה"); return; }
+    setOtpSending(true);
+    setOtpError("");
+    try {
+      const res = await fetch("/api/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, businessId: businessId || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.error || "שגיאה בשליחת קוד"); }
+      else { setOtpSent(true); }
+    } catch {
+      setOtpError("שגיאת חיבור — נסה שוב");
+    }
+    setOtpSending(false);
+  }
+
+  // ── OTP: verify code ────────────────────────────────────────────────────────
+  async function verifyOtp() {
+    if (!otpCode) { setOtpError("הזן את הקוד שקיבלת"); return; }
+    setOtpVerifying(true);
+    setOtpError("");
+    try {
+      const res = await fetch("/api/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone, code: otpCode, businessId: businessId || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.error || "קוד שגוי"); }
+      else { setOtpVerified(true); setOtpToken(data.token); setOtpError(""); }
+    } catch {
+      setOtpError("שגיאת חיבור — נסה שוב");
+    }
+    setOtpVerifying(false);
+  }
+
+  // ── Submit booking ──────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
+    if (!otpVerified) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
     setSubmitting(true);
     setError("");
     try {
@@ -178,6 +283,7 @@ function ConfirmPageContent() {
           customerPhone: phone, customerName: name,
           referralSource: referralSource || undefined,
           referrerPhone: (referralSource === "חבר הביא חבר" && referrerPhone) ? referrerPhone : undefined,
+          otpToken,
         }),
       });
       if (!res.ok) {
@@ -266,6 +372,9 @@ function ConfirmPageContent() {
               </div>
             </div>
           </div>
+
+          {/* App download banner */}
+          <AppDownloadBanner appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
 
           {/* Waitlist card */}
           {successPhone && successStaffId && successSvcId && successDate && (
@@ -357,9 +466,10 @@ function ConfirmPageContent() {
                 type="tel"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                disabled={otpVerified}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
+                className={`w-full bg-white border rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors ${otpVerified ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-neutral-200"}`}
               />
             </div>
             <div>
@@ -374,6 +484,72 @@ function ConfirmPageContent() {
                 className="w-full bg-white border border-neutral-200 rounded-xl px-4 py-3 text-sm text-neutral-900 placeholder:text-neutral-300 focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)] transition-colors"
               />
             </div>
+          </div>
+
+          {/* ── OTP Section ── */}
+          <div className="mt-5 pt-4 border-t border-neutral-100">
+            {!otpVerified ? (
+              <>
+                {!otpSent ? (
+                  <>
+                    {otpError && <p className="text-xs text-red-500 mb-2">{otpError}</p>}
+                    <button
+                      onClick={sendOtp}
+                      disabled={otpSending || !phone}
+                      className="w-full border border-[var(--brand)] text-[var(--brand)] text-xs tracking-[0.15em] uppercase py-3 rounded-full hover:bg-[var(--brand)] hover:text-white transition-colors disabled:opacity-40"
+                    >
+                      {otpSending ? "שולח..." : "📲 שלח קוד אימות ב-WhatsApp"}
+                    </button>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-neutral-500 text-center">
+                      נשלח קוד ל-<span dir="ltr" className="font-mono">{phone}</span>
+                    </p>
+                    {otpError && <p className="text-xs text-red-500 text-center">{otpError}</p>}
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="הזן קוד 6 ספרות"
+                      dir="ltr"
+                      className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm text-center font-mono tracking-[0.3em] focus:outline-none focus:ring-2 focus:ring-[var(--brand)]/40 focus:border-[var(--brand)]"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={verifyOtp}
+                        disabled={otpVerifying || otpCode.length < 6}
+                        className="flex-1 bg-[var(--brand)] text-white text-xs tracking-[0.15em] uppercase py-3 rounded-full hover:opacity-90 transition disabled:opacity-40"
+                      >
+                        {otpVerifying ? "מאמת..." : "אמת קוד"}
+                      </button>
+                      <button
+                        onClick={() => { setOtpSent(false); setOtpCode(""); setOtpError(""); }}
+                        className="px-4 text-xs text-neutral-500 hover:text-neutral-700 transition"
+                      >
+                        שנה
+                      </button>
+                    </div>
+                    <button
+                      onClick={sendOtp}
+                      disabled={otpSending}
+                      className="w-full text-[10px] text-neutral-400 hover:text-neutral-600 transition"
+                    >
+                      לא קיבלת? שלח שוב
+                    </button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-emerald-600 text-sm">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                <span className="text-xs tracking-wide">הטלפון אומת בהצלחה ✓</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -423,11 +599,16 @@ function ConfirmPageContent() {
         {/* ===== Submit button ===== */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !phone || !name}
+          disabled={submitting || !phone || !name || !otpVerified}
           className="w-full bg-[var(--brand)] text-white font-semibold text-sm tracking-[0.2em] uppercase py-5 rounded-full hover:bg-[var(--brand)] disabled:bg-neutral-200 disabled:text-neutral-400 transition-colors shadow-md hover:shadow-lg"
         >
           {submitting ? "קובע תור..." : "קביעת תור!"}
         </button>
+        {!otpVerified && phone && name && (
+          <p className="text-center text-[10px] text-neutral-400 tracking-wide">
+            נדרש אימות טלפון לפני קביעת התור
+          </p>
+        )}
       </div>
     </div>
   );

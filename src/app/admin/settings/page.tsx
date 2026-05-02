@@ -370,6 +370,28 @@ export default function AdminSettingsPage() {
     }
   }
 
+  // Calendar display hours
+  const [calStartHour, setCalStartHour] = useState(8);
+  const [calEndHour, setCalEndHour] = useState(21);
+  const [calHoursSaving, setCalHoursSaving] = useState(false);
+  const [calHoursSaved, setCalHoursSaved] = useState(false);
+
+  async function saveCalendarHours() {
+    setCalHoursSaving(true);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: { ...currentSettings, calendarStartHour: calStartHour, calendarEndHour: calEndHour },
+      }),
+    });
+    setCalHoursSaving(false);
+    setCalHoursSaved(true);
+    setTimeout(() => setCalHoursSaved(false), 2000);
+  }
+
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
@@ -419,6 +441,9 @@ export default function AdminSettingsPage() {
         setThemeId(resolvedTheme);
         // Owner login phone — falls back to public phone if not set
         setOwnerLoginPhone(settingsObj.ownerLoginPhone || data.phone || "");
+        // Calendar hours
+        if (typeof settingsObj.calendarStartHour === "number") setCalStartHour(settingsObj.calendarStartHour);
+        if (typeof settingsObj.calendarEndHour   === "number") setCalEndHour(settingsObj.calendarEndHour);
       }
       setBizLoading(false);
     });
@@ -821,6 +846,44 @@ export default function AdminSettingsPage() {
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Calendar display hours */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-semibold text-neutral-800">שעות תצוגת יומן</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">טווח השעות המוצג ביומן הניהול</p>
+                </div>
+                <button onClick={saveCalendarHours} disabled={calHoursSaving || calStartHour >= calEndHour}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${calHoursSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+                  {calHoursSaving ? "שומר..." : calHoursSaved ? "✓ נשמר" : "שמור"}
+                </button>
+              </div>
+              <div className="flex items-center gap-4 flex-wrap" dir="ltr">
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1 text-right">שעת התחלה</label>
+                  <select value={calStartHour} onChange={e => setCalStartHour(Number(e.target.value))}
+                    className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i}>{String(i).padStart(2,"0")}:00</option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-neutral-400 text-lg mt-4">→</span>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1 text-right">שעת סיום</label>
+                  <select value={calEndHour} onChange={e => setCalEndHour(Number(e.target.value))}
+                    className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <option key={i} value={i} disabled={i <= calStartHour}>{String(i).padStart(2,"0")}:00</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {calStartHour >= calEndHour && (
+                <p className="text-xs text-red-500 mt-2">⚠️ שעת הסיום חייבת להיות אחרי שעת ההתחלה</p>
+              )}
             </div>
 
             {/* Referral sources */}

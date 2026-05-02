@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
-  { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢", ownerOnly: true },
+  { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
   { href: "/admin/staff",        label: "הפרופיל",        icon: "👤", barberOnly: true },
   { href: "/admin/settings",     label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
@@ -44,8 +44,8 @@ const bottomNavOwner: NavItem[] = [
 ];
 const bottomNavBarber: NavItem[] = [
   { href: "/admin",           label: "יומן",     icon: "📅", exact: true },
-  { href: "/admin/dashboard", label: "דאשבורד",  icon: "📊" },
   { href: "/admin/customers", label: "לקוחות",   icon: "👥" },
+  { href: "/admin/messaging", label: "שיווק",    icon: "📢" },
   { href: "/admin/staff",     label: "הפרופיל",  icon: "👤" },
 ];
 

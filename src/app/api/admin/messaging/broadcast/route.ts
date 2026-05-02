@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, applyTemplate } from "@/lib/messaging";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, scopedStaffId } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
 async function fetchFilteredCustomers(business: { id: string }, qs: string) {
@@ -84,8 +84,12 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
 
 // POST /api/admin/messaging/broadcast
 export async function POST(req: NextRequest) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const barberScopeId = scopedStaffId(req); // undefined = owner (all), string = barber's own id, null = unauth
+  if (barberScopeId === null) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const body = await req.json();
   const { message, filterQuery, filter = "all", filterValue } = body;
 
@@ -102,6 +106,13 @@ export async function POST(req: NextRequest) {
     // Build legacy-style query string
     if (filter === "inactive_weeks" && filterValue) qs = `inactive_weeks=${filterValue}`;
     else if (filter === "recent_days" && filterValue) qs = `recent_days=${filterValue}`;
+  }
+
+  // Barbers can only message their own customers — force staffId in filter
+  if (barberScopeId) {
+    const params = new URLSearchParams(qs);
+    params.set("staffId", barberScopeId);
+    qs = params.toString();
   }
 
   const customers = await fetchFilteredCustomers(business, qs);
@@ -130,16 +141,40 @@ export async function POST(req: NextRequest) {
 
 // GET /api/admin/messaging/broadcast — broadcast history
 export async function GET(req: NextRequest) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const barberScopeId = scopedStaffId(req);
+  if (barberScopeId === null) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
   const business = await prisma.business.findFirst();
   if (!business) return NextResponse.json([]);
 
-  const logs = await prisma.messageLog.findMany({
-    where: { businessId: business.id, kind: "broadcast" },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-  });
+  // For barbers: only return broadcast history for their own customers
+  // We filter by whether the customerPhone belongs to a customer who has an appointment with this staff
+  let logs;
+  if (barberScopeId) {
+    // Get phone numbers of this barber's customers
+    const myCustomers = await prisma.customer.findMany({
+      where: {
+        businessId: business.id,
+        appointments: { some: { staffId: barberScopeId } },
+      },
+      select: { phone: true },
+    });
+    const myPhones = myCustomers.map(c => c.phone).filter(Boolean);
+    logs = await prisma.messageLog.findMany({
+      where: { businessId: business.id, kind: "broadcast", customerPhone: { in: myPhones } },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+  } else {
+    logs = await prisma.messageLog.findMany({
+      where: { businessId: business.id, kind: "broadcast" },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+  }
 
   return NextResponse.json(logs);
 }

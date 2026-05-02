@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Staff = {
@@ -30,9 +31,12 @@ const emptySchedule = () =>
     breakEnd: "",
   }));
 
+const DEFAULT_PASSWORD = "12345678";
+
 export default function AdminStaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState(emptySchedule());
@@ -43,26 +47,60 @@ export default function AdminStaffPage() {
   const [editingAvatarId, setEditingAvatarId] = useState<string | null>(null);
   const [avatarUrlDraft, setAvatarUrlDraft] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  // Phone editing
+  const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
 
   async function load() {
-    const data = await fetch("/api/admin/staff").then((r) => r.json());
+    const [data, me] = await Promise.all([
+      fetch("/api/admin/staff").then((r) => r.json()),
+      fetch("/api/admin/me").then((r) => r.ok ? r.json() : { isOwner: false }),
+    ]);
     setStaff(data);
+    setIsOwner(me.isOwner ?? false);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
   async function addStaff() {
-    if (!newStaff.name.trim()) return;
+    if (!newStaff.name.trim() || !newStaff.phone.trim()) {
+      alert("שם וטלפון הם שדות חובה");
+      return;
+    }
     setSaving(true);
-    await fetch("/api/admin/staff", {
+    // Create staff with default password
+    const res = await fetch("/api/admin/staff", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newStaff),
     });
+    if (res.ok) {
+      const created = await res.json();
+      // Set default password automatically
+      await fetch(`/api/admin/staff/${created.id}/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: DEFAULT_PASSWORD }),
+      });
+    }
     setNewStaff({ name: "", phone: "", avatarUrl: "", inQuickPool: true });
     setShowAdd(false);
     setSaving(false);
+    load();
+  }
+
+  async function savePhone(id: string) {
+    if (!phoneDraft.trim()) { alert("טלפון לא יכול להיות ריק"); return; }
+    setSaving(true);
+    await fetch(`/api/admin/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: phoneDraft.trim() }),
+    });
+    setSaving(false);
+    setEditingPhoneId(null);
+    setPhoneDraft("");
     load();
   }
 
@@ -169,17 +207,22 @@ export default function AdminStaffPage() {
 
   return (
     <div className="p-8 overflow-auto h-full">
+      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
+        ← הגדרות עסק
+      </Link>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">ספרים</h1>
           <p className="text-neutral-500 text-sm mt-1">{staff.length} ספרים רשומים</p>
         </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
-        >
-          + ספר חדש
-        </button>
+        {isOwner && (
+          <button
+            onClick={() => setShowAdd(true)}
+            className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
+          >
+            + ספר חדש
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -201,9 +244,21 @@ export default function AdminStaffPage() {
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-neutral-900">{s.name}</div>
-                  {s.phone && <div className="text-sm text-neutral-500" dir="ltr">{s.phone}</div>}
+                  {s.phone
+                    ? <div className="text-sm text-neutral-500" dir="ltr">{s.phone}</div>
+                    : <div className="text-xs text-amber-600">⚠️ אין טלפון</div>
+                  }
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">
+                  {/* Settings page — owner only */}
+                  {isOwner && (
+                    <Link
+                      href={`/admin/staff/${s.id}`}
+                      className="text-xs px-3 py-1.5 rounded-full border border-teal-200 text-teal-700 hover:bg-teal-50 transition"
+                    >
+                      ⚙️ הגדרות
+                    </Link>
+                  )}
                   {/* Photo edit button */}
                   <button
                     onClick={() => {
@@ -214,6 +269,15 @@ export default function AdminStaffPage() {
                   >
                     ✏️ תמונה
                   </button>
+                  {/* Phone edit — owner only */}
+                  {isOwner && (
+                    <button
+                      onClick={() => { setEditingPhoneId(s.id); setPhoneDraft(s.phone || ""); }}
+                      className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      📞 טלפון
+                    </button>
+                  )}
                   <button
                     onClick={() => toggleQuickPool(s.id, s.inQuickPool)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${
@@ -246,14 +310,45 @@ export default function AdminStaffPage() {
                   >
                     {s.isAvailable ? "פעיל" : "לא פעיל"}
                   </button>
-                  <button
-                    onClick={() => deleteStaff(s.id, s.name)}
-                    className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition"
-                  >
-                    מחק
-                  </button>
+                  {isOwner && (
+                    <button
+                      onClick={() => deleteStaff(s.id, s.name)}
+                      className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition"
+                    >
+                      מחק
+                    </button>
+                  )}
                 </div>
               </div>
+
+              {/* Inline phone editor */}
+              {editingPhoneId === s.id && (
+                <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
+                  <label className="text-xs text-neutral-500 block mb-1">מספר טלפון</label>
+                  <input
+                    value={phoneDraft}
+                    onChange={(e) => setPhoneDraft(e.target.value)}
+                    placeholder="050-0000000"
+                    dir="ltr"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => savePhone(s.id)}
+                      disabled={saving || !phoneDraft.trim()}
+                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
+                    >
+                      {saving ? "שומר..." : "שמור"}
+                    </button>
+                    <button
+                      onClick={() => { setEditingPhoneId(null); setPhoneDraft(""); }}
+                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200"
+                    >
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Inline avatar editor — file upload or URL */}
               {editingAvatarId === s.id && (
@@ -324,6 +419,9 @@ export default function AdminStaffPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAdd(false)}>
           <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">ספר חדש</h3>
+            <p className="text-xs text-neutral-500 mb-4 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
+              💡 הספר יקבל סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span> — ניתן לשנות אחר כך
+            </p>
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שם *</label>
@@ -335,12 +433,13 @@ export default function AdminStaffPage() {
                 />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">טלפון</label>
+                <label className="text-xs text-neutral-500 block mb-1">טלפון * <span className="text-red-500">(חובה — משמש להתחברות)</span></label>
                 <input
                   value={newStaff.phone}
                   onChange={(e) => setNewStaff((p) => ({ ...p, phone: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 ${!newStaff.phone.trim() ? "border-amber-300" : "border-neutral-200"}`}
                   dir="ltr"
+                  placeholder="050-0000000"
                 />
               </div>
               <div>
@@ -366,7 +465,7 @@ export default function AdminStaffPage() {
             <div className="flex gap-2 mt-5">
               <button
                 onClick={addStaff}
-                disabled={saving || !newStaff.name.trim()}
+                disabled={saving || !newStaff.name.trim() || !newStaff.phone.trim()}
                 className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
               >
                 {saving ? "שומר..." : "הוסף"}

@@ -295,6 +295,25 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
     onDeleted();
   };
 
+  const convertToStaff = async () => {
+    if (!detail) return;
+    if (!confirm(`להפוך את ${detail.name} לספר/מנהל?\n\nסיסמת ברירת מחדל: 12345678`)) return;
+    setBusy(true);
+    const r = await fetch("/api/admin/staff/from-customer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ customerId: id }),
+    });
+    setBusy(false);
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      alert(j.error || "שגיאה בהמרה");
+      return;
+    }
+    alert(`✅ ${detail.name} הפך לספר! סיסמה זמנית: 12345678`);
+    onClose();
+  };
+
   if (loading || !detail) {
     return (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -500,6 +519,14 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             )}
           </div>
         )}
+
+        {/* Convert to staff — owner action */}
+        <div className="px-5 pb-3">
+          <button onClick={convertToStaff} disabled={busy}
+            className="w-full bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 rounded-xl py-2.5 text-sm font-medium">
+            🔄 הפוך לקוח לספר / מנהל
+          </button>
+        </div>
 
         {/* Danger zone */}
         <div className="p-5 flex gap-2">

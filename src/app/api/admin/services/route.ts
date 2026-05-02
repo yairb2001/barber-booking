@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner } from "@/lib/session";
 
 export async function GET(req: NextRequest) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  // Barbers also need to read services (for the new appointment modal)
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const services = await prisma.service.findMany({ orderBy: { sortOrder: "asc" } });
   return NextResponse.json(services);
 }

@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwner } from "@/lib/session";
 
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  const staff = await prisma.staff.findUnique({
+    where: { id: params.id },
+    include: { schedules: true },
+  });
+  if (!staff) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(staff);
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwner(req);
   if (guard) return guard;

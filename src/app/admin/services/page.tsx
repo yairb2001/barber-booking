@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Service = {
@@ -82,6 +83,9 @@ export default function AdminServicesPage() {
 
   return (
     <div className="p-8 overflow-auto h-full">
+      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
+        ← הגדרות עסק
+      </Link>
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">שירותים</h1>

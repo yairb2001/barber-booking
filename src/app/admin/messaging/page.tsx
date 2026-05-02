@@ -60,8 +60,12 @@ function buildParams(staffId: string, category: FilterCategory, opts: {
 export default function MessagingPage() {
   const [tab, setTab] = useState<"send" | "history">("send");
 
+  // Auth / role
+  const [isOwner, setIsOwner] = useState(true); // optimistic
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
+
   // Audience
-  const [staffId, setStaffId] = useState("");       // "" = all
+  const [staffId, setStaffId] = useState("");       // "" = all (owner) or locked to own id (barber)
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
 
   // Filter
@@ -85,8 +89,20 @@ export default function MessagingPage() {
   const [history,    setHistory]    = useState<MessageLog[]>([]);
   const [histLoading,setHistLoading]= useState(false);
 
-  // Load staff list
+  // Load role + staff list on mount
   useEffect(() => {
+    fetch("/api/admin/me")
+      .then(r => r.ok ? r.json() : null)
+      .then(me => {
+        if (!me) return;
+        const owner = me.isOwner ?? true;
+        setIsOwner(owner);
+        if (!owner && me.staffId) {
+          setMyStaffId(me.staffId);
+          setStaffId(me.staffId); // lock to own id
+        }
+      })
+      .catch(() => {});
     fetch("/api/admin/staff").then(r => r.json()).then(setAllStaff).catch(() => {});
   }, []);
 
@@ -164,23 +180,29 @@ export default function MessagingPage() {
         <div className="space-y-4">
 
           {/* ── 1. Audience ── */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-            <h2 className="font-semibold text-neutral-800 mb-3 text-sm">👥 קהל יעד</h2>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setStaffId("")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${!staffId ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
-                כל הלקוחות
-              </button>
-              {allStaff.map(s => (
-                <button key={s.id}
-                  onClick={() => setStaffId(s.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${staffId === s.id ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
-                  ✂️ {s.name}
+          {isOwner ? (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+              <h2 className="font-semibold text-neutral-800 mb-3 text-sm">👥 קהל יעד</h2>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setStaffId("")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${!staffId ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
+                  כל הלקוחות
                 </button>
-              ))}
+                {allStaff.map(s => (
+                  <button key={s.id}
+                    onClick={() => setStaffId(s.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${staffId === s.id ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
+                    ✂️ {s.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-teal-50 border border-teal-200 rounded-2xl p-4 text-sm text-teal-700">
+              📢 ההודעות יישלחו ללקוחות שלך בלבד
+            </div>
+          )}
 
           {/* ── 2. Filter ── */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">

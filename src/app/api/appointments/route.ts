@@ -1,15 +1,33 @@
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
+import { jwtVerify } from "jose";
 
-export async function POST(request: Request) {
+const SECRET = new TextEncoder().encode(
+  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
+);
+
+async function verifyOtpToken(token: string, phone: string): Promise<boolean> {
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    if (payload.type !== "otp") return false;
+    // The phone in the token must match (after normalizing)
+    const normalizedPhone = phone.replace(/\D/g, "").replace(/^0/, "972");
+    return payload.phone === normalizedPhone;
+  } catch {
+    return false;
+  }
+}
+
+export async function POST(request: NextRequest) {
   const body = await request.json();
   const {
     staffId, serviceId, date, startTime,
     customerPhone, customerName,
     referralSource,
     referrerPhone, // phone of the friend who referred — used when referralSource === "חבר הביא חבר"
+    otpToken,      // short-lived JWT from /api/otp/verify
   } = body;
 
   if (!staffId || !serviceId || !date || !startTime || !customerPhone || !customerName) {
@@ -17,6 +35,15 @@ export async function POST(request: Request) {
       { error: "Missing required fields" },
       { status: 400 }
     );
+  }
+
+  // Verify OTP token — required for all customer-facing bookings
+  if (!otpToken) {
+    return NextResponse.json({ error: "נדרש אימות זהות — שלח קוד אימות" }, { status: 401 });
+  }
+  const tokenValid = await verifyOtpToken(otpToken, customerPhone);
+  if (!tokenValid) {
+    return NextResponse.json({ error: "קוד אימות לא תקף — בקש קוד חדש" }, { status: 401 });
   }
 
   // Get service details (with custom duration/price if exists)
