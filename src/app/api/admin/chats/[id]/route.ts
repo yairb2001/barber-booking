@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -47,11 +48,28 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const escalated = !!conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS;
 
+  // Phone-based fallback if no linked customer (e.g. agent never identified them).
+  // Customer.phone might be stored as "972..." or "0..." — try both formats.
+  let customerName = conv.customer?.name ?? null;
+  let customerId   = conv.customer?.id ?? null;
+  if (!customerName) {
+    const normalized = normalizeIsraeliPhone(conv.phone);
+    const local      = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
+    const matched = await prisma.customer.findFirst({
+      where: {
+        businessId: business.id,
+        OR: [{ phone: normalized }, { phone: local }, { phone: conv.phone }],
+      },
+      select: { id: true, name: true },
+    });
+    if (matched) { customerName = matched.name; customerId = matched.id; }
+  }
+
   return NextResponse.json({
     id: conv.id,
     phone: conv.phone,
-    customerName: conv.customer?.name ?? null,
-    customerId: conv.customer?.id ?? null,
+    customerName,
+    customerId,
     status: conv.status,
     escalated,
     escalatedAt: conv.escalatedAt,

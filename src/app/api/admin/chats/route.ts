@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -53,6 +54,18 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // Phone-based fallback: build a lookup of all customers in the business
+  // keyed by their normalized phone. Conversations without a linked customerId
+  // can still be matched to a known customer by phone.
+  const allCustomers = await prisma.customer.findMany({
+    where: { businessId: business.id },
+    select: { id: true, name: true, phone: true },
+  });
+  const phoneToCustomer = new Map<string, { id: string; name: string }>();
+  for (const c of allCustomers) {
+    phoneToCustomer.set(normalizeIsraeliPhone(c.phone), { id: c.id, name: c.name });
+  }
+
   const now = Date.now();
   const data = await Promise.all(convs.map(async (c) => {
     const last = c.messages[0];
@@ -67,10 +80,14 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Resolve customer name: linked customer first, then phone match
+    const matchedByPhone = phoneToCustomer.get(normalizeIsraeliPhone(c.phone));
+    const customerName = c.customer?.name ?? matchedByPhone?.name ?? null;
+
     return {
       id: c.id,
       phone: c.phone,
-      customerName: c.customer?.name ?? null,
+      customerName,
       status: c.status,
       escalated,
       lastMessageAt: c.lastMessageAt,
