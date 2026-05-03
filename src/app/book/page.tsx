@@ -108,7 +108,7 @@ export default function ChooseBarberPage() {
         </div>
       </div>
 
-      {/* ── Quick slots strip (jump-to-book) ── */}
+      {/* ── Quick slots strip ── */}
       {!loading && quickSlots.length > 0 && (
         <div className="px-4 pt-5 pb-1">
           <div className="flex items-center gap-2 mb-3">
@@ -117,7 +117,7 @@ export default function ChooseBarberPage() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
             </span>
             <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-              קפוץ ישירות לתור
+              התורים הקרובים
             </p>
           </div>
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
@@ -142,7 +142,7 @@ export default function ChooseBarberPage() {
           {/* Divider */}
           <div className="mt-5 mb-1 flex items-center gap-3">
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: "var(--text-muted)" }}>או בחר ספר</span>
+            <span className="text-[9px] tracking-[0.3em] uppercase" style={{ color: "#CBD5E1" }}>או בחר ספר</span>
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
           </div>
         </div>
@@ -168,17 +168,16 @@ export default function ChooseBarberPage() {
             const hasToday = slot?.dayLabel === "היום";
 
             return (
-              <Link key={member.id}
-                href={`/book/service?staffId=${member.id}`}
-                className="flex items-center gap-4 p-4 rounded-2xl active:scale-[0.99] transition-all"
+              <div key={member.id}
+                className="flex items-center gap-4 p-4 rounded-2xl"
                 style={{
                   background: "var(--card)",
                   border: "1px solid var(--divider)",
                   boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
                 }}>
 
-                {/* Avatar */}
-                <div className="relative flex-shrink-0">
+                {/* Avatar — links to service selection */}
+                <Link href={`/book/service?staffId=${member.id}`} className="relative flex-shrink-0 active:scale-95 transition-transform">
                   <div className="w-[60px] h-[60px] rounded-2xl overflow-hidden"
                     style={{ background: "var(--bg-alt)" }}>
                     {member.avatarUrl ? (
@@ -197,36 +196,43 @@ export default function ChooseBarberPage() {
                       <span className="w-3 h-3 rounded-full animate-pulse" style={{ background: "#22c55e" }} />
                     </span>
                   )}
-                </div>
+                </Link>
 
-                {/* Info */}
-                <div className="flex-1 min-w-0">
+                {/* Info — links to service selection */}
+                <Link href={`/book/service?staffId=${member.id}`} className="flex-1 min-w-0 active:opacity-80 transition-opacity">
                   <p className="font-semibold text-[15px] leading-tight" style={{ color: "var(--text-pri)" }}>
                     {member.name}
                   </p>
                   {member.nickname && (
                     <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{member.nickname}</p>
                   )}
-                  {slot ? (
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-                        style={{ background: "var(--brand)", color: "#000" }}>
-                        ⚡ {slot.dayLabel === "היום" ? "היום" : slot.dayLabel} {slot.time}
-                      </span>
-                    </div>
-                  ) : (
+                  {!slot && (
                     <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>
                       לחץ לבחירת שירות
                     </p>
                   )}
-                </div>
+                </Link>
 
-                {/* Arrow */}
-                <svg className="w-5 h-5 flex-shrink-0 rotate-180" fill="none" viewBox="0 0 24 24"
-                  stroke="currentColor" strokeWidth={1.8} style={{ color: "var(--text-muted)" }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+                {/* Slot badge — direct link to confirm */}
+                {slot ? (
+                  <Link
+                    href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                    className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-2xl active:scale-95 transition-transform text-center"
+                    style={{ background: "var(--brand)", minWidth: 72 }}
+                    onClick={e => e.stopPropagation()}>
+                    <span className="text-[15px] font-bold tracking-widest text-white leading-none" dir="ltr">{slot.time}</span>
+                    <span className="text-[9px] font-semibold text-white/80 tracking-wide">{slot.dayLabel} ⚡</span>
+                  </Link>
+                ) : (
+                  /* Arrow — browse services */
+                  <Link href={`/book/service?staffId=${member.id}`} className="flex-shrink-0 active:scale-95 transition-transform">
+                    <svg className="w-5 h-5 rotate-180" fill="none" viewBox="0 0 24 24"
+                      stroke="currentColor" strokeWidth={1.8} style={{ color: "var(--text-muted)" }}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                  </Link>
+                )}
+              </div>
             );
           })
         )}
