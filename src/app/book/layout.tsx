@@ -14,22 +14,29 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
       .catch(() => {});
   }, []);
 
+  // Keep only the brand color from the theme.
+  // Everything else (bg, text, font) is forced to the same clean slate palette
+  // the admin uses — so the booking flow looks consistent and professional.
   const cssVars = `
     :root {
-      --brand:        ${theme.brand};
-      --brand-soft:   ${theme.brandSoft};
-      --bg:           ${theme.bg};
-      --bg-alt:       ${theme.bgAlt};
-      --card:         ${theme.card};
-      --text-pri:     ${theme.textPri};
-      --text-sec:     ${theme.textSec};
-      --text-muted:   ${theme.textMuted};
-      --divider:      ${theme.divider};
-      --header-bg:    ${theme.headerBg};
-      --font-display: ${theme.fontDisplay};
-      --font-body:    ${theme.fontBody};
+      --brand:       ${theme.brand};
+      --brand-soft:  ${theme.brandSoft};
+      --bg:          #F8FAFC;
+      --bg-alt:      #F1F5F9;
+      --card:        #FFFFFF;
+      --text-pri:    #0F172A;
+      --text-sec:    #475569;
+      --text-muted:  #94A3B8;
+      --divider:     #E2E8F0;
+      --header-bg:   rgba(248,250,252,0.97);
     }
-    body { font-family: var(--font-body); background: var(--bg); color: var(--text-pri); }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: var(--font-heebo), system-ui, -apple-system, sans-serif;
+      background: #F8FAFC;
+      color: #0F172A;
+      -webkit-font-smoothing: antialiased;
+    }
   `;
 
   return (
