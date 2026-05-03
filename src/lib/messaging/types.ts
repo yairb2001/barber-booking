@@ -20,7 +20,11 @@ export type MessageKind =
   // Drag-to-move follow-up
   | "appointment_moved"  // sent to a customer when their appointment is moved by admin
   // Delay notifications
-  | "delay_notification"; // sent to a customer when the barber is running late
+  | "delay_notification" // sent to a customer when the barber is running late
+  // Internal business reports (sent to manager/staff, not customers)
+  | "report_daily"
+  | "report_weekly"
+  | "report_monthly";
 
 export type MessageStatus =
   | "queued"

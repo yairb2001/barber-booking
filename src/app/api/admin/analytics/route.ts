@@ -10,14 +10,19 @@
  * Revenue = all non-cancelled appointments (price known at booking time).
  *
  * Definitions:
- *   newCustomer       — first active appointment (at business / at barber) is in the period
+ *   newToBusiness     — customer's first ever active appointment in the business is in the period
+ *   newToStaff        — customer's first ever active appointment WITH the filtered staff is in the period
+ *                       (only meaningful when staffId is set; otherwise = newToBusiness)
  *   prevMonthCohort   — new customers in the previous calendar month; how many came back in [from,to]
  *   activityBreakdown — all-time customers split by visit count: oneTime / active(2+) / regular(3+)
  *   returnRate        — rolling cohort: customers whose first visit was in last N days; % came back
+ *   today*            — same-day metrics (UTC day, matching how dates are stored)
+ *   occupancy*        — % of available staff hours that were booked
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
+import { computeOccupancy } from "@/lib/analytics/occupancy";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +52,11 @@ export async function GET(req: NextRequest) {
   const toDate   = new Date(toStr   + "T23:59:59.999Z");
   const sf       = effectiveStaffId ? { staffId: effectiveStaffId } : {};
   const cancelledArr = Array.from(CANCELLED);
+
+  // Today range (UTC day — matches how Appointment.date is stored)
+  const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
+  const todayEnd   = new Date(); todayEnd.setUTCHours(23, 59, 59, 999);
+  const last24h    = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Previous calendar month (relative to [from])
   const prevMonthEnd   = new Date(fromDate); prevMonthEnd.setUTCDate(0); prevMonthEnd.setUTCHours(23, 59, 59, 999);
@@ -91,10 +101,43 @@ export async function GET(req: NextRequest) {
     dailyRevenue.push({ date: d, ...(dailyMap.get(d) ?? { revenue: 0, count: 0 }) });
   }
 
+  // ── Today metrics (independent of from/to filter) ────────────────────────────
+  const todayAppts = await prisma.appointment.findMany({
+    where: {
+      businessId: bizId,
+      date: { gte: todayStart, lte: todayEnd },
+      status: { notIn: cancelledArr },
+      ...sf,
+    },
+    select: { id: true, customerId: true, price: true },
+  });
+  const todayAppointments = todayAppts.length;
+  const todayRevenue = todayAppts.reduce((s, a) => s + a.price, 0);
+
+  // bookingsCreatedToday — appointments BOOKED in last 24h (regardless of when the appt is)
+  const bookingsCreatedToday = await prisma.appointment.count({
+    where: {
+      businessId: bizId,
+      createdAt: { gte: last24h },
+      status: { notIn: cancelledArr },
+      ...sf,
+    },
+  });
+
   if (periodCustIds.length === 0) {
+    // Even with empty period, return today metrics + occupancy
+    const [occToday, occMonth] = await Promise.all([
+      computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
+      computeOccupancy({ businessId: bizId, from: fromDate,   to: toDate,   staffId: effectiveStaffId }),
+    ]);
     return NextResponse.json({
       totalRevenue, totalAppointments,
-      newCustomers: 0, newBySource: [],
+      newCustomers: 0,           // legacy alias
+      newToBusiness: 0,
+      newToStaff: 0,
+      newBySource: [],
+      todayAppointments, todayRevenue, todayNewToBusiness: 0, bookingsCreatedToday,
+      occupancyToday: occToday.pct, occupancyMonth: occMonth.pct,
       prevMonthCohort: { newInPrevMonth: 0, returnedThisMonth: 0, rate: 0 },
       activityBreakdown: { total: 0, oneTime: 0, active: 0, regulars: 0 },
       returnRate: { windowDays: returnWindowDays, cohortSize: 0, returned: 0, rate: 0 },
@@ -102,38 +145,76 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // ── 2. All-time history for period customers (to classify new vs returning) ──
-  const allHistory = await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: periodCustIds }, ...sf },
-    select: { customerId: true, date: true },
+  // ── 2. All-time history for period customers ────────────────────────────────
+  // We need TWO views per customer:
+  //   (a) global  — all appointments across all staff (for newToBusiness)
+  //   (b) staff   — only appointments with the filtered staff (for newToStaff)
+  // (a) is always loaded; (b) is the same set when no staff filter, otherwise filtered.
+  const globalHistory = await prisma.appointment.findMany({
+    where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: periodCustIds } },
+    select: { customerId: true, staffId: true, date: true },
   });
 
-  const custDates = new Map<string, Date[]>();
-  for (const a of allHistory) {
-    const arr = custDates.get(a.customerId) ?? [];
-    arr.push(new Date(a.date));
-    custDates.set(a.customerId, arr);
+  const globalDates = new Map<string, Date[]>();   // customer → ALL their dates
+  const staffDates  = new Map<string, Date[]>();   // customer → dates with effectiveStaffId only
+  for (const a of globalHistory) {
+    const d = new Date(a.date);
+    const ga = globalDates.get(a.customerId) ?? [];
+    ga.push(d);
+    globalDates.set(a.customerId, ga);
+
+    if (!effectiveStaffId || a.staffId === effectiveStaffId) {
+      const sa = staffDates.get(a.customerId) ?? [];
+      sa.push(d);
+      staffDates.set(a.customerId, sa);
+    }
   }
-  custDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
+  globalDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
+  staffDates.forEach(arr  => arr.sort((a, b) => a.getTime() - b.getTime()));
 
   // ── 3. Classify: new customer + source ───────────────────────────────────────
-  let newCount = 0;
+  let newToBusiness = 0;
+  let newToStaff = 0;
   const newBySrc      = new Map<string, number>();
   const returnedBySrc = new Map<string, number>();
 
   for (const [custId, { referralSource }] of Array.from(periodCustMap.entries())) {
-    const dates = custDates.get(custId) ?? [];
-    if (!dates.length) continue;
+    const gDates = globalDates.get(custId) ?? [];
+    const sDates = staffDates.get(custId) ?? [];
     const src = referralSource || "לא צוין";
 
-    if (dates[0] >= fromDate && dates[0] <= toDate) {
-      // New this period — first ever visit is within the period
-      newCount++;
+    const isNewToBusiness = gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate;
+    const isNewToStaff    = sDates[0] && sDates[0] >= fromDate && sDates[0] <= toDate;
+
+    if (isNewToBusiness) newToBusiness++;
+    if (isNewToStaff)    newToStaff++;
+
+    // Source breakdown follows the staff-scoped definition (matches existing UI semantics)
+    if (isNewToStaff) {
       newBySrc.set(src, (newBySrc.get(src) ?? 0) + 1);
     } else {
-      // Returning customer — first visit was before this period, came back now
-      // Counts all returning visits (2nd, 3rd, 4th...) not just the 2nd
       returnedBySrc.set(src, (returnedBySrc.get(src) ?? 0) + 1);
+    }
+  }
+
+  // todayNewToBusiness — of today's customers, how many are new to the business overall
+  const todayCustIds = Array.from(new Set(todayAppts.map(a => a.customerId)));
+  let todayNewToBusiness = 0;
+  if (todayCustIds.length > 0) {
+    const todayHistory = await prisma.appointment.findMany({
+      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: todayCustIds } },
+      select: { customerId: true, date: true },
+    });
+    const tDates = new Map<string, Date[]>();
+    for (const a of todayHistory) {
+      const arr = tDates.get(a.customerId) ?? [];
+      arr.push(new Date(a.date));
+      tDates.set(a.customerId, arr);
+    }
+    tDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
+    for (const cid of todayCustIds) {
+      const d0 = tDates.get(cid)?.[0];
+      if (d0 && d0 >= todayStart && d0 <= todayEnd) todayNewToBusiness++;
     }
   }
 
@@ -152,7 +233,6 @@ export async function GET(req: NextRequest) {
 
   let prevMonthCohort = { newInPrevMonth: 0, returnedThisMonth: 0, rate: 0 };
   if (prevCustIds.length > 0) {
-    // Find which of those were new last month (first visit was last month)
     const prevHistory = await prisma.appointment.findMany({
       where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: prevCustIds }, ...sf },
       select: { customerId: true, date: true },
@@ -220,7 +300,13 @@ export async function GET(req: NextRequest) {
   }
 
   // ── 7. Per-barber summary (only when no staff filter) ─────────────────────
-  type StaffRow = { staffId: string; name: string; revenue: number; appointments: number; newCustomers: number; secondVisit: number };
+  type StaffRow = {
+    staffId: string; name: string;
+    revenue: number; appointments: number;
+    newToStaff: number;          // customer's first visit WITH this staff is in period
+    newAlsoToBusiness: number;   // of newToStaff, also customer's first visit ANYWHERE is in period
+    secondVisit: number;
+  };
   const staffSummary: StaffRow[] = [];
 
   if (!effectiveStaffId) {
@@ -233,6 +319,8 @@ export async function GET(req: NextRequest) {
     for (const [sid, { name, appts }] of Array.from(bySt.entries())) {
       const stRev   = appts.reduce((s: number, a: { price: number }) => s + a.price, 0);
       const stCusts = Array.from(new Set(appts.map(a => a.customerId)));
+
+      // Per-staff history (with this staff only) for newToStaff + secondVisit
       const stHist  = await prisma.appointment.findMany({
         where: { businessId: bizId, status: { notIn: cancelledArr }, staffId: sid, customerId: { in: stCusts } },
         select: { customerId: true, date: true },
@@ -245,22 +333,60 @@ export async function GET(req: NextRequest) {
       }
       stDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
 
-      let stNew = 0, stSec = 0;
+      // Global history for these same customers, to compute newAlsoToBusiness
+      const stGlobalHist = await prisma.appointment.findMany({
+        where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: stCusts } },
+        select: { customerId: true, date: true },
+      });
+      const stGlobalDates = new Map<string, Date[]>();
+      for (const a of stGlobalHist) {
+        const arr = stGlobalDates.get(a.customerId) ?? [];
+        arr.push(new Date(a.date));
+        stGlobalDates.set(a.customerId, arr);
+      }
+      stGlobalDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
+
+      let stNew = 0, stSec = 0, stNewAlsoBiz = 0;
       for (const custId of stCusts) {
         const dates = stDates.get(custId) ?? [];
-        if (dates[0] && dates[0] >= fromDate && dates[0] <= toDate) stNew++;
+        const gDates = stGlobalDates.get(custId) ?? [];
+        if (dates[0] && dates[0] >= fromDate && dates[0] <= toDate) {
+          stNew++;
+          if (gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate) stNewAlsoBiz++;
+        }
         if (dates[1] && dates[1] >= fromDate && dates[1] <= toDate) stSec++;
       }
-      staffSummary.push({ staffId: sid, name, revenue: stRev, appointments: appts.length, newCustomers: stNew, secondVisit: stSec });
+      staffSummary.push({
+        staffId: sid, name,
+        revenue: stRev, appointments: appts.length,
+        newToStaff: stNew, newAlsoToBusiness: stNewAlsoBiz,
+        secondVisit: stSec,
+      });
     }
     staffSummary.sort((a, b) => b.revenue - a.revenue);
   }
 
+  // ── 8. Occupancy (today + period) ────────────────────────────────────────────
+  const [occToday, occMonth] = await Promise.all([
+    computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
+    computeOccupancy({ businessId: bizId, from: fromDate,   to: toDate,   staffId: effectiveStaffId }),
+  ]);
+
   return NextResponse.json({
     totalRevenue,
     totalAppointments,
-    newCustomers: newCount,
+    // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.
+    newCustomers: effectiveStaffId ? newToStaff : newToBusiness,
+    newToBusiness,
+    newToStaff,
     newBySource,
+    // Today metrics
+    todayAppointments,
+    todayRevenue,
+    todayNewToBusiness,
+    bookingsCreatedToday,
+    occupancyToday: occToday.pct,
+    occupancyMonth: occMonth.pct,
     prevMonthCohort,
     activityBreakdown,
     returnRate: {

@@ -3,6 +3,18 @@
     {
       "path": "/api/cron/reminders",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/report-daily",
+      "schedule": "0 19 * * 0-5"
+    },
+    {
+      "path": "/api/cron/report-weekly",
+      "schedule": "0 6 * * 0"
+    },
+    {
+      "path": "/api/cron/report-monthly",
+      "schedule": "0 6 1 * *"
     }
   ]
 }

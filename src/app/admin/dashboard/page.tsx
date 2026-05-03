@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -10,7 +11,16 @@ type SourceRow = { source: string; new: number; returned: number };
 type Analytics = {
   totalRevenue:         number;
   totalAppointments:    number;
-  newCustomers:         number;
+  newCustomers:         number;          // legacy alias
+  newToBusiness:        number;
+  newToStaff:           number;
+  // Today metrics
+  todayAppointments:    number;
+  todayRevenue:         number;
+  todayNewToBusiness:   number;
+  bookingsCreatedToday: number;
+  occupancyToday:       number;
+  occupancyMonth:       number;
   dailyRevenue:         { date: string; revenue: number; count: number }[];
   newBySource:          SourceRow[];
   prevMonthCohort: {
@@ -31,12 +41,13 @@ type Analytics = {
     rate:        number;
   };
   staffSummary: {
-    staffId:      string;
-    name:         string;
-    revenue:      number;
-    appointments: number;
-    newCustomers: number;
-    secondVisit:  number;
+    staffId:           string;
+    name:              string;
+    revenue:           number;
+    appointments:      number;
+    newToStaff:        number;
+    newAlsoToBusiness: number;
+    secondVisit:       number;
   }[];
 };
 
@@ -63,6 +74,22 @@ function StatCard({ label, value, sub, color = "text-neutral-900", badge }: {
       </div>
       <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+// ── MiniStat (for the "Today" strip — more compact) ──────────────────────────
+function MiniStat({ icon, label, value, sub, accent }: {
+  icon: string; label: string; value: string | number; sub?: string; accent?: string;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 flex items-center gap-3 min-w-0">
+      <div className={`text-2xl shrink-0 ${accent ?? ""}`}>{icon}</div>
+      <div className="min-w-0">
+        <p className="text-[10px] text-neutral-500 uppercase tracking-wider truncate">{label}</p>
+        <p className="text-lg font-bold text-neutral-900 leading-tight">{value}</p>
+        {sub && <p className="text-[10px] text-neutral-400 truncate">{sub}</p>}
+      </div>
     </div>
   );
 }
@@ -330,8 +357,11 @@ function BarberCard({ row, selected, onClick }: {
           <p className="text-lg font-bold text-neutral-800">{row.appointments}</p>
         </div>
         <div>
-          <p className="text-[10px] text-neutral-400 uppercase">לקוחות חדשים</p>
-          <p className="text-lg font-bold text-teal-600">{row.newCustomers}</p>
+          <p className="text-[10px] text-neutral-400 uppercase">חדשים אצלו</p>
+          <p className="text-lg font-bold text-teal-600">{row.newToStaff}</p>
+          {row.newAlsoToBusiness > 0 && (
+            <p className="text-[10px] text-emerald-600 mt-0.5">{row.newAlsoToBusiness} גם חדשים לעסק</p>
+          )}
         </div>
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">ביקור שני</p>
@@ -386,6 +416,7 @@ export default function Dashboard() {
   }
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
   const isOwner = me?.isOwner ?? false;
+  const isStaffScoped = !!selStaff || (!isOwner && !!me?.staffId);
 
   const heading = selStaff
     ? `דשבורד — ${allStaff.find(s => s.id === selStaff)?.name ?? ""}`
@@ -416,25 +447,64 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Barber filter chips */}
-      {isOwner && allStaff.length > 0 && (
-        <div className="flex gap-2 flex-wrap">
-          <button onClick={() => setSelStaff(null)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-              !selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
-            }`}>
-            כל הספרים
-          </button>
-          {allStaff.map(s => (
-            <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-                selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
-              }`}>
-              {s.name}
-            </button>
-          ))}
+      {/* ── Today strip ─────────────────────────────────────────────────────── */}
+      {a && (
+        <div>
+          <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ היום</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <MiniStat
+              icon="👥"
+              label="לקוחות היום"
+              value={a.todayAppointments}
+              sub={a.todayNewToBusiness > 0 ? `${a.todayNewToBusiness} חדשים למספרה` : undefined}
+            />
+            <MiniStat
+              icon="💰"
+              label="מחזור היום"
+              value={`₪${a.todayRevenue.toLocaleString("he-IL")}`}
+            />
+            <MiniStat
+              icon="📈"
+              label="תפוסה היום"
+              value={`${a.occupancyToday}%`}
+            />
+            <MiniStat
+              icon="📅"
+              label="נקבעו ב-24 שעות"
+              value={a.bookingsCreatedToday}
+              sub="כל התורים שנוצרו היום"
+            />
+          </div>
         </div>
       )}
+
+      {/* Barber filter chips + insights button */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        {isOwner && allStaff.length > 0 ? (
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={() => setSelStaff(null)}
+              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                !selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+              }`}>
+              כל הספרים
+            </button>
+            {allStaff.map(s => (
+              <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                  selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+                }`}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        ) : <span />}
+        <Link
+          href="/admin/dashboard/insights"
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
+        >
+          🔍 ניתוח מעמיק
+        </Link>
+      </div>
 
       {loading ? (
         <div className="text-center py-20 text-neutral-400">טוען נתונים...</div>
@@ -442,7 +512,7 @@ export default function Dashboard() {
         <div className="text-center py-20 text-red-400 text-sm">שגיאה בטעינת הנתונים</div>
       ) : (
         <>
-          {/* Stat cards */}
+          {/* Stat cards (monthly) */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard
               label="הכנסה חודשית"
@@ -450,12 +520,13 @@ export default function Dashboard() {
               color="text-slate-800"
               sub={a.totalAppointments > 0 ? `ממוצע ₪${Math.round(a.totalRevenue / a.totalAppointments)} לתור` : undefined}
             />
-            <StatCard label="תורים החודש" value={a.totalAppointments} color="text-neutral-900" />
+            <StatCard label="תורים החודש" value={a.totalAppointments} color="text-neutral-900" sub={`תפוסה ${a.occupancyMonth}%`} />
             <StatCard
-              label="לקוחות חדשים"
-              value={a.newCustomers}
+              label={isStaffScoped ? "חדשים לעסק" : "לקוחות חדשים"}
+              value={a.newToBusiness}
               color="text-teal-600"
-              badge={selStaff ? "אצל הספר" : "בעסק"}
+              sub={isStaffScoped ? `מתוכם חדשים אצלך: ${a.newToStaff}` : undefined}
+              badge={isStaffScoped ? undefined : "כל המספרה"}
             />
             <StatCard label="לקוחות חוזרים" value={secondVisitCustomers} color="text-emerald-600" sub="ביקרו שוב החודש" />
           </div>
