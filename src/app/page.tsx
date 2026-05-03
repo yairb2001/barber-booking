@@ -500,21 +500,16 @@ export default function HomePage() {
           ALL SECTIONS BELOW HERO — clean white/slate design, Heebo font
       ══════════════════════════════════════════════════════════════════════════ */}
 
-      {/* ── Portfolio Focus Carousel — FIRST below hero ── */}
-      {!loading && portfolioWorks.length > 0 && (
+      {/* ── Stories as focus carousel — "העבודות שלנו" ── */}
+      {!loading && stories.length > 0 && (
         <section className="bg-white py-10 border-b border-slate-100">
           <SecLabel label="העבודות שלנו" sub="בחר סגנון"
             action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
           />
-          <PortfolioCarousel works={portfolioWorks} brand={brand} />
-        </section>
-      )}
-
-      {/* ── Stories ── */}
-      {!loading && stories.length > 0 && (
-        <section className="bg-white border-b border-slate-100 pt-5 pb-2">
-          <p className="text-[10px] font-bold tracking-[0.3em] uppercase px-5 mb-3" style={{ color: brand }}>Stories</p>
-          <StoriesCarousel stories={stories} />
+          <PortfolioCarousel
+            works={stories.map(s => ({ imageUrl: s.mediaUrl, staffName: s.caption || "", staffAvatar: null }))}
+            brand={brand}
+          />
         </section>
       )}
 
