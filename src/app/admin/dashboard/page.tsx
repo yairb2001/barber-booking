@@ -381,6 +381,7 @@ export default function Dashboard() {
   const [viewMonth,  setViewMonth]  = useState(now.getMonth());
   const [selStaff,   setSelStaff]   = useState<string | null>(null);
   const [windowDays, setWindowDays] = useState(90);
+  const [returnPeriod, setReturnPeriod] = useState<90 | 365>(90);
   const [analytics,  setAnalytics]  = useState<Analytics | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [me,         setMe]         = useState<Me | null>(null);
@@ -398,13 +399,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ from, to, returnWindowDays: String(windowDays) });
+    const params = new URLSearchParams({ from, to, returnWindowDays: String(returnPeriod) });
     if (selStaff) params.set("staffId", selStaff);
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, windowDays]);
+  }, [from, to, selStaff, returnPeriod]);
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -423,8 +424,9 @@ export default function Dashboard() {
     : (me && !isOwner && me.staff) ? `הדשבורד שלי — ${me.staff.name}` : "דשבורד";
 
   const a = analytics;
-  // Derive second-visit total from per-source returned counts (API no longer returns this as a scalar)
-  const secondVisitCustomers = a ? a.newBySource.reduce((s, r) => s + r.returned, 0) : 0;
+  // Second-visit customers: those who returned within the selected returnPeriod window
+  // returnRate.returned is already scoped to windowDays (returnWindowDays param)
+  const secondVisitCustomers = a ? a.returnRate.returned : 0;
 
   return (
     <div className="p-6 overflow-auto h-full space-y-6 max-w-5xl">
@@ -498,12 +500,20 @@ export default function Dashboard() {
             ))}
           </div>
         ) : <span />}
-        <Link
-          href="/admin/dashboard/insights"
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
-        >
-          🔍 ניתוח מעמיק
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/dashboard/marketing"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 transition"
+          >
+            📊 שיווק מעמיק
+          </Link>
+          <Link
+            href="/admin/dashboard/insights"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
+          >
+            🔍 ניתוח
+          </Link>
+        </div>
       </div>
 
       {loading ? (
@@ -528,7 +538,18 @@ export default function Dashboard() {
               sub={isStaffScoped ? `מתוכם חדשים אצלך: ${a.newToStaff}` : undefined}
               badge={isStaffScoped ? undefined : "כל המספרה"}
             />
-            <StatCard label="לקוחות חוזרים" value={secondVisitCustomers} color="text-emerald-600" sub="ביקרו שוב החודש" />
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-col gap-1">
+              <p className="text-xs text-neutral-400 font-medium">ביקור שני</p>
+              <p className="text-2xl font-bold text-emerald-600">{secondVisitCustomers}</p>
+              <div className="flex gap-1 mt-1">
+                {([90, 365] as const).map(d => (
+                  <button key={d} onClick={() => setReturnPeriod(d)}
+                    className={`flex-1 text-[10px] py-0.5 rounded-md font-semibold transition ${returnPeriod === d ? "bg-emerald-600 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}>
+                    {d === 90 ? "90 יום" : "שנה"}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Marketing */}

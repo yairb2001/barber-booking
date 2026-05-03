@@ -136,11 +136,33 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 }
 
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
-function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
+function WorkingOverlay({ staff, dow, override }: {
+  staff: Staff;
+  dow: number;
+  override?: { isWorking: boolean; slots: string | null; breaks: string | null } | null;
+}) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
-  const working = getWorkingRanges(staff, dow);
-  const breaks = getBreakRanges(staff, dow);
+
+  let working: { start: number; end: number }[];
+  let breakRanges: { start: number; end: number }[];
+
+  if (override) {
+    // Use date-specific override
+    if (!override.isWorking) {
+      return <div className="absolute inset-0 bg-red-50/60 pointer-events-none flex items-center justify-center">
+        <span className="text-red-400 text-[10px] font-bold tracking-wide rotate-[-15deg] select-none opacity-80">🔒 סגור</span>
+      </div>;
+    }
+    try { working = override.slots ? JSON.parse(override.slots).map((sl: { start: string; end: string }) => ({ start: toMin(sl.start), end: toMin(sl.end) })) : []; }
+    catch { working = []; }
+    try { breakRanges = override.breaks ? JSON.parse(override.breaks).map((b: { start: string; end: string }) => ({ start: toMin(b.start), end: toMin(b.end) })) : []; }
+    catch { breakRanges = []; }
+  } else {
+    working = getWorkingRanges(staff, dow);
+    breakRanges = getBreakRanges(staff, dow);
+  }
+
   const dayStartMin = calStart * 60;
   const dayEndMin = calEnd * 60;
   if (working.length === 0) {
@@ -155,7 +177,7 @@ function WorkingOverlay({ staff, dow }: { staff: Staff; dow: number }) {
     cursor = w.end;
   }
   if (cursor < dayEndMin) segments.push({ start: cursor, end: dayEndMin, type: "closed" });
-  for (const b of breaks) segments.push({ start: b.start, end: b.end, type: "break" });
+  for (const b of breakRanges) segments.push({ start: b.start, end: b.end, type: "break" });
 
   return (
     <>
@@ -1265,57 +1287,82 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   const [breaks, setBreaks] = useState<{ start: string; end: string }[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
 
   useEffect(() => {
-    // Load existing override/schedule
-    fetch("/api/admin/staff").then(r => r.json()).then(allStaff => {
-      const s = allStaff.find((x: {id:string}) => x.id === staffId);
-      const dow = new Date(date + "T00:00:00").getDay();
-      const sched = s?.schedules?.find((sc: {dayOfWeek: number}) => sc.dayOfWeek === dow);
-      if (sched) {
-        const slots = JSON.parse(sched.slots || "[]");
-        setHours({ isWorking: sched.isWorking, start: slots[0]?.start || "09:00", end: slots[0]?.end || "20:00" });
-        setBreaks(sched.breaks ? JSON.parse(sched.breaks) : []);
+    // First check for a date-specific override, then fall back to weekly schedule
+    Promise.all([
+      fetch(`/api/admin/staff/${staffId}/schedule/override?date=${date}`).then(r => r.json()),
+      fetch("/api/admin/staff").then(r => r.json()),
+    ]).then(([override, allStaff]) => {
+      if (override && override.staffId) {
+        // Date-specific override exists — use it
+        const slots = override.slots ? JSON.parse(override.slots) : [];
+        setHours({
+          isWorking: override.isWorking,
+          start: slots[0]?.start || "09:00",
+          end: slots[0]?.end || "20:00",
+        });
+        setBreaks(override.breaks ? JSON.parse(override.breaks) : []);
+      } else {
+        // No override — fall back to weekly recurring schedule
+        const s = allStaff.find((x: {id:string}) => x.id === staffId);
+        const dow = new Date(date + "T00:00:00").getDay();
+        const sched = s?.schedules?.find((sc: {dayOfWeek: number}) => sc.dayOfWeek === dow);
+        if (sched) {
+          const slots = JSON.parse(sched.slots || "[]");
+          setHours({ isWorking: sched.isWorking, start: slots[0]?.start || "09:00", end: slots[0]?.end || "20:00" });
+          setBreaks(sched.breaks ? JSON.parse(sched.breaks) : []);
+        }
       }
-    });
+    }).catch(() => {});
     fetch(`/api/admin/waitlist?date=${date}&staffId=${staffId}`).then(r => r.json()).then(setWaitlist).catch(() => {});
     fetch("/api/admin/services").then(r => r.json()).then(setServices).catch(() => {});
   }, [date, staffId]);
 
-  async function saveHours() {
+  async function doSave(body: object) {
     setSaving(true);
-    await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks }),
-    });
-    setSaving(false); onRefresh(); onClose();
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(errText || `HTTP ${res.status}`);
+      }
+      setSaved(true);
+      onRefresh();
+      setTimeout(() => { setSaved(false); onClose(); }, 800);
+    } catch (e) {
+      setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveHours() {
+    await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks });
   }
 
   async function closeDay() {
-    setSaving(true);
-    await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, isWorking: false }),
-    });
-    setSaving(false); onRefresh(); onClose();
+    setHours(p => ({ ...p, isWorking: false }));
+    await doSave({ date, isWorking: false });
   }
 
   async function removeBreak(idx: number) {
     const newBreaks = breaks.filter((_, i) => i !== idx);
     setBreaks(newBreaks);
-    await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: newBreaks }),
-    });
-    onRefresh();
+    await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: newBreaks });
   }
 
-  async function addBreak() {
-    const newBreak = { start: "13:00", end: "13:30" };
-    const newBreaks = [...breaks, newBreak];
-    setBreaks(newBreaks);
+  function addBreak() {
+    setBreaks(prev => [...prev, { start: "13:00", end: "14:00" }]);
   }
 
   async function addToWaitlist() {
@@ -1387,12 +1434,18 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                   </div>
                 </div>
               )}
+              {saveError && (
+                <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 border border-red-200">{saveError}</p>
+              )}
+              {saved && (
+                <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200 font-semibold text-center">✓ נשמר!</p>
+              )}
               <div className="flex gap-2">
-                <button onClick={saveHours} disabled={saving}
+                <button onClick={saveHours} disabled={saving || saved}
                   className="flex-1 bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   {saving ? "שומר..." : "שמור"}
                 </button>
-                <button onClick={closeDay} disabled={saving}
+                <button onClick={closeDay} disabled={saving || saved}
                   className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-medium disabled:opacity-50">
                   🔒 סגור יום
                 </button>
@@ -1421,12 +1474,12 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                 className="w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-2 rounded-xl text-sm hover:border-slate-300 hover:text-slate-800 transition">
                 + הוסף הפסקה
               </button>
-              {breaks.length > 0 && (
-                <button onClick={saveHours} disabled={saving}
-                  className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                  {saving ? "שומר..." : "שמור הפסקות"}
-                </button>
-              )}
+              {saveError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 border border-red-200">{saveError}</p>}
+              {saved && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200 font-semibold text-center">✓ נשמר!</p>}
+              <button onClick={saveHours} disabled={saving || saved}
+                className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {saving ? "שומר..." : "שמור הפסקות"}
+              </button>
             </div>
           )}
 
@@ -1701,6 +1754,8 @@ export default function AdminCalendar() {
   const [calStart, setCalStart] = useState(DAY_START);
   const [calEnd, setCalEnd] = useState(DAY_END);
   const [appointments, setAppointments] = useState<Appt[]>([]);
+  // Override map: keyed by `${staffId}|YYYY-MM-DD`
+  const [overrideMap, setOverrideMap] = useState<Record<string, { isWorking: boolean; slots: string | null; breaks: string | null }>>({});
   const [loading, setLoading] = useState(true);
   const [showFilter, setShowFilter] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null);
@@ -1955,8 +2010,21 @@ export default function AdminCalendar() {
     if (!allStaff.length) return;
     setLoading(true);
     const dates = getDates();
-    const results = await Promise.all(dates.map(d => fetch(`/api/admin/appointments?date=${d}`).then(r => r.json())));
-    setAppointments(results.flat());
+    const startDate = dates[0];
+    const endDate   = dates[dates.length - 1];
+    const [apptResults, overridesRaw] = await Promise.all([
+      Promise.all(dates.map(d => fetch(`/api/admin/appointments?date=${d}`).then(r => r.json()))),
+      fetch(`/api/admin/schedule-overrides?startDate=${startDate}&endDate=${endDate}`)
+        .then(r => r.ok ? r.json() : [])
+        .catch(() => []),
+    ]);
+    setAppointments(apptResults.flat());
+    // Build override map keyed by `${staffId}|YYYY-MM-DD`
+    const map: Record<string, { isWorking: boolean; slots: string | null; breaks: string | null }> = {};
+    for (const ov of (overridesRaw as Array<{ staffId: string; date: string; isWorking: boolean; slots: string | null; breaks: string | null }>)) {
+      map[`${ov.staffId}|${ov.date}`] = { isWorking: ov.isWorking, slots: ov.slots, breaks: ov.breaks };
+    }
+    setOverrideMap(map);
     // Reload swap proposals (open ones across the whole business — small list, OK to load all)
     fetch("/api/admin/swap-proposals?status=open")
       .then(r => r.ok ? r.json() : [])
@@ -2385,16 +2453,25 @@ export default function AdminCalendar() {
                     {s.name[0]}
                   </div>
                   <span className="text-xs text-neutral-700 mt-1 font-medium truncate px-1">{s.name}</span>
+                  <button
+                    onClick={() => setDayMenu({ date, staffId: s.id })}
+                    title="עריכת שעות יום"
+                    className="mt-1 text-[10px] text-neutral-400 hover:text-teal-600 px-1.5 py-0.5 rounded hover:bg-teal-50 transition-colors">
+                    ⚙ שעות
+                  </button>
                 </div>
               ))
               : dates.map(d => {
                 const isToday = d === todayISO();
                 const staffForDay = weekStaff;
+                const weekOverride = staffForDay ? overrideMap[`${staffForDay.id}|${d}`] : undefined;
+                const isDayClosed = weekOverride ? !weekOverride.isWorking : false;
                 return (
-                  <div key={d} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative"
-                    onClick={() => setDayMenu({ date: d, staffId: staffForDay?.id || "" })}>
-                    <span className={`text-xs font-semibold ${isToday ? "text-teal-700" : "text-neutral-500"}`}>{fmtShort(d)}</span>
-                    {isToday && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 mt-0.5" />}
+                  <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : ""}`}
+                    onClick={() => staffForDay && setDayMenu({ date: d, staffId: staffForDay.id })}>
+                    <span className={`text-xs font-semibold ${isToday ? "text-teal-700" : isDayClosed ? "text-red-400" : "text-neutral-500"}`}>{fmtShort(d)}</span>
+                    {isDayClosed && <span className="text-[9px] text-red-400">🔒</span>}
+                    {!isDayClosed && isToday && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 mt-0.5" />}
                     {waitlistCounts[d] > 0 && (
                       <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                         {waitlistCounts[d]}
@@ -2444,7 +2521,7 @@ export default function AdminCalendar() {
                         onPointerMove={e => handlePointerMove(e, s.id, date)}
                         onPointerUp={e => handlePointerUp(e, s.id, date)}
                         onPointerCancel={() => setDrag(null)}>
-                        <WorkingOverlay staff={s} dow={dayOfWeek(date)} />
+                        <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]} />
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
@@ -2526,7 +2603,7 @@ export default function AdminCalendar() {
                         onPointerMove={e => handlePointerMove(e, s.id, d)}
                         onPointerUp={e => handlePointerUp(e, s.id, d)}
                         onPointerCancel={() => setDrag(null)}>
-                        <WorkingOverlay staff={s} dow={dayOfWeek(d)} />
+                        <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]} />
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>

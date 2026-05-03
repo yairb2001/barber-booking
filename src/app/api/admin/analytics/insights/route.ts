@@ -1,11 +1,24 @@
 /**
  * GET /api/admin/analytics/insights
  *
- * Deep-analysis data for the dashboard insights page:
- *   - atRisk[]  — customers whose last active appointment was 60+ days ago
- *   - heatmap[] — occupancy % per (dayOfWeek, hour) over the last 90 days
+ * Marketing deep-analysis: customers grouped by referral source.
  *
- * Owners see all customers; barbers are scoped to their own.
+ * Query params:
+ *   period  — "all" | "month" | "custom"  (default: "all")
+ *   from    — ISO date string (used when period="custom")
+ *   to      — ISO date string (used when period="custom")
+ *   staffId — optional staff UUID to scope to a specific barber
+ *
+ * Response:
+ *   rows[]  — one row per referral source (+ "ישיר / לא ידוע" bucket)
+ *     source        : string
+ *     total         : number   — customers with this source in the period
+ *     regulars      : number   — customers with 3+ non-cancelled appointments
+ *     regularsPct   : number   — 0-100
+ *
+ *   totalCustomers, totalRegulars, regularsPct  — grand totals
+ *   staffList[]    — id + name of all staff (for the barber filter UI)
+ *   periodLabel    — human-readable string for display
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -15,9 +28,8 @@ import { getRequestSession } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 const CANCELLED = ["cancelled_by_customer", "cancelled_by_staff"];
-const AT_RISK_DAYS = 60;
-const HEATMAP_WINDOW_DAYS = 90;
-const ATRISK_LIMIT = 50;
+const REGULAR_MIN_VISITS = 3;
+const UNKNOWN_SOURCE = "ישיר / לא ידוע";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -27,127 +39,156 @@ export async function GET(req: NextRequest) {
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const bizId = biz.id;
 
-  const effectiveStaffId = (!session.isOwner && session.staffId) ? session.staffId : null;
-  const sf = effectiveStaffId ? { staffId: effectiveStaffId } : {};
+  const isOwner = session.isOwner ?? false;
+  const sessionStaffId = (!isOwner && session.staffId) ? session.staffId : null;
 
-  const now = new Date();
-  const atRiskCutoff = new Date(now.getTime() - AT_RISK_DAYS * 24 * 60 * 60 * 1000);
-  const heatmapStart = new Date(now.getTime() - HEATMAP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  // ── Parse query params ────────────────────────────────────────────────────
+  const url   = new URL(req.url);
+  const period  = url.searchParams.get("period") ?? "all";       // all | month | custom
+  const fromStr = url.searchParams.get("from");
+  const toStr   = url.searchParams.get("to");
 
-  // ── At-risk customers ─────────────────────────────────────────────────────
-  // Group all non-cancelled appointments by customer; find MAX(date)
-  const allAppts = await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: CANCELLED }, ...sf },
-    select: { customerId: true, staffId: true, date: true },
-  });
+  // Barbers can only see their own data; owners can filter optionally
+  const filterStaffId = sessionStaffId ?? (isOwner ? (url.searchParams.get("staffId") ?? null) : null);
 
-  type Agg = { lastDate: Date; visits: number; staffCounts: Map<string, number> };
-  const byCust = new Map<string, Agg>();
-  for (const a of allAppts) {
-    const d = new Date(a.date);
-    const cur = byCust.get(a.customerId);
-    if (cur) {
-      cur.visits++;
-      if (d > cur.lastDate) cur.lastDate = d;
-      cur.staffCounts.set(a.staffId, (cur.staffCounts.get(a.staffId) ?? 0) + 1);
-    } else {
-      byCust.set(a.customerId, {
-        lastDate: d,
-        visits: 1,
-        staffCounts: new Map([[a.staffId, 1]]),
-      });
-    }
+  // ── Date range ────────────────────────────────────────────────────────────
+  let fromDate: Date | null = null;
+  let toDate:   Date | null = null;
+  let periodLabel = "כל הזמנים";
+
+  if (period === "month") {
+    const now = new Date();
+    fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    toDate   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    periodLabel = `${now.toLocaleString("he-IL", { month: "long", timeZone: "UTC" })} ${now.getUTCFullYear()}`;
+  } else if (period === "custom" && fromStr && toStr) {
+    fromDate = new Date(fromStr);
+    toDate   = new Date(toStr);
+    toDate.setUTCHours(23, 59, 59, 999);
+    const fmt = (d: Date) => d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+    periodLabel = `${fmt(fromDate)} – ${fmt(toDate)}`;
   }
 
-  // Filter to at-risk (>= AT_RISK_DAYS since last visit)
-  type AtRiskRaw = { customerId: string; lastDate: Date; daysSince: number; visits: number; topStaffId: string };
-  const atRiskRaw: AtRiskRaw[] = [];
-  for (const [cid, agg] of Array.from(byCust.entries())) {
-    if (agg.lastDate < atRiskCutoff) {
-      // pick the most-frequent staff
-      let topStaff = "";
-      let topCount = 0;
-      for (const [sid, c] of Array.from(agg.staffCounts.entries())) {
-        if (c > topCount) { topCount = c; topStaff = sid; }
-      }
-      atRiskRaw.push({
-        customerId: cid,
-        lastDate: agg.lastDate,
-        daysSince: Math.floor((now.getTime() - agg.lastDate.getTime()) / (24 * 60 * 60 * 1000)),
-        visits: agg.visits,
-        topStaffId: topStaff,
-      });
-    }
+  // ── 1. Fetch customers (optionally filtered by join date) ─────────────────
+  // When a staff filter is active we only count customers who have at least
+  // one appointment with that staff member in the period.
+  let customerIds: string[] | null = null; // null = no staff restriction
+
+  if (filterStaffId) {
+    // Get all customerIds who have any appointment with this staff
+    const staffAppts = await prisma.appointment.findMany({
+      where: {
+        businessId: bizId,
+        staffId: filterStaffId,
+        status: { notIn: CANCELLED },
+      },
+      select: { customerId: true },
+      distinct: ["customerId"],
+    });
+    customerIds = staffAppts.map(a => a.customerId);
   }
 
-  // Sort: most "fresh" at-risk first (smallest daysSince) — best chance to win back
-  atRiskRaw.sort((a, b) => a.daysSince - b.daysSince);
-  const top = atRiskRaw.slice(0, ATRISK_LIMIT);
-
-  // Look up customer + staff details for the top slice
-  const custIds = top.map(x => x.customerId);
-  const staffIds = Array.from(new Set(top.map(x => x.topStaffId).filter(Boolean)));
-  const [customers, staffRows] = await Promise.all([
-    prisma.customer.findMany({
-      where: { id: { in: custIds } },
-      select: { id: true, name: true, phone: true },
-    }),
-    prisma.staff.findMany({
-      where: { id: { in: staffIds } },
-      select: { id: true, name: true },
-    }),
-  ]);
-  const custMap  = new Map(customers.map(c => [c.id, c]));
-  const staffMap = new Map(staffRows.map(s => [s.id, s.name]));
-
-  const atRisk = top.map(r => {
-    const c = custMap.get(r.customerId);
-    return {
-      customerId: r.customerId,
-      name:  c?.name  ?? "—",
-      phone: c?.phone ?? "",
-      lastVisitAt: r.lastDate.toISOString(),
-      daysSince: r.daysSince,
-      totalVisits: r.visits,
-      preferredStaffName: staffMap.get(r.topStaffId) ?? null,
-    };
-  });
-
-  // ── Heatmap (last 90 days, by dayOfWeek + hour of startTime) ────────────
-  const recentAppts = await prisma.appointment.findMany({
+  const customers = await prisma.customer.findMany({
     where: {
       businessId: bizId,
-      status: { notIn: CANCELLED },
-      date: { gte: heatmapStart },
-      ...sf,
+      ...(fromDate ? { createdAt: { gte: fromDate } } : {}),
+      ...(toDate   ? { createdAt: { lt:  toDate   } } : {}),
+      ...(customerIds !== null ? { id: { in: customerIds } } : {}),
     },
-    select: { date: true, startTime: true },
+    select: { id: true, referralSource: true },
   });
 
-  // counts[day][hour] = appointments
-  const counts = new Map<string, number>();
-  for (const a of recentAppts) {
-    const d = new Date(a.date);
-    const dayOfWeek = d.getUTCDay(); // 0 = Sunday
-    const hour = parseInt((a.startTime || "00:00").split(":")[0], 10);
-    const key = `${dayOfWeek}-${hour}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+  if (customers.length === 0) {
+    // Still need staffList for the filter UI
+    const staffList = isOwner
+      ? await prisma.staff.findMany({
+          where: { businessId: bizId, isAvailable: true },
+          select: { id: true, name: true },
+          orderBy: { sortOrder: "asc" },
+        })
+      : [];
+
+    return NextResponse.json({
+      rows: [],
+      totalCustomers: 0,
+      totalRegulars: 0,
+      regularsPct: 0,
+      staffList,
+      periodLabel,
+    });
   }
 
-  const maxCount = Math.max(1, ...Array.from(counts.values()));
-  const heatmap: { dayOfWeek: number; hour: number; count: number; pct: number }[] = [];
-  for (let day = 0; day < 7; day++) {
-    for (let hour = 7; hour <= 22; hour++) {
-      const c = counts.get(`${day}-${hour}`) ?? 0;
-      heatmap.push({ dayOfWeek: day, hour, count: c, pct: Math.round((c / maxCount) * 100) });
+  const allCustIds = customers.map(c => c.id);
+
+  // ── 2. Count appointments per customer ────────────────────────────────────
+  // "Regular" = 3+ non-cancelled appointments (scoped to the barber if filtered)
+  const apptGroups = await prisma.appointment.groupBy({
+    by: ["customerId"],
+    where: {
+      businessId: bizId,
+      customerId: { in: allCustIds },
+      status: { notIn: CANCELLED },
+      ...(filterStaffId ? { staffId: filterStaffId } : {}),
+    },
+    _count: { id: true },
+  });
+
+  const apptCountById = new Map<string, number>(
+    apptGroups.map(g => [g.customerId, g._count.id])
+  );
+
+  // ── 3. Aggregate by referral source ──────────────────────────────────────
+  type SourceAgg = { total: number; regulars: number };
+  const bySource = new Map<string, SourceAgg>();
+
+  for (const cust of customers) {
+    const source = cust.referralSource?.trim() || UNKNOWN_SOURCE;
+    const visits = apptCountById.get(cust.id) ?? 0;
+    const isRegular = visits >= REGULAR_MIN_VISITS;
+
+    const cur = bySource.get(source);
+    if (cur) {
+      cur.total++;
+      if (isRegular) cur.regulars++;
+    } else {
+      bySource.set(source, { total: 1, regulars: isRegular ? 1 : 0 });
     }
   }
 
+  // ── 4. Build sorted rows ──────────────────────────────────────────────────
+  // Sort by total desc; "unknown" always last
+  const rows = Array.from(bySource.entries())
+    .map(([source, agg]) => ({
+      source,
+      total: agg.total,
+      regulars: agg.regulars,
+      regularsPct: agg.total > 0 ? Math.round((agg.regulars / agg.total) * 100) : 0,
+    }))
+    .sort((a, b) => {
+      if (a.source === UNKNOWN_SOURCE) return 1;
+      if (b.source === UNKNOWN_SOURCE) return -1;
+      return b.total - a.total;
+    });
+
+  const totalCustomers = customers.length;
+  const totalRegulars  = rows.reduce((s, r) => s + r.regulars, 0);
+  const regularsPct    = totalCustomers > 0 ? Math.round((totalRegulars / totalCustomers) * 100) : 0;
+
+  // ── 5. Staff list for the barber-filter UI (owners only) ─────────────────
+  const staffList = isOwner
+    ? await prisma.staff.findMany({
+        where: { businessId: bizId, isAvailable: true },
+        select: { id: true, name: true },
+        orderBy: { sortOrder: "asc" },
+      })
+    : [];
+
   return NextResponse.json({
-    atRisk,
-    atRiskTotal: atRiskRaw.length,
-    heatmap,
-    heatmapWindowDays: HEATMAP_WINDOW_DAYS,
-    heatmapMaxCount: maxCount,
+    rows,
+    totalCustomers,
+    totalRegulars,
+    regularsPct,
+    staffList,
+    periodLabel,
   });
 }
