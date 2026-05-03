@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
-import { triggerPostVisitAutomations } from "@/lib/automations";
 import { getRequestSession } from "@/lib/session";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
@@ -117,21 +116,15 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     include: { customer: true, staff: true, service: true },
   });
 
-  // If status just changed to completed → update customer's lastVisitAt + fire automations
+  // If status just changed to completed → update customer's lastVisitAt
+  // (Post-visit automations are now fired by /api/cron/automations-post-visit
+  // so the configured delayMinutes is honored.)
   const justCompleted =
     before.status !== "completed" && appointment.status === "completed";
   if (justCompleted) {
     prisma.customer.update({
       where: { id: appointment.customerId },
       data:  { lastVisitAt: appointment.date },
-    }).catch(console.error);
-
-    triggerPostVisitAutomations({
-      id:         appointment.id,
-      businessId: appointment.businessId,
-      customerId: appointment.customerId,
-      staffId:    appointment.staffId,
-      serviceId:  appointment.serviceId,
     }).catch(console.error);
   }
 

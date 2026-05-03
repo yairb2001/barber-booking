@@ -970,8 +970,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <div className="grid grid-cols-2 gap-2">
             {[
               { v: "confirmed",          l: "✓ מאשר",    c: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
-              { v: "completed",          l: "✔ הושלם",   c: "bg-teal-50 text-teal-700 border border-teal-200" },
-              { v: "no_show",            l: "לא הגיע",  c: "bg-neutral-50 text-neutral-600 border border-neutral-200" },
               { v: "cancelled_by_staff", l: "בטל תור",  c: "bg-red-50 text-red-600 border border-red-200" },
             ].map(({ v, l, c }) => (
               <button key={v} disabled={appt.status === v || updating} onClick={() => setStatus(v)}

@@ -1477,6 +1477,7 @@ function PostFirstPanelSettings({
 }) {
   const [ctaType, setCtaType] = useState((settings.ctaType as string) ?? "google_review");
   const [ctaUrl,  setCtaUrl]  = useState((settings.ctaUrl  as string) ?? "");
+  const [delayMinutes, setDelayMinutes] = useState((settings.delayMinutes as number) ?? 30);
   const [dirty,   setDirty]   = useState(false);
   const CTA_OPTIONS = [
     { value: "google_review", label: "⭐ גוגל",      placeholder: "https://g.page/r/..." },
@@ -1485,6 +1486,16 @@ function PostFirstPanelSettings({
   ];
   return (
     <div className="space-y-3">
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">השהייה אחרי סיום התור</label>
+        <div className="flex items-center gap-3">
+          <input type="number" min={0} max={1440} value={delayMinutes}
+            onChange={e => { setDelayMinutes(Number(e.target.value)); setDirty(true); }}
+            className="w-24 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          <span className="text-sm text-neutral-500">דקות</span>
+        </div>
+        <p className="text-[10px] text-neutral-400 mt-1">ההודעה תישלח לאחר {delayMinutes} דקות מסיום התור</p>
+      </div>
       <div>
         <label className="text-xs text-neutral-500 block mb-1.5">קריאה לפעולה (CTA)</label>
         <div className="flex gap-2">
@@ -1504,7 +1515,7 @@ function PostFirstPanelSettings({
           className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
       </div>
       {dirty && (
-        <button onClick={() => { onSave({ ctaType, ctaUrl }); setDirty(false); }}
+        <button onClick={() => { onSave({ ctaType, ctaUrl, delayMinutes }); setDirty(false); }}
           disabled={saving}
           className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
@@ -1523,9 +1534,20 @@ function PostEveryPanelSettings({
 }) {
   const [segment,   setSegment]   = useState((settings.segment   as string) ?? "regular_only");
   const [minVisits, setMinVisits] = useState((settings.minVisits as number) ?? 2);
+  const [delayMinutes, setDelayMinutes] = useState((settings.delayMinutes as number) ?? 60);
   const [dirty,     setDirty]     = useState(false);
   return (
     <div className="space-y-3">
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">השהייה אחרי סיום התור</label>
+        <div className="flex items-center gap-3">
+          <input type="number" min={0} max={1440} value={delayMinutes}
+            onChange={e => { setDelayMinutes(Number(e.target.value)); setDirty(true); }}
+            className="w-24 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          <span className="text-sm text-neutral-500">דקות</span>
+        </div>
+        <p className="text-[10px] text-neutral-400 mt-1">ההודעה תישלח לאחר {delayMinutes} דקות מסיום התור</p>
+      </div>
       <div>
         <label className="text-xs text-neutral-500 block mb-1.5">למי לשלח</label>
         <div className="flex gap-2">
@@ -1549,7 +1571,7 @@ function PostEveryPanelSettings({
         </div>
       )}
       {dirty && (
-        <button onClick={() => { onSave({ segment, minVisits }); setDirty(false); }}
+        <button onClick={() => { onSave({ segment, minVisits, delayMinutes }); setDirty(false); }}
           disabled={saving}
           className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
@@ -1562,13 +1584,14 @@ function PostEveryPanelSettings({
 // ── AutoPanel (shared light-themed card) ───────────────────────────────────────
 
 function AutoPanel({
-  emoji, title, subtitle, active, saving, onToggle, template, vars, defaultTemplate, onSave, children,
+  emoji, title, subtitle, active, saving, onToggle, template, vars, defaultTemplate, onSave, onTest, children,
 }: {
   emoji: string; title: string; subtitle: string;
   active: boolean; saving: boolean;
   onToggle: () => void;
   template: string | null; vars: string[]; defaultTemplate: string;
   onSave: (patch: Record<string, unknown>) => void;
+  onTest?: () => void;
   children?: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -1592,6 +1615,16 @@ function AutoPanel({
           <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${active ? "right-0.5" : "left-0.5"}`} />
         </button>
       </div>
+
+      {/* Test button — visible when active */}
+      {active && onTest && (
+        <div className="px-5 pb-3 -mt-1">
+          <button onClick={onTest}
+            className="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-700 px-3 py-1.5 rounded-lg font-semibold transition">
+            🧪 שלח הודעת בדיקה
+          </button>
+        </div>
+      )}
 
       {/* Type-specific settings */}
       {children && (
@@ -1696,6 +1729,26 @@ function AutomationsTab() {
     upsert(type, { active: !cur });
   }
 
+  // ── Test send ──────────────────────────────────────────────────────────────
+  async function testAutomation(type: AutoType) {
+    const rec = get(type);
+    if (!rec || rec.id === "__tmp__") {
+      alert("יש לשמור את האוטומציה לפני שליחת בדיקה (הפעל ושמור הגדרות)");
+      return;
+    }
+    const phone = prompt("הזן מספר טלפון לקבלת הודעת בדיקה (השאר ריק לשליחה למספר העסק):") ?? "";
+    const res = await fetch(`/api/admin/automations/${rec.id}/test`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: phone.trim() || undefined }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      alert(`✓ נשלחה הודעת בדיקה ל-${data.sentTo}`);
+    } else {
+      alert(`✗ שגיאה: ${data.error || "שליחה נכשלה"}`);
+    }
+  }
+
   if (loading) return <div className="text-center py-16 text-neutral-400">טוען...</div>;
 
   const reengage  = get("reengage");
@@ -1725,6 +1778,7 @@ function AutomationsTab() {
         vars={["{{name}}", "{{business}}", "{{booking_url}}"]}
         defaultTemplate={"שלום {{name}} 👋\n\nהתגעגענו אליך ב*{{business}}* ✂️\nבוא נקבע תור: {{booking_url}}"}
         onSave={patch => upsert("reengage", patch)}
+        onTest={() => testAutomation("reengage")}
       >
         <ReengagePanelSettings
           settings={parseAutoS(reengage?.settings ?? "{}")}
@@ -1736,7 +1790,7 @@ function AutomationsTab() {
       {/* Post first visit */}
       <AutoPanel
         emoji="🌟" title="קידום חכם — לקוח חדש"
-        subtitle="נשלח אחרי הביקור הראשון — מופעל כשמסמנים תור כ׳הושלם׳"
+        subtitle="נשלח אחרי הביקור הראשון — אוטומטי לפי שעת סיום התור"
         active={postFirst?.active ?? false}
         saving={saving === "post_first_visit"}
         onToggle={() => toggle("post_first_visit")}
@@ -1744,6 +1798,7 @@ function AutomationsTab() {
         vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}", "{{cta}}"]}
         defaultTemplate={"שלום {{name}} 👋\n\nתודה שביקרת לראשונה ב*{{business}}* ✂️\nנשמח לראותך שוב! {{cta}}"}
         onSave={patch => upsert("post_first_visit", patch)}
+        onTest={() => testAutomation("post_first_visit")}
       >
         <PostFirstPanelSettings
           settings={parseAutoS(postFirst?.settings ?? "{}")}
@@ -1755,7 +1810,7 @@ function AutomationsTab() {
       {/* Post every visit */}
       <AutoPanel
         emoji="💬" title="הודעה אחרי כל ביקור"
-        subtitle="תודה / follow-up אחרי כל תור שהושלם"
+        subtitle="תודה / follow-up אחרי כל תור — אוטומטי לפי שעת סיום"
         active={postEvery?.active ?? false}
         saving={saving === "post_every_visit"}
         onToggle={() => toggle("post_every_visit")}
@@ -1763,6 +1818,7 @@ function AutomationsTab() {
         vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}"]}
         defaultTemplate={"שלום {{name}} 👋\n\nתודה שביקרת ב*{{business}}* ✂️\nנתראה בפעם הבאה! 😊"}
         onSave={patch => upsert("post_every_visit", patch)}
+        onTest={() => testAutomation("post_every_visit")}
       >
         <PostEveryPanelSettings
           settings={parseAutoS(postEvery?.settings ?? "{}")}
@@ -1771,9 +1827,9 @@ function AutomationsTab() {
         />
       </AutoPanel>
 
-      <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-700">
-        ⚠️ <strong>החזרת לקוחות</strong> דורשת cron יומי על:{" "}
-        <code className="font-mono">/api/cron/reengage</code>
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 text-xs text-emerald-800">
+        ✓ <strong>cron אוטומטי</strong> — החזרת לקוחות רץ יומית ב-11:00,
+        אוטומציות אחרי ביקור נבדקות כל 15 דקות. כפתור 🧪 שולח הודעת בדיקה לטלפון שלך.
       </div>
     </div>
   );
