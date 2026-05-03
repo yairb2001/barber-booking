@@ -8,8 +8,12 @@ type Staff = { id: string; name: string };
 type ReferralRow = {
   source: string;
   total: number;
+  returning: number;
+  returningPct: number;
   regulars: number;
   regularPct: number;
+  loyal: number;
+  loyalPct: number;
 };
 
 type Period = "all" | "month" | "custom";
@@ -71,9 +75,13 @@ export default function MarketingDeepPage() {
       .catch(() => setLoading(false));
   }, [period, from, to, selStaff]);
 
-  const totalCustomers = rows.reduce((s, r) => s + r.total, 0);
-  const totalRegulars  = rows.reduce((s, r) => s + r.regulars, 0);
-  const overallPct     = totalCustomers > 0 ? Math.round((totalRegulars / totalCustomers) * 100) : 0;
+  const totalCustomers  = rows.reduce((s, r) => s + r.total,     0);
+  const totalReturning  = rows.reduce((s, r) => s + r.returning,  0);
+  const totalRegulars   = rows.reduce((s, r) => s + r.regulars,   0);
+  const totalLoyal      = rows.reduce((s, r) => s + r.loyal,      0);
+  const returningPct    = totalCustomers > 0 ? Math.round((totalReturning / totalCustomers) * 100) : 0;
+  const overallPct      = totalCustomers > 0 ? Math.round((totalRegulars  / totalCustomers) * 100) : 0;
+  const loyalPct        = totalCustomers > 0 ? Math.round((totalLoyal     / totalCustomers) * 100) : 0;
 
   return (
     <div className="p-4 sm:p-6 overflow-auto h-full max-w-4xl space-y-5">
@@ -144,18 +152,25 @@ export default function MarketingDeepPage() {
 
       {/* Summary cards */}
       {!loading && rows.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center">
             <p className="text-2xl font-bold text-neutral-900">{totalCustomers.toLocaleString("he-IL")}</p>
             <p className="text-xs text-neutral-500 mt-1">סה״כ לקוחות</p>
           </div>
-          <div className="bg-white rounded-2xl border border-neutral-200 p-4 text-center">
-            <p className="text-2xl font-bold text-teal-600">{totalRegulars.toLocaleString("he-IL")}</p>
-            <p className="text-xs text-neutral-500 mt-1">לקוחות קבועים (3+)</p>
+          <div className="bg-white rounded-2xl border border-blue-100 p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">{totalReturning.toLocaleString("he-IL")}</p>
+            <p className="text-xs text-neutral-500 mt-1">חזרו (2+ ביקורים)</p>
+            <p className="text-xs text-blue-500 font-semibold">{returningPct}%</p>
           </div>
-          <div className="bg-white rounded-2xl border border-teal-200 bg-teal-50 p-4 text-center">
-            <p className="text-2xl font-bold text-teal-700">{overallPct}%</p>
-            <p className="text-xs text-teal-600 mt-1">אחוז הפיכה לקבוע</p>
+          <div className="bg-white rounded-2xl border border-teal-100 p-4 text-center">
+            <p className="text-2xl font-bold text-teal-600">{totalRegulars.toLocaleString("he-IL")}</p>
+            <p className="text-xs text-neutral-500 mt-1">קבועים (3+ ביקורים)</p>
+            <p className="text-xs text-teal-500 font-semibold">{overallPct}%</p>
+          </div>
+          <div className="bg-white rounded-2xl border border-amber-100 p-4 text-center">
+            <p className="text-2xl font-bold text-amber-600">{totalLoyal.toLocaleString("he-IL")}</p>
+            <p className="text-xs text-neutral-500 mt-1">נאמנים (10+ ביקורים)</p>
+            <p className="text-xs text-amber-500 font-semibold">{loyalPct}%</p>
           </div>
         </div>
       )}
@@ -181,37 +196,42 @@ export default function MarketingDeepPage() {
             <table className="w-full text-sm">
               <thead className="bg-neutral-50 border-b border-neutral-100">
                 <tr>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">מקור הגעה</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">סה״כ לקוחות</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">לקוחות קבועים (3+)</th>
-                  <th className="text-center px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">אחוז קבועים</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">Bar</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">מקור הגעה</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">סה״כ</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-blue-500 uppercase tracking-wide">2+</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-teal-500 uppercase tracking-wide">3+</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-amber-500 uppercase tracking-wide">10+</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide">%קבועים</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50">
                 {rows.map((row, i) => (
                   <tr key={row.source} className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/40"}>
-                    <td className="px-5 py-3 font-medium text-neutral-900">{row.source}</td>
-                    <td className="px-4 py-3 text-center text-neutral-700">{row.total.toLocaleString("he-IL")}</td>
-                    <td className="px-4 py-3 text-center text-teal-700 font-semibold">{row.regulars.toLocaleString("he-IL")}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${
-                        row.regularPct >= 50 ? "bg-emerald-100 text-emerald-700" :
-                        row.regularPct >= 25 ? "bg-teal-100 text-teal-700" :
-                        row.regularPct >= 10 ? "bg-amber-100 text-amber-700" :
-                        "bg-neutral-100 text-neutral-500"
-                      }`}>
-                        {row.regularPct}%
-                      </span>
+                    <td className="px-4 py-3 font-medium text-neutral-900 max-w-[120px] truncate">{row.source}</td>
+                    <td className="px-3 py-3 text-center text-neutral-600 text-sm">{row.total.toLocaleString("he-IL")}</td>
+                    <td className="px-3 py-3 text-center text-blue-700 font-semibold text-sm">
+                      {row.returning.toLocaleString("he-IL")}
+                      <span className="text-[10px] text-blue-400 block">{row.returningPct}%</span>
                     </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2 min-w-[80px]">
-                        <div className="flex-1 bg-neutral-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className="h-full bg-teal-500 rounded-full transition-all"
-                            style={{ width: `${row.regularPct}%` }}
-                          />
+                    <td className="px-3 py-3 text-center text-teal-700 font-semibold text-sm">
+                      {row.regulars.toLocaleString("he-IL")}
+                      <span className="text-[10px] text-teal-400 block">{row.regularPct}%</span>
+                    </td>
+                    <td className="px-3 py-3 text-center text-amber-700 font-semibold text-sm">
+                      {row.loyal.toLocaleString("he-IL")}
+                      <span className="text-[10px] text-amber-400 block">{row.loyalPct}%</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 min-w-[60px]">
+                        <div className="flex-1 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
+                          <div className="h-full bg-teal-500 rounded-full" style={{ width: `${row.regularPct}%` }} />
                         </div>
+                        <span className={`text-[11px] font-bold shrink-0 ${
+                          row.regularPct >= 50 ? "text-emerald-600" :
+                          row.regularPct >= 25 ? "text-teal-600" :
+                          row.regularPct >= 10 ? "text-amber-600" :
+                          "text-neutral-400"
+                        }`}>{row.regularPct}%</span>
                       </div>
                     </td>
                   </tr>

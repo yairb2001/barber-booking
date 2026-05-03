@@ -500,20 +500,12 @@ export default function Dashboard() {
             ))}
           </div>
         ) : <span />}
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin/dashboard/marketing"
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-teal-600 text-white hover:bg-teal-700 transition"
-          >
-            📊 שיווק מעמיק
-          </Link>
-          <Link
-            href="/admin/dashboard/insights"
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold bg-slate-900 text-white hover:bg-slate-800 transition"
-          >
-            🔍 ניתוח
-          </Link>
-        </div>
+        <Link
+          href="/admin/dashboard/marketing"
+          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border border-teal-600 text-teal-700 bg-white hover:bg-teal-600 hover:text-white transition"
+        >
+          📊 שיווק מעמיק
+        </Link>
       </div>
 
       {loading ? (

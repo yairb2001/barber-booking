@@ -59,23 +59,29 @@ export async function GET(req: NextRequest) {
   });
 
   // ── Group by referral source ──────────────────────────────────────────────────
-  const map = new Map<string, { total: number; regulars: number }>();
+  const map = new Map<string, { total: number; returning: number; regulars: number; loyal: number }>();
 
   for (const c of customers) {
     const src = c.referralSource?.trim() || "לא ידוע";
-    const apptCount = c._count.appointments;
-    const row = map.get(src) ?? { total: 0, regulars: 0 };
-    row.total += 1;
-    if (apptCount >= 3) row.regulars += 1;
+    const n = c._count.appointments;
+    const row = map.get(src) ?? { total: 0, returning: 0, regulars: 0, loyal: 0 };
+    row.total    += 1;
+    if (n >= 2)  row.returning += 1;
+    if (n >= 3)  row.regulars  += 1;
+    if (n >= 10) row.loyal     += 1;
     map.set(src, row);
   }
 
   const result = Array.from(map.entries())
-    .map(([source, { total, regulars }]) => ({
+    .map(([source, { total, returning, regulars, loyal }]) => ({
       source,
       total,
+      returning,
+      returningPct: total > 0 ? Math.round((returning / total) * 100) : 0,
       regulars,
-      regularPct: total > 0 ? Math.round((regulars / total) * 100) : 0,
+      regularPct:   total > 0 ? Math.round((regulars  / total) * 100) : 0,
+      loyal,
+      loyalPct:     total > 0 ? Math.round((loyal     / total) * 100) : 0,
     }))
     .sort((a, b) => b.total - a.total);
 

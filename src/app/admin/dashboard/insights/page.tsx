@@ -1,73 +1,109 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const DAYS_HE = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
-const DAYS_HE_FULL = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
-
-type AtRiskRow = {
-  customerId: string;
-  name: string;
-  phone: string;
-  lastVisitAt: string;
-  daysSince: number;
-  totalVisits: number;
-  preferredStaffName: string | null;
+// ── Types ─────────────────────────────────────────────────────────────────────
+type SourceRow = {
+  source: string;
+  total: number;
+  regulars: number;
+  regularsPct: number;
 };
 
-type HeatmapCell = { dayOfWeek: number; hour: number; count: number; pct: number };
+type StaffItem = { id: string; name: string };
 
-type Insights = {
-  atRisk: AtRiskRow[];
-  atRiskTotal: number;
-  heatmap: HeatmapCell[];
-  heatmapWindowDays: number;
-  heatmapMaxCount: number;
+type InsightsData = {
+  rows: SourceRow[];
+  totalCustomers: number;
+  totalRegulars: number;
+  regularsPct: number;
+  staffList: StaffItem[];
+  periodLabel: string;
 };
 
-type SortKey = "daysSince" | "totalVisits" | "name";
+type Period  = "all" | "month" | "custom";
+type SortKey = "total" | "regulars" | "regularsPct" | "source";
+type SortDir = "asc" | "desc";
 
-export default function InsightsPage() {
-  const [data, setData] = useState<Insights | null>(null);
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function firstOfMonthISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+export default function MarketingInsightsPage() {
+  const [data,    setData]    = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("daysSince");
-  const [copied, setCopied] = useState<string | null>(null);
+  const [error,   setError]   = useState(false);
 
-  useEffect(() => {
-    fetch("/api/admin/analytics/insights")
-      .then(r => r.json())
-      .then((d: Insights) => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
+  // Filters
+  const [period,   setPeriod]   = useState<Period>("all");
+  const [fromDate, setFromDate] = useState(firstOfMonthISO());
+  const [toDate,   setToDate]   = useState(todayISO());
+  const [staffId,  setStaffId]  = useState<string>("");
 
-  const sortedAtRisk = useMemo(() => {
-    if (!data) return [];
-    const arr = [...data.atRisk];
-    if (sortKey === "daysSince") arr.sort((a, b) => a.daysSince - b.daysSince);
-    else if (sortKey === "totalVisits") arr.sort((a, b) => b.totalVisits - a.totalVisits);
-    else if (sortKey === "name") arr.sort((a, b) => a.name.localeCompare(b.name, "he"));
-    return arr;
-  }, [data, sortKey]);
+  // Table sort
+  const [sortKey, setSortKey] = useState<SortKey>("total");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const copyPhone = async (phone: string, custId: string) => {
-    try {
-      await navigator.clipboard.writeText(phone);
-      setCopied(custId);
-      setTimeout(() => setCopied(prev => prev === custId ? null : prev), 1500);
-    } catch {
-      // ignore
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  const fetchData = useCallback(() => {
+    setLoading(true);
+    setError(false);
+
+    const params = new URLSearchParams({ period });
+    if (period === "custom") {
+      params.set("from", fromDate);
+      params.set("to",   toDate);
     }
+    if (staffId) params.set("staffId", staffId);
+
+    fetch(`/api/admin/analytics/insights?${params}`)
+      .then(r => r.json())
+      .then((d: InsightsData) => { setData(d); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, [period, fromDate, toDate, staffId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Sorted rows ──────────────────────────────────────────────────────────
+  const sortedRows = useMemo(() => {
+    if (!data) return [];
+    return [...data.rows].sort((a, b) => {
+      let cmp = 0;
+      if (sortKey === "source")      cmp = a.source.localeCompare(b.source, "he");
+      else if (sortKey === "total")  cmp = a.total      - b.total;
+      else if (sortKey === "regulars") cmp = a.regulars  - b.regulars;
+      else if (sortKey === "regularsPct") cmp = a.regularsPct - b.regularsPct;
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+  }, [data, sortKey, sortDir]);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortKey(key); setSortDir("desc"); }
   };
 
-  return (
-    <div className="p-6 overflow-auto h-full space-y-6 max-w-5xl" dir="rtl">
+  const sortIcon = (key: SortKey) =>
+    sortKey !== key ? "↕" : sortDir === "desc" ? "↓" : "↑";
 
-      {/* Header */}
+  // ── Render ───────────────────────────────────────────────────────────────
+  return (
+    <div className="p-6 overflow-auto h-full space-y-6 max-w-4xl" dir="rtl">
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">🔍 ניתוח מעמיק</h1>
-          <p className="text-neutral-500 text-sm">לקוחות בסיכון + שעות שיא</p>
+          <h1 className="text-2xl font-bold text-neutral-900">📣 שיווק מעמיק</h1>
+          <p className="text-neutral-500 text-sm">
+            מאיפה מגיעים הלקוחות? כמה הופכים לקבועים?
+          </p>
         </div>
         <Link
           href="/admin/dashboard"
@@ -77,95 +113,151 @@ export default function InsightsPage() {
         </Link>
       </div>
 
+      {/* ── Filters ── */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-4">
+        {/* Period tabs */}
+        <div>
+          <p className="text-xs text-neutral-500 mb-2 font-medium">תקופה</p>
+          <div className="flex flex-wrap gap-2">
+            {(["all", "month", "custom"] as Period[]).map(p => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                  period === p
+                    ? "bg-slate-900 border-slate-900 text-white"
+                    : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-400"
+                }`}
+              >
+                {p === "all" ? "כל הזמנים" : p === "month" ? "החודש הנוכחי" : "תקופה מותאמת"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom date pickers */}
+        {period === "custom" && (
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500">מ-</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={e => setFromDate(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 bg-white text-neutral-800"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-neutral-500">עד</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={e => setToDate(e.target.value)}
+                className="text-sm border border-neutral-200 rounded-lg px-3 py-1.5 bg-white text-neutral-800"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Barber filter — shown only when staff list available */}
+        {data && data.staffList.length > 0 && (
+          <div>
+            <p className="text-xs text-neutral-500 mb-2 font-medium">סינון לפי ספר</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setStaffId("")}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                  !staffId
+                    ? "bg-teal-600 border-teal-600 text-white"
+                    : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+                }`}
+              >
+                כל הספרים
+              </button>
+              {data.staffList.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setStaffId(prev => prev === s.id ? "" : s.id)}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
+                    staffId === s.id
+                      ? "bg-teal-600 border-teal-600 text-white"
+                      : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
+                  }`}
+                >
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Content ── */}
       {loading ? (
         <div className="text-center py-20 text-neutral-400">טוען נתונים...</div>
-      ) : !data ? (
+      ) : error ? (
         <div className="text-center py-20 text-red-400 text-sm">שגיאה בטעינת הנתונים</div>
+      ) : !data || data.rows.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-12 text-center text-sm text-neutral-400">
+          לא נמצאו לקוחות בתקופה הנבחרת
+        </div>
       ) : (
         <>
-          {/* ── At-risk customers ─────────────────────────────────────────── */}
-          <section>
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-800">⚠️ לקוחות בסיכון</h2>
-                <p className="text-xs text-neutral-400">לא חזרו 60+ יום — שווה לפנות אליהם ידנית</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-neutral-500">
-                  סה״כ {data.atRiskTotal} בסיכון{data.atRiskTotal > data.atRisk.length ? ` (מוצגים ${data.atRisk.length} ראשונים)` : ""}
-                </span>
-                <select
-                  value={sortKey}
-                  onChange={e => setSortKey(e.target.value as SortKey)}
-                  className="text-xs border border-neutral-200 rounded-lg px-2.5 py-1 bg-white text-neutral-700"
-                >
-                  <option value="daysSince">לפי ימים מהביקור האחרון</option>
-                  <option value="totalVisits">לפי כמות ביקורים</option>
-                  <option value="name">לפי שם</option>
-                </select>
-              </div>
-            </div>
+          {/* ── Summary cards ── */}
+          <div className="grid grid-cols-3 gap-3">
+            <SummaryCard label="לקוחות בתקופה" value={data.totalCustomers} sub={data.periodLabel} />
+            <SummaryCard label="לקוחות קבועים" value={data.totalRegulars} sub={`3+ ביקורים`} accent="text-emerald-600" />
+            <SummaryCard label="% קבועים" value={`${data.regularsPct}%`} sub="מתוך כלל הלקוחות" accent={data.regularsPct >= 40 ? "text-emerald-600" : data.regularsPct >= 20 ? "text-amber-600" : "text-neutral-900"} />
+          </div>
 
-            {data.atRisk.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-8 text-center text-sm text-neutral-400">
-                אין לקוחות בסיכון 🎉 כל הלקוחות חזרו ב-60 הימים האחרונים
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-neutral-50">
-                    <tr>
-                      <th className="text-right px-4 py-2.5 text-xs text-neutral-500 font-medium">שם</th>
-                      <th className="text-right px-4 py-2.5 text-xs text-neutral-500 font-medium">טלפון</th>
-                      <th className="text-center px-4 py-2.5 text-xs text-neutral-500 font-medium">ימים מאז</th>
-                      <th className="text-center px-4 py-2.5 text-xs text-neutral-500 font-medium">סה״כ ביקורים</th>
-                      <th className="text-right px-4 py-2.5 text-xs text-neutral-500 font-medium">ספר מועדף</th>
-                      <th className="text-center px-4 py-2.5 text-xs text-neutral-500 font-medium">פעולה</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {sortedAtRisk.map(row => {
-                      const dangerColor =
-                        row.daysSince >= 180 ? "text-red-600 font-bold" :
-                        row.daysSince >= 90  ? "text-orange-600 font-semibold" :
-                                                "text-amber-600";
-                      return (
-                        <tr key={row.customerId} className="hover:bg-neutral-50">
-                          <td className="px-4 py-2.5 font-medium text-neutral-800">{row.name}</td>
-                          <td className="px-4 py-2.5 text-neutral-600 font-mono text-xs">{row.phone}</td>
-                          <td className={`px-4 py-2.5 text-center ${dangerColor}`}>{row.daysSince} ימים</td>
-                          <td className="px-4 py-2.5 text-center text-neutral-700">{row.totalVisits}</td>
-                          <td className="px-4 py-2.5 text-neutral-500 text-xs">{row.preferredStaffName ?? "—"}</td>
-                          <td className="px-4 py-2.5 text-center">
-                            <button
-                              onClick={() => copyPhone(row.phone, row.customerId)}
-                              className={`text-xs px-3 py-1 rounded-lg border transition ${
-                                copied === row.customerId
-                                  ? "bg-emerald-100 border-emerald-300 text-emerald-700"
-                                  : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-400 hover:text-slate-800"
-                              }`}
-                            >
-                              {copied === row.customerId ? "✓ הועתק" : "📋 העתק"}
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-
-          {/* ── Heatmap ───────────────────────────────────────────────────── */}
+          {/* ── Table ── */}
           <section>
             <div className="mb-3">
-              <h2 className="text-sm font-semibold text-neutral-800">🔥 שעות שיא — {data.heatmapWindowDays} ימים אחרונים</h2>
-              <p className="text-xs text-neutral-400">
-                כמה תורים נקבעו בכל יום בשבוע × שעה. צבע כהה יותר = יותר עומס
-              </p>
+              <h2 className="text-sm font-semibold text-neutral-800">מקורות הגעה</h2>
+              <p className="text-xs text-neutral-400">לחץ על כותרת עמודה למיון</p>
             </div>
-            <OccupancyHeatmap heatmap={data.heatmap} maxCount={data.heatmapMaxCount} />
+            <div className="bg-white rounded-2xl border border-neutral-200 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <SortTh label="מקור הגעה"    sortKey="source"      current={sortKey} dir={sortDir} onClick={toggleSort} icon={sortIcon("source")}      align="right" />
+                    <SortTh label="לקוחות"        sortKey="total"       current={sortKey} dir={sortDir} onClick={toggleSort} icon={sortIcon("total")}       align="center" />
+                    <SortTh label="קבועים (+3)"   sortKey="regulars"    current={sortKey} dir={sortDir} onClick={toggleSort} icon={sortIcon("regulars")}    align="center" />
+                    <SortTh label="% קבועים"      sortKey="regularsPct" current={sortKey} dir={sortDir} onClick={toggleSort} icon={sortIcon("regularsPct")} align="center" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {sortedRows.map(row => (
+                    <tr key={row.source} className="hover:bg-neutral-50 transition">
+                      <td className="px-4 py-3 font-medium text-neutral-800">{row.source}</td>
+                      <td className="px-4 py-3 text-center text-neutral-700 font-semibold">{row.total}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-emerald-600">{row.regulars}</td>
+                      <td className="px-4 py-3 text-center">
+                        <RegularsBadge pct={row.regularsPct} total={row.total} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                {/* Totals row */}
+                <tfoot className="bg-neutral-50 border-t-2 border-neutral-200">
+                  <tr>
+                    <td className="px-4 py-3 font-bold text-neutral-700">סה״כ</td>
+                    <td className="px-4 py-3 text-center font-bold text-neutral-800">{data.totalCustomers}</td>
+                    <td className="px-4 py-3 text-center font-bold text-emerald-600">{data.totalRegulars}</td>
+                    <td className="px-4 py-3 text-center">
+                      <RegularsBadge pct={data.regularsPct} total={data.totalCustomers} bold />
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Legend */}
+            <p className="text-xs text-neutral-400 mt-2 text-left">
+              * &quot;ישיר / לא ידוע&quot; — לקוחות ללא מקור הגעה רשום
+              {staffId && data.staffList.find(s => s.id === staffId) &&
+                ` · מוצג: ${data.staffList.find(s => s.id === staffId)!.name} בלבד`}
+            </p>
           </section>
         </>
       )}
@@ -173,72 +265,48 @@ export default function InsightsPage() {
   );
 }
 
-// ── Heatmap ─────────────────────────────────────────────────────────────────
-function OccupancyHeatmap({ heatmap, maxCount }: { heatmap: HeatmapCell[]; maxCount: number }) {
-  const hours = Array.from(new Set(heatmap.map(h => h.hour))).sort((a, b) => a - b);
+// ── Sub-components ────────────────────────────────────────────────────────────
 
-  // Lookup
-  const cellByKey = new Map<string, HeatmapCell>();
-  heatmap.forEach(h => cellByKey.set(`${h.dayOfWeek}-${h.hour}`, h));
-
-  const colorFor = (pct: number) => {
-    if (pct === 0) return "bg-neutral-50";
-    if (pct < 25) return "bg-teal-100";
-    if (pct < 50) return "bg-teal-300";
-    if (pct < 75) return "bg-teal-500";
-    return "bg-teal-700";
-  };
-  const textFor = (pct: number) => pct >= 50 ? "text-white" : "text-neutral-700";
-
+function SummaryCard({ label, value, sub, accent }: {
+  label: string; value: string | number; sub?: string; accent?: string;
+}) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-5 overflow-x-auto">
-      <table className="w-full border-separate border-spacing-1 text-xs min-w-[640px]">
-        <thead>
-          <tr>
-            <th className="w-12 text-neutral-400 font-normal text-[10px]"></th>
-            {hours.map(h => (
-              <th key={h} className="text-neutral-400 font-normal text-[10px]">{h}:00</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {DAYS_HE.map((day, dayIdx) => (
-            <tr key={dayIdx}>
-              <td className="text-neutral-500 font-medium text-center pr-2" title={DAYS_HE_FULL[dayIdx]}>{day}</td>
-              {hours.map(hour => {
-                const cell = cellByKey.get(`${dayIdx}-${hour}`);
-                const pct = cell?.pct ?? 0;
-                const count = cell?.count ?? 0;
-                return (
-                  <td
-                    key={hour}
-                    className={`relative h-9 rounded ${colorFor(pct)} group transition`}
-                    title={`${DAYS_HE_FULL[dayIdx]} ${hour}:00 — ${count} תורים`}
-                  >
-                    {count > 0 && (
-                      <span className={`absolute inset-0 flex items-center justify-center text-[10px] font-semibold ${textFor(pct)}`}>
-                        {count}
-                      </span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="flex items-center justify-end gap-2 mt-4 text-[10px] text-neutral-500">
-        <span>פחות</span>
-        <div className="flex gap-0.5">
-          <div className="w-4 h-4 rounded bg-neutral-50 border border-neutral-200" />
-          <div className="w-4 h-4 rounded bg-teal-100" />
-          <div className="w-4 h-4 rounded bg-teal-300" />
-          <div className="w-4 h-4 rounded bg-teal-500" />
-          <div className="w-4 h-4 rounded bg-teal-700" />
-        </div>
-        <span>יותר</span>
-        <span className="text-neutral-400 mr-2">(מקסימום {maxCount} תורים)</span>
-      </div>
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <p className="text-xs text-neutral-500 mb-1">{label}</p>
+      <p className={`text-3xl font-bold ${accent ?? "text-neutral-900"}`}>{value}</p>
+      {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
     </div>
+  );
+}
+
+function SortTh({ label, sortKey, current, dir, onClick, icon, align }: {
+  label: string;
+  sortKey: SortKey;
+  current: SortKey;
+  dir: SortDir;
+  onClick: (k: SortKey) => void;
+  icon: string;
+  align: "right" | "center";
+}) {
+  const active = current === sortKey;
+  return (
+    <th
+      className={`px-4 py-2.5 text-xs font-medium text-neutral-500 cursor-pointer select-none hover:text-neutral-800 transition text-${align} whitespace-nowrap`}
+      onClick={() => onClick(sortKey)}
+    >
+      <span className={active ? "text-slate-900 font-semibold" : ""}>{label}</span>
+      {" "}
+      <span className={`text-[10px] ${active ? "text-slate-700" : "text-neutral-300"}`}>{icon}</span>
+    </th>
+  );
+}
+
+function RegularsBadge({ pct, total, bold }: { pct: number; total: number; bold?: boolean }) {
+  if (total === 0) return <span className="text-neutral-300">—</span>;
+  const color = pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-amber-600" : "text-neutral-500";
+  return (
+    <span className={`${color} ${bold ? "font-bold text-base" : "font-semibold"}`}>
+      {pct}%
+    </span>
   );
 }
