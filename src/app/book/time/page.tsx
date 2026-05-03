@@ -291,12 +291,12 @@ function ChooseTimePageContent() {
                 }}>
                 {/* Day label (היום / מחר / א׳) */}
                 <span className="text-[9px] tracking-wider font-medium mb-1"
-                  style={{ color: isActive ? "rgba(0,0,0,0.65)" : "var(--text-muted)" }}>
+                  style={{ color: isActive ? "rgba(255,255,255,0.75)" : "var(--text-muted)" }}>
                   {d.label === "היום" ? "היום" : d.label === "מחר" ? "מחר" : d.dayShort}
                 </span>
                 {/* Day number */}
                 <span className="text-[18px] font-bold leading-none"
-                  style={{ color: isActive ? "#000" : "var(--text-pri)" }}>
+                  style={{ color: isActive ? "#fff" : "var(--text-pri)" }}>
                   {d.dayNum}
                 </span>
               </button>
@@ -312,33 +312,27 @@ function ChooseTimePageContent() {
           <p className="text-[10px] tracking-[0.3em] uppercase font-semibold" style={{ color: "var(--brand)" }}>
             {currentDateObj?.label || ""}
           </p>
-          {!loading && slots.length > 0 && (
-            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
-              style={{ background: "var(--brand)", color: "#000" }}>
-              {slots.length} שעות פנויות
-            </span>
-          )}
         </div>
 
         {loading ? (
-          <div className="grid grid-cols-3 gap-2.5">
-            {[1, 2, 3, 4, 5, 6].map(i => (
+          <div className="flex flex-col gap-2.5">
+            {[1, 2, 3, 4].map(i => (
               <div key={i} className="h-14 rounded-2xl animate-pulse" style={{ background: "var(--card)" }} />
             ))}
           </div>
         ) : slots.length > 0 ? (
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="flex flex-col gap-2.5">
             {slots.map(time => (
               <Link key={time}
                 href={`/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}&time=${time}`}
-                className="flex items-center justify-center rounded-2xl py-3.5 transition-all active:scale-95"
+                className="flex items-center justify-center rounded-2xl py-4 transition-all active:scale-[0.98]"
                 dir="ltr"
                 style={{
                   background: "var(--card)",
                   border: "1.5px solid var(--divider)",
-                  fontSize: "15px",
+                  fontSize: "16px",
                   fontWeight: 700,
-                  letterSpacing: "0.12em",
+                  letterSpacing: "0.15em",
                   color: "var(--text-pri)",
                 }}>
                 {time}
