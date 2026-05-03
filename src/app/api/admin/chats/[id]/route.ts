@@ -48,7 +48,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   const escalated = !!conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS;
 
-  // Phone-based fallback if no linked customer (e.g. agent never identified them).
+  // Display name resolution:
+  //   1. Linked customer (DB) → 2. Phone match in customers → 3. WhatsApp name → 4. null
   // Customer.phone might be stored as "972..." or "0..." — try both formats.
   let customerName = conv.customer?.name ?? null;
   let customerId   = conv.customer?.id ?? null;
@@ -64,6 +65,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     });
     if (matched) { customerName = matched.name; customerId = matched.id; }
   }
+  if (!customerName) customerName = conv.whatsappName ?? null;
 
   return NextResponse.json({
     id: conv.id,

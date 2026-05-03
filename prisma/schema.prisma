@@ -448,6 +448,10 @@ model Conversation {
   // ── Read marker: when any admin opens the conversation. Used to surface
   // unread customer messages with a badge in the nav. Shared across all admins.
   lastReadAt    DateTime? @map("last_read_at")
+  // ── WhatsApp display name (from senderData.senderName). Captured by the
+  // webhook on every incoming message — used as a fallback when the customer
+  // is not in our DB so the chat list shows something meaningful.
+  whatsappName  String?   @map("whatsapp_name")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   lastMessageAt DateTime? @map("last_message_at")

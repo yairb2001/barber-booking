@@ -80,9 +80,13 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    // Resolve customer name: linked customer first, then phone match
+    // Resolve display name in priority order:
+    //   1. Linked customer in DB (most reliable — name they registered with)
+    //   2. Phone match in customers table
+    //   3. WhatsApp display name (whatever they set in their WhatsApp profile)
+    //   4. null → UI falls back to phone
     const matchedByPhone = phoneToCustomer.get(normalizeIsraeliPhone(c.phone));
-    const customerName = c.customer?.name ?? matchedByPhone?.name ?? null;
+    const customerName = c.customer?.name ?? matchedByPhone?.name ?? c.whatsappName ?? null;
 
     return {
       id: c.id,

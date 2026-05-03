@@ -89,6 +89,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const chatId = body.senderData?.chatId ?? "";
   const rawPhone = phoneFromChatId(chatId);
   const text = extractText(body);
+  // WhatsApp display name as set by the sender — used in the chats UI as a
+  // fallback when the customer is not yet in our DB.
+  const senderName = (body.senderData?.senderName || body.senderData?.chatName || "").trim();
 
   if (!rawPhone || !text?.trim()) {
     return NextResponse.json({ ok: true, skipped: true });
@@ -121,7 +124,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
   if (!conv) {
     conv = await prisma.conversation.create({
-      data: { businessId: biz.id, phone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+      data: {
+        businessId: biz.id,
+        phone,
+        agentType: "customer",
+        status: "active",
+        lastMessageAt: new Date(),
+        whatsappName: senderName || null,
+      },
     });
   }
   await prisma.conversationMessage.create({
@@ -129,7 +139,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
   await prisma.conversation.update({
     where: { id: conv.id },
-    data: { lastMessageAt: new Date() },
+    data: {
+      lastMessageAt: new Date(),
+      // Refresh whatsappName each message in case the user updates it
+      ...(senderName && { whatsappName: senderName }),
+    },
   });
 
   // ── 2. Check if agent should run ─────────────────────────────────────────────
