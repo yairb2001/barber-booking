@@ -78,6 +78,8 @@ export async function PATCH(req: NextRequest) {
       ...(body.minBookingLeadMinutes !== undefined && {
         minBookingLeadMinutes: Math.max(0, Number(body.minBookingLeadMinutes) || 0),
       }),
+      // Chats feature toggle
+      ...(body.chatsEnabled !== undefined && { chatsEnabled: Boolean(body.chatsEnabled) }),
       // Re-engagement automation
       ...(body.reengageEnabled !== undefined && { reengageEnabled: Boolean(body.reengageEnabled) }),
       ...(body.reengageWeeks   !== undefined && { reengageWeeks:   Number(body.reengageWeeks) || 6 }),

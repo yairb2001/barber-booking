@@ -421,8 +421,9 @@ export async function runCustomerAgent(opts: {
   businessId: string;
   phone: string;        // normalized E.164
   incomingText: string;
+  alreadyPersisted?: boolean;  // when true, skip saving the user message (webhook already did)
 }): Promise<void> {
-  const { businessId, phone, incomingText } = opts;
+  const { businessId, phone, incomingText, alreadyPersisted = false } = opts;
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -448,14 +449,16 @@ export async function runCustomerAgent(opts: {
     });
   }
 
-  // Save incoming user message
-  await prisma.conversationMessage.create({
-    data: { conversationId: conversation.id, role: "user", content: incomingText },
-  });
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data: { lastMessageAt: new Date() },
-  });
+  // Save incoming user message (unless the webhook already did)
+  if (!alreadyPersisted) {
+    await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, role: "user", content: incomingText },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date() },
+    });
+  }
 
   // ── Load conversation history ─────────────────────────────────────────────────
   const history = await prisma.conversationMessage.findMany({

@@ -50,6 +50,8 @@ model Business {
   // ── Booking calendar ──
   bookingHorizonDays    Int      @default(30) @map("booking_horizon_days")
   minBookingLeadMinutes Int      @default(0)  @map("min_booking_lead_minutes")
+  // ── Chats / customer messaging ──
+  chatsEnabled          Boolean  @default(false) @map("chats_enabled")
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -214,6 +216,7 @@ model Customer {
   appointments      Appointment[]
   waitlist          Waitlist[]
   recurringAppointments RecurringAppointment[]
+  conversations     Conversation[]
 
   @@unique([businessId, phone])
   @@map("customers")
@@ -438,11 +441,19 @@ model Conversation {
   agentType   String   @default("customer")  // customer | barber
   status      String   @default("active")    // active | resolved | escalated
   summary     String?                         // auto-summary after close
+  // ── Manual escalation: when an admin sends a manual reply, agent is muted
+  // for this conversation for 24h. Null = agent active. Logic is lazy:
+  // checked on incoming message, cleared automatically when expired.
+  escalatedAt   DateTime? @map("escalated_at")
+  // ── Read marker: when any admin opens the conversation. Used to surface
+  // unread customer messages with a badge in the nav. Shared across all admins.
+  lastReadAt    DateTime? @map("last_read_at")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
   lastMessageAt DateTime? @map("last_message_at")
 
-  business    Business @relation(fields: [businessId], references: [id])
+  business    Business  @relation(fields: [businessId], references: [id])
+  customer    Customer? @relation(fields: [customerId], references: [id])
   messages    ConversationMessage[]
 
   @@index([businessId, phone])
@@ -454,6 +465,7 @@ model ConversationMessage {
   id             String   @id @default(uuid())
   conversationId String   @map("conversation_id")
   role           String   // user | assistant | tool
+  source         String   @default("agent") // agent | admin — who sent it
   content        String   // message text (or JSON for tool calls)
   toolName       String?  @map("tool_name")
   toolCallId     String?  @map("tool_call_id")

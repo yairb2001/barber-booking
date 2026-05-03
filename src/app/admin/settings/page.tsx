@@ -22,6 +22,7 @@ type Business = {
   reengageEnabled: boolean;
   reengageWeeks: number;
   reengageTemplate: string;
+  chatsEnabled: boolean;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -83,6 +84,7 @@ const emptyBusiness: Business = {
   reminder24hTemplate: "", reminder2hTemplate: "",
   bookingHorizonDays: 30, minBookingLeadMinutes: 0,
   reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
+  chatsEnabled: false,
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -430,6 +432,7 @@ export default function AdminSettingsPage() {
           reengageEnabled:        data.reengageEnabled        ?? false,
           reengageWeeks:       data.reengageWeeks       ?? 6,
           reengageTemplate:    data.reengageTemplate    || "",
+          chatsEnabled:        data.chatsEnabled        ?? false,
         });
         const settingsObj = data.settings || {};
         // Resolve theme preset (with backward compat for old "theme: light/dark")
@@ -1359,6 +1362,27 @@ function WhatsAppTab({
           שלח הודעה ללקוחות שלא ביקרו כבר זמן מה — נדרש הגדרת cron יומי.
         </p>
         <ReengageEditor form={form} setField={setField} />
+      </div>
+
+      {/* Chats — bidirectional WhatsApp */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setField("chatsEnabled", !form.chatsEnabled)}
+            className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${form.chatsEnabled ? "bg-teal-500" : "bg-neutral-200"}`}
+          >
+            <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.chatsEnabled ? "right-0.5" : "left-0.5"}`} />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-semibold ${form.chatsEnabled ? "text-neutral-800" : "text-neutral-400"}`}>
+              💬 שיחות עם לקוחות
+            </p>
+            <p className="text-xs text-neutral-400">
+              נהל שיחות WhatsApp עם הלקוחות מתוך המערכת — בלי להיות מחובר ישירות לוואצאפ.
+              היסטוריית שיחות נשמרת ל-7 ימים אחורה.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Save */}

@@ -112,30 +112,49 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "no business" }, { status: 404 });
   }
 
-  // Check if agent is enabled for this business
+  // ── 1. Always persist the incoming message ──────────────────────────────────
+  // Even if the agent is off or escalated, we save the message so the admin can
+  // see it in the chat UI and reply manually.
+  let conv = await prisma.conversation.findFirst({
+    where: { businessId: biz.id, phone },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!conv) {
+    conv = await prisma.conversation.create({
+      data: { businessId: biz.id, phone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+    });
+  }
+  await prisma.conversationMessage.create({
+    data: { conversationId: conv.id, role: "user", source: "agent", content: text },
+  });
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date() },
+  });
+
+  // ── 2. Check if agent should run ─────────────────────────────────────────────
   const agentConfig = await prisma.agentConfig.findUnique({
     where: { businessId: biz.id },
     select: { isEnabled: true },
   });
 
   if (!agentConfig?.isEnabled) {
-    // Agent is off — silently ignore
-    return NextResponse.json({ ok: true, skipped: "agent_disabled" });
+    return NextResponse.json({ ok: true, skipped: "agent_disabled", saved: true });
   }
 
-  // Check if the conversation is escalated (human took over)
-  const conv = await prisma.conversation.findFirst({
-    where: { businessId: biz.id, phone, status: "escalated" },
-    orderBy: { createdAt: "desc" },
-  });
-  if (conv) {
-    // Human is handling — don't intervene
-    return NextResponse.json({ ok: true, skipped: "escalated" });
+  // 24h escalation expiry — lazy check; clear flag if expired
+  const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
+  const isEscalated = conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS;
+  if (conv.escalatedAt && !isEscalated) {
+    await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: null } });
+  }
+  if (isEscalated) {
+    return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
   }
 
-  // Run agent synchronously — Vercel kills background tasks after response
+  // ── 3. Run agent — message is already persisted; agent will skip its own save ──
   try {
-    await runCustomerAgent({ businessId: biz.id, phone, incomingText: text });
+    await runCustomerAgent({ businessId: biz.id, phone, incomingText: text, alreadyPersisted: true });
   } catch (agentErr) {
     console.error("[agent] error:", agentErr);
   }

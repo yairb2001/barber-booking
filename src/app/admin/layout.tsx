@@ -11,6 +11,7 @@ type NavItem = {
   exact?: boolean;
   ownerOnly?: boolean;
   barberOnly?: boolean;
+  requiresChats?: boolean;  // only shown when business.chatsEnabled === true
 };
 
 // Pages that live "inside" Business Settings — the Settings nav item stays highlighted on these
@@ -28,6 +29,7 @@ const SETTINGS_SUB_PATHS = [
 const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
+  { href: "/admin/chats",        label: "שיחות",          icon: "💬", requiresChats: true },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
@@ -53,7 +55,8 @@ const bottomNavBarber: NavItem[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean } | null>(null);
+  const [unreadChats, setUnreadChats] = useState(0);
 
   useEffect(() => {
     if (pathname === "/admin/login") return;
@@ -63,14 +66,47 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .catch(() => setMe(null));
   }, [pathname]);
 
+  // Poll unread chats count when chats feature is on (only when tab visible).
+  // 15s interval — light DB hit (single COUNT query per business).
+  const chatsEnabled = me?.chatsEnabled ?? false;
+  useEffect(() => {
+    if (!chatsEnabled || pathname === "/admin/login") return;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      fetch("/api/admin/chats")
+        .then(r => r.ok ? r.json() : [])
+        .then((list: { unreadCount: number }[]) => {
+          if (cancelled) return;
+          const total = Array.isArray(list) ? list.reduce((s, c) => s + (c.unreadCount || 0), 0) : 0;
+          setUnreadChats(total);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 15000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", tick); };
+  }, [chatsEnabled, pathname]);
+
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
   const visibleNav = navItems.filter(item => {
     if (item.ownerOnly && !isOwner) return false;
     if (item.barberOnly && isOwner) return false;
+    if (item.requiresChats && !chatsEnabled) return false;
     return true;
   });
-  const bottomNav = isOwner ? bottomNavOwner : bottomNavBarber;
+  // Bottom nav: only show "שיחות" if feature enabled — otherwise drop in favor of fallback
+  const bottomNavBase = isOwner ? bottomNavOwner : bottomNavBarber;
+  const bottomNav = chatsEnabled
+    ? [
+        bottomNavBase[0], // יומן
+        { href: "/admin/chats", label: "שיחות", icon: "💬" } as NavItem,
+        ...bottomNavBase.slice(1, 3), // לקוחות, שיווק
+        bottomNavBase[3], // הגדרות / הפרופיל
+      ]
+    : bottomNavBase;
 
   if (pathname === "/admin/login") {
     return <div className="min-h-screen bg-slate-50 text-slate-900 font-heebo" dir="rtl">{children}</div>;
@@ -125,21 +161,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
 
         <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
-          {visibleNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setDrawerOpen(false)}
-              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${
-                isActive(item)
-                  ? "bg-teal-50 text-teal-700 font-semibold"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-              }`}
-            >
-              <span className="text-base">{item.icon}</span>
-              <span>{item.label}</span>
-            </Link>
-          ))}
+          {visibleNav.map((item) => {
+            const isChats = item.href === "/admin/chats";
+            const showBadge = isChats && unreadChats > 0;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setDrawerOpen(false)}
+                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm transition ${
+                  isActive(item)
+                    ? "bg-teal-50 text-teal-700 font-semibold"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                }`}
+              >
+                <span className="text-base">{item.icon}</span>
+                <span>{item.label}</span>
+                {showBadge && (
+                  <span className="mr-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
+                    {unreadChats > 99 ? "99+" : unreadChats}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="px-4 py-3 border-t border-slate-200 space-y-2">
@@ -183,18 +228,27 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Mobile bottom nav */}
         <nav className="md:hidden flex bg-white border-t border-slate-200 shrink-0 safe-bottom">
-          {bottomNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition ${
-                isActive(item) ? "text-teal-600 font-semibold" : "text-slate-400 hover:text-slate-600"
-              }`}
-            >
-              <span className="text-xl leading-none">{item.icon}</span>
-              <span className="text-[10px] font-medium">{item.label}</span>
-            </Link>
-          ))}
+          {bottomNav.map((item) => {
+            const isChats = item.href === "/admin/chats";
+            const showBadge = isChats && unreadChats > 0;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition relative ${
+                  isActive(item) ? "text-teal-600 font-semibold" : "text-slate-400 hover:text-slate-600"
+                }`}
+              >
+                <span className="text-xl leading-none">{item.icon}</span>
+                <span className="text-[10px] font-medium">{item.label}</span>
+                {showBadge && (
+                  <span className="absolute top-1 right-1/2 translate-x-3 bg-red-500 text-white text-[9px] font-bold rounded-full px-1 min-w-[14px] h-[14px] flex items-center justify-center">
+                    {unreadChats > 9 ? "9+" : unreadChats}
+                  </span>
+                )}
+              </Link>
+            );
+          })}
           {/* "More" button opens full sidebar */}
           <button
             onClick={() => setDrawerOpen(true)}

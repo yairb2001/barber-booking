@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/report-monthly",
       "schedule": "0 6 1 * *"
+    },
+    {
+      "path": "/api/cron/cleanup-conversations",
+      "schedule": "0 4 * * *"
     }
   ]
 }
