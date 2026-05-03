@@ -718,6 +718,49 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [delaySending, setDelaySending] = useState(false);
   const [delaySent, setDelaySent] = useState(false);
 
+  // Quick message
+  const [showQuickMsg, setShowQuickMsg] = useState(false);
+  const [quickMsg, setQuickMsg] = useState("");
+  const [quickSending, setQuickSending] = useState(false);
+  const [quickSent, setQuickSent] = useState(false);
+  const [quickError, setQuickError] = useState("");
+
+  async function sendQuickMessage() {
+    if (!quickMsg.trim()) return;
+    setQuickSending(true);
+    setQuickError("");
+    try {
+      const res = await fetch("/api/admin/chats/send-quick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: appt.customer.phone,
+          customerName: appt.customer.name,
+          message: quickMsg.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) { setQuickError(data.error || "שגיאה בשליחה"); }
+      else {
+        setQuickSent(true);
+        setQuickMsg("");
+        setShowQuickMsg(false);
+        setTimeout(() => setQuickSent(false), 3000);
+      }
+    } catch {
+      setQuickError("שגיאת חיבור");
+    }
+    setQuickSending(false);
+  }
+
+  // Build template messages with the customer/staff/time info already filled in
+  const apptDateLabel = new Date(appt.date).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  const quickTemplates = [
+    `היי ${appt.customer.name}, רק לאשר שהתור שלך ב${apptDateLabel} ב-${appt.startTime} עדיין רלוונטי? 🙏`,
+    `היי ${appt.customer.name}, אני מאחר/ת בכמה דקות, מתנצל/ת על העיכוב 🙏`,
+    `היי ${appt.customer.name}, התור הקרוב מתחיל בעוד 10 דקות. נתראה בקרוב! ✂️`,
+  ];
+
   useEffect(() => {
     fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
   }, []);
@@ -1085,10 +1128,56 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Actions */}
-        <div className="px-5 py-4">
+        <div className="px-5 py-4 space-y-2">
+          {/* Quick message — sends from system, persists in chats */}
+          {quickSent ? (
+            <p className="text-sm text-emerald-600 font-medium text-center py-2">✓ ההודעה נשלחה ל-{appt.customer.name}</p>
+          ) : showQuickMsg ? (
+            <div className="space-y-2 bg-emerald-50/50 border border-emerald-100 rounded-xl p-3">
+              {/* Quick templates */}
+              <div className="flex flex-wrap gap-1">
+                {quickTemplates.map((tpl, i) => (
+                  <button key={i}
+                    onClick={() => setQuickMsg(tpl)}
+                    className="text-[10px] bg-white hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-2 py-1 rounded-full transition">
+                    {["📅 אישור", "⏱ עיכוב", "🔔 תזכורת"][i]}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={quickMsg}
+                onChange={e => setQuickMsg(e.target.value)}
+                rows={3}
+                placeholder={`כתוב הודעה ל${appt.customer.name}...`}
+                dir="rtl"
+                autoFocus
+                className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
+              />
+              {quickError && <p className="text-xs text-red-500">{quickError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={sendQuickMessage}
+                  disabled={quickSending || !quickMsg.trim()}
+                  className="flex-1 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50 transition">
+                  {quickSending ? "שולח..." : "💬 שלח ב-WhatsApp"}
+                </button>
+                <button
+                  onClick={() => { setShowQuickMsg(false); setQuickMsg(""); setQuickError(""); }}
+                  className="px-4 py-2 text-neutral-500 hover:bg-neutral-100 rounded-lg text-sm transition">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowQuickMsg(true)}
+              className="block w-full py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium text-center hover:bg-emerald-600 transition">
+              💬 שלח הודעה מהירה
+            </button>
+          )}
           <a href={`https://wa.me/${cleanPhone}`} target="_blank"
-            className="block w-full py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium text-center hover:bg-emerald-600 transition">
-            💬 שלח הודעה ב-WhatsApp
+            className="block w-full py-2 rounded-xl bg-white border border-neutral-200 text-neutral-600 text-xs font-medium text-center hover:bg-neutral-50 transition">
+            פתח WhatsApp ישירות ↗
           </a>
         </div>
       </div>
