@@ -156,11 +156,11 @@ export default function ChooseBarberPage() {
         </div>
       )}
 
-      {/* ── Staff list ── */}
-      <div className="px-4 pt-4 space-y-3">
+      {/* ── Staff grid — 2-column rounded squares ── */}
+      <div className="px-4 pt-4 grid grid-cols-2 gap-3">
         {loading ? (
-          [1, 2, 3].map(i => (
-            <div key={i} className="h-[84px] rounded-2xl animate-pulse" style={{ background: "var(--card)" }} />
+          [1, 2, 3, 4].map(i => (
+            <div key={i} className="rounded-3xl animate-pulse" style={{ aspectRatio: "3/4", background: "var(--card)" }} />
           ))
         ) : (
           staff.map(member => {
@@ -168,68 +168,57 @@ export default function ChooseBarberPage() {
             const hasToday = slot?.dayLabel === "היום";
 
             return (
-              <div key={member.id}
-                className="flex items-center gap-4 p-4 rounded-2xl"
-                style={{
-                  background: "var(--card)",
-                  border: "1px solid var(--divider)",
-                  boxShadow: "0 2px 12px rgba(0,0,0,0.05)",
-                }}>
+              <div key={member.id} className="relative rounded-3xl overflow-hidden active:scale-[0.97] transition-transform"
+                style={{ aspectRatio: "3/4", background: "var(--bg-alt)", boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}>
 
-                {/* Avatar — links to service selection */}
-                <Link href={`/book/service?staffId=${member.id}`} className="relative flex-shrink-0 active:scale-95 transition-transform">
-                  <div className="w-[60px] h-[60px] rounded-2xl overflow-hidden"
-                    style={{ background: "var(--bg-alt)" }}>
-                    {member.avatarUrl ? (
-                      <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-2xl font-bold"
-                        style={{ color: "var(--text-muted)" }}>
-                        {member.name[0]}
-                      </div>
-                    )}
-                  </div>
-                  {/* Live dot */}
-                  {hasToday && (
-                    <span className="absolute -bottom-1 -left-1 w-[18px] h-[18px] rounded-full flex items-center justify-center"
-                      style={{ background: "var(--bg)", border: `2px solid var(--bg)` }}>
-                      <span className="w-3 h-3 rounded-full animate-pulse" style={{ background: "#22c55e" }} />
-                    </span>
+                {/* Photo — full card */}
+                <Link href={`/book/service?staffId=${member.id}`} className="absolute inset-0">
+                  {member.avatarUrl ? (
+                    <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-5xl font-bold"
+                      style={{ color: "var(--text-muted)" }}>
+                      {member.name[0]}
+                    </div>
                   )}
+                  {/* Bottom gradient */}
+                  <div className="absolute inset-0"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 50%, transparent 100%)" }} />
                 </Link>
 
-                {/* Info — links to service selection */}
-                <Link href={`/book/service?staffId=${member.id}`} className="flex-1 min-w-0 active:opacity-80 transition-opacity">
-                  <p className="font-semibold text-[15px] leading-tight" style={{ color: "var(--text-pri)" }}>
-                    {member.name}
-                  </p>
+                {/* Live dot top-left */}
+                {hasToday && (
+                  <span className="absolute top-3 left-3 flex h-2.5 w-2.5 z-10">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                  </span>
+                )}
+
+                {/* Name — bottom overlay */}
+                <Link href={`/book/service?staffId=${member.id}`}
+                  className="absolute bottom-0 inset-x-0 px-3 z-10"
+                  style={{ paddingBottom: slot ? "52px" : "14px" }}>
+                  <p className="font-bold text-[14px] text-white leading-tight truncate">{member.name}</p>
                   {member.nickname && (
-                    <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>{member.nickname}</p>
-                  )}
-                  {!slot && (
-                    <p className="text-[11px] mt-1.5" style={{ color: "var(--text-muted)" }}>
-                      לחץ לבחירת שירות
-                    </p>
+                    <p className="text-[10px] text-white/60 truncate">{member.nickname}</p>
                   )}
                 </Link>
 
-                {/* Slot badge — direct link to confirm */}
+                {/* Slot button — direct book */}
                 {slot ? (
                   <Link
                     href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                    className="flex-shrink-0 flex flex-col items-center gap-1 px-3 py-2 rounded-2xl active:scale-95 transition-transform text-center"
-                    style={{ background: "var(--brand)", minWidth: 72 }}
-                    onClick={e => e.stopPropagation()}>
-                    <span className="text-[15px] font-bold tracking-widest text-white leading-none" dir="ltr">{slot.time}</span>
-                    <span className="text-[9px] font-semibold text-white/80 tracking-wide">{slot.dayLabel} ⚡</span>
+                    className="absolute bottom-3 inset-x-3 z-10 flex items-center justify-center gap-1.5 py-2 rounded-2xl active:opacity-80 transition-opacity"
+                    style={{ background: "var(--brand)" }}>
+                    <span className="text-[13px] font-bold text-white tracking-widest" dir="ltr">{slot.time}</span>
+                    <span className="text-[10px] text-white/80">⚡ {slot.dayLabel}</span>
                   </Link>
                 ) : (
-                  /* Arrow — browse services */
-                  <Link href={`/book/service?staffId=${member.id}`} className="flex-shrink-0 active:scale-95 transition-transform">
-                    <svg className="w-5 h-5 rotate-180" fill="none" viewBox="0 0 24 24"
-                      stroke="currentColor" strokeWidth={1.8} style={{ color: "var(--text-muted)" }}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                    </svg>
+                  <Link
+                    href={`/book/service?staffId=${member.id}`}
+                    className="absolute bottom-3 inset-x-3 z-10 flex items-center justify-center py-2 rounded-2xl active:opacity-80 transition-opacity"
+                    style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.25)" }}>
+                    <span className="text-[11px] font-semibold text-white">קבע תור</span>
                   </Link>
                 )}
               </div>
