@@ -21,6 +21,7 @@ const SETTINGS_SUB_PATHS = [
   "/admin/stories",
   "/admin/products",
   "/admin/announcements",
+  "/admin/portfolio",
 ];
 
 // Sidebar — flat list. Everything that's a sub-page of settings is reached from inside /admin/settings.
