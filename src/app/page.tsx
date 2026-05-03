@@ -6,7 +6,10 @@ import FooterCTA from "@/components/FooterCTA";
 import { THEMES, type Theme } from "@/lib/themes";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
-type Story = { id: string; mediaUrl: string; caption: string | null };
+type Story = {
+  id: string; mediaUrl: string; caption: string | null;
+  staff?: { id: string; name: string; avatarUrl: string | null } | null;
+};
 type QuickSlot = {
   staffId: string; staffName: string; staffAvatar: string | null;
   date: string; dayLabel: string; time: string;
@@ -507,7 +510,11 @@ export default function HomePage() {
             action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
           />
           <PortfolioCarousel
-            works={stories.map(s => ({ imageUrl: s.mediaUrl, staffName: s.caption || "", staffAvatar: null }))}
+            works={stories.map(s => ({
+              imageUrl: s.mediaUrl,
+              staffName: s.staff?.name || s.caption || "",
+              staffAvatar: s.staff?.avatarUrl || null,
+            }))}
             brand={brand}
           />
         </section>

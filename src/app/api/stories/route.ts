@@ -18,6 +18,7 @@ export async function GET() {
       ],
     },
     orderBy: { sortOrder: "asc" },
+    include: { staff: { select: { id: true, name: true, avatarUrl: true } } },
   });
   return NextResponse.json(stories);
 }

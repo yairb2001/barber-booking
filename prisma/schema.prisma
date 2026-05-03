@@ -119,6 +119,7 @@ model Staff {
   appointments  Appointment[]
   waitlist      Waitlist[]
   portfolio     PortfolioItem[]
+  stories       Story[]
   recurringAppointments RecurringAppointment[]
 
   @@map("staff")
@@ -414,6 +415,7 @@ model Automation {
 model Story {
   id          String   @id @default(uuid())
   businessId  String   @map("business_id")
+  staffId     String?  @map("staff_id")    // optional — who this work belongs to
   mediaUrl    String   @map("media_url")   // image URL
   caption     String?
   isActive    Boolean  @default(true) @map("is_active")
@@ -422,6 +424,7 @@ model Story {
   createdAt   DateTime @default(now()) @map("created_at")
 
   business    Business @relation(fields: [businessId], references: [id])
+  staff       Staff?   @relation(fields: [staffId], references: [id])
 
   @@map("stories")
 }
