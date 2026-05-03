@@ -451,7 +451,7 @@ export default function HomePage() {
             style={{ fontSize: "clamp(2rem,10vw,4.5rem)", textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
             {business?.name || "DOMINANT"}
           </h1>
-          <p className="text-white/40 tracking-[0.5em] text-[10px] mb-8 uppercase">barbershop</p>
+          <p className="text-white/40 tracking-[0.5em] text-[10px] mb-5 uppercase">barbershop</p>
 
           <Link href="/book"
             className="inline-flex items-center gap-2 font-bold text-[13px] tracking-[0.15em] uppercase px-10 py-4 rounded-full text-white active:scale-95 transition-transform"
@@ -462,6 +462,39 @@ export default function HomePage() {
             קבע תור עכשיו
           </Link>
         </div>
+
+        {/* ── Portfolio strip — blended into hero ── */}
+        {!loading && stories.length > 0 && (
+          <div className="relative z-10 px-4 pb-3">
+            <div className="flex items-center gap-3 mb-2.5">
+              <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.07)" }} />
+              <p className="text-[9px] font-semibold tracking-[0.35em] uppercase" style={{ color: "rgba(255,255,255,0.35)" }}>
+                העבודות שלנו
+              </p>
+              <Link href="/book" style={{ color: "rgba(255,255,255,0.25)", fontSize: 9, letterSpacing: "0.1em" }}>
+                בחר סגנון ←
+              </Link>
+              <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.07)" }} />
+            </div>
+            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+              {stories.map(s => (
+                <Link key={s.id} href="/book"
+                  className="flex-shrink-0 rounded-2xl overflow-hidden active:scale-95 transition-transform relative"
+                  style={{ width: 96, aspectRatio: "3/4", border: "1px solid rgba(255,255,255,0.13)", flexShrink: 0 }}>
+                  <img src={s.mediaUrl} alt="" className="w-full h-full object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.opacity = "0"; }} />
+                  <div className="absolute inset-0"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.68) 0%, transparent 52%)" }} />
+                  {s.staff?.name && (
+                    <div className="absolute bottom-2 inset-x-1 text-center">
+                      <span className="text-[9px] font-semibold text-white/85 block truncate">{s.staff.name}</span>
+                    </div>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── QUICK SLOTS — inside hero, visible without scrolling ── */}
         {!loading && quickSlots.length > 0 && (
@@ -503,22 +536,7 @@ export default function HomePage() {
           ALL SECTIONS BELOW HERO — clean white/slate design, Heebo font
       ══════════════════════════════════════════════════════════════════════════ */}
 
-      {/* ── Stories as focus carousel — "העבודות שלנו" ── */}
-      {!loading && stories.length > 0 && (
-        <section className="bg-white py-10 border-b border-slate-100">
-          <SecLabel label="העבודות שלנו" sub="בחר סגנון"
-            action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
-          />
-          <PortfolioCarousel
-            works={stories.map(s => ({
-              imageUrl: s.mediaUrl,
-              staffName: s.staff?.name || s.caption || "",
-              staffAvatar: s.staff?.avatarUrl || null,
-            }))}
-            brand={brand}
-          />
-        </section>
-      )}
+      {/* portfolio is now inside the hero — no separate section here */}
 
       {/* ── Staff — choose your barber ── */}
       {staff.length > 0 && (
