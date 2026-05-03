@@ -2,7 +2,7 @@
 // Four hand-tuned color + font palettes. Admin picks one — every color is
 // already harmonized. No individual color pickers anywhere in the UI.
 
-export type ThemeId = "onyx" | "velvet" | "vintage" | "mono";
+export type ThemeId = "onyx" | "velvet" | "vintage" | "mono" | "teal";
 
 export type Theme = {
   id: ThemeId;
@@ -99,7 +99,27 @@ export const THEMES: Record<ThemeId, Theme> = {
     fontBody:    "var(--font-heebo)",
   },
 
-  // ─── 4. Mono — Modern minimalist (off-white + deep navy) ──
+  // ─── 4. Teal — Modern teal + mint (fresh, clean) ──
+  teal: {
+    id: "teal",
+    name: "Teal",
+    description: "טורקיז מודרני · מינט",
+    isDark: false,
+    bg:        "#F3FBFB",
+    bgAlt:     "#CBF0EC",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(243,251,251,0.95)",
+    brand:     "#1A7B8C",
+    brandSoft: "#2A97A8",
+    textPri:   "#0C3540",
+    textSec:   "#2E6570",
+    textMuted: "#72A8B2",
+    divider:   "rgba(26,123,140,0.15)",
+    fontDisplay: "var(--font-heebo)",
+    fontBody:    "var(--font-heebo)",
+  },
+
+  // ─── 5. Mono — Modern minimalist (off-white + deep navy) ──
   mono: {
     id: "mono",
     name: "Mono",

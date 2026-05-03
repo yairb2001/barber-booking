@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
 import { THEMES, type Theme } from "@/lib/themes";
@@ -104,6 +104,148 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
   );
 }
 
+// ── Focus Carousel — portfolio works ──────────────────────────────────────────
+type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null };
+
+function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: string }) {
+  const [active, setActive] = useState(0);
+  const startX = useRef(0);
+  const isDragging = useRef(false);
+
+  const prev = useCallback(() => setActive(a => Math.max(0, a - 1)), []);
+  const next = useCallback(() => setActive(a => Math.min(works.length - 1, a + 1)), [works.length]);
+
+  function onTouchStart(e: React.TouchEvent) {
+    startX.current = e.touches[0].clientX;
+    isDragging.current = true;
+  }
+  function onTouchEnd(e: React.TouchEvent) {
+    if (!isDragging.current) return;
+    const dx = e.changedTouches[0].clientX - startX.current;
+    if (Math.abs(dx) > 40) {
+      // RTL: swipe left (negative dx) = next; swipe right = prev
+      if (dx < 0) next(); else prev();
+    }
+    isDragging.current = false;
+  }
+
+  const CARD_W = 210;
+  const CARD_H = CARD_W * (4 / 3); // 280
+  const OFFSET_PX = 158;
+
+  return (
+    <div dir="ltr"> {/* ltr so translateX direction is predictable */}
+      <div
+        className="relative select-none"
+        style={{ height: CARD_H + 40 }}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Cards */}
+        <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+          {works.map((work, i) => {
+            const offset = i - active; // offset from active: 0=center, ±1, ±2 …
+            const abs = Math.abs(offset);
+            if (abs > 2) return null;
+
+            const scale = abs === 0 ? 1 : abs === 1 ? 0.72 : 0.55;
+            const blurPx = abs === 0 ? 0 : abs === 1 ? 3 : 6;
+            const opacity = abs === 0 ? 1 : abs === 1 ? 0.58 : 0.28;
+            // offset > 0 → to the right of active; offset < 0 → to the left
+            const tx = offset * OFFSET_PX;
+
+            return (
+              <div
+                key={i}
+                onClick={() => abs > 0 && setActive(i)}
+                style={{
+                  position: "absolute",
+                  transform: `translateX(${tx}px) scale(${scale})`,
+                  filter: `blur(${blurPx}px)`,
+                  opacity,
+                  transition: "transform 0.42s cubic-bezier(0.25,0.46,0.45,0.94), opacity 0.42s ease, filter 0.42s ease",
+                  zIndex: 10 - abs,
+                  cursor: abs > 0 ? "pointer" : "default",
+                  transformOrigin: "center center",
+                  willChange: "transform",
+                }}
+              >
+                <div style={{ width: CARD_W, height: CARD_H, borderRadius: 20, overflow: "hidden", position: "relative", flexShrink: 0 }}>
+                  <img
+                    src={work.imageUrl}
+                    alt={work.staffName}
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                  {/* Overlay only on active */}
+                  {abs === 0 && (
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.78) 100%)" }}>
+                      <div style={{ position: "absolute", bottom: 14, right: 14, left: 14, display: "flex", alignItems: "center", gap: 8 }} dir="rtl">
+                        {work.staffAvatar ? (
+                          <img src={work.staffAvatar} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,0.55)", flexShrink: 0 }} />
+                        ) : (
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: brand, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>
+                            {work.staffName[0]}
+                          </div>
+                        )}
+                        <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, flex: 1 }}>{work.staffName}</span>
+                        <Link href="/book" dir="rtl"
+                          style={{ background: brand, borderRadius: 20, padding: "5px 13px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
+                          קבע תור
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Dot indicators */}
+        <div style={{ position: "absolute", bottom: 4, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6 }} dir="ltr">
+          {works.slice(0, 12).map((_, i) => (
+            <button
+              key={i}
+              onClick={() => setActive(i)}
+              style={{
+                width: i === active ? 20 : 6,
+                height: 6,
+                borderRadius: 3,
+                background: i === active ? brand : "#CBD5E1",
+                transition: "all 0.3s ease",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
+
+        {/* Prev / Next arrows */}
+        {active > 0 && (
+          <button onClick={prev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-md z-20"
+            style={{ background: "rgba(255,255,255,0.92)", border: "1px solid #E2E8F0" }}>
+            <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        )}
+        {active < works.length - 1 && (
+          <button onClick={next}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-md z-20"
+            style={{ background: "rgba(255,255,255,0.92)", border: "1px solid #E2E8F0" }}>
+            <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Section header — admin-style ────────────────────────────────────────────────
 function SecLabel({ label, sub, action }: { label: string; sub?: string; action?: React.ReactNode }) {
   return (
@@ -178,7 +320,6 @@ export default function HomePage() {
     waze:      rawSocial.waze || "",
   };
 
-  type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null };
   const portfolioWorks: PortfolioWork[] = staff
     .filter(s => s.portfolio.length > 0)
     .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl })));
@@ -359,6 +500,16 @@ export default function HomePage() {
           ALL SECTIONS BELOW HERO — clean white/slate design, Heebo font
       ══════════════════════════════════════════════════════════════════════════ */}
 
+      {/* ── Portfolio Focus Carousel — FIRST below hero ── */}
+      {!loading && portfolioWorks.length > 0 && (
+        <section className="bg-white py-10 border-b border-slate-100">
+          <SecLabel label="העבודות שלנו" sub="בחר סגנון"
+            action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
+          />
+          <PortfolioCarousel works={portfolioWorks} brand={brand} />
+        </section>
+      )}
+
       {/* ── Stories ── */}
       {!loading && stories.length > 0 && (
         <section className="bg-white border-b border-slate-100 pt-5 pb-2">
@@ -422,35 +573,6 @@ export default function HomePage() {
                 </Link>
               );
             })}
-          </div>
-        </section>
-      )}
-
-      {/* ── Portfolio ── */}
-      {!loading && portfolioWorks.length > 0 && (
-        <section className="bg-white py-10 border-b border-slate-100">
-          <SecLabel label="מהעבודות שלנו" sub="Portfolio"
-            action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>בחר סגנון →</Link>}
-          />
-          <div className="flex gap-3 overflow-x-auto px-5 pb-2 snap-x snap-mandatory" style={{ scrollbarWidth: "none" }}>
-            {portfolioWorks.map((work, i) => (
-              <Link key={i} href="/book" className="flex-shrink-0 snap-start active:scale-[0.97] transition-transform" style={{ width: 155 }}>
-                <div className="rounded-2xl overflow-hidden relative" style={{ aspectRatio: "3/4" }}>
-                  <img src={work.imageUrl} alt={work.staffName} className="w-full h-full object-cover"
-                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                  <div className="absolute inset-0" style={{ background: "linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.75) 100%)" }} />
-                  <div className="absolute bottom-3 right-3 left-3 flex items-center gap-2">
-                    {work.staffAvatar ? (
-                      <img src={work.staffAvatar} alt="" className="w-6 h-6 rounded-full object-cover border-2 border-white/50 flex-shrink-0" />
-                    ) : (
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[9px] text-white font-bold"
-                        style={{ background: brand }}>{work.staffName[0]}</div>
-                    )}
-                    <span className="text-[11px] text-white font-semibold truncate">{work.staffName}</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
           </div>
         </section>
       )}
