@@ -24,9 +24,9 @@ type Staff = {
 };
 
 // ── Compute slot day display label ────────────────────────────────────────────
-// Returns "" for today, "מחר", day-name for this week, or "d/M" for >7 days
+// Returns "היום" / "מחר" / day-name / "d/M" depending on how far the slot is
 function slotDayDisplay(slot: QuickSlot): string {
-  if (slot.dayLabel === "היום") return "";
+  if (slot.dayLabel === "היום") return "היום";
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const slotDate = new Date(slot.date + "T00:00:00");
   const diffDays = Math.round((slotDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
