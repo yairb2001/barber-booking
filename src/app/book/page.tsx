@@ -204,13 +204,9 @@ export default function ChooseBarberPage() {
                 {slot ? (
                   <Link
                     href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                    className="absolute bottom-2 inset-x-2 z-10 flex flex-col items-center justify-center gap-0.5 py-1.5 active:opacity-80 transition-opacity"
+                    className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-center gap-1 py-1.5 active:opacity-80 transition-opacity"
                     style={{ background: "var(--brand)", borderRadius: 14 }}>
-                    <span className="text-[9px] text-white/80 font-medium tracking-wide leading-none">{slot.dayLabel}</span>
-                    <div className="flex items-center gap-0.5">
-                      <span className="text-[9px] text-white/70">⚡</span>
-                      <span className="text-[11px] font-bold text-white tracking-wider leading-none" dir="ltr">{slot.time}</span>
-                    </div>
+                    <span className="text-[10px] font-bold text-white">⚡ {slot.dayLabel} {slot.time}</span>
                   </Link>
                 ) : (
                   <Link
