@@ -23,6 +23,19 @@ type Staff = {
   isAvailable: boolean;
 };
 
+// ── Compute slot day display label ────────────────────────────────────────────
+// Returns "" for today, "מחר", day-name for this week, or "d/M" for >7 days
+function slotDayDisplay(slot: QuickSlot): string {
+  if (slot.dayLabel === "היום") return "";
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const slotDate = new Date(slot.date + "T00:00:00");
+  const diffDays = Math.round((slotDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays > 7) {
+    return `${slotDate.getDate()}/${slotDate.getMonth() + 1}`;
+  }
+  return slot.dayLabel; // "מחר" / "יום שלישי" etc.
+}
+
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
   const steps = ["ספר", "שירות", "זמן"];
@@ -204,9 +217,12 @@ export default function ChooseBarberPage() {
                 {slot ? (
                   <Link
                     href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                    className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-center gap-1 py-1.5 active:opacity-80 transition-opacity"
-                    style={{ background: "var(--brand)", borderRadius: 14 }}>
-                    <span className="text-[10px] font-bold text-white">⚡ {slot.dayLabel} {slot.time}</span>
+                    className="absolute bottom-2 inset-x-2 z-10 flex flex-col items-center justify-center py-1 active:opacity-80 transition-opacity"
+                    style={{ background: "var(--brand)", borderRadius: 12 }}>
+                    {slotDayDisplay(slot) && (
+                      <span className="text-[8px] font-semibold text-white/80 leading-none mb-0.5">{slotDayDisplay(slot)}</span>
+                    )}
+                    <span className="text-[10px] font-bold text-white leading-none">⚡ {slot.time}</span>
                   </Link>
                 ) : (
                   <Link
