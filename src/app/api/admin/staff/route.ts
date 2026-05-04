@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwner, getRequestSession } from "@/lib/session";
+import { getBusinessNow } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -8,11 +9,27 @@ export async function GET(req: NextRequest) {
     ? { id: session.staffId }
     : undefined;
 
+  // Current business time (Israel timezone)
+  const { date: todayStr, time: nowTime } = getBusinessNow();
+  const todayDate = new Date(todayStr + "T00:00:00.000Z");
+
   const staff = await prisma.staff.findMany({
     ...(where ? { where } : {}),
     include: {
       schedules: true,
       staffServices: { include: { service: true } },
+      appointments: {
+        where: {
+          status: { in: ["pending", "confirmed"] },
+          OR: [
+            { date: { gt: todayDate } },
+            { date: todayDate, startTime: { gte: nowTime } },
+          ],
+        },
+        orderBy: [{ date: "asc" }, { startTime: "asc" }],
+        take: 1,
+        select: { id: true, date: true, startTime: true },
+      },
     },
     orderBy: { sortOrder: "asc" },
   });

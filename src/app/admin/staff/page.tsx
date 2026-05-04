@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+type NextAppointment = {
+  id: string;
+  date: string; // ISO string from DB
+  startTime: string; // "HH:MM"
+};
+
 type Staff = {
   id: string;
   name: string;
@@ -18,7 +24,35 @@ type Staff = {
     slots: string;
     breaks: string | null;
   }[];
+  appointments?: NextAppointment[];
 };
+
+function formatNextAppt(appt: NextAppointment): string {
+  // appt.date is like "2026-05-05T00:00:00.000Z"
+  // Extract local date
+  const apptDate = new Date(appt.date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const apptMidnight = new Date(apptDate);
+  apptMidnight.setHours(0, 0, 0, 0);
+
+  const daysDiff = Math.round((apptMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+  let dateLabel: string;
+  if (daysDiff === 0) {
+    dateLabel = "היום";
+  } else if (daysDiff === 1) {
+    dateLabel = "מחר";
+  } else if (daysDiff <= 6) {
+    dateLabel = `יום ${DAY_NAMES[apptMidnight.getDay()]}`;
+  } else {
+    const d = apptMidnight.getDate();
+    const mo = apptMidnight.getMonth() + 1;
+    dateLabel = `${d}/${mo}`;
+  }
+
+  return `${dateLabel} ${appt.startTime}`;
+}
 
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -249,6 +283,19 @@ export default function AdminStaffPage() {
                     ? <div className="text-sm text-neutral-500" dir="ltr">{s.phone}</div>
                     : <div className="text-xs text-amber-600">⚠️ אין טלפון</div>
                   }
+                  {/* Next upcoming appointment indicator */}
+                  {s.appointments && s.appointments.length > 0 ? (
+                    <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-medium">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                      <span>תור קרוב:</span>
+                      <span>{formatNextAppt(s.appointments[0])}</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-neutral-50 border border-neutral-200 text-neutral-400 text-[11px]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-neutral-300 flex-shrink-0" />
+                      <span>אין תורים קרובים</span>
+                    </div>
+                  )}
                   {s.staffServices?.length === 0 && (
                     <div className="text-[11px] text-orange-600 mt-0.5 flex items-center gap-1">
                       ⚠️ לא מוצג ללקוחות — אין שירותים מוגדרים
