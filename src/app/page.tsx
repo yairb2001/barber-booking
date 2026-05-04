@@ -548,9 +548,12 @@ export default function HomePage() {
                     <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 50%)" }} />
                     {/* Slot badge */}
                     {slot && (
-                      <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      <div className="absolute top-2 right-2 px-2 py-1 rounded-full text-[10px] font-bold flex flex-col items-center leading-tight"
                         style={{ background: brand, color: "#fff" }}>
-                        ⚡ {slot.time}
+                        {slot.dayLabel !== "היום" && (
+                          <span className="text-[9px] opacity-80">{slot.dayLabel}</span>
+                        )}
+                        <span>⚡ {slot.time}</span>
                       </div>
                     )}
                     {/* Live dot */}
