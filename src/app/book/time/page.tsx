@@ -254,9 +254,20 @@ function ChooseTimePageContent() {
     setWaitlistSuccess(false);
     fetch(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}`)
       .then(res => res.json())
-      .then(data => { setSlots(data); setLoading(false); })
+      .then(data => {
+        setSlots(data);
+        setLoading(false);
+        // If today has no more available slots (all past), auto-advance to the next date
+        if (Array.isArray(data) && data.length === 0 && dates.length > 1) {
+          const todayStr = formatDate(new Date());
+          if (selectedDate === todayStr) {
+            const nextDate = dates.find(d => d.date > todayStr);
+            if (nextDate) setSelectedDate(nextDate.date);
+          }
+        }
+      })
       .catch(() => setLoading(false));
-  }, [staffId, serviceId, selectedDate]);
+  }, [staffId, serviceId, selectedDate, dates]);
 
   const currentDateObj = dates.find(d => d.date === selectedDate);
   const dateLabel = currentDateObj ? `${currentDateObj.label} ${currentDateObj.dayNum}` : selectedDate;
