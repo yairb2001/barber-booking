@@ -253,9 +253,9 @@ function ChooseTimePageContent() {
     setLoading(true);
     setWaitlistSuccess(false);
     fetch(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}`)
-      .then(res => res.json())
+      .then(res => res.ok ? res.json() : [])
       .then(data => {
-        setSlots(data);
+        setSlots(Array.isArray(data) ? data : []);
         setLoading(false);
         // If today has no more available slots (all past), auto-advance to the next date
         if (Array.isArray(data) && data.length === 0 && dates.length > 1) {

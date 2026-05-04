@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { generateSlots, getDayOfWeek, timeToMinutes, getBusinessNow } from "@/lib/utils";
+import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   }
 
   const date = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
-  const dayOfWeek = getDayOfWeek(date);
+  const dayOfWeek = getDayOfWeekISO(dateStr);       // always UTC – immune to server TZ
 
   // Get service duration (check for custom duration)
   const staffService = await prisma.staffService.findUnique({
