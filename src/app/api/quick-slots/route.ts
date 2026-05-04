@@ -69,7 +69,7 @@ export async function GET(request: Request) {
   const nowBiz = getBusinessNow();
   const todayStr = nowBiz.date;
 
-  // Collect ALL available slots across all pool staff for next 3 days
+  // Collect ALL available slots across all pool staff for next 7 days
   const allCandidates: {
     staffId: string;
     staffName: string;
@@ -84,7 +84,7 @@ export async function GET(request: Request) {
     duration: number;
   }[] = [];
 
-  for (let dayOffset = 0; dayOffset < 3; dayOffset++) {
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
     const dateStr   = addDaysISO(todayStr, dayOffset);
     const date      = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
     const dayOfWeek = getDayOfWeekISO(dateStr);
@@ -156,7 +156,7 @@ export async function GET(request: Request) {
   // Sort by absolute time
   allCandidates.sort((a, b) => a.timeMinutes - b.timeMinutes);
 
-  // For specific staff: return first 3 diverse slots (spaced at least 60 min apart)
+  // For specific staff: return first 6 diverse slots (spaced at least 60 min apart)
   if (staffIdFilter) {
     const selected = [];
     let lastTime = -999;
@@ -164,7 +164,7 @@ export async function GET(request: Request) {
       if (c.timeMinutes - lastTime >= 60) {
         selected.push(c);
         lastTime = c.timeMinutes;
-        if (selected.length >= 3) break;
+        if (selected.length >= 6) break;
       }
     }
     return NextResponse.json(selected);

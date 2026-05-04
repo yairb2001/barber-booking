@@ -141,7 +141,7 @@ function ChooseServicePageContent() {
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
             </span>
             <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-              תורים פנויים — {staffInfo?.name}
+              התורים הכי קרובים
             </p>
           </div>
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>

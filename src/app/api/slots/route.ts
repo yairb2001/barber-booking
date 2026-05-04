@@ -79,24 +79,28 @@ export async function GET(request: Request) {
   let slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 
   // Filter out past slots + honor min-lead-time when the requested date is today
-  const nowBiz = getBusinessNow();
-  if (nowBiz.date === dateStr) {
-    // Per-barber override takes priority over business-level setting
-    const staffRecord = await prisma.staff.findUnique({
-      where: { id: staffId },
-      select: { settings: true },
-    });
-    const staffSettings: Record<string, unknown> = staffRecord?.settings
-      ? JSON.parse(staffRecord.settings)
-      : {};
-    let leadMinutes = 0;
-    if (staffSettings.minBookingLeadMinutes !== undefined) {
-      leadMinutes = Number(staffSettings.minBookingLeadMinutes);
-    } else {
-      const biz = await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
-      leadMinutes = biz?.minBookingLeadMinutes ?? 0;
+  try {
+    const nowBiz = getBusinessNow();
+    if (nowBiz.date === dateStr) {
+      // Per-barber override takes priority over business-level setting
+      const staffRecord = await prisma.staff.findUnique({
+        where: { id: staffId },
+        select: { settings: true },
+      });
+      const staffSettings: Record<string, unknown> = staffRecord?.settings
+        ? JSON.parse(staffRecord.settings)
+        : {};
+      let leadMinutes = 0;
+      if (staffSettings.minBookingLeadMinutes !== undefined) {
+        leadMinutes = Number(staffSettings.minBookingLeadMinutes);
+      } else {
+        const biz = await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
+        leadMinutes = biz?.minBookingLeadMinutes ?? 0;
+      }
+      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + leadMinutes);
     }
-    slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + leadMinutes);
+  } catch (e) {
+    console.error("getBusinessNow failed, skipping past-slot filter:", e);
   }
 
   return NextResponse.json(slots);
