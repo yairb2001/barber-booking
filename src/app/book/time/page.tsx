@@ -212,6 +212,7 @@ function ChooseTimePageContent() {
 
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [slots, setSlots] = useState<string[]>([]);
+  const [dayClosed, setDayClosed] = useState(false); // true = barber not working that day
   const [loading, setLoading] = useState(false);
   const [dates, setDates] = useState<{ date: string; label: string; dayName: string; dayShort: string; dayNum: number }[]>([]);
   const [waitlistOpen, setWaitlistOpen]     = useState(false);
@@ -253,12 +254,16 @@ function ChooseTimePageContent() {
     setLoading(true);
     setWaitlistSuccess(false);
     fetch(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}`)
-      .then(res => res.ok ? res.json() : [])
-      .then(data => {
-        setSlots(Array.isArray(data) ? data : []);
+      .then(res => res.ok ? res.json() : { slots: [] })
+      .then((data: { slots?: string[]; closed?: boolean } | string[]) => {
+        // Support both old array format (backward compat) and new { slots, closed } format
+        const slotList: string[] = Array.isArray(data) ? data : (data.slots ?? []);
+        const closed: boolean = Array.isArray(data) ? false : (data.closed ?? false);
+        setSlots(slotList);
+        setDayClosed(closed);
         setLoading(false);
         // If today has no more available slots (all past), auto-advance to the next date
-        if (Array.isArray(data) && data.length === 0 && dates.length > 1) {
+        if (slotList.length === 0 && !closed && dates.length > 1) {
           const todayStr = formatDate(new Date());
           if (selectedDate === todayStr) {
             const nextDate = dates.find(d => d.date > todayStr);
@@ -266,7 +271,7 @@ function ChooseTimePageContent() {
           }
         }
       })
-      .catch(() => setLoading(false));
+      .catch(() => { setDayClosed(false); setLoading(false); });
   }, [staffId, serviceId, selectedDate, dates]);
 
   const currentDateObj = dates.find(d => d.date === selectedDate);
@@ -358,17 +363,21 @@ function ChooseTimePageContent() {
           <div className="py-16 flex flex-col items-center gap-4">
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
               style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
-              📅
+              {dayClosed ? "🚫" : "📅"}
             </div>
             <div className="text-center">
-              <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>אין זמינות</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>נסה תאריך אחר</p>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>
+                {dayClosed ? "הספר לא עובד ביום זה" : "אין שעות פנויות"}
+              </p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+                {dayClosed ? "בחר תאריך אחר" : "כל התורים מלאים — נסה תאריך אחר"}
+              </p>
             </div>
           </div>
         )}
 
-        {/* ── Waitlist CTA ── */}
-        {!loading && selectedDate && (
+        {/* ── Waitlist CTA — only when barber is scheduled to work but day is full/limited ── */}
+        {!loading && selectedDate && !dayClosed && (
           <div className="mt-8 rounded-2xl p-4"
             style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
             <div className="flex items-start gap-3">

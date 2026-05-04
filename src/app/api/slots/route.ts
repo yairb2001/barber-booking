@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   });
 
   if (override && !override.isWorking) {
-    return NextResponse.json([]); // Day off
+    return NextResponse.json({ slots: [], closed: true }); // Day off override
   }
 
   // Get schedule
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
     });
 
     if (!schedule || !schedule.isWorking) {
-      return NextResponse.json([]);
+      return NextResponse.json({ slots: [], closed: true }); // No schedule or day off
     }
 
     scheduleSlots = JSON.parse(schedule.slots);
@@ -78,7 +78,10 @@ export async function GET(request: Request) {
 
   let slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 
-  // Filter out past slots + honor min-lead-time when the requested date is today
+  // Filter out past slots + honor min-lead-time when the requested date is today.
+  // ⚠️  The JSON.parse for staff settings lives in its own try/catch so that a
+  //     malformed settings string does NOT cause the outer catch to swallow the
+  //     entire filter block (which would leave past slots visible).
   try {
     const nowBiz = getBusinessNow();
     if (nowBiz.date === dateStr) {
@@ -87,12 +90,16 @@ export async function GET(request: Request) {
         where: { id: staffId },
         select: { settings: true },
       });
-      const staffSettings: Record<string, unknown> = staffRecord?.settings
-        ? JSON.parse(staffRecord.settings)
-        : {};
+
+      let staffSettings: Record<string, unknown> = {};
+      try {
+        if (staffRecord?.settings) staffSettings = JSON.parse(staffRecord.settings);
+      } catch { /* ignore malformed settings JSON — fall through to business default */ }
+
       let leadMinutes = 0;
       if (staffSettings.minBookingLeadMinutes !== undefined) {
-        leadMinutes = Number(staffSettings.minBookingLeadMinutes);
+        const parsed = Number(staffSettings.minBookingLeadMinutes);
+        leadMinutes = isNaN(parsed) ? 0 : parsed;
       } else {
         const biz = await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
         leadMinutes = biz?.minBookingLeadMinutes ?? 0;
@@ -103,5 +110,5 @@ export async function GET(request: Request) {
     console.error("getBusinessNow failed, skipping past-slot filter:", e);
   }
 
-  return NextResponse.json(slots);
+  return NextResponse.json({ slots });
 }
