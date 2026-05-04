@@ -270,13 +270,22 @@ export default function AdminStaffPage() {
               className={`bg-white rounded-2xl border ${s.isAvailable ? "border-neutral-200" : "border-neutral-100 opacity-60"} p-5`}
             >
               <div className="flex items-center gap-4">
-                {s.avatarUrl ? (
-                  <img src={s.avatarUrl} alt={s.name} className="w-12 h-12 rounded-full object-cover" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold text-lg">
-                    {s.name[0]}
-                  </div>
-                )}
+                {/* Avatar with next-appointment badge */}
+                <div className="relative flex-shrink-0">
+                  {s.avatarUrl ? (
+                    <img src={s.avatarUrl} alt={s.name} className="w-14 h-14 rounded-full object-cover" />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold text-lg">
+                      {s.name[0]}
+                    </div>
+                  )}
+                  {/* Blue dot on avatar when there's an upcoming appointment */}
+                  {s.appointments && s.appointments.length > 0 ? (
+                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-white" />
+                  ) : (
+                    <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-neutral-300 border-2 border-white" />
+                  )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-neutral-900">{s.name}</div>
                   {s.phone
