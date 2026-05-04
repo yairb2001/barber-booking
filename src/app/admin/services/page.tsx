@@ -10,10 +10,11 @@ type Service = {
   price: number;
   durationMinutes: number;
   isVisible: boolean;
+  showDuration: boolean;
   sortOrder: number;
 };
 
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true };
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true };
 
 export default function AdminServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -54,11 +55,11 @@ export default function AdminServicesPage() {
     load();
   }
 
-  async function toggleVisible(id: string, current: boolean) {
+  async function toggle(id: string, field: "isVisible" | "showDuration", current: boolean) {
     await fetch(`/api/admin/services/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isVisible: !current }),
+      body: JSON.stringify({ [field]: !current }),
     });
     load();
   }
@@ -77,6 +78,7 @@ export default function AdminServicesPage() {
       price: s.price.toString(),
       durationMinutes: s.durationMinutes.toString(),
       isVisible: s.isVisible,
+      showDuration: s.showDuration,
     });
     setShowAdd(true);
   }
@@ -102,62 +104,66 @@ export default function AdminServicesPage() {
       {loading ? (
         <div className="text-center py-16 text-neutral-400">טוען...</div>
       ) : (
-        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+        <div className="space-y-3">
           {services.length === 0 ? (
             <div className="text-center py-16 text-neutral-400">אין שירותים עדיין</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-100 bg-neutral-50">
-                  <th className="text-right px-5 py-3 text-neutral-500 font-medium">שירות</th>
-                  <th className="text-right px-5 py-3 text-neutral-500 font-medium">משך</th>
-                  <th className="text-right px-5 py-3 text-neutral-500 font-medium">מחיר</th>
-                  <th className="text-right px-5 py-3 text-neutral-500 font-medium">מצב</th>
-                  <th className="px-5 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-50">
-                {services.map((s) => (
-                  <tr key={s.id} className={`hover:bg-neutral-50 ${!s.isVisible ? "opacity-50" : ""}`}>
-                    <td className="px-5 py-4">
-                      <div className="font-semibold text-neutral-900">{s.name}</div>
-                      {s.description && <div className="text-xs text-neutral-400">{s.description}</div>}
-                    </td>
-                    <td className="px-5 py-4 text-neutral-600">{s.durationMinutes} דק׳</td>
-                    <td className="px-5 py-4 font-semibold text-neutral-900">₪{s.price}</td>
-                    <td className="px-5 py-4">
-                      <button
-                        onClick={() => toggleVisible(s.id, s.isVisible)}
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          s.isVisible
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-neutral-100 text-neutral-400"
-                        }`}
-                      >
-                        {s.isVisible ? "גלוי" : "מוסתר"}
-                      </button>
-                    </td>
-                    <td className="px-5 py-4">
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          onClick={() => openEdit(s)}
-                          className="text-xs text-slate-800 hover:underline"
-                        >
-                          ערוך
-                        </button>
-                        <button
-                          onClick={() => del(s.id)}
-                          className="text-xs text-red-400 hover:underline"
-                        >
-                          מחק
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          ) : services.map((s) => (
+            <div key={s.id} className={`bg-white rounded-2xl border p-4 transition ${!s.isVisible ? "border-neutral-100 opacity-60" : "border-neutral-200"}`}>
+              <div className="flex items-start gap-3">
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-neutral-900">{s.name}</div>
+                  {s.description && <div className="text-xs text-neutral-400 mt-0.5">{s.description}</div>}
+                  <div className="text-xs text-neutral-500 mt-1">
+                    <span className="font-medium text-neutral-800">₪{s.price}</span>
+                    <span className="mx-1.5 text-neutral-300">·</span>
+                    <span>{s.durationMinutes} דק׳</span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => openEdit(s)} className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1 rounded-lg border border-neutral-200 hover:border-neutral-300 transition">
+                    ✏️ ערוך
+                  </button>
+                  <button onClick={() => del(s.id)} className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg border border-neutral-200 hover:border-red-200 transition">
+                    מחק
+                  </button>
+                </div>
+              </div>
+
+              {/* Toggles row */}
+              <div className="flex items-center gap-4 mt-3 pt-3 border-t border-neutral-50">
+                {/* isVisible toggle */}
+                <button
+                  onClick={() => toggle(s.id, "isVisible", s.isVisible)}
+                  className="flex items-center gap-2 group"
+                >
+                  <div className={`relative w-9 h-5 rounded-full transition-colors ${s.isVisible ? "bg-teal-600" : "bg-neutral-300"}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${s.isVisible ? "right-0.5" : "left-0.5"}`} />
+                  </div>
+                  <span className="text-xs text-neutral-600 group-hover:text-neutral-900 transition">
+                    {s.isVisible ? "גלוי ללקוחות" : "מוסתר"}
+                  </span>
+                </button>
+
+                <span className="text-neutral-200">|</span>
+
+                {/* showDuration toggle */}
+                <button
+                  onClick={() => toggle(s.id, "showDuration", s.showDuration)}
+                  className="flex items-center gap-2 group"
+                >
+                  <div className={`relative w-9 h-5 rounded-full transition-colors ${s.showDuration ? "bg-teal-600" : "bg-neutral-300"}`}>
+                    <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${s.showDuration ? "right-0.5" : "left-0.5"}`} />
+                  </div>
+                  <span className="text-xs text-neutral-600 group-hover:text-neutral-900 transition">
+                    {s.showDuration ? "משך זמן גלוי" : "משך זמן מוסתר"}
+                  </span>
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -208,15 +214,28 @@ export default function AdminServicesPage() {
                   />
                 </div>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.isVisible}
-                  onChange={(e) => setForm((p) => ({ ...p, isVisible: e.target.checked }))}
-                  className="accent-slate-900"
-                />
-                <span className="text-sm text-neutral-700">גלוי ללקוחות</span>
-              </label>
+
+              {/* Visibility toggles */}
+              <div className="space-y-2 pt-1">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.isVisible}
+                    onChange={(e) => setForm((p) => ({ ...p, isVisible: e.target.checked }))}
+                    className="accent-teal-600 w-4 h-4"
+                  />
+                  <span className="text-sm text-neutral-700">גלוי ללקוחות</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.showDuration}
+                    onChange={(e) => setForm((p) => ({ ...p, showDuration: e.target.checked }))}
+                    className="accent-teal-600 w-4 h-4"
+                  />
+                  <span className="text-sm text-neutral-700">הצג משך זמן ללקוחות</span>
+                </label>
+              </div>
             </div>
             <div className="flex gap-2 mt-5">
               <button

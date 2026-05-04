@@ -14,6 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.price !== undefined && { price: parseFloat(body.price) }),
       ...(body.durationMinutes !== undefined && { durationMinutes: parseInt(body.durationMinutes) }),
       ...(body.isVisible !== undefined && { isVisible: body.isVisible }),
+      ...(body.showDuration !== undefined && { showDuration: body.showDuration }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },
   });

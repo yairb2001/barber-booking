@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
       price: parseFloat(body.price),
       durationMinutes: parseInt(body.durationMinutes),
       isVisible: body.isVisible ?? true,
+      showDuration: body.showDuration ?? true,
       sortOrder: body.sortOrder ?? 0,
     },
   });

@@ -170,6 +170,7 @@ model Service {
   icon            String?
   note            String?
   isVisible       Boolean  @default(true) @map("is_visible")
+  showDuration    Boolean  @default(true) @map("show_duration")
   sortOrder       Int      @default(0) @map("sort_order")
   createdAt       DateTime @default(now()) @map("created_at")
 

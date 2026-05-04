@@ -7,7 +7,7 @@ import Link from "next/link";
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
   id: string; name: string; price: number; durationMinutes: number;
-  customPrice: number | null; customDuration: number | null;
+  showDuration: boolean; customPrice: number | null; customDuration: number | null;
 };
 
 // ── Waitlist card ──────────────────────────────────────────────────────────────
@@ -353,7 +353,9 @@ function ConfirmPageContent() {
           <SummaryRow label="שירות" value={serviceInfo?.name || "..."} />
           <SummaryRow label="תאריך" value={dateLabel} />
           <SummaryRow label="שעה" value={<span dir="ltr">{time}</span>} />
-          <SummaryRow label="משך" value={`${duration} דקות`} />
+          {serviceInfo?.showDuration !== false && (
+            <SummaryRow label="משך" value={`${duration} דקות`} />
+          )}
           <SummaryRow label="מחיר" value={`₪${price}`} large />
         </div>
 

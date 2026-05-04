@@ -10,6 +10,7 @@ type Service = {
   description: string | null;
   price: number;
   durationMinutes: number;
+  showDuration: boolean;
   note: string | null;
   customPrice: number | null;
   customDuration: number | null;
@@ -212,12 +213,14 @@ function ChooseServicePageContent() {
                         {service.description}
                       </p>
                     )}
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className="text-[11px] px-2 py-0.5 rounded-full"
-                        style={{ background: "var(--bg-alt)", color: "var(--text-muted)" }}>
-                        {duration} דקות
-                      </span>
-                    </div>
+                    {service.showDuration !== false && (
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[11px] px-2 py-0.5 rounded-full"
+                          style={{ background: "var(--bg-alt)", color: "var(--text-muted)" }}>
+                          {duration} דקות
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Price + arrow */}
