@@ -48,6 +48,7 @@ type Analytics = {
     newToStaff:        number;
     newAlsoToBusiness: number;
     secondVisit:       number;
+    secondVisitRate:   { cohortSize: number; returned: number; rate: number };
   }[];
 };
 
@@ -191,62 +192,105 @@ function RevenueChart({ data, todayISO }: { data: { date: string; revenue: numbe
   );
 }
 
-// ── ReturnRateCard ────────────────────────────────────────────────────────────
-function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
+// ── RetentionCard — unified window + visit-count selector ─────────────────────
+const RETENTION_WINDOWS = [
+  { label: "30 יום",   days: 30  },
+  { label: "60 יום",   days: 60  },
+  { label: "90 יום",   days: 90  },
+  { label: "חצי שנה",  days: 180 },
+  { label: "שנה",      days: 365 },
+];
+const VISIT_THRESHOLDS = [
+  { label: "ביקור 2+",  min: 2,  desc: "הגיעו לפחות פעמיים" },
+  { label: "ביקור 3+",  min: 3,  desc: "הגיעו לפחות 3 פעמים" },
+  { label: "ביקור 10+", min: 10, desc: "לקוחות קבועים מאוד" },
+];
+
+function RetentionCard({ returnRate, windowDays, minVisits, onWindowChange, onMinVisitsChange }: {
   returnRate: Analytics["returnRate"];
   windowDays: number;
+  minVisits: number;
   onWindowChange: (d: number) => void;
+  onMinVisitsChange: (v: number) => void;
 }) {
   const pct = returnRate.rate;
-  const WINDOWS = [
-    { label: "30 יום",   days: 30  },
-    { label: "90 יום",   days: 90  },
-    { label: "6 חודשים", days: 180 },
-    { label: "שנה",      days: 365 },
-  ];
+  const threshold = VISIT_THRESHOLDS.find(t => t.min === minVisits) ?? VISIT_THRESHOLDS[0];
+  const windowLabel = RETENTION_WINDOWS.find(w => w.days === windowDays)?.label ?? `${windowDays} יום`;
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-      <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5 col-span-full">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
         <div>
-          <h3 className="font-semibold text-neutral-800 text-sm">אחוז לקוחות חוזרים</h3>
+          <h3 className="font-semibold text-neutral-800">שימור לקוחות</h3>
           <p className="text-xs text-neutral-400 mt-0.5">
-            מלקוחות שהגיעו לראשונה ב-{returnRate.windowDays} הימים האחרונים
+            מלקוחות חדשים ב-{windowLabel} האחרונים — כמה הגיעו {threshold.desc}
           </p>
         </div>
-        <div className="flex gap-1 flex-wrap">
-          {WINDOWS.map(w => (
-            <button key={w.days} onClick={() => onWindowChange(w.days)}
-              className={`text-xs px-2.5 py-1 rounded-lg border transition ${
-                windowDays === w.days
-                  ? "bg-teal-600 border-teal-600 text-white font-semibold"
-                  : "border-neutral-200 text-neutral-500 hover:border-slate-300"
-              }`}>
-              {w.label}
-            </button>
-          ))}
+        {/* Big number */}
+        {returnRate.cohortSize > 0 && (
+          <div className="text-left">
+            <span className={`text-4xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
+              {pct}%
+            </span>
+            <p className="text-xs text-neutral-400 mt-0.5 text-left">
+              {returnRate.returned} מתוך {returnRate.cohortSize}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Selectors row */}
+      <div className="flex flex-wrap gap-3 mb-4">
+        {/* Window */}
+        <div>
+          <p className="text-[10px] text-neutral-400 uppercase mb-1.5">טווח זמן</p>
+          <div className="flex gap-1 flex-wrap">
+            {RETENTION_WINDOWS.map(w => (
+              <button key={w.days} onClick={() => onWindowChange(w.days)}
+                className={`text-xs px-2.5 py-1 rounded-lg border transition ${
+                  windowDays === w.days
+                    ? "bg-teal-600 border-teal-600 text-white font-semibold"
+                    : "border-neutral-200 text-neutral-500 hover:border-slate-300"
+                }`}>
+                {w.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* Visit count */}
+        <div>
+          <p className="text-[10px] text-neutral-400 uppercase mb-1.5">כמות ביקורים</p>
+          <div className="flex gap-1">
+            {VISIT_THRESHOLDS.map(t => (
+              <button key={t.min} onClick={() => onMinVisitsChange(t.min)}
+                className={`text-xs px-3 py-1 rounded-lg border transition ${
+                  minVisits === t.min
+                    ? "bg-slate-800 border-slate-800 text-white font-semibold"
+                    : "border-neutral-200 text-neutral-500 hover:border-slate-300"
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Result */}
       {returnRate.cohortSize === 0 ? (
         <p className="text-sm text-neutral-400 text-center py-4">אין נתונים מספיקים עדיין</p>
       ) : (
         <>
-          <div className="flex items-end gap-3 mb-3">
-            <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
-              {pct}%
-            </span>
-            <span className="text-sm text-neutral-500 mb-1.5">
-              {returnRate.returned} מתוך {returnRate.cohortSize} לקוחות חזרו
-            </span>
-          </div>
-          <div className="h-3 bg-neutral-100 rounded-full overflow-hidden">
+          <div className="h-3 bg-neutral-100 rounded-full overflow-hidden mb-2">
             <div
-              className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
+              className={`h-full rounded-full transition-all duration-500 ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
               style={{ width: `${pct}%` }}
             />
           </div>
-          <div className="flex justify-between text-xs text-neutral-400 mt-1.5">
+          <div className="flex justify-between text-xs text-neutral-400">
             <span>0%</span>
-            <span className={pct >= 40 ? "text-emerald-600 font-semibold" : ""}>{pct >= 40 ? "מעולה! 🎉" : pct >= 20 ? "בסדר" : "מתחת לממוצע"}</span>
+            <span className={pct >= 40 ? "text-emerald-600 font-semibold" : pct >= 20 ? "text-slate-600" : "text-red-400"}>
+              {pct >= 40 ? "מעולה 🎉" : pct >= 20 ? "בסדר" : "מתחת לממוצע"}
+            </span>
             <span>100%</span>
           </div>
         </>
@@ -255,39 +299,70 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
   );
 }
 
-// ── CohortCard ────────────────────────────────────────────────────────────────
-function CohortCard({ cohort }: { cohort: Analytics["prevMonthCohort"] }) {
-  const pct = cohort.rate;
-  if (cohort.newInPrevMonth === 0) {
-    return (
-      <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-        <h3 className="font-semibold text-neutral-800 text-sm mb-1">קוהורט חודש שעבר</h3>
-        <p className="text-xs text-neutral-400 mb-4">לקוחות חדשים מחודש שעבר שחזרו החודש</p>
-        <p className="text-sm text-neutral-400 text-center py-4">אין נתוני חודש קודם</p>
-      </div>
-    );
-  }
+// ── ReturnRateCard ────────────────────────────────────────────────────────────
+function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
+  returnRate: Analytics["returnRate"];
+  windowDays: number;
+  onWindowChange: (d: number) => void;
+}) {
+  const pct = returnRate.rate;
+  const windowLabel = RETENTION_WINDOWS.find(w => w.days === windowDays)?.label ?? `${windowDays} יום`;
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-      <h3 className="font-semibold text-neutral-800 text-sm mb-1">קוהורט חודש שעבר</h3>
-      <p className="text-xs text-neutral-400 mb-4">לקוחות חדשים מחודש שעבר שחזרו החודש</p>
-      <div className="flex items-end gap-3 mb-3">
-        <span className={`text-5xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
-          {pct}%
-        </span>
-        <span className="text-sm text-neutral-500 mb-1.5">
-          {cohort.returnedThisMonth} מתוך {cohort.newInPrevMonth} חזרו
-        </span>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h3 className="font-semibold text-neutral-800 text-sm">חזרת לקוחות</h3>
+          <p className="text-xs text-neutral-400 mt-0.5">לקוחות חדשים שחזרו תוך {windowLabel}</p>
+        </div>
+        {returnRate.cohortSize > 0 && (
+          <span className={`text-3xl font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-900" : "text-red-400"}`}>
+            {pct}%
+          </span>
+        )}
       </div>
-      <div className="h-3 bg-neutral-100 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
-          style={{ width: `${pct}%` }}
-        />
+      <div className="flex gap-1 flex-wrap mb-3">
+        {RETENTION_WINDOWS.map(w => (
+          <button key={w.days} onClick={() => onWindowChange(w.days)}
+            className={`text-xs px-2.5 py-1 rounded-lg border transition ${
+              windowDays === w.days ? "bg-teal-600 border-teal-600 text-white font-semibold" : "border-neutral-200 text-neutral-500 hover:border-slate-300"
+            }`}>
+            {w.label}
+          </button>
+        ))}
       </div>
-      <p className="text-[11px] text-neutral-400 mt-2">
-        {cohort.newInPrevMonth} לקוחות חדשים הגיעו בחודש שעבר
-      </p>
+      {returnRate.cohortSize === 0 ? (
+        <p className="text-xs text-neutral-400">אין נתונים מספיקים</p>
+      ) : (
+        <>
+          <div className="h-2.5 bg-neutral-100 rounded-full overflow-hidden mb-1.5">
+            <div className={`h-full rounded-full ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-700" : "bg-red-400"}`}
+              style={{ width: `${pct}%` }} />
+          </div>
+          <p className="text-xs text-neutral-400">{returnRate.returned} מתוך {returnRate.cohortSize} חזרו</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── CohortCard ────────────────────────────────────────────────────────────────
+function CohortCard({ cohort }: { cohort: Analytics["prevMonthCohort"] }) {
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <h3 className="font-semibold text-neutral-800 text-sm mb-1">קוהורט חודש קודם</h3>
+      <p className="text-xs text-neutral-400 mb-4">לקוחות חדשים בחודש שעבר שהגיעו שוב החודש</p>
+      <div className="flex items-end gap-4">
+        <div>
+          <p className="text-3xl font-black text-slate-900">{cohort.rate}%</p>
+          <p className="text-xs text-neutral-400 mt-0.5">{cohort.returnedThisMonth} מתוך {cohort.newInPrevMonth}</p>
+        </div>
+        {cohort.newInPrevMonth > 0 && (
+          <div className="flex-1 h-2.5 bg-neutral-100 rounded-full overflow-hidden mb-1.5">
+            <div className={`h-full rounded-full ${cohort.rate >= 40 ? "bg-emerald-500" : cohort.rate >= 20 ? "bg-slate-700" : "bg-red-400"}`}
+              style={{ width: `${cohort.rate}%` }} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -330,9 +405,13 @@ function ActivityBreakdownCard({ breakdown }: { breakdown: Analytics["activityBr
 }
 
 // ── BarberCard ────────────────────────────────────────────────────────────────
-function BarberCard({ row, selected, onClick }: {
-  row: Analytics["staffSummary"][0]; selected: boolean; onClick: () => void;
+function BarberCard({ row, selected, onClick, windowDays }: {
+  row: Analytics["staffSummary"][0]; selected: boolean; onClick: () => void; windowDays: number;
 }) {
+  const svr = row.secondVisitRate;
+  const pct = svr.rate;
+  const windowLabel = windowDays === 30 ? "30 יום" : windowDays === 60 ? "60 יום" :
+    windowDays === 90 ? "90 יום" : windowDays === 180 ? "חצי שנה" : "שנה";
   return (
     <button onClick={onClick}
       className={`text-right w-full rounded-2xl border p-5 transition ${
@@ -347,7 +426,7 @@ function BarberCard({ row, selected, onClick }: {
           <p className="text-xs text-neutral-400">לחץ לסינון</p>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 text-right">
+      <div className="grid grid-cols-2 gap-3 text-right mb-4">
         <div>
           <p className="text-[10px] text-neutral-400 uppercase">הכנסה</p>
           <p className="text-lg font-bold text-slate-800">₪{row.revenue.toLocaleString("he-IL")}</p>
@@ -360,13 +439,38 @@ function BarberCard({ row, selected, onClick }: {
           <p className="text-[10px] text-neutral-400 uppercase">חדשים אצלו</p>
           <p className="text-lg font-bold text-teal-600">{row.newToStaff}</p>
           {row.newAlsoToBusiness > 0 && (
-            <p className="text-[10px] text-emerald-600 mt-0.5">{row.newAlsoToBusiness} גם חדשים לעסק</p>
+            <p className="text-[10px] text-emerald-600 mt-0.5">{row.newAlsoToBusiness} גם לעסק</p>
           )}
         </div>
         <div>
-          <p className="text-[10px] text-neutral-400 uppercase">ביקור שני</p>
+          <p className="text-[10px] text-neutral-400 uppercase">חזרו (חודש זה)</p>
           <p className="text-lg font-bold text-emerald-600">{row.secondVisit}</p>
         </div>
+      </div>
+      {/* Second-visit rate rolling window */}
+      <div className="border-t border-neutral-100 pt-3">
+        <div className="flex items-center justify-between mb-1.5">
+          <p className="text-[10px] text-neutral-400 uppercase">חזרה — {windowLabel}</p>
+          <span className={`text-sm font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-800" : "text-neutral-400"}`}>
+            {svr.cohortSize > 0 ? `${pct}%` : "—"}
+          </span>
+        </div>
+        {svr.cohortSize > 0 && (
+          <>
+            <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-600" : "bg-red-400"}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-[10px] text-neutral-400 mt-1">
+              {svr.returned} מתוך {svr.cohortSize} לקוחות חזרו
+            </p>
+          </>
+        )}
+        {svr.cohortSize === 0 && (
+          <p className="text-[10px] text-neutral-400">אין לקוחות חדשים בטווח זה</p>
+        )}
       </div>
     </button>
   );
@@ -379,9 +483,8 @@ export default function Dashboard() {
 
   const [viewYear,   setViewYear]   = useState(now.getFullYear());
   const [viewMonth,  setViewMonth]  = useState(now.getMonth());
-  const [selStaff,   setSelStaff]   = useState<string | null>(null);
-  const [windowDays, setWindowDays] = useState(90);
-  const [returnPeriod, setReturnPeriod] = useState<90 | 365>(90);
+  const [selStaff,        setSelStaff]        = useState<string | null>(null);
+  const [returnWindowDays, setReturnWindowDays] = useState(90);
   const [analytics,  setAnalytics]  = useState<Analytics | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [me,         setMe]         = useState<Me | null>(null);
@@ -399,13 +502,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ from, to, returnWindowDays: String(returnPeriod) });
+    const params = new URLSearchParams({ from, to, returnWindowDays: String(returnWindowDays) });
     if (selStaff) params.set("staffId", selStaff);
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, returnPeriod]);
+  }, [from, to, selStaff, returnWindowDays]);
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -532,15 +635,10 @@ export default function Dashboard() {
             />
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-col gap-1">
               <p className="text-xs text-neutral-400 font-medium">ביקור שני</p>
-              <p className="text-2xl font-bold text-emerald-600">{secondVisitCustomers}</p>
-              <div className="flex gap-1 mt-1">
-                {([90, 365] as const).map(d => (
-                  <button key={d} onClick={() => setReturnPeriod(d)}
-                    className={`flex-1 text-[10px] py-0.5 rounded-md font-semibold transition ${returnPeriod === d ? "bg-emerald-600 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"}`}>
-                    {d === 90 ? "90 יום" : "שנה"}
-                  </button>
-                ))}
-              </div>
+              <p className="text-2xl font-bold text-emerald-600">{a.returnRate.returned}</p>
+              <p className="text-[10px] text-neutral-400">
+                {a.returnRate.cohortSize > 0 ? `${a.returnRate.rate}% מתוך ${a.returnRate.cohortSize}` : "אין נתונים"}
+              </p>
             </div>
           </div>
 
@@ -565,7 +663,7 @@ export default function Dashboard() {
           <div>
             <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">🔄 שימור לקוחות</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-              <ReturnRateCard returnRate={a.returnRate} windowDays={windowDays} onWindowChange={setWindowDays} />
+              <ReturnRateCard returnRate={a.returnRate} windowDays={returnWindowDays} onWindowChange={setReturnWindowDays} />
 
               <CohortCard cohort={a.prevMonthCohort} />
             </div>
@@ -593,6 +691,7 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {a.staffSummary.map(row => (
                   <BarberCard key={row.staffId} row={row} selected={selStaff === row.staffId}
+                    windowDays={returnWindowDays}
                     onClick={() => setSelStaff(p => p === row.staffId ? null : row.staffId)} />
                 ))}
               </div>
