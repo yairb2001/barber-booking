@@ -55,7 +55,7 @@ const bottomNavBarber: NavItem[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
 
   useEffect(() => {
@@ -69,8 +69,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Poll unread chats count when chats feature is on (only when tab visible).
   // 15s interval — light DB hit (single COUNT query per business).
   const chatsEnabled = me?.chatsEnabled ?? false;
+  const isOwnerForChats = me?.isOwner ?? true;
+  const showChats = chatsEnabled && (isOwnerForChats || (me?.barbersCanAccessChats ?? false));
   useEffect(() => {
-    if (!chatsEnabled || pathname === "/admin/login") return;
+    if (!showChats || pathname === "/admin/login") return;
     let cancelled = false;
     const tick = () => {
       if (cancelled || document.visibilityState !== "visible") return;
@@ -87,19 +89,19 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const id = setInterval(tick, 15000);
     document.addEventListener("visibilitychange", tick);
     return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", tick); };
-  }, [chatsEnabled, pathname]);
+  }, [showChats, pathname]);
 
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
   const visibleNav = navItems.filter(item => {
     if (item.ownerOnly && !isOwner) return false;
     if (item.barberOnly && isOwner) return false;
-    if (item.requiresChats && !chatsEnabled) return false;
+    if (item.requiresChats && !showChats) return false;
     return true;
   });
   // Bottom nav: only show "שיחות" if feature enabled — otherwise drop in favor of fallback
   const bottomNavBase = isOwner ? bottomNavOwner : bottomNavBarber;
-  const bottomNav = chatsEnabled
+  const bottomNav = showChats
     ? [
         bottomNavBase[0], // יומן
         { href: "/admin/chats", label: "שיחות", icon: "💬" } as NavItem,

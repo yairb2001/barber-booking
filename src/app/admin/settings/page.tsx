@@ -397,6 +397,26 @@ export default function AdminSettingsPage() {
     setTimeout(() => setCalHoursSaved(false), 2000);
   }
 
+  // Barber permissions
+  const [barbersCanViewOthersCalendar, setBarbersCanViewOthersCalendar] = useState(false);
+  const [barbersCanAccessChats, setBarbersCanAccessChats] = useState(false);
+  const [barberPermsSaving, setBarberPermsSaving] = useState(false);
+  const [barberPermsSaved, setBarberPermsSaved] = useState(false);
+
+  async function saveBarberPerms() {
+    setBarberPermsSaving(true);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...currentSettings, barbersCanViewOthersCalendar, barbersCanAccessChats } }),
+    });
+    setBarberPermsSaving(false);
+    setBarberPermsSaved(true);
+    setTimeout(() => setBarberPermsSaved(false), 2500);
+  }
+
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
@@ -452,6 +472,9 @@ export default function AdminSettingsPage() {
         if (typeof settingsObj.calendarEndHour   === "number") setCalEndHour(settingsObj.calendarEndHour);
         // Hero video
         if (typeof settingsObj.heroVideoUrl === "string") setHeroVideoUrl(settingsObj.heroVideoUrl);
+        // Barber permissions
+        if (typeof settingsObj.barbersCanViewOthersCalendar === "boolean") setBarbersCanViewOthersCalendar(settingsObj.barbersCanViewOthersCalendar);
+        if (typeof settingsObj.barbersCanAccessChats === "boolean") setBarbersCanAccessChats(settingsObj.barbersCanAccessChats);
       }
       setBizLoading(false);
     });
@@ -921,6 +944,45 @@ export default function AdminSettingsPage() {
               {calStartHour >= calEndHour && (
                 <p className="text-xs text-red-500 mt-2">⚠️ שעת הסיום חייבת להיות אחרי שעת ההתחלה</p>
               )}
+            </div>
+
+            {/* Barber permissions */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-semibold text-neutral-800">הרשאות ספרים</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">שלוט במה שספרים יכולים לראות ולעשות</p>
+                </div>
+                <button onClick={saveBarberPerms} disabled={barberPermsSaving}
+                  className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition ${barberPermsSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+                  {barberPermsSaving ? "שומר..." : barberPermsSaved ? "✓ נשמר" : "שמור"}
+                </button>
+              </div>
+              <div className="space-y-4">
+                {/* Toggle: view other calendars */}
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-800">צפייה ביומנים של ספרים אחרים</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">ספרים יוכלו לעבור בין יומנים — ברירת המחדל תמיד היומן שלהם</p>
+                  </div>
+                  <button onClick={() => setBarbersCanViewOthersCalendar(v => !v)}
+                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${barbersCanViewOthersCalendar ? "bg-teal-600" : "bg-neutral-300"}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${barbersCanViewOthersCalendar ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                </label>
+                <div className="border-t border-neutral-100" />
+                {/* Toggle: WhatsApp chats */}
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-800">גישה לשיחות WhatsApp</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">ספרים יראו שיחות WhatsApp עם לקוחות שלהם בלבד</p>
+                  </div>
+                  <button onClick={() => setBarbersCanAccessChats(v => !v)}
+                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${barbersCanAccessChats ? "bg-teal-600" : "bg-neutral-300"}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${barbersCanAccessChats ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                </label>
+              </div>
             </div>
 
             {/* Referral sources */}

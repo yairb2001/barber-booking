@@ -15,12 +15,14 @@ export async function GET(req: NextRequest) {
     if (s) staff = s;
   }
 
-  // Business-level feature flags (chats toggle is needed by the layout to
-  // decide whether to show the "שיחות" nav item)
   const business = await prisma.business.findFirst({
     where: { id: session.businessId },
-    select: { chatsEnabled: true },
+    select: { chatsEnabled: true, settings: true },
   });
+
+  const bSettings = (() => {
+    try { return JSON.parse(business?.settings || "{}"); } catch { return {}; }
+  })();
 
   return NextResponse.json({
     businessId: session.businessId,
@@ -29,5 +31,7 @@ export async function GET(req: NextRequest) {
     staffId: session.staffId || null,
     staff,
     chatsEnabled: business?.chatsEnabled ?? false,
+    barbersCanViewOthersCalendar: bSettings.barbersCanViewOthersCalendar ?? false,
+    barbersCanAccessChats: bSettings.barbersCanAccessChats ?? false,
   });
 }

@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
   const toStr            = searchParams.get("to")   ?? "";
   const staffId          = searchParams.get("staffId") || null;
   const returnWindowDays = Math.min(Math.max(parseInt(searchParams.get("returnWindowDays") ?? "90", 10), 7), 365);
+  const minVisits        = Math.min(Math.max(parseInt(searchParams.get("minVisits") ?? "2", 10), 2), 20);
 
   // Staff scoping: barbers only see analytics for their own data
   const session = getRequestSession(req);
@@ -296,7 +297,7 @@ export async function GET(req: NextRequest) {
 
   let cohortSize = 0, cohortReturned = 0;
   for (const [, dates] of Array.from(wDates.entries())) {
-    if (dates[0] >= windowStart) { cohortSize++; if (dates.length >= 2) cohortReturned++; }
+    if (dates[0] >= windowStart) { cohortSize++; if (dates.length >= minVisits) cohortReturned++; }
   }
 
   // ── 7. Per-barber summary (only when no staff filter) ─────────────────────
@@ -306,6 +307,7 @@ export async function GET(req: NextRequest) {
     newToStaff: number;          // customer's first visit WITH this staff is in period
     newAlsoToBusiness: number;   // of newToStaff, also customer's first visit ANYWHERE is in period
     secondVisit: number;
+    secondVisitRate: { cohortSize: number; returned: number; rate: number };
   };
   const staffSummary: StaffRow[] = [];
 
@@ -346,7 +348,11 @@ export async function GET(req: NextRequest) {
       }
       stGlobalDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
 
+      const barberWindowStart = new Date();
+      barberWindowStart.setDate(barberWindowStart.getDate() - returnWindowDays);
+
       let stNew = 0, stSec = 0, stNewAlsoBiz = 0;
+      let barberCohortSize = 0, barberCohortReturned = 0;
       for (const custId of stCusts) {
         const dates = stDates.get(custId) ?? [];
         const gDates = stGlobalDates.get(custId) ?? [];
@@ -355,12 +361,22 @@ export async function GET(req: NextRequest) {
           if (gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate) stNewAlsoBiz++;
         }
         if (dates[1] && dates[1] >= fromDate && dates[1] <= toDate) stSec++;
+        // Rolling second-visit cohort: first visit with this barber within the window
+        if (dates[0] && dates[0] >= barberWindowStart) {
+          barberCohortSize++;
+          if (dates.length >= minVisits) barberCohortReturned++;
+        }
       }
       staffSummary.push({
         staffId: sid, name,
         revenue: stRev, appointments: appts.length,
         newToStaff: stNew, newAlsoToBusiness: stNewAlsoBiz,
         secondVisit: stSec,
+        secondVisitRate: {
+          cohortSize: barberCohortSize,
+          returned:   barberCohortReturned,
+          rate: barberCohortSize > 0 ? Math.round((barberCohortReturned / barberCohortSize) * 100) : 0,
+        },
       });
     }
     staffSummary.sort((a, b) => b.revenue - a.revenue);

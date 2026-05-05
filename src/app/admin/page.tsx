@@ -1840,6 +1840,13 @@ export default function AdminCalendar() {
   // Calendar display hours — loaded from business settings
   const [calStart, setCalStart] = useState(DAY_START);
   const [calEnd, setCalEnd] = useState(DAY_END);
+  // Barber permissions
+  const [isOwner, setIsOwner] = useState(true); // optimistic
+  const [barbersCanViewOthersCalendar, setBarbersCanViewOthersCalendar] = useState(false);
+  // Hours picker (local override stored in localStorage)
+  const [showHoursPicker, setShowHoursPicker] = useState(false);
+  const [localCalStart, setLocalCalStart] = useState(DAY_START);
+  const [localCalEnd, setLocalCalEnd] = useState(DAY_END);
   const [appointments, setAppointments] = useState<Appt[]>([]);
   // Override map: keyed by `${staffId}|YYYY-MM-DD`
   const [overrideMap, setOverrideMap] = useState<Record<string, { isWorking: boolean; slots: string | null; breaks: string | null }>>({});
@@ -2072,14 +2079,35 @@ export default function AdminCalendar() {
       }
       setServices(sv);
       // Load calendar display hours from business settings JSON
+      let serverStart = DAY_START;
+      let serverEnd = DAY_END;
       if (biz?.settings) {
         try {
           const s = JSON.parse(biz.settings);
-          if (typeof s.calendarStartHour === "number") setCalStart(s.calendarStartHour);
-          if (typeof s.calendarEndHour   === "number") setCalEnd(s.calendarEndHour);
+          if (typeof s.calendarStartHour === "number") serverStart = s.calendarStartHour;
+          if (typeof s.calendarEndHour   === "number") serverEnd = s.calendarEndHour;
         } catch { /* ignore */ }
       }
+      // Check localStorage for user-local override
+      const savedHours = typeof window !== "undefined" ? localStorage.getItem("cal_hours") : null;
+      if (savedHours) {
+        try {
+          const h = JSON.parse(savedHours);
+          if (typeof h.start === "number") serverStart = h.start;
+          if (typeof h.end === "number") serverEnd = h.end;
+        } catch { /* ignore */ }
+      }
+      setCalStart(serverStart);
+      setCalEnd(serverEnd);
+      setLocalCalStart(serverStart);
+      setLocalCalEnd(serverEnd);
     });
+    // Load /api/admin/me for owner status and barber permissions
+    fetch("/api/admin/me").then(r => r.ok ? r.json() : null).then(me => {
+      if (!me) return;
+      setIsOwner(me.isOwner ?? true);
+      setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
+    }).catch(() => {});
   }, []);
 
   const getDates = useCallback(() => {
@@ -2247,6 +2275,13 @@ export default function AdminCalendar() {
       setWaitlistCounts(counts);
     }).catch(() => {});
   }, [getDates]);
+
+  function saveLocalHours() {
+    setCalStart(localCalStart);
+    setCalEnd(localCalEnd);
+    localStorage.setItem("cal_hours", JSON.stringify({ start: localCalStart, end: localCalEnd }));
+    setShowHoursPicker(false);
+  }
 
   function navigate(dir: -1 | 1) {
     const step = view === "day" ? 1 : view === "3day" ? 3 : 7;
@@ -2862,14 +2897,14 @@ export default function AdminCalendar() {
         </button>
 
         {/* Week barber picker (only in week/3day view) */}
-        {(view === "week" || view === "3day") && (
+        {(isOwner || barbersCanViewOthersCalendar) && (view === "week" || view === "3day") && allStaff.length > 1 && (
           <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
             className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
             {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
         {/* Day view barber picker — so "+ תור" defaults to the right barber */}
-        {view === "day" && allStaff.length > 1 && (
+        {(isOwner || barbersCanViewOthersCalendar) && view === "day" && allStaff.length > 1 && (
           <select value={dayBarber} onChange={e => setDayBarber(e.target.value)}
             className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
             {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

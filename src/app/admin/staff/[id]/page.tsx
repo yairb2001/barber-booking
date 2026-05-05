@@ -40,7 +40,7 @@ export default function StaffSettingsPage() {
   const { id } = useParams<{ id: string }>();
 
   const [staff, setStaff] = useState<StaffInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<"services" | "schedule" | "booking">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "schedule" | "booking" | "password">("services");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -53,6 +53,12 @@ export default function StaffSettingsPage() {
   // Schedule
   const [schedule, setSchedule] = useState(emptySchedule());
   const [scheduleSaved, setScheduleSaved] = useState(false);
+
+  // Password change
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [passSaved, setPassSaved] = useState(false);
+  const [passError, setPassError] = useState("");
 
   // Booking settings (per-staff)
   const [horizonDays, setHorizonDays] = useState("");
@@ -136,6 +142,21 @@ export default function StaffSettingsPage() {
     setTimeout(() => setScheduleSaved(false), 2500);
   }
 
+  async function savePassword() {
+    if (newPass.length < 4) { setPassError("סיסמה חייבת להיות לפחות 4 תווים"); return; }
+    if (newPass !== confirmPass) { setPassError("הסיסמאות אינן תואמות"); return; }
+    setSaving(true); setPassError("");
+    const res = await fetch(`/api/admin/staff/${id}/set-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password: newPass }),
+    });
+    setSaving(false);
+    if (!res.ok) { const d = await res.json(); setPassError(d.error || "שגיאה"); return; }
+    setPassSaved(true); setNewPass(""); setConfirmPass("");
+    setTimeout(() => setPassSaved(false), 2500);
+  }
+
   async function saveBookingSettings() {
     setSaving(true);
     const staffData = await fetch(`/api/admin/staff/${id}`).then(r => r.json());
@@ -183,6 +204,7 @@ export default function StaffSettingsPage() {
           ["services",  "🛠️ שירותים"],
           ["schedule",  "📅 שעות עבודה"],
           ["booking",   "⚙️ הגדרות יומן"],
+          ["password",  "🔒 סיסמא"],
         ] as const).map(([t, label]) => (
           <button key={t} onClick={() => setActiveTab(t)}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${activeTab === t ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}>
@@ -332,6 +354,30 @@ export default function StaffSettingsPage() {
           <button onClick={saveBookingSettings} disabled={saving}
             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
             {saving ? "שומר..." : bookingSaved ? "✓ נשמר" : "שמור הגדרות"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Tab: Password ── */}
+      {activeTab === "password" && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-5">
+          <p className="text-xs text-neutral-400">שנה את סיסמת הכניסה של {staff.name} למערכת.</p>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">סיסמה חדשה</label>
+            <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)}
+              placeholder="לפחות 4 תווים"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">אימות סיסמה</label>
+            <input type="password" value={confirmPass} onChange={e => setConfirmPass(e.target.value)}
+              placeholder="הזן שוב"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          </div>
+          {passError && <p className="text-xs text-red-500">{passError}</p>}
+          <button onClick={savePassword} disabled={saving || !newPass || !confirmPass}
+            className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${passSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+            {saving ? "שומר..." : passSaved ? "✓ סיסמה עודכנה" : "שמור סיסמה"}
           </button>
         </div>
       )}
