@@ -200,6 +200,52 @@ const RETENTION_WINDOWS = [
   { label: "חצי שנה",  days: 180 },
   { label: "שנה",      days: 365 },
 ];
+// Slider steps: 7,14,21,30,45,60,90,120,180,270,365
+const SLIDER_STEPS = [7,14,21,30,45,60,90,120,180,270,365];
+function sliderIndexToDays(idx: number) { return SLIDER_STEPS[Math.max(0, Math.min(SLIDER_STEPS.length - 1, idx))]; }
+function daysToSliderIndex(days: number) {
+  let best = 0;
+  SLIDER_STEPS.forEach((s, i) => { if (Math.abs(s - days) < Math.abs(SLIDER_STEPS[best] - days)) best = i; });
+  return best;
+}
+function daysLabel(days: number) {
+  if (days < 30)  return `${days} ימים`;
+  if (days === 30)  return "30 יום";
+  if (days === 45)  return "45 יום";
+  if (days === 60)  return "60 יום";
+  if (days === 90)  return "90 יום";
+  if (days === 120) return "4 חודשים";
+  if (days === 180) return "חצי שנה";
+  if (days === 270) return "9 חודשים";
+  return "שנה";
+}
+
+function WindowSlider({ days, onChange }: { days: number; onChange: (d: number) => void }) {
+  const idx = daysToSliderIndex(days);
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] text-neutral-400 uppercase">טווח זמן</span>
+        <span className="text-sm font-bold text-teal-700">{daysLabel(days)}</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={SLIDER_STEPS.length - 1}
+        step={1}
+        value={idx}
+        onChange={e => onChange(sliderIndexToDays(Number(e.target.value)))}
+        className="w-full h-2 rounded-full appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to left, #e5e7eb ${((SLIDER_STEPS.length - 1 - idx) / (SLIDER_STEPS.length - 1)) * 100}%, #0d9488 ${((SLIDER_STEPS.length - 1 - idx) / (SLIDER_STEPS.length - 1)) * 100}%)`,
+        }}
+      />
+      <div className="flex justify-between text-[9px] text-neutral-300 mt-0.5 pointer-events-none">
+        <span>7י</span><span>30י</span><span>90י</span><span>180י</span><span>שנה</span>
+      </div>
+    </div>
+  );
+}
 const VISIT_THRESHOLDS = [
   { label: "ביקור 2+",  min: 2,  desc: "הגיעו לפחות פעמיים" },
   { label: "ביקור 3+",  min: 3,  desc: "הגיעו לפחות 3 פעמים" },
@@ -240,23 +286,9 @@ function RetentionCard({ returnRate, windowDays, minVisits, onWindowChange, onMi
       </div>
 
       {/* Selectors row */}
-      <div className="flex flex-wrap gap-3 mb-4">
-        {/* Window */}
-        <div>
-          <p className="text-[10px] text-neutral-400 uppercase mb-1.5">טווח זמן</p>
-          <div className="flex gap-1 flex-wrap">
-            {RETENTION_WINDOWS.map(w => (
-              <button key={w.days} onClick={() => onWindowChange(w.days)}
-                className={`text-xs px-2.5 py-1 rounded-lg border transition ${
-                  windowDays === w.days
-                    ? "bg-teal-600 border-teal-600 text-white font-semibold"
-                    : "border-neutral-200 text-neutral-500 hover:border-slate-300"
-                }`}>
-                {w.label}
-              </button>
-            ))}
-          </div>
-        </div>
+      <div className="flex flex-col gap-4 mb-4">
+        {/* Window slider */}
+        <WindowSlider days={windowDays} onChange={onWindowChange} />
         {/* Visit count */}
         <div>
           <p className="text-[10px] text-neutral-400 uppercase mb-1.5">כמות ביקורים</p>
@@ -320,15 +352,8 @@ function ReturnRateCard({ returnRate, windowDays, onWindowChange }: {
           </span>
         )}
       </div>
-      <div className="flex gap-1 flex-wrap mb-3">
-        {RETENTION_WINDOWS.map(w => (
-          <button key={w.days} onClick={() => onWindowChange(w.days)}
-            className={`text-xs px-2.5 py-1 rounded-lg border transition ${
-              windowDays === w.days ? "bg-teal-600 border-teal-600 text-white font-semibold" : "border-neutral-200 text-neutral-500 hover:border-slate-300"
-            }`}>
-            {w.label}
-          </button>
-        ))}
+      <div className="mb-3">
+        <WindowSlider days={windowDays} onChange={onWindowChange} />
       </div>
       {returnRate.cohortSize === 0 ? (
         <p className="text-xs text-neutral-400">אין נתונים מספיקים</p>
