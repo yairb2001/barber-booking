@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
     staffId, serviceId, date, startTime,
     customerPhone, customerName,
     referralSource,
-    referrerPhone, // phone of the friend who referred — used when referralSource === "חבר הביא חבר"
+    referrerPhone, // legacy: phone of the friend who referred
+    referrerId,    // preferred: customer ID of the friend who referred (from autocomplete)
     otpToken,      // short-lived JWT from /api/otp/verify
   } = body;
 
@@ -82,11 +83,23 @@ export async function POST(request: NextRequest) {
 
   // If referred by a friend, look up the referrer customer record
   let referredById: string | undefined;
-  if (referralSource === "חבר הביא חבר" && referrerPhone) {
-    const referrer = await prisma.customer.findUnique({
-      where: { businessId_phone: { businessId: staff.businessId, phone: referrerPhone } },
-    });
-    if (referrer) referredById = referrer.id;
+  let referrerRecord: { id: string; name: string; phone: string } | null = null;
+
+  if (referralSource === "חבר הביא חבר") {
+    if (referrerId) {
+      // Preferred path: look up by ID (from autocomplete selection)
+      referrerRecord = await prisma.customer.findUnique({
+        where: { id: referrerId },
+        select: { id: true, name: true, phone: true },
+      });
+    } else if (referrerPhone) {
+      // Legacy path: look up by phone
+      referrerRecord = await prisma.customer.findUnique({
+        where: { businessId_phone: { businessId: staff.businessId, phone: referrerPhone } },
+        select: { id: true, name: true, phone: true },
+      });
+    }
+    if (referrerRecord) referredById = referrerRecord.id;
   }
 
   if (!customer) {
@@ -189,6 +202,21 @@ export async function POST(request: NextRequest) {
       kind: "confirmation",
       body: msgBody,
     }).catch(err => console.error("confirmation send failed", err));
+  }
+
+  // Send thank-you to the referrer (fire-and-forget)
+  if (referrerRecord && business) {
+    const thankYouBody =
+      `שלום ${referrerRecord.name} 🙌\n\n` +
+      `${customer.name} קבע תור ב*${business.name}* ✂️ והזכיר את שמך כמי שהמליץ!\n\n` +
+      `תודה על ההמלצה — אנחנו מעריכים אותך 🤩\n` +
+      `כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם 💈`;
+    sendMessage({
+      businessId: staff.businessId,
+      customerPhone: referrerRecord.phone,
+      kind: "referral_thankyou",
+      body: thankYouBody,
+    }).catch(err => console.error("referral thank-you send failed", err));
   }
 
   return NextResponse.json(appointment, { status: 201 });

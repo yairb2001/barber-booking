@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/barber-daily-summary",
-      "schedule": "0 4 * * *"
+      "schedule": "0 17 * * *"
     }
   ]
 }

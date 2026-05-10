@@ -23,6 +23,8 @@ export type MessageKind =
   | "delay_notification" // sent to a customer when the barber is running late
   // Walk-in customers — thank-you + booking link after appointment ends
   | "walk_in"
+  // Referral thank-you — sent to the friend who referred a new customer
+  | "referral_thankyou"
   // Internal business reports (sent to manager/staff, not customers)
   | "report_daily"
   | "report_weekly"

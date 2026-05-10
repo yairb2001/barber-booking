@@ -84,29 +84,47 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   );
 }
 
-// ── App download banner ────────────────────────────────────────────────────────
-function AppDownloadBanner({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playStoreUrl?: string }) {
-  if (!appStoreUrl && !playStoreUrl) return null;
+// ── App teaser — always shown after booking ───────────────────────────────────
+function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playStoreUrl?: string }) {
+  const hasLinks = !!(appStoreUrl || playStoreUrl);
   return (
-    <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)" }}>
-      <p className="text-[11px] font-semibold tracking-[0.15em] uppercase text-slate-400 mb-1">חבר מביא חבר 📱</p>
-      <p className="text-[13px] text-slate-200 leading-relaxed mb-4">
-        הורד את האפליקציה שלנו ותיהנה מתוכנית חבר מביא חבר — כל 2 חברים שתביא מוצר במתנה!
-      </p>
-      <div className="flex gap-2">
-        {appStoreUrl && (
-          <a href={appStoreUrl} target="_blank" rel="noopener noreferrer"
-            className="flex-1 bg-white text-slate-900 text-[12px] font-bold tracking-wide text-center py-2.5 rounded-xl">
-            🍎 App Store
-          </a>
-        )}
-        {playStoreUrl && (
-          <a href={playStoreUrl} target="_blank" rel="noopener noreferrer"
-            className="flex-1 bg-white text-slate-900 text-[12px] font-bold tracking-wide text-center py-2.5 rounded-xl">
-            🤖 Google Play
-          </a>
-        )}
+    <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-2xl">📱</span>
+        <p className="text-[14px] font-bold text-white">
+          {hasLinks ? "הורד את האפליקציה שלנו" : "האפליקציה שלנו — בקרוב"}
+        </p>
       </div>
+      <p className="text-[12px] text-teal-100 leading-relaxed mb-1">
+        ✓ לא תצטרך להזין קוד אימות בכל פעם
+      </p>
+      <p className="text-[12px] text-teal-100 leading-relaxed mb-1">
+        ✓ ראה תורים עתידיים ועדכונים בזמן אמת
+      </p>
+      <p className="text-[12px] text-teal-100 leading-relaxed mb-4">
+        ✓ תוכנית חבר מביא חבר — כל 3 חברים = תספורת חינם
+      </p>
+      {hasLinks ? (
+        <div className="flex gap-2">
+          {appStoreUrl && (
+            <a href={appStoreUrl} target="_blank" rel="noopener noreferrer"
+              className="flex-1 bg-white text-teal-800 text-[12px] font-bold tracking-wide text-center py-2.5 rounded-xl">
+              🍎 App Store
+            </a>
+          )}
+          {playStoreUrl && (
+            <a href={playStoreUrl} target="_blank" rel="noopener noreferrer"
+              className="flex-1 bg-white text-teal-800 text-[12px] font-bold tracking-wide text-center py-2.5 rounded-xl">
+              🤖 Google Play
+            </a>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 bg-white/10 rounded-xl px-4 py-2.5">
+          <span className="text-teal-200 text-[12px]">🔔</span>
+          <span className="text-teal-100 text-[12px]">נדעיל אותך כשהאפליקציה עולה לאוויר</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,7 +155,11 @@ function ConfirmPageContent() {
   const [phone, setPhone]             = useState("");
   const [name, setName]               = useState("");
   const [referralSource, setReferralSource] = useState("");
-  const [referrerPhone, setReferrerPhone]   = useState("");
+  const [referrerPhone, setReferrerPhone]   = useState(""); // kept for legacy / manual entry
+  const [referrerId, setReferrerId]         = useState(""); // customer ID from autocomplete
+  const [referrerName, setReferrerName]     = useState(""); // display name once selected
+  const [referrerQuery, setReferrerQuery]   = useState(""); // search input
+  const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string; displayPhone: string }[]>([]);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
@@ -153,6 +175,18 @@ function ConfirmPageContent() {
   const [businessId,   setBusinessId]   = useState("");
   const [appStoreUrl,  setAppStoreUrl]  = useState("");
   const [playStoreUrl, setPlayStoreUrl] = useState("");
+
+  // Autocomplete: search customers as user types referrer name
+  useEffect(() => {
+    if (referrerQuery.length < 2) { setReferrerSuggestions([]); return; }
+    const timer = setTimeout(() => {
+      fetch(`/api/customers/lookup?q=${encodeURIComponent(referrerQuery)}`)
+        .then(r => r.json())
+        .then(setReferrerSuggestions)
+        .catch(() => setReferrerSuggestions([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [referrerQuery]);
 
   useEffect(() => {
     fetch("/api/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
@@ -229,7 +263,8 @@ function ConfirmPageContent() {
           staffId, serviceId, date, startTime: time,
           customerPhone: phone, customerName: name,
           referralSource: referralSource || undefined,
-          referrerPhone: (referralSource === "חבר הביא חבר" && referrerPhone) ? referrerPhone : undefined,
+          referrerId:    (referralSource === "חבר הביא חבר" && referrerId)    ? referrerId    : undefined,
+          referrerPhone: (referralSource === "חבר הביא חבר" && !referrerId && referrerPhone) ? referrerPhone : undefined,
           otpToken,
         }),
       });
@@ -294,7 +329,7 @@ function ConfirmPageContent() {
             <SummaryRow label="מחיר" value={`₪${successPrice}`} large />
           </div>
 
-          <AppDownloadBanner appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
+          <AppTeaser appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
 
           {successPhone && successStaffId && successSvcId && successDate && (
             <WaitlistCard phone={successPhone} name={successName}
@@ -432,21 +467,85 @@ function ConfirmPageContent() {
           </div>
         </div>
 
-        {/* Referral source */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <p className="text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase mb-3">מאיפה הכרת אותנו?</p>
-          <select value={referralSource} onChange={e => { setReferralSource(e.target.value); setReferrerPhone(""); }}
-            className={inputClass + " appearance-none"} style={{ WebkitAppearance: "none" }}>
-            <option value="">בחר (אופציונלי)</option>
+        {/* Referral source — highlighted section */}
+        <div className="rounded-2xl border-2 border-teal-400 shadow-sm p-5"
+          style={{ background: "linear-gradient(135deg, #f0fdfa 0%, #fff 100%)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xl">🤝</span>
+            <div>
+              <p className="text-[13px] font-bold text-teal-800">מאיפה הכרת אותנו?</p>
+              <p className="text-[11px] text-teal-600">עוזר לנו להתפתח — לוקח שנייה!</p>
+            </div>
+          </div>
+          <select
+            value={referralSource}
+            onChange={e => {
+              setReferralSource(e.target.value);
+              setReferrerPhone(""); setReferrerId(""); setReferrerName(""); setReferrerQuery(""); setReferrerSuggestions([]);
+            }}
+            className={inputClass + " appearance-none border-teal-200 focus:ring-teal-400"}
+            style={{ WebkitAppearance: "none" }}
+          >
+            <option value="">בחר...</option>
             {referralOptions.map(src => <option key={src} value={src}>{src}</option>)}
           </select>
+
           {referralSource === "חבר הביא חבר" && (
-            <div className="mt-3">
-              <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">טלפון החבר שהמליץ</label>
-              <input type="tel" value={referrerPhone} onChange={e => setReferrerPhone(e.target.value)}
-                placeholder="050-0000000" dir="ltr" className={inputClass} />
-              <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
-                כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם
+            <div className="mt-3 space-y-2">
+              <label className="text-[11px] font-semibold text-teal-700 block">
+                🔍 מי החבר שהמליץ? (חפש לפי שם)
+              </label>
+
+              {referrerId ? (
+                /* Selected referrer */
+                <div className="flex items-center gap-2 bg-teal-50 border border-teal-300 rounded-xl px-4 py-2.5">
+                  <span className="text-teal-600 text-sm flex-1 font-medium">{referrerName}</span>
+                  <button
+                    type="button"
+                    onClick={() => { setReferrerId(""); setReferrerName(""); setReferrerQuery(""); }}
+                    className="text-teal-400 hover:text-teal-600 text-xs"
+                  >
+                    ✕ שנה
+                  </button>
+                </div>
+              ) : (
+                /* Autocomplete search */
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={referrerQuery}
+                    onChange={e => setReferrerQuery(e.target.value)}
+                    placeholder="הקלד שם החבר..."
+                    className={inputClass + " border-teal-200"}
+                  />
+                  {referrerSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-teal-200 rounded-xl shadow-lg overflow-hidden">
+                      {referrerSuggestions.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => {
+                            setReferrerId(s.id);
+                            setReferrerName(s.name);
+                            setReferrerQuery(s.name);
+                            setReferrerSuggestions([]);
+                          }}
+                          className="w-full text-right px-4 py-2.5 hover:bg-teal-50 flex items-center justify-between border-b border-slate-50 last:border-0 transition-colors"
+                        >
+                          <span className="text-[13px] font-medium text-slate-800">{s.name}</span>
+                          <span className="text-[11px] text-slate-400 font-mono">{s.displayPhone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {referrerQuery.length >= 2 && referrerSuggestions.length === 0 && (
+                    <p className="text-[11px] text-slate-400 mt-1">לא נמצא — אפשר להשאיר ריק</p>
+                  )}
+                </div>
+              )}
+
+              <p className="text-[11px] text-teal-600 leading-relaxed font-medium">
+                🎁 כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם
               </p>
             </div>
           )}

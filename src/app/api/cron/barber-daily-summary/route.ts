@@ -1,7 +1,7 @@
 /**
  * GET /api/cron/barber-daily-summary
  *
- * Runs at 06:00 Israel time every day (04:00 UTC in summer / 03:00 UTC in winter).
+ * Runs at 19:00 Israel time every day (17:00 UTC in summer / 16:00 UTC in winter).
  * Sends each barber (who has a phone number) a WhatsApp with their appointment list for today.
  *
  * Authorization: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` header.
