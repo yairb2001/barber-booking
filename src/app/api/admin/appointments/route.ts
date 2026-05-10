@@ -165,10 +165,10 @@ export async function POST(req: NextRequest) {
     }).catch(err => console.error("confirmation send failed", err));
   }
 
-  // ── Walk-in thank-you (sent immediately — cron serves only as a backup) ──────
-  // We send right away because the cron runs once a day; waiting until tomorrow
-  // defeats the purpose. The cron's dedup check (MessageLog) prevents double-send.
-  if (body.walkIn) {
+  // ── Walk-in thank-you — always sent, regardless of whether time has passed ────
+  // Sent immediately (not via cron) so the customer gets it right away.
+  // The cron's MessageLog dedup prevents double-send if it runs later.
+  if (!!body.walkIn) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
     const bookingLink = `${baseUrl}/book`;
     const walkInBody =
@@ -179,13 +179,17 @@ export async function POST(req: NextRequest) {
       `אפשר למצוא אותנו בוואצאפ עם המילים:\n` +
       `*מספרה* | *תספורת* | *ספר*\n\n` +
       `נתראה בפעם הבאה 💈`;
+    console.log("[walk-in] sending thank-you to", appointment.customer.phone);
     sendMessage({
       businessId: business.id,
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
       kind: "walk_in",
       body: walkInBody,
-    }).catch(err => console.error("walk-in thank-you send failed", err));
+    }).then(r => {
+      if (!r.ok) console.error("[walk-in] send failed:", r.error);
+      else console.log("[walk-in] sent ok");
+    }).catch(err => console.error("[walk-in] exception:", err));
   }
 
   return NextResponse.json(appointment, { status: 201 });

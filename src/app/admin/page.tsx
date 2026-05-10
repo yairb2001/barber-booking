@@ -490,7 +490,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs text-neutral-500">לקוח</label>
               <div className="flex gap-2 text-xs">
-                <button onClick={() => setCustomerMode("search")}
+                <button onClick={() => { setCustomerMode("search"); setWalkIn(false); }}
                   className={`px-2 py-0.5 rounded-full ${customerMode === "search" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
                   חיפוש
                 </button>
@@ -579,25 +579,27 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
           </div>
 
-          {/* Walk-in toggle */}
-          <button
-            type="button"
-            onClick={() => setWalkIn(v => !v)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
-              walkIn
-                ? "bg-teal-50 border-teal-300 text-teal-800"
-                : "bg-neutral-50 border-neutral-200 text-neutral-500"
-            }`}
-          >
-            <span className="text-xl">📲</span>
-            <div className="flex-1 text-right">
-              <p className="text-sm font-medium">לקוח מזדמן</p>
-              <p className="text-xs opacity-70">שלח הודעת תודה עם קישור הזמנה בסוף התור</p>
-            </div>
-            <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${walkIn ? "bg-teal-500" : "bg-neutral-300"}`}>
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${walkIn ? "right-1" : "right-5"}`} />
-            </div>
-          </button>
+          {/* Walk-in toggle — only for new customers */}
+          {customerMode === "new" && (
+            <button
+              type="button"
+              onClick={() => setWalkIn(v => !v)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+                walkIn
+                  ? "bg-teal-50 border-teal-300 text-teal-800"
+                  : "bg-neutral-50 border-neutral-200 text-neutral-500"
+              }`}
+            >
+              <span className="text-xl">📲</span>
+              <div className="flex-1 text-right">
+                <p className="text-sm font-medium">לקוח מזדמן</p>
+                <p className="text-xs opacity-70">שלח הודעת תודה עם קישור הזמנה בסוף התור</p>
+              </div>
+              <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${walkIn ? "bg-teal-500" : "bg-neutral-300"}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${walkIn ? "right-1" : "right-5"}`} />
+              </div>
+            </button>
+          )}
         </div>
 
         <div className="px-5 pb-5 space-y-3">
