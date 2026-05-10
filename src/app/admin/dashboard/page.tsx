@@ -664,10 +664,10 @@ export default function Dashboard() {
             />
             <StatCard label="תורים החודש" value={a.totalAppointments} color="text-neutral-900" sub={`תפוסה ${a.occupancyMonth}%`} />
             <StatCard
-              label={isStaffScoped ? "חדשים לעסק" : "לקוחות חדשים"}
-              value={a.newToBusiness}
+              label={isStaffScoped ? "לקוחות חדשים אצלך" : "לקוחות חדשים"}
+              value={isStaffScoped ? a.newToStaff : a.newToBusiness}
               color="text-teal-600"
-              sub={isStaffScoped ? `מתוכם חדשים אצלך: ${a.newToStaff}` : undefined}
+              sub={isStaffScoped ? `מתוכם חדשים למספרה: ${a.newToBusiness}` : undefined}
               badge={isStaffScoped ? undefined : "כל המספרה"}
             />
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-col gap-1">
