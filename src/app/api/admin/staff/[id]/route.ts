@@ -29,6 +29,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           : typeof body.settings === "string" ? body.settings
           : JSON.stringify(body.settings),
       }),
+      ...(body.canViewAllCalendars !== undefined && { canViewAllCalendars: !!body.canViewAllCalendars }),
     },
   });
   return NextResponse.json(staff);

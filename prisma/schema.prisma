@@ -111,9 +111,10 @@ model Staff {
   isAvailable   Boolean  @default(true) @map("is_available")
   inQuickPool   Boolean  @default(false) @map("in_quick_pool")
   poolPriority  Int      @default(0) @map("pool_priority")
-  passwordHash  String?  @map("password_hash")
-  settings      String?  // JSON string
-  sortOrder     Int      @default(0) @map("sort_order")
+  passwordHash        String?  @map("password_hash")
+  settings            String?  // JSON string
+  sortOrder           Int      @default(0) @map("sort_order")
+  canViewAllCalendars Boolean  @default(false) @map("can_view_all_calendars")
   createdAt     DateTime @default(now()) @map("created_at")
 
   business      Business @relation(fields: [businessId], references: [id])

@@ -10,6 +10,7 @@ type StaffInfo = {
   phone: string | null;
   avatarUrl: string | null;
   settings: string | null;
+  canViewAllCalendars: boolean;
   schedules: { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null }[];
 };
 
@@ -40,7 +41,7 @@ export default function StaffSettingsPage() {
   const { id } = useParams<{ id: string }>();
 
   const [staff, setStaff] = useState<StaffInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<"services" | "schedule" | "booking" | "password">("services");
+  const [activeTab, setActiveTab] = useState<"services" | "schedule" | "booking" | "permissions" | "password">("services");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -64,6 +65,10 @@ export default function StaffSettingsPage() {
   const [horizonDays, setHorizonDays] = useState("");
   const [leadMins, setLeadMins] = useState("");
   const [bookingSaved, setBookingSaved] = useState(false);
+
+  // Permissions
+  const [canViewAllCalendars, setCanViewAllCalendars] = useState(false);
+  const [permSaved, setPermSaved] = useState(false);
 
   async function loadStaff() {
     const data: StaffInfo = await fetch(`/api/admin/staff/${id}`).then(r => r.json());
@@ -89,6 +94,7 @@ export default function StaffSettingsPage() {
       if (s.bookingHorizonDays !== undefined) setHorizonDays(String(s.bookingHorizonDays));
       if (s.minBookingLeadMinutes !== undefined) setLeadMins(String(s.minBookingLeadMinutes));
     } catch { /* ignore */ }
+    setCanViewAllCalendars(!!data.canViewAllCalendars);
     setLoading(false);
   }
 
@@ -157,6 +163,18 @@ export default function StaffSettingsPage() {
     setTimeout(() => setPassSaved(false), 2500);
   }
 
+  async function savePermissions() {
+    setSaving(true);
+    await fetch(`/api/admin/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ canViewAllCalendars }),
+    });
+    setSaving(false);
+    setPermSaved(true);
+    setTimeout(() => setPermSaved(false), 2500);
+  }
+
   async function saveBookingSettings() {
     setSaving(true);
     const staffData = await fetch(`/api/admin/staff/${id}`).then(r => r.json());
@@ -199,14 +217,15 @@ export default function StaffSettingsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-neutral-100 rounded-xl p-1">
+      <div className="flex gap-1 mb-6 bg-neutral-100 rounded-xl p-1 flex-wrap">
         {([
-          ["services",  "🛠️ שירותים"],
-          ["schedule",  "📅 שעות עבודה"],
-          ["booking",   "⚙️ הגדרות יומן"],
-          ["password",  "🔒 סיסמא"],
+          ["services",     "🛠️ שירותים"],
+          ["schedule",     "📅 שעות עבודה"],
+          ["booking",      "⚙️ הגדרות יומן"],
+          ["permissions",  "🔐 הרשאות"],
+          ["password",     "🔒 סיסמא"],
         ] as const).map(([t, label]) => (
-          <button key={t} onClick={() => setActiveTab(t)}
+          <button key={t} onClick={() => setActiveTab(t as typeof activeTab)}
             className={`flex-1 py-2 rounded-lg text-sm font-medium transition ${activeTab === t ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500 hover:text-neutral-700"}`}>
             {label}
           </button>
@@ -354,6 +373,38 @@ export default function StaffSettingsPage() {
           <button onClick={saveBookingSettings} disabled={saving}
             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
             {saving ? "שומר..." : bookingSaved ? "✓ נשמר" : "שמור הגדרות"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Tab: Permissions ── */}
+      {activeTab === "permissions" && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-5">
+          <p className="text-xs text-neutral-400">
+            הגדר מה {staff.name} רשאי לראות ולעשות במערכת.
+          </p>
+
+          {/* canViewAllCalendars toggle */}
+          <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-900">📅 צפייה ביומנים של כל הספרים</p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                כשמופעל — {staff.name} יכול לראות את כל העמודות ביומן, לא רק את שלו.
+                מתאים לספר בכיר או מנהל שצריך לתאם בין כולם.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCanViewAllCalendars(v => !v)}
+              className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canViewAllCalendars ? "bg-teal-500" : "bg-neutral-300"}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canViewAllCalendars ? "right-1" : "right-6"}`} />
+            </button>
+          </div>
+
+          <button onClick={savePermissions} disabled={saving}
+            className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${permSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+            {saving ? "שומר..." : permSaved ? "✓ נשמר" : "שמור הרשאות"}
           </button>
         </div>
       )}

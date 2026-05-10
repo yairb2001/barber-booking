@@ -5,9 +5,19 @@ import { getBusinessNow } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
-  const where = session && !session.isOwner && session.staffId
-    ? { id: session.staffId }
-    : undefined;
+
+  // Default: barbers see only themselves. Exception: if canViewAllCalendars is set.
+  let where: { id: string } | undefined = undefined;
+  if (session && !session.isOwner && session.staffId) {
+    const me = await prisma.staff.findUnique({
+      where: { id: session.staffId },
+      select: { canViewAllCalendars: true },
+    });
+    if (!me?.canViewAllCalendars) {
+      where = { id: session.staffId };
+    }
+    // canViewAllCalendars=true → where stays undefined → sees all staff
+  }
 
   // Current business time (Israel timezone)
   const { date: todayStr, time: nowTime } = getBusinessNow();
