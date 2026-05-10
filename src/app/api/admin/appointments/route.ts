@@ -142,6 +142,7 @@ export async function POST(req: NextRequest) {
   ).getTime();
   const isUpcoming = apptTimestamp > Date.now();
 
+  // ── Confirmation (future appointments only, non-walk-in) ─────────────────────
   if (!body.walkIn && isUpcoming && hasFeature(business.features, "reminders")) {
     const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
     const confirmBody = confirmationText({
@@ -155,7 +156,6 @@ export async function POST(req: NextRequest) {
       price: appointment.price,
       address: business.address,
     }, business.confirmationTemplate);
-    // Fire-and-forget: don't await, don't block the response
     sendMessage({
       businessId: business.id,
       appointmentId: appointment.id,
@@ -163,6 +163,29 @@ export async function POST(req: NextRequest) {
       kind: "confirmation",
       body: confirmBody,
     }).catch(err => console.error("confirmation send failed", err));
+  }
+
+  // ── Walk-in thank-you (sent immediately — cron serves only as a backup) ──────
+  // We send right away because the cron runs once a day; waiting until tomorrow
+  // defeats the purpose. The cron's dedup check (MessageLog) prevents double-send.
+  if (body.walkIn) {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const bookingLink = `${baseUrl}/book`;
+    const walkInBody =
+      `שלום ${appointment.customer.name} 👋\n\n` +
+      `תודה שביקרת ב*${business.name}* ✂️\n` +
+      `שמחנו לארח אותך ולגזור לך!\n\n` +
+      `📅 לקביעת תור הבא:\n${bookingLink}\n\n` +
+      `אפשר למצוא אותנו בוואצאפ עם המילים:\n` +
+      `*מספרה* | *תספורת* | *ספר*\n\n` +
+      `נתראה בפעם הבאה 💈`;
+    sendMessage({
+      businessId: business.id,
+      appointmentId: appointment.id,
+      customerPhone: appointment.customer.phone,
+      kind: "walk_in",
+      body: walkInBody,
+    }).catch(err => console.error("walk-in thank-you send failed", err));
   }
 
   return NextResponse.json(appointment, { status: 201 });
