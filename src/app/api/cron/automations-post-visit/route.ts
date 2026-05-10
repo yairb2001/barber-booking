@@ -165,5 +165,63 @@ export async function GET() {
     }
   }
 
+  // ── Walk-in customers — send thank-you + booking link ──────────────────────
+  // Any appointment where walkIn=true and endTime has passed in the last 7 days,
+  // and no "walk_in" MessageLog entry yet.
+  const walkInDelay = 30; // minutes after appointment ends before sending
+  const walkInCutoff = new Date(now.getTime() - walkInDelay * 60 * 1000);
+
+  // Group walk-in appointments by business so we only fetch each business once
+  const walkInAppts = await prisma.appointment.findMany({
+    where: {
+      walkIn: true,
+      status: { in: ["confirmed", "completed"] },
+      date: { gte: sevenDaysAgo, lte: now },
+    },
+    include: { customer: true, staff: true, service: true, business: true },
+    take: 500,
+  });
+
+  for (const appt of walkInAppts) {
+    const apptEnd = combineDateTime(appt.date, appt.endTime);
+    if (apptEnd > walkInCutoff) { skipped++; continue; } // not done yet
+    if (apptEnd < sevenDaysAgo) { skipped++; continue; }  // too old
+
+    // Dedup
+    const already = await prisma.messageLog.findFirst({
+      where: {
+        businessId: appt.businessId,
+        appointmentId: appt.id,
+        kind: "walk_in",
+        status: { not: "failed" },
+      },
+    });
+    if (already) { skipped++; continue; }
+
+    const biz = appt.business;
+    // Build booking link from business slug
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const bookingLink = `${baseUrl}/book`;
+
+    // Build message with thank-you + booking link + WhatsApp searchable keywords
+    const msgBody =
+      `שלום ${appt.customer.name} 👋\n\n` +
+      `תודה שביקרת ב*${biz.name}* ✂️\n` +
+      `שמחנו לארח אותך ולגזור לך!\n\n` +
+      `📅 לקביעת תור הבא:\n${bookingLink}\n\n` +
+      `אפשר למצוא אותנו בוואצאפ עם המילים:\n` +
+      `*מספרה* | *תספורת* | *ספר*\n\n` +
+      `נתראה בפעם הבאה 💈`;
+
+    await sendMessage({
+      businessId: appt.businessId,
+      appointmentId: appt.id,
+      customerPhone: appt.customer.phone,
+      kind: "walk_in",
+      body: msgBody,
+    });
+    fired++;
+  }
+
   return NextResponse.json({ ok: true, fired, skipped });
 }

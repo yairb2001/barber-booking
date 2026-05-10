@@ -126,6 +126,7 @@ export async function POST(req: NextRequest) {
       status: "confirmed",
       price: body.price ?? service.price,
       note: body.note || null,
+      walkIn: !!body.walkIn,
     },
     include: { customer: true, staff: true, service: true },
   });

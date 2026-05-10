@@ -21,10 +21,14 @@ export type MessageKind =
   | "appointment_moved"  // sent to a customer when their appointment is moved by admin
   // Delay notifications
   | "delay_notification" // sent to a customer when the barber is running late
+  // Walk-in customers — thank-you + booking link after appointment ends
+  | "walk_in"
   // Internal business reports (sent to manager/staff, not customers)
   | "report_daily"
   | "report_weekly"
-  | "report_monthly";
+  | "report_monthly"
+  // Internal staff summaries
+  | "barber_daily_summary";
 
 export type MessageStatus =
   | "queued"

@@ -239,6 +239,7 @@ model Appointment {
   staffNote      String?  @map("staff_note")
   referralSource String?  @map("referral_source")
   referredById   String?  @map("referred_by_id")
+  walkIn         Boolean  @default(false) @map("walk_in")
   cancelledAt    DateTime? @map("cancelled_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
