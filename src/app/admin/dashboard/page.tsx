@@ -501,6 +501,16 @@ function BarberCard({ row, selected, onClick, windowDays }: {
   );
 }
 
+// ── useDebounce — delays a value until the user stops changing it ─────────────
+function useDebounce<T>(value: T, delay = 500): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const now      = new Date();
@@ -510,6 +520,8 @@ export default function Dashboard() {
   const [viewMonth,  setViewMonth]  = useState(now.getMonth());
   const [selStaff,        setSelStaff]        = useState<string | null>(null);
   const [returnWindowDays, setReturnWindowDays] = useState(90);
+  // Debounced — API is called only after slider stops moving (500ms)
+  const debouncedWindowDays = useDebounce(returnWindowDays, 500);
   const [analytics,  setAnalytics]  = useState<Analytics | null>(null);
   const [loading,    setLoading]    = useState(true);
   const [me,         setMe]         = useState<Me | null>(null);
@@ -527,13 +539,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ from, to, returnWindowDays: String(returnWindowDays) });
+    const params = new URLSearchParams({ from, to, returnWindowDays: String(debouncedWindowDays) });
     if (selStaff) params.set("staffId", selStaff);
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, returnWindowDays]);
+  }, [from, to, selStaff, debouncedWindowDays]);
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
