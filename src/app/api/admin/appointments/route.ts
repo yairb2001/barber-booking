@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -166,19 +166,17 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Walk-in thank-you — always sent, regardless of whether time has passed ────
-  // Sent immediately (not via cron) so the customer gets it right away.
-  // The cron's MessageLog dedup prevents double-send if it runs later.
+  // Sent immediately so the customer gets it right away.
+  // Uses the custom walk_in template if the owner configured one, otherwise the default.
   if (!!body.walkIn) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
     const bookingLink = `${baseUrl}/book`;
-    const walkInBody =
-      `שלום ${appointment.customer.name} 👋\n\n` +
-      `תודה שביקרת ב*${business.name}* ✂️\n` +
-      `שמחנו לארח אותך ולגזור לך!\n\n` +
-      `📅 לקביעת תור הבא:\n${bookingLink}\n\n` +
-      `אפשר למצוא אותנו בוואצאפ עם המילים:\n` +
-      `*מספרה* | *תספורת* | *ספר*\n\n` +
-      `נתראה בפעם הבאה 💈`;
+    const tmpl = business.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
+    const walkInBody = applyTemplate(tmpl, {
+      name:         appointment.customer.name,
+      business:     business.name,
+      booking_link: bookingLink,
+    });
     console.log("[walk-in] sending thank-you to", appointment.customer.phone);
     sendMessage({
       businessId: business.id,

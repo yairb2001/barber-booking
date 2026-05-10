@@ -229,6 +229,20 @@ export const DEFAULT_DELAY_NOTIFICATION_TEMPLATE =
 
 מצטערים על אי הנוחות 🙏`;
 
+export const DEFAULT_WALK_IN_TEMPLATE =
+`שלום {{name}} 👋
+
+תודה שביקרת ב*{{business}}* ✂️
+שמחנו לארח אותך ולגזור לך!
+
+📅 לקביעת תור הבא:
+{{booking_link}}
+
+אפשר למצוא אותנו בוואצאפ עם המילים:
+*מספרה* | *תספורת* | *ספר*
+
+נתראה בפעם הבאה 💈`;
+
 /** All editable template definitions (used by the /admin/templates UI). */
 export const TEMPLATE_DEFS = {
   confirmation: {
@@ -343,6 +357,17 @@ export const TEMPLATE_DEFS = {
       { key: "business",      label: "שם העסק" },
       { key: "time",          label: "שעת התור המקורית" },
       { key: "delay_minutes", label: "מספר דקות עיכוב" },
+    ],
+  },
+  walk_in: {
+    label: "הודעת תודה — לקוח מזדמן",
+    description: "נשלחת מיד לאחר הזנת לקוח מזדמן ביומן — מכילה תודה + קישור לקביעה + מילות חיפוש.",
+    field: "walkInTemplate" as const,
+    default: DEFAULT_WALK_IN_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "business",     label: "שם העסק" },
+      { key: "booking_link", label: "קישור לקביעת תור" },
     ],
   },
 } as const;

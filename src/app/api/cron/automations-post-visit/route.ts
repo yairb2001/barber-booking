@@ -19,7 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage } from "@/lib/messaging";
+import { sendMessage, applyTemplate, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
@@ -199,19 +199,14 @@ export async function GET() {
     if (already) { skipped++; continue; }
 
     const biz = appt.business;
-    // Build booking link from business slug
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
     const bookingLink = `${baseUrl}/book`;
-
-    // Build message with thank-you + booking link + WhatsApp searchable keywords
-    const msgBody =
-      `שלום ${appt.customer.name} 👋\n\n` +
-      `תודה שביקרת ב*${biz.name}* ✂️\n` +
-      `שמחנו לארח אותך ולגזור לך!\n\n` +
-      `📅 לקביעת תור הבא:\n${bookingLink}\n\n` +
-      `אפשר למצוא אותנו בוואצאפ עם המילים:\n` +
-      `*מספרה* | *תספורת* | *ספר*\n\n` +
-      `נתראה בפעם הבאה 💈`;
+    const tmpl = biz.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
+    const msgBody = applyTemplate(tmpl, {
+      name:         appt.customer.name,
+      business:     biz.name,
+      booking_link: bookingLink,
+    });
 
     await sendMessage({
       businessId: appt.businessId,
