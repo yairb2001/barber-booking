@@ -229,6 +229,23 @@ export const DEFAULT_DELAY_NOTIFICATION_TEMPLATE =
 
 מצטערים על אי הנוחות 🙏`;
 
+export const DEFAULT_FIRST_BOOKING_TEMPLATE =
+`שלום {{name}} 👋
+
+ברוך הבא ל*{{business}}* ✂️
+שמחים שבחרת בנו לראשונה!
+
+📅 {{date}}
+🕒 {{time}} – {{end_time}}
+💈 {{service}} אצל {{staff}}
+💰 {{price}}₪{{address_line}}
+
+📍 *איך מגיעים אלינו:*
+[כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
+
+יש שאלות? פשוט כתוב לנו כאן 😊
+מחכים לך! 💈`;
+
 export const DEFAULT_WALK_IN_TEMPLATE =
 `שלום {{name}} 👋
 
@@ -357,6 +374,23 @@ export const TEMPLATE_DEFS = {
       { key: "business",      label: "שם העסק" },
       { key: "time",          label: "שעת התור המקורית" },
       { key: "delay_minutes", label: "מספר דקות עיכוב" },
+    ],
+  },
+  first_booking: {
+    label: "ברכת לקוח חדש (הזמנה ראשונה)",
+    description: "נשלחת ללקוח שקובע תור בפעם הראשונה דרך האתר — במקום אישור הרגיל. כאן כדאי להסביר איך מגיעים, מה לצפות וכו׳.",
+    field: "firstBookingTemplate" as const,
+    default: DEFAULT_FIRST_BOOKING_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "business",     label: "שם העסק" },
+      { key: "date",         label: "תאריך" },
+      { key: "time",         label: "שעת התחלה" },
+      { key: "end_time",     label: "שעת סיום" },
+      { key: "staff",        label: "שם הספר" },
+      { key: "service",      label: "שם השירות" },
+      { key: "price",        label: "מחיר" },
+      { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
     ],
   },
   walk_in: {

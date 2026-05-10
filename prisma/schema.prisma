@@ -40,6 +40,7 @@ model Business {
   appointmentMovedTemplate  String?  @map("appointment_moved_template")
   delayNotificationTemplate String?  @map("delay_notification_template")
   walkInTemplate            String?  @map("walk_in_template")
+  firstBookingTemplate      String?  @map("first_booking_template")
   // ── Re-engagement automation ──
   reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
   reengageWeeks         Int      @default(6)     @map("reengage_weeks")

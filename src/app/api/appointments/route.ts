@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
-import { sendMessage, confirmationText, hasFeature } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -181,25 +181,72 @@ export async function POST(request: NextRequest) {
   });
 
   // Send WhatsApp confirmation (fire-and-forget)
+  // For first-time customers: use the special first_booking welcome template.
+  // For returning customers: use the regular confirmation template.
   const business = await prisma.business.findUnique({ where: { id: staff.businessId } });
   if (business && hasFeature(business.features, "reminders")) {
     const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
-    const msgBody = confirmationText({
-      customerName: customer.name,
-      businessName: business.name,
-      staffName: appointment.staff.name,
-      serviceName: appointment.service.name,
-      dateLabel,
-      startTime,
-      endTime,
-      price,
-      address: business.address,
-    }, business.confirmationTemplate);
+
+    // Count all their appointments at this business (the one we just created counts too,
+    // so isFirstBooking = true when total == 1)
+    const apptCount = await prisma.appointment.count({
+      where: { customerId: customer.id, businessId: staff.businessId },
+    });
+    const isFirstBooking = apptCount === 1;
+
+    let msgBody: string;
+    let msgKind: "confirmation" | "first_booking";
+
+    if (isFirstBooking && business.firstBookingTemplate !== null) {
+      // Owner has customised the first-booking template → use it
+      const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
+      msgBody = applyTemplate(tmpl, {
+        name:         customer.name,
+        business:     business.name,
+        date:         dateLabel,
+        time:         startTime,
+        end_time:     endTime,
+        staff:        appointment.staff.name,
+        service:      appointment.service.name,
+        price:        String(price),
+        address_line: business.address ? `\n📍 ${business.address}` : "",
+      });
+      msgKind = "first_booking";
+    } else if (isFirstBooking) {
+      // No custom template yet → still send the default first-booking message
+      msgBody = applyTemplate(DEFAULT_FIRST_BOOKING_TEMPLATE, {
+        name:         customer.name,
+        business:     business.name,
+        date:         dateLabel,
+        time:         startTime,
+        end_time:     endTime,
+        staff:        appointment.staff.name,
+        service:      appointment.service.name,
+        price:        String(price),
+        address_line: business.address ? `\n📍 ${business.address}` : "",
+      });
+      msgKind = "first_booking";
+    } else {
+      // Returning customer — regular confirmation
+      msgBody = confirmationText({
+        customerName: customer.name,
+        businessName: business.name,
+        staffName: appointment.staff.name,
+        serviceName: appointment.service.name,
+        dateLabel,
+        startTime,
+        endTime,
+        price,
+        address: business.address,
+      }, business.confirmationTemplate);
+      msgKind = "confirmation";
+    }
+
     sendMessage({
       businessId: staff.businessId,
       appointmentId: appointment.id,
       customerPhone,
-      kind: "confirmation",
+      kind: msgKind,
       body: msgBody,
     }).catch(err => console.error("confirmation send failed", err));
   }
