@@ -131,10 +131,20 @@ export async function POST(req: NextRequest) {
     include: { customer: true, staff: true, service: true },
   });
 
-  // Send WhatsApp confirmation (fire-and-forget; failures are logged but don't break the flow)
-  if (hasFeature(business.features, "reminders")) {
+  // Send WhatsApp confirmation only when the appointment is genuinely in the future.
+  // Walk-in: the customer is physically present — no need for a "your appointment is booked" message.
+  // Past/same-time: admin is recording an appointment that already happened — don't spam the customer.
+  //
+  // We approximate Israel time as UTC+2 (conservative; 1h off in summer — acceptable for this check).
+  const dateStr = body.date.split("T")[0]; // "YYYY-MM-DD"
+  const apptTimestamp = new Date(
+    `${dateStr}T${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}:00+02:00`
+  ).getTime();
+  const isUpcoming = apptTimestamp > Date.now();
+
+  if (!body.walkIn && isUpcoming && hasFeature(business.features, "reminders")) {
     const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
-    const body = confirmationText({
+    const confirmBody = confirmationText({
       customerName: appointment.customer.name,
       businessName: business.name,
       staffName: appointment.staff.name,
@@ -151,7 +161,7 @@ export async function POST(req: NextRequest) {
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
       kind: "confirmation",
-      body,
+      body: confirmBody,
     }).catch(err => console.error("confirmation send failed", err));
   }
 

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 // GET /api/cron/cleanup-conversations
 // Daily Vercel cron — deletes conversations + their messages older than 7 days
 // (no message activity since). Keeps the DB lean.
