@@ -14,21 +14,32 @@ export const revalidate = 0;
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffIdFilter = searchParams.get("staffId"); // optional: for specific barber
+  const businessId = searchParams.get("businessId");
+
+  // Resolve businessId (backward-compat: no param → findFirst)
+  let resolvedBusinessId: string | undefined;
+  if (businessId) {
+    resolvedBusinessId = businessId;
+  } else {
+    const b = await prisma.business.findFirst({ select: { id: true } });
+    resolvedBusinessId = b?.id;
+  }
 
   // Get business-wide min lead time for bookings
-  const biz = await prisma.business.findFirst({
-    select: { minBookingLeadMinutes: true },
-  });
+  const biz = resolvedBusinessId
+    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true } })
+    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
 
   // Get staff members in the quick pool
+  const bizScope = resolvedBusinessId ? { businessId: resolvedBusinessId } : {};
   const staffWhere = staffIdFilter
-    ? { id: staffIdFilter, isAvailable: true }
-    : { inQuickPool: true, isAvailable: true };
+    ? { id: staffIdFilter, isAvailable: true, ...bizScope }
+    : { inQuickPool: true, isAvailable: true, ...bizScope };
 
   // Get the default service first (needed for filtering)
   const defaultServiceForFilter = await prisma.service.findFirst({
-    where: { isVisible: true },
+    where: { isVisible: true, ...bizScope },
     orderBy: { sortOrder: "asc" },
     select: { id: true },
   });
@@ -57,7 +68,7 @@ export async function GET(request: Request) {
 
   // Get the default service (first service) — full record for slot generation
   const defaultService = await prisma.service.findFirst({
-    where: { isVisible: true },
+    where: { isVisible: true, ...bizScope },
     orderBy: { sortOrder: "asc" },
   });
 

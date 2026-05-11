@@ -1,11 +1,27 @@
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { resolveTheme } from "@/lib/themes";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const business = await prisma.business.findFirst({
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const slug = searchParams.get("slug");
+  const businessId = searchParams.get("businessId");
+
+  const business = slug
+    ? await prisma.business.findUnique({ where: { slug }, select: {
+        id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
+        phone: true, address: true, about: true, socialLinks: true,
+        settings: true, bookingHorizonDays: true,
+      } })
+    : businessId
+      ? await prisma.business.findUnique({ where: { id: businessId }, select: {
+          id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
+          phone: true, address: true, about: true, socialLinks: true,
+          settings: true, bookingHorizonDays: true,
+        } })
+      : await prisma.business.findFirst({
     select: {
       id: true,
       name: true,

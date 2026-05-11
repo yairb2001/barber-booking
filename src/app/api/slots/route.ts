@@ -9,6 +9,7 @@ export async function GET(request: Request) {
   const staffId = searchParams.get("staffId");
   const serviceId = searchParams.get("serviceId");
   const dateStr = searchParams.get("date");
+  const businessId = searchParams.get("businessId");
 
   if (!staffId || !serviceId || !dateStr) {
     return NextResponse.json(
@@ -101,7 +102,9 @@ export async function GET(request: Request) {
         const parsed = Number(staffSettings.minBookingLeadMinutes);
         leadMinutes = isNaN(parsed) ? 0 : parsed;
       } else {
-        const biz = await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
+        const biz = businessId
+          ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true } })
+          : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
         leadMinutes = biz?.minBookingLeadMinutes ?? 0;
       }
       slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + leadMinutes);

@@ -12,19 +12,16 @@ import { sendMessage, hasFeature } from "@/lib/messaging";
  */
 export async function POST(request: Request) {
   const body = await request.json();
-  const { phone, name, staffId, serviceId, date, isFlexible, preferredTimeOfDay } = body;
+  const { phone, name, staffId, serviceId, date, isFlexible, preferredTimeOfDay, businessId } = body;
 
   if (!phone || !serviceId || !date) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  const business = await prisma.business.findFirst({
-    include: { staff: { where: staffId ? { id: staffId } : { id: "" }, select: { name: true } } },
-  });
-  if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
-
-  // Fetch staff name separately (business include above is for messaging only)
-  const biz = await prisma.business.findFirst();
+  // Resolve business (backward-compat: no businessId → findFirst)
+  const biz = businessId
+    ? await prisma.business.findUnique({ where: { id: businessId } })
+    : await prisma.business.findFirst();
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   const staffRecord = staffId

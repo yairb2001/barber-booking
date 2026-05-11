@@ -1,11 +1,23 @@
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const businessId = searchParams.get("businessId");
+
+  // Resolve which business to scope to (backward-compat: no param → findFirst)
+  let resolvedBusinessId: string | undefined;
+  if (businessId) {
+    resolvedBusinessId = businessId;
+  } else {
+    const biz = await prisma.business.findFirst({ select: { id: true } });
+    resolvedBusinessId = biz?.id;
+  }
+
   const staff = await prisma.staff.findMany({
-    where: { isAvailable: true },
+    where: { isAvailable: true, ...(resolvedBusinessId ? { businessId: resolvedBusinessId } : {}) },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,
