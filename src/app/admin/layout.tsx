@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useNativeShell } from "@/lib/native/useNativeShell";
 
 type NavItem = {
   href: string;
@@ -57,6 +58,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
+  // Initialise the native shell — registers push, sets status bar.
+  // No-op on the regular web browser.
+  const { platform } = useNativeShell();
+  const isNative = platform === "ios" || platform === "android";
 
   useEffect(() => {
     if (pathname === "/admin/login") return;
