@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getPlatform, registerPush, setStatusBar, type NativePlatform } from "./bridge";
+import { getPlatform, registerPush, setStatusBar, handlePushTaps, type NativePlatform } from "./bridge";
 
 /**
  * Hook that initialises the native shell on mount.
@@ -25,6 +25,9 @@ export function useNativeShell(): { platform: NativePlatform | null } {
       if (p === "ios" || p === "android") {
         // Status bar — keep the teal background consistent with the app
         setStatusBar("light", "#0d9488").catch(() => {});
+
+        // Deep-link when the user taps a delivered notification
+        handlePushTaps().catch(() => {});
 
         // Register push and send token to server
         const token = await registerPush();

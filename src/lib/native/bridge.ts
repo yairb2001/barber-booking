@@ -84,6 +84,31 @@ export async function registerPush(): Promise<string | null> {
   }
 }
 
+/**
+ * Listen for taps on a delivered push notification and deep-link the WebView
+ * to the relevant admin screen. Call once on app start (after registerPush).
+ *
+ * The push payload carries a `data.type` set by the server:
+ *   - "chat"        → open the chats inbox
+ *   - "appointment" → open the calendar
+ */
+export async function handlePushTaps(): Promise<void> {
+  if (!(await isNative())) return;
+  try {
+    const { PushNotifications } = await import("@capacitor/push-notifications");
+    await PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
+      const data = (action.notification?.data ?? {}) as Record<string, string>;
+      let target: string | null = null;
+      if (data.type === "chat") target = "/admin/chats";
+      else if (data.type === "appointment") target = "/admin";
+      if (target && typeof window !== "undefined") {
+        // Same-origin navigation inside the WebView.
+        window.location.assign(target);
+      }
+    });
+  } catch { /* ignore */ }
+}
+
 /** Set the status-bar style. Useful when entering dark sections. */
 export async function setStatusBar(style: "light" | "dark", backgroundColor?: string): Promise<void> {
   if (!(await isNative())) return;
