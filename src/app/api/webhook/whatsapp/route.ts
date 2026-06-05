@@ -23,6 +23,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
+import { pushToOwner } from "@/lib/native/push";
+
+/** Build a short preview of the incoming message for a push notification. */
+function previewText(text: string): string {
+  const t = text.trim().replace(/\s+/g, " ");
+  return t.length > 80 ? `${t.slice(0, 79)}…` : t;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // seconds — needed for Claude API call
@@ -153,6 +160,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   });
 
   if (!agentConfig?.isEnabled) {
+    // Agent is off → a human must reply. Ping the owner's device.
+    pushToOwner(biz.id, {
+      title: `הודעה חדשה מ${senderName || phone}`,
+      body: previewText(text),
+      data: { type: "chat", conversationId: conv.id, phone },
+    }).catch(() => {});
     return NextResponse.json({ ok: true, skipped: "agent_disabled", saved: true });
   }
 
@@ -163,6 +176,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: null } });
   }
   if (isEscalated) {
+    // Conversation handed to a human → notify the owner of the new message.
+    pushToOwner(biz.id, {
+      title: `הודעה חדשה מ${senderName || phone}`,
+      body: previewText(text),
+      data: { type: "chat", conversationId: conv.id, phone },
+    }).catch(() => {});
     return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
   }
 

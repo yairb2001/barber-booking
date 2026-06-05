@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { pushToStaff } from "@/lib/native/push";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -179,6 +180,16 @@ export async function POST(request: NextRequest) {
     where: { id: customer.id },
     data: { lastVisitAt: new Date() },
   });
+
+  // Native push to the assigned barber — "you have a new appointment".
+  {
+    const pushDateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+    pushToStaff(staffId, {
+      title: "תור חדש נקבע 📅",
+      body: `${customer.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
+      data: { type: "appointment", appointmentId: appointment.id, date },
+    }).catch(() => {});
+  }
 
   // Send WhatsApp confirmation (fire-and-forget)
   // For first-time customers: use the special first_booking welcome template.
