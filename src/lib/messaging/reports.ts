@@ -298,23 +298,66 @@ export async function buildWeeklyReportManager(bizId: string): Promise<string> {
 export async function buildWeeklyReportStaff(bizId: string, staffId: string): Promise<string> {
   const { start: wStart, end: wEnd } = lastNDaysRange(7);
   const { start: pStart, end: pEnd } = previousNDaysRange(7, 7);
+  const { start: tomStart, end: tomEnd } = tomorrowRange();
 
-  const [curr, prev, occ, staff] = await Promise.all([
+  const [curr, prev, occ, staff, lifetimeGroups, tomorrowAppts] = await Promise.all([
     computeStaffStatsForPeriod(bizId, staffId, wStart, wEnd),
     computeStaffStatsForPeriod(bizId, staffId, pStart, pEnd),
     computeOccupancy({ businessId: bizId, from: wStart, to: wEnd, staffId }),
     prisma.staff.findUnique({ where: { id: staffId }, select: { name: true } }),
+    // Lifetime unique customers → level + return rate
+    prisma.appointment.groupBy({
+      by:     ["customerId"],
+      where:  { businessId: bizId, staffId, status: { notIn: CANCELLED } },
+      _count: { _all: true },
+    }),
+    // Tomorrow's schedule for this barber
+    prisma.appointment.findMany({
+      where:   { businessId: bizId, staffId, status: { notIn: CANCELLED }, date: { gte: tomStart, lte: tomEnd } },
+      select:  { startTime: true },
+      orderBy: { startTime: "asc" },
+    }),
   ]);
 
-  const lines: string[] = [];
-  lines.push(`📊 השבוע שלך, ${staff?.name ?? ""} — ${fmtDateHe(wStart)}–${fmtDateHe(wEnd)}`);
-  lines.push("");
-  lines.push(`לקוחות: ${curr.appointments} (${fmtTrend(curr.appointments, prev.appointments)})`);
-  lines.push(`חדשים אצלך: ${curr.newToStaff}${curr.newAlsoToBusiness > 0 ? ` (מתוכם ${curr.newAlsoToBusiness} חדשים גם למספרה)` : ""}`);
-  lines.push(`מחזור: ${fmtMoney(curr.revenue)}`);
-  lines.push(`תפוסה: ${occ.pct}%`);
+  const uniqueCustomers = lifetimeGroups.length;
+  const repeatCustomers = lifetimeGroups.filter(r => r._count._all >= 2).length;
+  const returnRate      = uniqueCustomers > 0 ? Math.round((repeatCustomers / uniqueCustomers) * 100) : 0;
+  const avgPerAppt      = curr.appointments > 0 ? Math.round(curr.revenue / curr.appointments) : 0;
 
-  // Insight line
+  const name = staff?.name ?? "";
+  const lines: string[] = [];
+
+  // ── Header ──────────────────────────────────────────────────────────────────
+  lines.push(`📊 סיכום שבועי — ${name}`);
+  lines.push(`${fmtDateHe(wStart)}–${fmtDateHe(wEnd)}`);
+  lines.push("");
+
+  // ── This week ───────────────────────────────────────────────────────────────
+  lines.push(`✂️  תורים: *${curr.appointments}* (${fmtTrend(curr.appointments, prev.appointments)})`);
+  lines.push(`💰 מחזור: *${fmtMoney(curr.revenue)}* (${fmtTrend(curr.revenue, prev.revenue)})`);
+  if (curr.appointments > 0) {
+    lines.push(`📊 ממוצע לתור: ${fmtMoney(avgPerAppt)}`);
+  }
+  if (curr.newToStaff > 0) {
+    const bizPart = curr.newAlsoToBusiness > 0 ? ` (${curr.newAlsoToBusiness} חדשים גם למספרה)` : "";
+    lines.push(`🆕 לקוחות חדשים אצלך: ${curr.newToStaff}${bizPart}`);
+  }
+
+  // ── Loyalty ─────────────────────────────────────────────────────────────────
+  lines.push("");
+  lines.push("— שימור לקוחות —");
+  lines.push(`↩️  לקוחות חוזרים: *${returnRate}%* (${repeatCustomers} מתוך ${uniqueCustomers})`);
+  lines.push(`👥 סה״כ לקוחות ייחודיים אצלך: ${uniqueCustomers}`);
+
+  // ── Tomorrow ────────────────────────────────────────────────────────────────
+  lines.push("");
+  if (tomorrowAppts.length > 0) {
+    lines.push(`📅 מחר: *${tomorrowAppts.length} תורים* (פתיחה ${tomorrowAppts[0].startTime})`);
+  } else {
+    lines.push("📅 מחר: אין תורים — יום חופש 🙌");
+  }
+
+  // ── Insight ─────────────────────────────────────────────────────────────────
   const insight = staffInsight(curr, prev, occ.pct);
   if (insight) {
     lines.push("");
@@ -563,6 +606,32 @@ async function countCustomersWonBackInMonth(
     if (gapMs >= dormantDays * 24 * 60 * 60 * 1000) wonBack++;
   }
   return wonBack;
+}
+
+// ── Level helper (mirrors barber-stats API) ───────────────────────────────────
+
+const STAFF_LEVELS = [
+  { name: "מתחיל",  emoji: "🌱", min: 0,   max: 49  },
+  { name: "מקצועי", emoji: "💪", min: 50,  max: 149 },
+  { name: "מומחה",  emoji: "🔥", min: 150, max: 299 },
+  { name: "מאסטר",  emoji: "👑", min: 300, max: 499 },
+  { name: "אגדה",   emoji: "⭐", min: 500, max: Infinity },
+] as const;
+
+function getStaffLevel(uniqueCustomers: number) {
+  const idx  = STAFF_LEVELS.findIndex(
+    l => uniqueCustomers >= l.min && (l.max === Infinity || uniqueCustomers <= l.max)
+  );
+  const safe  = idx >= 0 ? idx : 0;
+  const level = STAFF_LEVELS[safe];
+  const next  = STAFF_LEVELS[safe + 1] ?? null;
+  return {
+    level:          level.name,
+    levelEmoji:     level.emoji,
+    nextLevel:      next?.name       ?? null,
+    nextLevelEmoji: next?.emoji      ?? null,
+    nextLevelAt:    next?.min        ?? null,
+  };
 }
 
 function staffInsight(curr: StaffPeriod, prev: StaffPeriod, occPct: number): string | null {

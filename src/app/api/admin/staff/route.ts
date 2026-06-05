@@ -1,30 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner, getRequestSession } from "@/lib/session";
+import { requireOwner } from "@/lib/session";
 import { getBusinessNow } from "@/lib/utils";
 
-export async function GET(req: NextRequest) {
-  const session = getRequestSession(req);
-
-  // Default: barbers see only themselves. Exception: if canViewAllCalendars is set.
-  let where: { id: string } | undefined = undefined;
-  if (session && !session.isOwner && session.staffId) {
-    const me = await prisma.staff.findUnique({
-      where: { id: session.staffId },
-      select: { canViewAllCalendars: true },
-    });
-    if (!me?.canViewAllCalendars) {
-      where = { id: session.staffId };
-    }
-    // canViewAllCalendars=true → where stays undefined → sees all staff
-  }
+export async function GET(_req: NextRequest) {
+  // All authenticated users (owners + barbers) see all staff.
+  // Barbers work in a shared calendar — they need all columns.
 
   // Current business time (Israel timezone)
   const { date: todayStr, time: nowTime } = getBusinessNow();
   const todayDate = new Date(todayStr + "T00:00:00.000Z");
 
   const staff = await prisma.staff.findMany({
-    ...(where ? { where } : {}),
     include: {
       schedules: true,
       staffServices: { include: { service: true } },

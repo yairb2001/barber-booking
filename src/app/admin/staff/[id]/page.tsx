@@ -11,6 +11,7 @@ type StaffInfo = {
   avatarUrl: string | null;
   settings: string | null;
   canViewAllCalendars: boolean;
+  canViewAllChats: boolean;
   schedules: { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null }[];
 };
 
@@ -68,6 +69,7 @@ export default function StaffSettingsPage() {
 
   // Permissions
   const [canViewAllCalendars, setCanViewAllCalendars] = useState(false);
+  const [canViewAllChats,     setCanViewAllChats]     = useState(false);
   const [permSaved, setPermSaved] = useState(false);
 
   async function loadStaff() {
@@ -95,6 +97,7 @@ export default function StaffSettingsPage() {
       if (s.minBookingLeadMinutes !== undefined) setLeadMins(String(s.minBookingLeadMinutes));
     } catch { /* ignore */ }
     setCanViewAllCalendars(!!data.canViewAllCalendars);
+    setCanViewAllChats(!!data.canViewAllChats);
     setLoading(false);
   }
 
@@ -168,7 +171,7 @@ export default function StaffSettingsPage() {
     await fetch(`/api/admin/staff/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canViewAllCalendars }),
+      body: JSON.stringify({ canViewAllCalendars, canViewAllChats }),
     });
     setSaving(false);
     setPermSaved(true);
@@ -399,6 +402,24 @@ export default function StaffSettingsPage() {
               className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canViewAllCalendars ? "bg-teal-500" : "bg-neutral-300"}`}
             >
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canViewAllCalendars ? "right-1" : "right-6"}`} />
+            </button>
+          </div>
+
+          {/* canViewAllChats toggle */}
+          <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-900">💬 צפייה בכל השיחות</p>
+              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                כשמופעל — {staff.name} יכול לראות את כל שיחות הוואטסאפ של העסק, לא רק של לקוחות שלו.
+                מתאים לספר בכיר שמטפל בלקוחות של אחרים.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCanViewAllChats(v => !v)}
+              className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canViewAllChats ? "bg-teal-500" : "bg-neutral-300"}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canViewAllChats ? "right-1" : "right-6"}`} />
             </button>
           </div>
 

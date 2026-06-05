@@ -115,6 +115,7 @@ model Staff {
   settings            String?  // JSON string
   sortOrder           Int      @default(0) @map("sort_order")
   canViewAllCalendars Boolean  @default(false) @map("can_view_all_calendars")
+  canViewAllChats     Boolean  @default(false) @map("can_view_all_chats")
   createdAt     DateTime @default(now()) @map("created_at")
 
   business      Business @relation(fields: [businessId], references: [id])

@@ -26,17 +26,9 @@ export async function GET(req: NextRequest) {
     const end   = new Date(date + "T23:59:59.999Z");
     where.date = { gte: start, lte: end };
   }
-  // If logged in as barber → filter to own appointments unless canViewAllCalendars is set
-  if (session && !session.isOwner && session.staffId) {
-    const me = await prisma.staff.findUnique({
-      where: { id: session.staffId },
-      select: { canViewAllCalendars: true },
-    });
-    if (!me?.canViewAllCalendars) {
-      where.staffId = session.staffId;
-    }
-    // canViewAllCalendars=true → no staffId filter → sees all appointments
-  } else if (staffIdParam) {
+  // All authenticated users (owners + barbers) see all appointments.
+  // Barbers work in a shared calendar — they need to see everyone's schedule.
+  if (staffIdParam) {
     where.staffId = staffIdParam;
   }
 

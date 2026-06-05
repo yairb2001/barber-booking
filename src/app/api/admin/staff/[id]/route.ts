@@ -30,6 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           : JSON.stringify(body.settings),
       }),
       ...(body.canViewAllCalendars !== undefined && { canViewAllCalendars: !!body.canViewAllCalendars }),
+      ...(body.canViewAllChats     !== undefined && { canViewAllChats:     !!body.canViewAllChats     }),
     },
   });
   return NextResponse.json(staff);

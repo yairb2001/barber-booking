@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -28,16 +28,10 @@ export async function GET(req: NextRequest) {
   if (!business) return NextResponse.json([]);
   if (!business.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
-  const barberScope = scopedStaffId(req);
-
-  // Build where: barbers see only their own customers' conversations
-  let where: Record<string, unknown> = { businessId: business.id };
-  if (barberScope) {
-    where = {
-      businessId: business.id,
-      customer: { appointments: { some: { staffId: barberScope } } },
-    };
-  }
+  // All authenticated users (owners + barbers) see all conversations of the business.
+  // The canViewAllChats permission flag exists on Staff for future granular control
+  // but is not enforced here — chats are a shared inbox.
+  const where: Record<string, unknown> = { businessId: business.id };
 
   const convs = await prisma.conversation.findMany({
     where,

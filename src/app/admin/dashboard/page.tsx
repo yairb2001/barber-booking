@@ -6,6 +6,18 @@ import { useEffect, useMemo, useState } from "react";
 // ── Types ─────────────────────────────────────────────────────────────────────
 const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
 
+// Barber-specific gamified stats (fetched from /api/admin/barber-stats)
+type BarberStats = {
+  thisWeek:  { appointments: number; revenue: number };
+  lastWeek:  { appointments: number; revenue: number };
+  weeklyHistory: { weekStart: string; weekLabel: string; appointments: number; revenue: number }[];
+  lifetime: {
+    totalAppointments: number;
+    uniqueCustomers:   number;
+  };
+  returnRate: { uniqueCustomers: number; repeatCustomers: number; rate: number };
+};
+
 type SourceRow = { source: string; new: number; returned: number };
 
 type Analytics = {
@@ -501,6 +513,128 @@ function BarberCard({ row, selected, onClick, windowDays }: {
   );
 }
 
+// ── WeeklyBarChart ────────────────────────────────────────────────────────────
+function WeeklyBarChart({ data }: { data: BarberStats["weeklyHistory"] }) {
+  const maxRev = Math.max(...data.map(d => d.revenue), 1);
+  return (
+    <div className="flex items-end gap-1 h-16">
+      {data.map((week, i) => {
+        const pct       = (week.revenue / maxRev) * 100;
+        const isCurrent = i === data.length - 1;
+        return (
+          <div key={week.weekStart} className="flex-1 flex flex-col items-center group relative">
+            {/* Tooltip */}
+            <div className="absolute bottom-full mb-1 bg-neutral-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10 text-center">
+              <div>{week.weekLabel}</div>
+              <div>₪{week.revenue.toLocaleString("he-IL")}</div>
+              <div>{week.appointments} תורים</div>
+            </div>
+            <div
+              className={`w-full rounded-t transition-all ${isCurrent ? "bg-teal-500" : "bg-slate-200 group-hover:bg-slate-400"}`}
+              style={{ height: `${Math.max(pct, 4)}%` }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── BarberGamifiedSection ─────────────────────────────────────────────────────
+function BarberGamifiedSection({ stats }: { stats: BarberStats }) {
+  const { thisWeek, lastWeek, lifetime, returnRate, weeklyHistory } = stats;
+
+  const apptDiff = thisWeek.appointments - lastWeek.appointments;
+  const apptPct  = lastWeek.appointments > 0
+    ? Math.round((apptDiff / lastWeek.appointments) * 100)
+    : null;
+  const revDiff  = thisWeek.revenue - lastWeek.revenue;
+  const revPct   = lastWeek.revenue > 0
+    ? Math.round((revDiff / lastWeek.revenue) * 100)
+    : null;
+
+  const rateColor =
+    returnRate.rate >= 40 ? "text-emerald-400" :
+    returnRate.rate >= 20 ? "text-slate-200"   : "text-red-400";
+
+  return (
+    <div className="space-y-4">
+      {/* ── All-time summary strip ── */}
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">לקוחות ייחודיים</p>
+          <p className="text-2xl font-black text-teal-600">{lifetime.uniqueCustomers}</p>
+          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">חזרת לקוחות</p>
+          <p className={`text-2xl font-black ${rateColor.replace("text-slate-200", "text-slate-800")}`}>{returnRate.rate}%</p>
+          <p className="text-[10px] text-neutral-400">{returnRate.repeatCustomers} חזרו</p>
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים כולל</p>
+          <p className="text-2xl font-black text-neutral-800">{lifetime.totalAppointments.toLocaleString("he-IL")}</p>
+          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
+        </div>
+      </div>
+
+      {/* ── This week vs last week ── */}
+      <div>
+        <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ שבוע זה (ראשון–שבת)</h2>
+        <div className="grid grid-cols-2 gap-2.5">
+          {/* Appointments */}
+          <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים השבוע</p>
+            <p className="text-3xl font-black text-neutral-900">{thisWeek.appointments}</p>
+            {apptDiff !== 0 ? (
+              <p className={`text-xs font-semibold mt-1 ${apptDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {apptDiff > 0 ? "↑" : "↓"}{" "}
+                {Math.abs(apptDiff)}
+                {apptPct !== null && ` (${Math.abs(apptPct)}%)`}
+                {" "}מהשבוע שעבר
+              </p>
+            ) : lastWeek.appointments > 0 ? (
+              <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
+            ) : null}
+            <p className="text-[10px] text-neutral-400 mt-0.5">שבוע שעבר: {lastWeek.appointments}</p>
+          </div>
+
+          {/* Revenue */}
+          <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">הכנסה השבוע</p>
+            <p className="text-2xl font-black text-neutral-900">
+              ₪{thisWeek.revenue.toLocaleString("he-IL")}
+            </p>
+            {revDiff !== 0 ? (
+              <p className={`text-xs font-semibold mt-1 ${revDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
+                {revDiff > 0 ? "↑" : "↓"}{" "}
+                ₪{Math.abs(revDiff).toLocaleString("he-IL")}
+                {revPct !== null && ` (${Math.abs(revPct)}%)`}
+              </p>
+            ) : lastWeek.revenue > 0 ? (
+              <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
+            ) : null}
+            <p className="text-[10px] text-neutral-400 mt-0.5">שבוע שעבר: ₪{lastWeek.revenue.toLocaleString("he-IL")}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 8-week trend chart ── */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-neutral-800">📊 מגמת 12 שבועות</h3>
+          <span className="text-xs text-neutral-400">הכנסות שבועיות</span>
+        </div>
+        <WeeklyBarChart data={weeklyHistory} />
+        <div className="flex justify-between text-[9px] text-neutral-300 mt-2 pointer-events-none">
+          <span>{weeklyHistory[0]?.weekLabel}</span>
+          <span className="text-teal-600 font-semibold">שבוע זה</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── useDebounce — delays a value until the user stops changing it ─────────────
 function useDebounce<T>(value: T, delay = 500): T {
   const [debounced, setDebounced] = useState(value);
@@ -522,10 +656,11 @@ export default function Dashboard() {
   const [returnWindowDays, setReturnWindowDays] = useState(90);
   // Debounced — API is called only after slider stops moving (500ms)
   const debouncedWindowDays = useDebounce(returnWindowDays, 500);
-  const [analytics,  setAnalytics]  = useState<Analytics | null>(null);
-  const [loading,    setLoading]    = useState(true);
-  const [me,         setMe]         = useState<Me | null>(null);
-  const [allStaff,   setAllStaff]   = useState<Staff[]>([]);
+  const [analytics,    setAnalytics]    = useState<Analytics | null>(null);
+  const [loading,      setLoading]      = useState(true);
+  const [me,           setMe]           = useState<Me | null>(null);
+  const [allStaff,     setAllStaff]     = useState<Staff[]>([]);
+  const [barberStats,  setBarberStats]  = useState<BarberStats | null>(null);
 
   const { from, to, label: monthLabel } = useMemo(
     () => monthRange(viewYear, viewMonth),
@@ -533,7 +668,19 @@ export default function Dashboard() {
   );
 
   useEffect(() => {
-    fetch("/api/admin/me").then(r => r.json()).then(setMe).catch(() => {});
+    fetch("/api/admin/me")
+      .then(r => r.json())
+      .then((data: Me) => {
+        setMe(data);
+        // Fetch barber-specific gamified stats for non-owners
+        if (!data.isOwner) {
+          fetch("/api/admin/barber-stats")
+            .then(r => r.json())
+            .then(setBarberStats)
+            .catch(() => {});
+        }
+      })
+      .catch(() => {});
     fetch("/api/admin/staff").then(r => r.json()).then((d: Staff[]) => setAllStaff(d)).catch(() => {});
   }, []);
 
@@ -589,35 +736,42 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Today strip ─────────────────────────────────────────────────────── */}
-      {a && (
-        <div>
-          <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ היום</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <MiniStat
-              icon="👥"
-              label="לקוחות היום"
-              value={a.todayAppointments}
-              sub={a.todayNewToBusiness > 0 ? `${a.todayNewToBusiness} חדשים למספרה` : undefined}
-            />
-            <MiniStat
-              icon="💰"
-              label="מחזור היום"
-              value={`₪${a.todayRevenue.toLocaleString("he-IL")}`}
-            />
-            <MiniStat
-              icon="📈"
-              label="תפוסה היום"
-              value={`${a.occupancyToday}%`}
-            />
-            <MiniStat
-              icon="📅"
-              label="נקבעו ב-24 שעות"
-              value={a.bookingsCreatedToday}
-              sub="כל התורים שנוצרו היום"
-            />
+      {/* ── For barbers: gamified weekly section; for owners: today strip ── */}
+      {!isOwner ? (
+        barberStats
+          ? <BarberGamifiedSection stats={barberStats} />
+          : <div className="animate-pulse bg-neutral-100 rounded-2xl h-40" />
+      ) : (
+        /* Owner: today strip */
+        a && (
+          <div>
+            <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ היום</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <MiniStat
+                icon="👥"
+                label="לקוחות היום"
+                value={a.todayAppointments}
+                sub={a.todayNewToBusiness > 0 ? `${a.todayNewToBusiness} חדשים למספרה` : undefined}
+              />
+              <MiniStat
+                icon="💰"
+                label="מחזור היום"
+                value={`₪${a.todayRevenue.toLocaleString("he-IL")}`}
+              />
+              <MiniStat
+                icon="📈"
+                label="תפוסה היום"
+                value={`${a.occupancyToday}%`}
+              />
+              <MiniStat
+                icon="📅"
+                label="נקבעו ב-24 שעות"
+                value={a.bookingsCreatedToday}
+                sub="כל התורים שנוצרו היום"
+              />
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Barber filter chips + insights button */}
@@ -712,14 +866,16 @@ export default function Dashboard() {
             <ActivityBreakdownCard breakdown={a.activityBreakdown} />
           </div>
 
-          {/* Revenue chart */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-neutral-800 text-sm">הכנסות יומיות — {monthLabel}</h3>
-              <span className="text-xs text-neutral-400">סה״כ ₪{a.totalRevenue.toLocaleString("he-IL")}</span>
+          {/* Revenue chart — owners only; barbers get the weekly trend chart instead */}
+          {isOwner && (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-neutral-800 text-sm">הכנסות יומיות — {monthLabel}</h3>
+                <span className="text-xs text-neutral-400">סה״כ ₪{a.totalRevenue.toLocaleString("he-IL")}</span>
+              </div>
+              <RevenueChart data={a.dailyRevenue} todayISO={todayISO} />
             </div>
-            <RevenueChart data={a.dailyRevenue} todayISO={todayISO} />
-          </div>
+          )}
 
           {/* Per-barber grid */}
           {isOwner && !selStaff && a.staffSummary.length > 0 && (

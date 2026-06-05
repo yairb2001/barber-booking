@@ -6,7 +6,7 @@ import Constants from "expo-constants";
 
 const BASE_URL: string =
   (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
-  "http://localhost:3001";
+  "http://192.168.1.102:3001";
 
 type FetchOptions = RequestInit & { params?: Record<string, string | undefined | null> };
 
