@@ -1764,53 +1764,65 @@ function DraftMoveSlotBlock({
 // ── Draft Appointment Block (Google-Calendar style click-to-place) ─────────────
 function DraftApptBlock({
   startY, staffName,
-  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved,
+  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved, onHorizontalDragEnd,
 }: {
   startY: number; staffName: string; date: string;
   onMove: (y: number) => void;
   onConfirm: () => void;
   onAddBreak: () => void;
   onDismiss: () => void;
-  onDragMoved?: () => void;  // called when block was actually dragged (not just tapped)
+  onDragMoved?: () => void;
+  /** Called when the user releases after a horizontal drag — clientX of the pointer */
+  onHorizontalDragEnd?: (clientX: number) => void;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  // On mobile, just show a thin draggable pill — action buttons live in the
-  // fixed bottom bar rendered at screen level (see FloatingDraftBar).
   const blockH = isMobile ? 28 : 36;
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
-  const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
-  void staffName; // not displayed in compact mode
+  const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
+  // CSS translateX so the block slides across columns while pointer capture is held
+  const [transX, setTransX] = React.useState(0);
+  void staffName;
 
   return (
     <div
-      className="no-touch-select absolute left-1 right-1 z-30 select-none cursor-grab active:cursor-grabbing"
-      style={{ top: clampedTop, height: blockH, touchAction: "none" }}
+      className="no-touch-select absolute left-1 right-1 select-none cursor-grab active:cursor-grabbing"
+      style={{
+        top: clampedTop,
+        height: blockH,
+        touchAction: "none",
+        transform: transX !== 0 ? `translateX(${transX}px)` : undefined,
+        zIndex: transX !== 0 ? 50 : 30,  // float above other columns when dragging sideways
+      }}
       onPointerDown={e => {
-        // Don't hijack clicks that land on buttons — let them fire normally
         if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
-        dragRef.current = { clientY: e.clientY, startY: clampedTop };
+        dragRef.current = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        setTransX(0);
       }}
       onPointerMove={e => {
         if (!dragRef.current) return;
+        // Vertical: update time
         const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
         onMove(newY);
+        // Horizontal: slide block across columns visually (keeps pointer capture on this element)
+        setTransX(e.clientX - dragRef.current.clientX);
       }}
       onPointerUp={e => {
         e.stopPropagation();
-        if (dragRef.current && Math.abs(e.clientY - dragRef.current.clientY) > 5) {
-          // Real drag ended — the browser will fire a click on whatever grid cell
-          // is under the cursor. Tell the parent to ignore it.
-          onDragMoved?.();
-        }
+        const dy = dragRef.current ? Math.abs(e.clientY - dragRef.current.clientY) : 0;
+        const dx = dragRef.current ? Math.abs(e.clientX - dragRef.current.clientX) : 0;
+        if (dy > 5 || dx > 5) onDragMoved?.();
+        // If horizontal drag happened, inform parent of final clientX so it can pick target column
+        if (dx > 15) onHorizontalDragEnd?.(e.clientX);
         dragRef.current = null;
+        setTransX(0);
       }}
-      onPointerCancel={() => { dragRef.current = null; }}
+      onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
@@ -1943,6 +1955,20 @@ export default function AdminCalendar() {
   // the pointer is over during a drag-move. Rebuilt on each render based on
   // current view (day = many staff, week = many days).
   const colRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Find which column (staffId + date) contains a given clientX screen coordinate.
+  // Used by DraftApptBlock to land on the right column after a horizontal drag.
+  const findColumnByX = React.useCallback((clientX: number): { staffId: string; date: string } | null => {
+    for (const [key, el] of Object.entries(colRefs.current)) {
+      if (!el) continue;
+      const rect = el.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right) {
+        const [staffId, date] = key.split("|");
+        return { staffId, date };
+      }
+    }
+    return null;
+  }, []);
 
   // When a DraftApptBlock or DraftMoveSlotBlock is dragged, the browser fires a
   // `click` on the grid after mouseup (because the mouse ends up outside the
@@ -2740,6 +2766,14 @@ export default function AdminCalendar() {
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            onHorizontalDragEnd={clientX => {
+                              const target = findColumnByX(clientX);
+                              if (!target) return;
+                              suppressNextGridClick.current = true;
+                              if (target.staffId !== draftAppt?.staffId || target.date !== draftAppt?.date) {
+                                setDraftAppt(prev => prev ? { ...prev, staffId: target.staffId, date: target.date } : null);
+                              }
+                            }}
                           />
                         )}
                         {colDraftMove && (
@@ -2820,6 +2854,14 @@ export default function AdminCalendar() {
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            onHorizontalDragEnd={clientX => {
+                              const target = findColumnByX(clientX);
+                              if (!target) return;
+                              suppressNextGridClick.current = true;
+                              if (target.date !== draftAppt?.date) {
+                                setDraftAppt(prev => prev ? { ...prev, date: target.date } : null);
+                              }
+                            }}
                           />
                         )}
                         {colDraftMove && (
