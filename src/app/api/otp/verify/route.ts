@@ -54,14 +54,14 @@ export async function POST(req: NextRequest) {
   const sessionToken = await new SignJWT({ phone: normalized, businessId: business.id, type: "customer_session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime("40d")
     .sign(SECRET);
 
   const response = NextResponse.json({ ok: true, token });
   response.cookies.set("bk_session", sessionToken, {
     httpOnly: true,
     sameSite: "strict",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 40, // 40 days
     path: "/",
     secure: process.env.NODE_ENV === "production",
   });

@@ -9,7 +9,7 @@
  *   { ok: true, token: string, phone: string }   — phone is in display format (05...)
  *   { error: string }  with status 401           — session missing or expired
  *
- * Also renews the session cookie (sliding 30-day window).
+ * Also renews the session cookie (sliding 40-day window).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   const newSession = await new SignJWT({ phone, businessId, type: "customer_session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("30d")
+    .setExpirationTime("40d")
     .sign(SECRET);
 
   // Convert stored phone (972...) → display format (05...)
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   response.cookies.set("bk_session", newSession, {
     httpOnly: true,
     sameSite: "strict",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: 60 * 60 * 24 * 40, // 40 days
     path: "/",
     secure: process.env.NODE_ENV === "production",
   });
