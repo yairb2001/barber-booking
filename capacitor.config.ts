@@ -22,8 +22,10 @@ const config: CapacitorConfig = {
   ios: {
     contentInset: "always",
     backgroundColor: "#0d9488",
-    // Hide the WKWebView scroll bounce so it feels more native
-    scrollEnabled: true,
+    // Disable the WKWebView's native scrollView entirely — the admin manages its
+    // own scroll inside <main> (overflow:auto). This kills the rubber-band
+    // bounce that revealed the teal background strip when the app was dragged.
+    scrollEnabled: false,
     limitsNavigationsToAppBoundDomains: false,
   },
   plugins: {
