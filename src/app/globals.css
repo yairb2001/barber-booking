@@ -26,6 +26,13 @@ body {
   text-size-adjust: 100%;
 }
 
+/* Kill the iOS WebView rubber-band bounce everywhere. Normal scrolling inside
+   scroll containers still works — this only removes the chain/bounce/glow. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 /* ── iOS Safari: never auto-zoom when focusing a field ──────────────────────────
    iOS zooms in on any <input>/<select>/<textarea> whose effective font-size is
    below 16px. Forcing 16px on touch devices kills that behaviour at the root —
@@ -81,6 +88,13 @@ body {
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
+  /* Pin the whole admin to the viewport so the document has nothing to
+     rubber-band — no more teal strip peeking when you pull the app. All
+     scrolling happens inside <main> / inner scroll regions. */
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 .admin-shell input,
 .admin-shell textarea,
