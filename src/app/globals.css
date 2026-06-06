@@ -20,6 +20,77 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Stop the whole page from rubber-band scrolling / accidental highlight while
+     dragging appointments. Individual scroll areas opt back in below. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* ── iOS Safari: never auto-zoom when focusing a field ──────────────────────────
+   iOS zooms in on any <input>/<select>/<textarea> whose effective font-size is
+   below 16px. Forcing 16px on touch devices kills that behaviour at the root —
+   no viewport hacks required beyond maximum-scale. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea,
+  input[type="text"],
+  input[type="tel"],
+  input[type="number"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="date"],
+  input[type="time"] {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Drag without painting the screen blue ─────────────────────────────────────
+   When you long-press / drag an appointment block iOS treats it as a text
+   selection and highlights everything in blue, and pops the copy/lookup callout.
+   `.no-touch-select` shuts both off. Apply it to draggable blocks and the grid. */
+.no-touch-select {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Anything that is dragged with a pointer gesture: tell the browser we handle
+   the gesture ourselves so it doesn't scroll/select mid-drag. */
+.touch-drag-handle {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Admin = native-app behaviour, no text selection anywhere ───────────────────
+   The admin (calendar especially) is a touch tool, not a document. Disabling
+   selection on the whole shell guarantees that NO drag — wherever it starts —
+   paints the screen blue or pops the iOS copy / translate / lookup callout.
+   Real input fields opt back in below so typing still works normally. */
+.admin-shell {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.admin-shell input,
+.admin-shell textarea,
+.admin-shell select,
+.admin-shell [contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }
 
 /* ── Premium card system ────────────────────────────────────────────────────── */

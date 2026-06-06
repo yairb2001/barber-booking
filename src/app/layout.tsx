@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Frank_Ruhl_Libre,
   Bellefair,
@@ -55,6 +55,20 @@ const assistant = Assistant({
 export const metadata: Metadata = {
   title: "DOMINANT Barbershop",
   description: "זימון תורים - DOMINANT Barbershop",
+};
+
+// iOS/Android native-app behaviour:
+// - maximumScale 1 + userScalable false  → no pinch-zoom, and no auto-zoom when
+//   focusing an input (combined with the 16px input font-size in globals.css).
+// - viewportFit "cover"                   → content extends under the notch /
+//   home-indicator so safe-area insets work.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#0d9488",
 };
 
 export default function RootLayout({

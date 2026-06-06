@@ -259,7 +259,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   }
 
   return (
-    <div className={`absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1.5 py-1 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1.5 py-1 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: "none", ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
@@ -1714,7 +1714,7 @@ function DraftMoveSlotBlock({
 
   return (
     <div
-      className="absolute left-0.5 right-0.5 z-30 select-none cursor-grab active:cursor-grabbing"
+      className="no-touch-select absolute left-0.5 right-0.5 z-30 select-none cursor-grab active:cursor-grabbing"
       style={{ top: clampedTop, height: blockH, touchAction: "none" }}
       onPointerDown={e => {
         // Don't hijack clicks that land on buttons — let them fire normally
@@ -1786,7 +1786,7 @@ function DraftApptBlock({
 
   return (
     <div
-      className="absolute left-1 right-1 z-30 select-none cursor-grab active:cursor-grabbing"
+      className="no-touch-select absolute left-1 right-1 z-30 select-none cursor-grab active:cursor-grabbing"
       style={{ top: clampedTop, height: blockH, touchAction: "none" }}
       onPointerDown={e => {
         // Don't hijack clicks that land on buttons — let them fire normally
@@ -2657,7 +2657,7 @@ export default function AdminCalendar() {
                     return (
                       <div key={s.id}
                         ref={el => { colRefs.current[colKey] = el; }}
-                        className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
+                        className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
                           if (colDraft) { setDraftAppt(null); return; }
@@ -2739,7 +2739,7 @@ export default function AdminCalendar() {
                     return (
                       <div key={d}
                         ref={el => { colRefs.current[colKey] = el; }}
-                        className="flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
+                        className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
                           if (colDraft) { setDraftAppt(null); return; }

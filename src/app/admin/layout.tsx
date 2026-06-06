@@ -133,7 +133,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const currentLabel = visibleNav.find(isActive)?.label ?? "ניהול";
 
   return (
-    <div className="flex h-[100dvh] overflow-hidden bg-slate-50 text-slate-900 font-heebo" dir="rtl">
+    <div className="admin-shell flex h-[100dvh] overflow-hidden bg-slate-50 text-slate-900 font-heebo" dir="rtl">
 
       {/* ── Mobile drawer backdrop ── */}
       {drawerOpen && (
