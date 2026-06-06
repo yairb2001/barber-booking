@@ -272,11 +272,20 @@ export default function HomePage() {
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [scrolled, setScrolled] = useState(false);
+  const [welcomeName, setWelcomeName] = useState("");
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Returning customer — greet by name (saved after first booking)
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
+      if (saved?.name) setWelcomeName(String(saved.name).split(" ")[0]); // first name only
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -444,6 +453,15 @@ export default function HomePage() {
                 boxShadow: `0 0 40px rgba(${brandRgb},0.4), 0 8px 32px rgba(0,0,0,0.6)`,
               }}>
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
+            </div>
+          )}
+
+          {welcomeName && (
+            <div className="mb-3 px-5 py-2 rounded-full"
+              style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
+              <p className="text-white text-[14px] font-semibold tracking-wide">
+                👋 ברוך הבא, {welcomeName}!
+              </p>
             </div>
           )}
 
