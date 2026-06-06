@@ -90,6 +90,7 @@ export default function ChooseBarberPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [welcomeName, setWelcomeName] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -102,6 +103,12 @@ export default function ChooseBarberPage() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+
+    // Returning customer — greet by name (saved after first booking)
+    try {
+      const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
+      if (saved?.name) setWelcomeName(String(saved.name).split(" ")[0]); // first name only
+    } catch { /* ignore */ }
   }, []);
 
   const getBarberSlot = (staffId: string) => quickSlots.find(s => s.staffId === staffId);
@@ -120,6 +127,23 @@ export default function ChooseBarberPage() {
           <StepBar step={1} />
         </div>
       </div>
+
+      {/* ── Welcome back banner (returning customer) ── */}
+      {welcomeName && (
+        <div className="px-4 pt-4 pb-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">👋</span>
+            <div>
+              <p className="text-[17px] font-bold leading-tight" style={{ color: "var(--text-pri)" }}>
+                ברוך הבא, {welcomeName}!
+              </p>
+              <p className="text-[12px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
+                שמחים לראות אותך שוב — בוא נקבע לך תור
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Quick slots strip ── */}
       {!loading && quickSlots.length > 0 && (
