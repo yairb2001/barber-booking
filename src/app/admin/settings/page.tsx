@@ -37,13 +37,13 @@ interface AutoRec {
 }
 const AUTO_NAMES: Record<AutoType, string> = {
   reengage: "החזרת לקוחות לא פעילים",
-  post_first_visit: "קידום חכם — ביקור ראשון",
-  post_every_visit: "הודעה אחרי כל ביקור",
+  post_first_visit: "קידום חכם — לקוח חדש",
+  post_every_visit: "קידום חכם — לקוח חוזר",
 };
 const AUTO_DEFAULT_SETTINGS: Record<AutoType, object> = {
   reengage:         { inactiveWeeks: 6, excludeWithFutureAppt: true, segment: "all" },
-  post_first_visit: { ctaType: "google_review", ctaUrl: "" },
-  post_every_visit: { segment: "regular_only", minVisits: 2 },
+  post_first_visit: { ctaType: "google_review", ctaUrl: "", delayMinutes: 30 },
+  post_every_visit: { segment: "regular_only", minVisits: 2, ctaType: "google_review", ctaUrl: "", delayMinutes: 60 },
 };
 function parseAutoS<T>(s: string): T { try { return JSON.parse(s) as T; } catch { return {} as T; } }
 
@@ -1594,10 +1594,17 @@ function PostEveryPanelSettings({
   saving: boolean;
   onSave: (s: object) => void;
 }) {
-  const [segment,   setSegment]   = useState((settings.segment   as string) ?? "regular_only");
-  const [minVisits, setMinVisits] = useState((settings.minVisits as number) ?? 2);
+  const [segment,      setSegment]      = useState((settings.segment      as string) ?? "regular_only");
+  const [minVisits,    setMinVisits]    = useState((settings.minVisits    as number) ?? 2);
   const [delayMinutes, setDelayMinutes] = useState((settings.delayMinutes as number) ?? 60);
-  const [dirty,     setDirty]     = useState(false);
+  const [ctaType,      setCtaType]      = useState((settings.ctaType      as string) ?? "google_review");
+  const [ctaUrl,       setCtaUrl]       = useState((settings.ctaUrl       as string) ?? "");
+  const [dirty,        setDirty]        = useState(false);
+  const CTA_OPTIONS = [
+    { value: "google_review", label: "⭐ גוגל",      placeholder: "https://g.page/r/..." },
+    { value: "instagram",     label: "📸 אינסטגרם", placeholder: "https://instagram.com/..." },
+    { value: "custom",        label: "🔗 מותאם",    placeholder: "https://..." },
+  ];
   return (
     <div className="space-y-3">
       <div>
@@ -1613,7 +1620,7 @@ function PostEveryPanelSettings({
       <div>
         <label className="text-xs text-neutral-500 block mb-1.5">למי לשלח</label>
         <div className="flex gap-2">
-          {([["all","כולם"],["new_only","חדשים בלבד"],["regular_only","קבועים בלבד"]] as [string,string][]).map(([v,l]) => (
+          {([["all","כולם"],["regular_only","חוזרים בלבד"],["new_only","חדשים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
               className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
@@ -1632,8 +1639,26 @@ function PostEveryPanelSettings({
           </div>
         </div>
       )}
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1.5">קריאה לפעולה (CTA)</label>
+        <div className="flex gap-2">
+          {CTA_OPTIONS.map(opt => (
+            <button key={opt.value} onClick={() => { setCtaType(opt.value); setDirty(true); }}
+              className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${ctaType === opt.value ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1">קישור</label>
+        <input type="url" value={ctaUrl} dir="ltr"
+          onChange={e => { setCtaUrl(e.target.value); setDirty(true); }}
+          placeholder={CTA_OPTIONS.find(o => o.value === ctaType)?.placeholder}
+          className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+      </div>
       {dirty && (
-        <button onClick={() => { onSave({ segment, minVisits, delayMinutes }); setDirty(false); }}
+        <button onClick={() => { onSave({ segment, minVisits, delayMinutes, ctaType, ctaUrl }); setDirty(false); }}
           disabled={saving}
           className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}
@@ -1871,14 +1896,14 @@ function AutomationsTab() {
 
       {/* Post every visit */}
       <AutoPanel
-        emoji="💬" title="הודעה אחרי כל ביקור"
-        subtitle="תודה / follow-up אחרי כל תור — אוטומטי לפי שעת סיום"
+        emoji="🌟" title="קידום חכם — לקוח חוזר"
+        subtitle="נשלח אחרי ביקור חוזר — אוטומטי לפי שעת סיום התור"
         active={postEvery?.active ?? false}
         saving={saving === "post_every_visit"}
         onToggle={() => toggle("post_every_visit")}
         template={postEvery?.template ?? null}
-        vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}"]}
-        defaultTemplate={"שלום {{name}} 👋\n\nתודה שביקרת ב*{{business}}* ✂️\nנתראה בפעם הבאה! 😊"}
+        vars={["{{name}}", "{{business}}", "{{staff}}", "{{service}}", "{{cta}}"]}
+        defaultTemplate={"שלום {{name}} 👋\n\nתודה שחזרת ל*{{business}}* ✂️\nנהנינו לטפל בך שוב 😊{{cta}}\n\nנתראה בפעם הבאה!"}
         onSave={patch => upsert("post_every_visit", patch)}
         onTest={() => testAutomation("post_every_visit")}
       >

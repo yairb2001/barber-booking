@@ -144,14 +144,23 @@ export async function GET() {
         if (segment === "regular_only" && completedCount < minVisits) { skipped++; continue; }
         if (segment === "new_only"     && completedCount !== 1)        { skipped++; continue; }
 
+        // CTA — same logic as post_first_visit
+        const ctaType = (settings.ctaType as string) ?? "";
+        const ctaUrl  = (settings.ctaUrl  as string) ?? "";
+        let ctaLine = "";
+        if (ctaType === "google_review" && ctaUrl) ctaLine = `\n\n⭐ נשמח לביקורת קצרה בגוגל — זה עוזר לנו המון:\n${ctaUrl}`;
+        else if (ctaType === "instagram" && ctaUrl) ctaLine = `\n\n📸 עקוב אחרינו באינסטגרם:\n${ctaUrl}`;
+        else if (ctaType === "custom"    && ctaUrl) ctaLine = `\n\n${ctaUrl}`;
+
         const template = (auto.template as string | null) ||
-          `שלום {{name}} 👋\n\nתודה שביקרת ב*{{business}}* ✂️\nנתראה בפעם הבאה! 😊`;
+          `שלום {{name}} 👋\n\nתודה שחזרת ל*{{business}}* ✂️\nנהנינו לטפל בך שוב 😊{{cta}}\n\nנתראה בפעם הבאה!`;
 
         const body = template
           .replace(/\{\{name\}\}/g, appt.customer.name)
           .replace(/\{\{business\}\}/g, business.name)
           .replace(/\{\{staff\}\}/g, appt.staff?.name ?? "")
-          .replace(/\{\{service\}\}/g, appt.service?.name ?? "");
+          .replace(/\{\{service\}\}/g, appt.service?.name ?? "")
+          .replace(/\{\{cta\}\}/g, ctaLine);
 
         await sendMessage({
           businessId: auto.businessId,
