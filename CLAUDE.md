@@ -74,7 +74,7 @@ Helpers in `src/lib/session.ts`:
 - **`Appointment`** — `status` is `pending|confirmed|completed|cancelled_by_customer|cancelled_by_staff|no_show`. Manual "completed/no-show" buttons were removed from the UI; completion is now derived from `date + endTime` being in the past.
 - **`Conversation` + `ConversationMessage`** — WhatsApp threads. `escalatedAt` = agent muted for 24h (lazy expiry on next incoming message). `lastReadAt` for unread badge. `whatsappName` captured from sender. `source` on messages: `agent` (AI) | `admin` (human reply).
 - **`MessageLog`** — every outgoing WhatsApp goes here. `kind` is the channel (`confirmation`, `reminder_24h`, `agent_reply`, `manual`, `broadcast`, `post_first_visit`, `post_every_visit`, `otp`, etc.). Used for de-duplication of automations.
-- **`OtpCode`** — 6-digit codes, 10-min TTL, used by `/book/confirm` before creating appointment.
+- **`OtpCode`** — 4-digit codes, 10-min TTL, used by `/book/confirm` before creating appointment.
 - **`Automation`** — `type` is `reengage` | `post_first_visit` | `post_every_visit`. JSON `settings` includes `delayMinutes` for post-visit kinds.
 - **`SwapProposal`** — swap/move appointment proposals sent to customers via WhatsApp.
 

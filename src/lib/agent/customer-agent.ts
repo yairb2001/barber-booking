@@ -16,6 +16,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import {
   generateSlots,
   getDayOfWeek,
@@ -324,6 +325,14 @@ async function execTool(
           where: { id: appt.id },
           data: { status: "cancelled_by_customer", cancelledAt: new Date() },
         });
+
+        // Notify waitlist members — a slot just freed up
+        notifyWaitlistForCancellation({
+          businessId: appt.businessId,
+          staffId:    appt.staffId,
+          date:       appt.date,
+          startTime:  appt.startTime,
+        }).catch(console.error);
 
         const dateStr = new Date(appt.date).toLocaleDateString("he-IL", {
           weekday: "short", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",

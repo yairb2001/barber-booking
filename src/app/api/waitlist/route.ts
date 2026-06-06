@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, hasFeature } from "@/lib/messaging";
 
 /**
  * Public endpoint — customers join the waitlist.
@@ -23,14 +22,6 @@ export async function POST(request: Request) {
     ? await prisma.business.findUnique({ where: { id: businessId } })
     : await prisma.business.findFirst();
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
-
-  const staffRecord = staffId
-    ? await prisma.staff.findUnique({ where: { id: staffId }, select: { name: true } })
-    : null;
-
-  const serviceRecord = await prisma.service.findUnique({
-    where: { id: serviceId }, select: { name: true },
-  });
 
   // Find or create customer
   let customer = await prisma.customer.findUnique({
@@ -73,33 +64,10 @@ export async function POST(request: Request) {
     include: { customer: true, service: true },
   });
 
-  // ── Send WhatsApp confirmation (fire-and-forget) ───────────────────────────
-  if (hasFeature(biz.features, "reminders")) {
-    const dateLabel = dateObj.toLocaleDateString("he-IL", {
-      weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
-    });
-    const timeLabel = preferredTimeOfDay === "morning"   ? "בוקר (09:00–12:00)"
-                    : preferredTimeOfDay === "afternoon" ? "צהריים (12:00–17:00)"
-                    : preferredTimeOfDay === "evening"   ? "ערב (17:00–20:00)"
-                    : "כל שעה";
-    const staffLine = staffRecord ? `\n💈 אצל ${staffRecord.name}` : "";
-    const msgBody = [
-      `שלום ${customer.name} 👋`,
-      ``,
-      `נרשמת לרשימת ההמתנה ב*${biz.name}* ✂️`,
-      `📅 ${dateLabel}`,
-      `🕒 שעה מועדפת: ${timeLabel}${staffLine}`,
-      ``,
-      `ברגע שיתפנה תור — נשלח לך הודעה מיידית! 🔔`,
-    ].join("\n");
-
-    sendMessage({
-      businessId: biz.id,
-      customerPhone: customer.phone,
-      kind: "manual",
-      body: msgBody,
-    }).catch(err => console.error("waitlist confirmation send failed", err));
-  }
+  // NOTE: We intentionally do NOT send a WhatsApp confirmation on registration.
+  // Waitlist members are only messaged when a slot actually frees up
+  // (see src/lib/waitlist-notify.ts — cancellations, day re-open, break removed,
+  //  hours added, and customer self-cancel via the WhatsApp agent).
 
   return NextResponse.json(entry, { status: 201 });
 }

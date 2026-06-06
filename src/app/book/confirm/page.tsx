@@ -462,12 +462,12 @@ function ConfirmPageContent() {
                       נשלח קוד ל-<span dir="ltr" className="font-mono font-bold">{phone}</span>
                     </p>
                     {otpError && <p className="text-[12px] text-red-500 text-center">{otpError}</p>}
-                    <input type="text" inputMode="numeric" maxLength={6}
-                      value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g,"").slice(0,6))}
-                      placeholder="הזן קוד 6 ספרות" dir="ltr"
+                    <input type="text" inputMode="numeric" maxLength={4}
+                      value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g,"").slice(0,4))}
+                      placeholder="הזן קוד 4 ספרות" dir="ltr"
                       className={inputClass + " text-center font-mono tracking-[0.3em] text-xl"} />
                     <div className="flex gap-2">
-                      <button onClick={verifyOtp} disabled={otpVerifying || otpCode.length < 6}
+                      <button onClick={verifyOtp} disabled={otpVerifying || otpCode.length < 4}
                         className="flex-1 text-[13px] font-bold tracking-[0.1em] py-3 rounded-full text-white transition-all disabled:opacity-40"
                         style={{ background: "var(--brand)" }}>
                         {otpVerifying ? "מאמת..." : "אמת קוד"}
