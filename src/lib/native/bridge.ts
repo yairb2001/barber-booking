@@ -109,6 +109,20 @@ export async function handlePushTaps(): Promise<void> {
   } catch { /* ignore */ }
 }
 
+/**
+ * Hide the iOS keyboard "accessory bar" — the grey toolbar with the
+ * prev / next (∧ ∨) arrows and the Done (✓) button that WKWebView pops above
+ * the keyboard for every form field. It looks un-native and wastes space, so
+ * we turn it off once on app start. No-op on web / Android.
+ */
+export async function hideKeyboardAccessoryBar(): Promise<void> {
+  if (!(await isNative())) return;
+  try {
+    const { Keyboard } = await import("@capacitor/keyboard");
+    await Keyboard.setAccessoryBarVisible({ isVisible: false });
+  } catch { /* ignore */ }
+}
+
 /** Set the status-bar style. Useful when entering dark sections. */
 export async function setStatusBar(style: "light" | "dark", backgroundColor?: string): Promise<void> {
   if (!(await isNative())) return;
