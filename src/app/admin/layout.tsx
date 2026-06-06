@@ -230,41 +230,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </header>
 
-        {/* Main content */}
+        {/* Main content — fills all remaining height; bottom nav removed, navigation is via the ☰ hamburger */}
         <main className="flex-1 overflow-auto min-h-0">{children}</main>
-
-        {/* Mobile bottom nav */}
-        <nav className="md:hidden flex bg-white border-t border-slate-200 shrink-0 safe-bottom">
-          {bottomNav.map((item) => {
-            const isChats = item.href === "/admin/chats";
-            const showBadge = isChats && unreadChats > 0;
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition relative ${
-                  isActive(item) ? "text-teal-600 font-semibold" : "text-slate-400 hover:text-slate-600"
-                }`}
-              >
-                <span className="text-xl leading-none">{item.icon}</span>
-                <span className="text-[10px] font-medium">{item.label}</span>
-                {showBadge && (
-                  <span className="absolute top-1 right-1/2 translate-x-3 bg-red-500 text-white text-[9px] font-bold rounded-full px-1 min-w-[14px] h-[14px] flex items-center justify-center">
-                    {unreadChats > 9 ? "9+" : unreadChats}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-          {/* "More" button opens full sidebar */}
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-slate-400 hover:text-slate-600 transition"
-          >
-            <span className="text-xl leading-none">⋯</span>
-            <span className="text-[10px] font-medium">עוד</span>
-          </button>
-        </nav>
       </div>
     </div>
   );

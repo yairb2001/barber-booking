@@ -874,62 +874,68 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl w-full max-w-lg shadow-2xl max-h-[78vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-lg text-neutral-900">{appt.service.name}</h3>
-              <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${meta.badgeClass}`}>{meta.label}</span>
-            </div>
-            <p className="text-sm text-neutral-500 mt-0.5">{appt.staff.name} · {appt.startTime}–{appt.endTime}</p>
-          </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center shrink-0 hover:bg-neutral-200 transition">✕</button>
+        {/* Drag handle — visual cue that this is a bottom sheet */}
+        <div className="flex justify-center pt-2.5 pb-1">
+          <div className="w-10 h-1 rounded-full bg-neutral-200" />
         </div>
 
-        {/* Customer */}
-        <div className="px-5 py-4 border-b border-neutral-100 flex items-center gap-3">
-          <div className="w-11 h-11 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-700 font-bold text-lg shrink-0">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-1 pb-2 border-b border-neutral-100">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <h3 className="font-bold text-base text-neutral-900 truncate">{appt.service.name}</h3>
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center shrink-0 hover:bg-neutral-200 transition text-sm">✕</button>
+        </div>
+
+        {/* Customer — compact row with pencil to edit */}
+        <div className="px-4 py-2.5 border-b border-neutral-100 flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-700 font-bold shrink-0">
             {appt.customer.name[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-neutral-900">{appt.customer.name}</p>
-            <p className="text-sm text-neutral-500" dir="ltr">{appt.customer.phone}</p>
+            <p className="font-semibold text-neutral-900 text-sm truncate">{appt.customer.name}</p>
+            <p className="text-xs text-neutral-500" dir="ltr">{appt.customer.phone}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-1.5">
+            <button onClick={() => setEditMode(true)} title="ערוך לקוח"
+              className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
             <a href={`tel:${appt.customer.phone}`}
-              className="w-9 h-9 rounded-full bg-neutral-100 flex items-center justify-center text-base hover:bg-neutral-200 transition"
-              title="התקשר">📞</a>
+              className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
             <a href={`https://wa.me/${cleanPhone}`} target="_blank"
-              className="w-9 h-9 rounded-full bg-emerald-100 flex items-center justify-center text-base hover:bg-emerald-200 transition"
-              title="WhatsApp">💬</a>
+              className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</a>
           </div>
         </div>
 
-        {/* Details row */}
-        <div className="px-5 py-3 border-b border-neutral-100 grid grid-cols-3 gap-3 text-sm">
-          <div>
-            <p className="text-xs text-neutral-400 mb-0.5">תאריך</p>
-            <p className="font-medium text-neutral-800 text-xs">{fmtDay(appt.date)}</p>
+        {/* Details row — תאריך / שעה / מחיר each with pencil */}
+        <div className="px-4 py-2.5 border-b border-neutral-100 grid grid-cols-3 gap-2">
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[10px] text-neutral-400">תאריך</p>
+            <div className="flex items-center gap-1">
+              <p className="font-medium text-neutral-800 text-xs leading-tight">{fmtDay(appt.date)}</p>
+              <button onClick={() => setEditMode(true)} title="ערוך תאריך"
+                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-neutral-400 mb-0.5">שעה</p>
-            <p className="font-medium text-neutral-800" dir="ltr">{appt.startTime}–{appt.endTime}</p>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[10px] text-neutral-400">שעה</p>
+            <div className="flex items-center gap-1">
+              <p className="font-medium text-neutral-800 text-xs" dir="ltr">{appt.startTime}–{appt.endTime}</p>
+              <button onClick={() => setEditMode(true)} title="ערוך שעה"
+                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+            </div>
           </div>
-          <div>
-            <p className="text-xs text-neutral-400 mb-0.5">מחיר</p>
-            <p className="font-bold text-slate-800">₪{appt.price}</p>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[10px] text-neutral-400">מחיר</p>
+            <div className="flex items-center gap-1">
+              <p className="font-bold text-slate-800 text-xs">₪{appt.price}</p>
+              <button onClick={() => setEditMode(true)} title="ערוך מחיר"
+                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+            </div>
           </div>
-        </div>
-
-        {/* Edit button */}
-        <div className="px-5 py-3 border-b border-neutral-100">
-          <button onClick={() => setEditMode(true)}
-            className="w-full py-2.5 rounded-xl bg-neutral-900 text-white text-sm font-medium hover:bg-neutral-800 transition flex items-center justify-center gap-2">
-            ✏️ ערוך תור (שעה / ספר / תאריך / שירות / מחיר)
-          </button>
         </div>
 
         {/* Referral source */}
@@ -2043,21 +2049,32 @@ export default function AdminCalendar() {
     return () => clearInterval(t);
   }, [hourHeight, calStart]);
 
-  // Pinch-to-zoom touch handler on the grid container
+  // Ref so the swipe handler always calls the current navigate()
+  const navigateRef = useRef<(dir: -1 | 1) => void>(() => {});
+  navigateRef.current = navigate;
+
+  // Pinch-to-zoom + horizontal swipe-to-navigate touch handler on the grid
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
     let startDist = 0;
     let startHH = 0;
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let isPinch = false;
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
+        isPinch = true;
         startDist = Math.hypot(
           e.touches[1].clientX - e.touches[0].clientX,
           e.touches[1].clientY - e.touches[0].clientY
         );
         startHH = hourHeightRef.current;
-      } else {
+      } else if (e.touches.length === 1) {
+        isPinch = false;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
         startDist = 0;
       }
     };
@@ -2073,7 +2090,19 @@ export default function AdminCalendar() {
         setHourHeight(newHH);
       }
     };
-    const onTouchEnd = () => { startDist = 0; };
+    const onTouchEnd = (e: TouchEvent) => {
+      startDist = 0;
+      if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
+        const dx = e.changedTouches[0].clientX - swipeStartX;
+        const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
+        // Only trigger on clear horizontal swipes (> 55px, more horizontal than vertical)
+        if (Math.abs(dx) > 55 && Math.abs(dx) > dy * 1.5) {
+          // In RTL: swipe right (dx > 0) = go to earlier dates; swipe left = later
+          navigateRef.current(dx > 0 ? -1 : 1);
+        }
+      }
+      swipeStartX = 0;
+    };
 
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
@@ -2598,7 +2627,7 @@ export default function AdminCalendar() {
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
                     {s.name[0]}
                   </div>
-                  <span className="text-xs text-neutral-700 mt-1 font-medium truncate px-1">{s.name}</span>
+                  <span className="text-[10px] text-neutral-700 mt-1 font-medium text-center leading-tight px-1 w-full break-words">{s.name}</span>
                   <button
                     onClick={() => setDayMenu({ date, staffId: s.id })}
                     title="עריכת שעות יום"
@@ -2897,120 +2926,107 @@ export default function AdminCalendar() {
         );
       })()}
 
-      {/* ── Top bar ── */}
-      <div className="flex items-center gap-1.5 px-3 py-2 bg-white border-b border-neutral-200 shrink-0 flex-wrap gap-y-1.5">
-        {/* Navigation */}
-        <button onClick={() => navigate(-1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">◀</button>
-        <button onClick={() => setDate(todayISO())} className="text-xs font-medium text-teal-600 hover:text-teal-700 hover:underline px-1 shrink-0">היום</button>
-        <button onClick={() => navigate(1)} className="w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 flex items-center justify-center shrink-0">▶</button>
+      {/* ── Top bar — two rows on mobile ── */}
+      <div className="bg-white border-b border-neutral-200 shrink-0">
 
-        {/* Date label */}
-        {view === "day" ? (
-          <button
-            className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate text-right hover:text-slate-800 transition"
-            onClick={() => setDayMenu({ date, staffId: displayedStaff[0]?.id || allStaff[0]?.id || "" })}>
-            {dateLabel}
+        {/* Row 1: navigation + date label + new appt button */}
+        <div className="flex items-center gap-1 px-2 py-1.5">
+          {/* Back — in RTL layout ▶ sits on the right = earlier dates */}
+          <button onClick={() => navigate(-1)} className="w-9 h-9 rounded-lg hover:bg-neutral-100 text-neutral-600 flex items-center justify-center shrink-0 text-base">▶</button>
+          <button onClick={() => setDate(todayISO())} className="text-xs font-semibold text-teal-600 border border-teal-200 rounded-lg px-2 py-1 shrink-0 hover:bg-teal-50 transition">היום</button>
+          {/* Forward — ◀ sits on the left = later dates */}
+          <button onClick={() => navigate(1)} className="w-9 h-9 rounded-lg hover:bg-neutral-100 text-neutral-600 flex items-center justify-center shrink-0 text-base">◀</button>
+
+          {/* Date label — takes remaining space */}
+          {view === "day" ? (
+            <button
+              className="font-semibold text-neutral-800 text-xs flex-1 min-w-0 text-right hover:text-teal-700 transition leading-tight"
+              onClick={() => setDayMenu({ date, staffId: displayedStaff[0]?.id || allStaff[0]?.id || "" })}>
+              {dateLabel}
+            </button>
+          ) : (
+            <span className="font-semibold text-neutral-800 text-xs flex-1 min-w-0 leading-tight text-right">{dateLabel}</span>
+          )}
+
+          {/* New appointment button */}
+          <button onClick={() => {
+            const defaultStaffId =
+              (view === "week" || view === "3day") ? (weekBarber || allStaff[0]?.id || "") :
+              view === "day" ? (dayBarber || displayedStaff[0]?.id || allStaff[0]?.id || "") :
+              (allStaff[0]?.id || "");
+            setNewAppt({ staffId: defaultStaffId, date, time: "10:00" });
+          }}
+            className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
+            + תור
           </button>
-        ) : (
-          <span className="font-semibold text-neutral-800 text-sm flex-1 min-w-0 truncate">{dateLabel}</span>
-        )}
-
-        {/* Refresh — hidden on mobile to save space */}
-        <button onClick={loadAppointments} className="hidden sm:flex w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 items-center justify-center shrink-0" title="רענן">
-          🔄
-        </button>
-
-        {/* Week barber picker (only in week/3day view) */}
-        {(isOwner || barbersCanViewOthersCalendar) && (view === "week" || view === "3day") && allStaff.length > 1 && (
-          <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
-            className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
-            {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        {/* Day view barber picker — so "+ תור" defaults to the right barber */}
-        {(isOwner || barbersCanViewOthersCalendar) && view === "day" && allStaff.length > 1 && (
-          <select value={dayBarber} onChange={e => setDayBarber(e.target.value)}
-            className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 max-w-[110px]">
-            {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-
-        {/* Zoom controls — hidden on month (no hourHeight there) */}
-        {view !== "month" && (
-          <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0" aria-label="זום יומן">
-            <button
-              onClick={() => setHourHeight(h => Math.max(28, h - 20))}
-              disabled={hourHeight <= 28}
-              className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition"
-              aria-label="הקטן יומן"
-              title="הקטן יומן"
-            >
-              −
-            </button>
-            <button
-              onClick={() => setHourHeight(h => Math.min(220, h + 20))}
-              disabled={hourHeight >= 220}
-              className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition"
-              aria-label="הגדל יומן"
-              title="הגדל יומן"
-            >
-              +
-            </button>
-          </div>
-        )}
-
-        {/* View switcher — compact on mobile */}
-        <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
-          {(["day","3day","week","month"] as ViewType[]).map(v => (
-            <button key={v} onClick={() => setView(v)}
-              className={`px-2 py-1 text-[11px] rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"} ${v === "3day" ? "hidden sm:block" : ""}`}>
-              {v === "day" ? "יום" : v === "3day" ? "3י" : v === "week" ? "שבוע" : "חודש"}
-            </button>
-          ))}
         </div>
 
-        {/* Day view barber filter */}
-        {view === "day" && (
-          <div className="relative shrink-0">
-            <button onClick={() => setShowFilter(!showFilter)}
-              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600"}`}>
-              ✂️ {visibleStaff.length === allStaff.length ? "הכל" : `${visibleStaff.length}`}
-            </button>
-            {showFilter && (
-              <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-neutral-200 p-2 w-48 z-30">
-                <div className="flex items-center justify-between mb-1 px-1">
-                  <span className="text-xs font-semibold text-neutral-700">ספרים</span>
-                  <button onClick={() => setVisibleStaff(allStaff.map(s => s.id))} className="text-[11px] text-slate-800">הכל</button>
-                </div>
-                {allStaff.map((s, si) => (
-                  <label key={s.id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-lg hover:bg-neutral-50">
-                    <input type="checkbox" checked={visibleStaff.includes(s.id)}
-                      onChange={e => setVisibleStaff(prev => e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id))}
-                      className="accent-slate-900" />
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold ${COLORS[si % COLORS.length].bg}`}>{s.name[0]}</div>
-                    <span className="text-xs text-neutral-800">{s.name}</span>
-                  </label>
-                ))}
-              </div>
-            )}
+        {/* Row 2: view switcher + barber picker + zoom */}
+        <div className="flex items-center gap-1.5 px-2 pb-1.5">
+          {/* View switcher */}
+          <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
+            {(["day","week","month"] as ViewType[]).map(v => (
+              <button key={v} onClick={() => setView(v)}
+                className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
+                {v === "day" ? "יום" : v === "week" ? "שבוע" : "חודש"}
+              </button>
+            ))}
           </div>
-        )}
 
-        {/* New appointment button */}
-        <button onClick={() => {
-          // Default to whichever barber is currently "in focus":
-          // • week/3day view → the barber selected in the barber picker
-          // • day view → the barber selected in the day picker (dayBarber)
-          // • month view → first staff as fallback
-          const defaultStaffId =
-            (view === "week" || view === "3day") ? (weekBarber || allStaff[0]?.id || "") :
-            view === "day" ? (dayBarber || displayedStaff[0]?.id || allStaff[0]?.id || "") :
-            (allStaff[0]?.id || "");
-          setNewAppt({ staffId: defaultStaffId, date, time: "10:00" });
-        }}
-          className="flex items-center gap-1 px-3 py-1.5 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
-          + תור
-        </button>
+          {/* Barber picker */}
+          {(isOwner || barbersCanViewOthersCalendar) && (view === "week" || view === "3day") && allStaff.length > 1 && (
+            <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
+              className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 flex-1 min-w-0">
+              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          {(isOwner || barbersCanViewOthersCalendar) && view === "day" && allStaff.length > 1 && (
+            <select value={dayBarber} onChange={e => setDayBarber(e.target.value)}
+              className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 flex-1 min-w-0">
+              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+
+          {/* Zoom — hidden on mobile (use pinch) / shown on desktop */}
+          {view !== "month" && (
+            <div className="hidden sm:flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
+              <button onClick={() => setHourHeight(h => Math.max(28, h - 20))} disabled={hourHeight <= 28}
+                className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">−</button>
+              <button onClick={() => setHourHeight(h => Math.min(220, h + 20))} disabled={hourHeight >= 220}
+                className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">+</button>
+            </div>
+          )}
+
+          {/* Day barber filter */}
+          {view === "day" && (
+            <div className="relative shrink-0">
+              <button onClick={() => setShowFilter(!showFilter)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition ${showFilter ? "bg-teal-600 text-white border-teal-700" : "bg-white border-neutral-200 text-neutral-600"}`}>
+                ✂️ {visibleStaff.length === allStaff.length ? "הכל" : visibleStaff.length}
+              </button>
+              {showFilter && (
+                <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-neutral-200 p-2 w-44 z-30">
+                  <div className="flex items-center justify-between mb-1 px-1">
+                    <span className="text-xs font-semibold text-neutral-700">ספרים</span>
+                    <button onClick={() => setVisibleStaff(allStaff.map(s => s.id))} className="text-[11px] text-slate-800">הכל</button>
+                  </div>
+                  {allStaff.map((s, si) => (
+                    <label key={s.id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-lg hover:bg-neutral-50">
+                      <input type="checkbox" checked={visibleStaff.includes(s.id)}
+                        onChange={e => setVisibleStaff(prev => e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id))}
+                        className="accent-slate-900" />
+                      <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${COLORS[si % COLORS.length].bg}`}>{s.name[0]}</div>
+                      <span className="text-xs text-neutral-800">{s.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Refresh — desktop only */}
+          <button onClick={loadAppointments} className="hidden sm:flex w-8 h-8 rounded-lg hover:bg-neutral-100 text-neutral-500 items-center justify-center shrink-0 mr-auto" title="רענן">🔄</button>
+        </div>
       </div>
 
       {/* ── Calendar body ── */}
