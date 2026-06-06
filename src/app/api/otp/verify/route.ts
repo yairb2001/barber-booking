@@ -50,5 +50,20 @@ export async function POST(req: NextRequest) {
     .setExpirationTime(`${OTP_TOKEN_TTL}s`)
     .sign(SECRET);
 
-  return NextResponse.json({ ok: true, token });
+  // Issue a long-lived session cookie so the customer doesn't need to re-verify on future bookings
+  const sessionToken = await new SignJWT({ phone: normalized, businessId: business.id, type: "customer_session" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("30d")
+    .sign(SECRET);
+
+  const response = NextResponse.json({ ok: true, token });
+  response.cookies.set("bk_session", sessionToken, {
+    httpOnly: true,
+    sameSite: "strict",
+    maxAge: 60 * 60 * 24 * 30, // 30 days
+    path: "/",
+    secure: process.env.NODE_ENV === "production",
+  });
+  return response;
 }

@@ -171,6 +171,7 @@ function ConfirmPageContent() {
   const [otpSending,   setOtpSending]   = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpError,     setOtpError]     = useState("");
+  const [autoVerified, setAutoVerified] = useState(false); // true = session cookie did the work
 
   const [businessId,   setBusinessId]   = useState("");
   const [appStoreUrl,  setAppStoreUrl]  = useState("");
@@ -198,6 +199,27 @@ function ConfirmPageContent() {
         if (s.playStoreUrl) setPlayStoreUrl(s.playStoreUrl);
       } catch { /* ignore */ }
     }).catch(() => {});
+
+    // ── Returning customer: pre-fill name/phone + auto-skip OTP ─────────────
+    try {
+      const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
+      if (saved?.name)  setName(saved.name);
+      if (saved?.phone) setPhone(saved.phone);
+    } catch { /* ignore parse errors */ }
+
+    // Try to exchange the session cookie for a fresh OTP token (no SMS needed)
+    fetch("/api/otp/auto-token", { method: "POST" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.ok && data.token) {
+          setOtpVerified(true);
+          setOtpToken(data.token);
+          setAutoVerified(true);
+          // Pre-fill phone from session if localStorage didn't have it
+          if (data.phone) setPhone(prev => prev || data.phone);
+        }
+      })
+      .catch(() => { /* no session — normal OTP flow */ });
   }, []);
 
   useEffect(() => {
@@ -247,7 +269,13 @@ function ConfirmPageContent() {
       });
       const data = await res.json();
       if (!res.ok) setOtpError(data.error || "קוד שגוי");
-      else { setOtpVerified(true); setOtpToken(data.token); setOtpError(""); }
+      else {
+        setOtpVerified(true);
+        setOtpToken(data.token);
+        setOtpError("");
+        // Save for future visits — cookie is set server-side, name goes to localStorage
+        try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
+      }
     } catch { setOtpError("שגיאת חיבור — נסה שוב"); }
     setOtpVerifying(false);
   }
@@ -275,6 +303,8 @@ function ConfirmPageContent() {
         return;
       }
       const appointment = await res.json();
+      // Persist customer details for future bookings
+      try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
       router.push(
         `/book/confirm?success=true&appointmentId=${appointment.id}` +
         `&staffId=${staffId}&serviceId=${serviceId}` +
@@ -455,13 +485,30 @@ function ConfirmPageContent() {
                 )}
               </>
             ) : (
-              <div className="flex items-center gap-2 text-green-600">
-                <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-                  <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-green-600">
+                  <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                  </div>
+                  <span className="text-[13px] font-semibold">
+                    {autoVerified ? `ברוך הבא חזרה, ${name || ""}! ✨` : "הטלפון אומת בהצלחה"}
+                  </span>
                 </div>
-                <span className="text-[13px] font-semibold">הטלפון אומת בהצלחה</span>
+                {autoVerified && (
+                  <button
+                    onClick={() => {
+                      setOtpVerified(false); setOtpToken(""); setAutoVerified(false);
+                      setPhone(""); setName(""); setOtpSent(false); setOtpCode("");
+                      try { localStorage.removeItem("bk_customer"); } catch { /* ignore */ }
+                      // Clear session cookie
+                      fetch("/api/otp/clear-session", { method: "POST" }).catch(() => {});
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 underline transition">
+                    לא אתה?
+                  </button>
+                )}
               </div>
             )}
           </div>
