@@ -2612,8 +2612,12 @@ export default function AdminCalendar() {
   function renderTimeGrid() {
     const isDay = view === "day";
 
-    // On mobile, each barber column in day-view needs a minimum width so columns don't get crushed
-    const gridMinWidth = isDay ? `${14 * 4 + displayedStaff.length * 80}px` : undefined; // 56px time col + 80px per barber
+    // ≤6 staff: columns share the full screen width evenly (no horizontal scroll).
+    // >6 staff: each column gets a fixed 80px and the grid scrolls horizontally.
+    const FIT_THRESHOLD = 6;
+    const fitOnScreen = isDay && displayedStaff.length <= FIT_THRESHOLD;
+    const colMinWidth = fitOnScreen ? undefined : 80;
+    const gridMinWidth = fitOnScreen ? undefined : `${56 + displayedStaff.length * 80}px`;
 
     return (
       <div className="flex flex-col flex-1 min-h-0">
@@ -2623,7 +2627,7 @@ export default function AdminCalendar() {
             <div className="w-14 shrink-0" />
             {isDay
               ? displayedStaff.map((s, si) => (
-                <div key={s.id} style={isDay ? { minWidth: 80 } : {}} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0">
+                <div key={s.id} style={colMinWidth ? { minWidth: colMinWidth } : {}} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
                     {s.name[0]}
                   </div>
@@ -2686,7 +2690,7 @@ export default function AdminCalendar() {
                     return (
                       <div key={s.id}
                         ref={el => { colRefs.current[colKey] = el; }}
-                        className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={{ minWidth: 80 }}
+                        className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={colMinWidth ? { minWidth: colMinWidth } : {}}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
                           if (colDraft) { setDraftAppt(null); return; }
