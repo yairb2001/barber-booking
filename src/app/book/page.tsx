@@ -89,6 +89,8 @@ function BackArrow({ href }: { href: string }) {
 export default function ChooseBarberPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
+  // Nearest available slot per barber (covers ALL barbers, not just the quick pool)
+  const [nearestByStaff, setNearestByStaff] = useState<Record<string, QuickSlot>>({});
   const [loading, setLoading] = useState(true);
   const [welcomeName, setWelcomeName] = useState("");
 
@@ -97,10 +99,25 @@ export default function ChooseBarberPage() {
       fetch("/api/staff").then(r => r.json()),
       fetch("/api/quick-slots").then(r => r.json()),
     ])
-      .then(([staffData, slots]) => {
+      .then(([staffData, slots]: [Staff[], QuickSlot[]]) => {
         setStaff(staffData);
         setQuickSlots(slots);
         setLoading(false);
+
+        // Fetch the nearest available slot for EVERY barber (in parallel),
+        // so even barbers outside the quick pool show their next opening.
+        if (Array.isArray(staffData)) {
+          staffData.forEach((member) => {
+            fetch(`/api/quick-slots?staffId=${member.id}`)
+              .then(r => r.ok ? r.json() : [])
+              .then((arr: QuickSlot[]) => {
+                if (Array.isArray(arr) && arr.length > 0) {
+                  setNearestByStaff(prev => ({ ...prev, [member.id]: arr[0] }));
+                }
+              })
+              .catch(() => {});
+          });
+        }
       })
       .catch(() => setLoading(false));
 
@@ -111,7 +128,8 @@ export default function ChooseBarberPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const getBarberSlot = (staffId: string) => quickSlots.find(s => s.staffId === staffId);
+  const getBarberSlot = (staffId: string) =>
+    nearestByStaff[staffId] || quickSlots.find(s => s.staffId === staffId);
 
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
@@ -243,10 +261,10 @@ export default function ChooseBarberPage() {
                     href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
                     className="absolute bottom-1.5 inset-x-2 z-10 flex flex-col items-center justify-center py-0.5 active:opacity-80 transition-opacity"
                     style={{ background: "var(--brand)", borderRadius: 10 }}>
-                    {slotDayDisplay(slot) && (
-                      <span className="text-[7px] font-medium text-white/75 leading-none mb-0.5">{slotDayDisplay(slot)}</span>
-                    )}
-                    <span className="text-[10px] font-bold text-white leading-none">⚡ {slot.time}</span>
+                    <span className="text-[7px] font-medium text-white/75 leading-none mb-0.5">
+                      התור הקרוב{slotDayDisplay(slot) ? ` · ${slotDayDisplay(slot)}` : ""}
+                    </span>
+                    <span className="text-[10px] font-bold text-white leading-none">{slot.time}</span>
                   </Link>
                 ) : (
                   <Link

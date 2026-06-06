@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, SignJWT } from "jose";
+import { prisma } from "@/lib/prisma";
 
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
@@ -58,7 +59,15 @@ export async function POST(req: NextRequest) {
   // Convert stored phone (972...) → display format (05...)
   const displayPhone = phone.startsWith("972") ? "0" + phone.slice(3) : phone;
 
-  const response = NextResponse.json({ ok: true, token, phone: displayPhone });
+  // Canonical name: phone is the identity → always return the originally
+  // registered name (Customer.phone may be stored as 0... or 972...)
+  const phoneVariants = Array.from(new Set([phone, displayPhone]));
+  const existingCustomer = await prisma.customer.findFirst({
+    where: { businessId, phone: { in: phoneVariants } },
+    select: { name: true },
+  });
+
+  const response = NextResponse.json({ ok: true, token, phone: displayPhone, name: existingCustomer?.name || null });
   response.cookies.set("bk_session", newSession, {
     httpOnly: true,
     sameSite: "strict",

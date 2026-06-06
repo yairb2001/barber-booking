@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     referralSource,
     referrerPhone, // legacy: phone of the friend who referred
     referrerId,    // preferred: customer ID of the friend who referred (from autocomplete)
+    note,          // optional customer note for this appointment
     otpToken,      // short-lived JWT from /api/otp/verify
   } = body;
 
@@ -168,6 +169,7 @@ export async function POST(request: NextRequest) {
       price,
       status: "confirmed",
       referralSource,
+      note: (typeof note === "string" && note.trim()) ? note.trim() : null,
     },
     include: {
       staff: { select: { name: true } },

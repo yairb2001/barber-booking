@@ -43,6 +43,20 @@ export async function POST(req: NextRequest) {
   // Mark as used
   await prisma.otpCode.update({ where: { id: otp.id }, data: { usedAt: new Date() } });
 
+  // ── Canonical name lookup ─────────────────────────────────────────────────
+  // The phone number is the customer's identity. If they already exist, we
+  // ALWAYS return the name they first registered with — even if they type a
+  // different name now. (Customer.phone may be stored as 0... or 972...)
+  const phoneVariants = Array.from(new Set([
+    phone,
+    normalized,
+    normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized,
+  ]));
+  const existingCustomer = await prisma.customer.findFirst({
+    where: { businessId: business.id, phone: { in: phoneVariants } },
+    select: { name: true },
+  });
+
   // Issue a short-lived JWT token that the booking flow will attach to the request
   const token = await new SignJWT({ phone: normalized, businessId: business.id, type: "otp" })
     .setProtectedHeader({ alg: "HS256" })
@@ -57,7 +71,7 @@ export async function POST(req: NextRequest) {
     .setExpirationTime("40d")
     .sign(SECRET);
 
-  const response = NextResponse.json({ ok: true, token });
+  const response = NextResponse.json({ ok: true, token, customerName: existingCustomer?.name || null });
   response.cookies.set("bk_session", sessionToken, {
     httpOnly: true,
     sameSite: "strict",

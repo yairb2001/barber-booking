@@ -380,8 +380,8 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const selectedStaff = allStaff.find(s => s.id === form.staffId);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-neutral-100">
           <h3 className="font-bold text-neutral-900 text-lg">קביעת תור</h3>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-full bg-neutral-100">✕</button>
@@ -732,6 +732,9 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [savingReferral, setSavingReferral] = useState(false);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
 
+  // Customer history modal
+  const [showHistory, setShowHistory] = useState(false);
+
   // Active swap proposals where this appointment is involved
   const [proposalsAsPrimary, setProposalsAsPrimary] = useState<SwapProposal[]>([]);
   const [proposalAsCandidate, setProposalAsCandidate] = useState<SwapProposal | null>(null);
@@ -874,6 +877,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }
 
   return (
+    <>
+    {showHistory && (
+      <CustomerHistoryModal
+        customerId={appt.customer.id}
+        customerName={appt.customer.name}
+        onClose={() => setShowHistory(false)}
+      />
+    )}
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[72vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
@@ -896,6 +907,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <p className="text-xs text-neutral-500" dir="ltr">{appt.customer.phone}</p>
           </div>
           <div className="flex items-center gap-1.5">
+            <button onClick={() => setShowHistory(true)} title="היסטוריית לקוח"
+              className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
             <button onClick={() => setEditMode(true)} title="ערוך לקוח"
               className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
             <a href={`tel:${appt.customer.phone}`}
@@ -1203,6 +1216,118 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             פתח WhatsApp ישירות ↗
           </a>
         </div>
+      </div>
+    </div>
+    </>
+  );
+}
+
+// ── Customer history modal ─────────────────────────────────────────────────────
+type CustomerHistory = {
+  name: string;
+  phone: string;
+  notes?: string | null;
+  notificationPrefs?: string | null;
+  totalVisits?: number;
+  past?: Array<{ id: string; date: string; startTime: string; status: string; staff?: { name: string } | null; service?: { name: string } | null }>;
+};
+
+function CustomerHistoryModal({ customerId, customerName, onClose }:
+  { customerId: string; customerName: string; onClose: () => void }
+) {
+  const [data, setData] = useState<CustomerHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/admin/customers/${customerId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (alive) { setData(d); setLoading(false); } })
+      .catch(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [customerId]);
+
+  // Notes are stored inside notificationPrefs JSON ({ notes: "..." })
+  let note = "";
+  if (data?.notificationPrefs) {
+    try { note = JSON.parse(data.notificationPrefs)?.notes || ""; } catch { /* ignore */ }
+  }
+
+  // Distinct barbers visited (from past appointments)
+  const past = data?.past || [];
+  const barberCounts = new Map<string, number>();
+  for (const a of past) {
+    const n = a.staff?.name;
+    if (n) barberCounts.set(n, (barberCounts.get(n) || 0) + 1);
+  }
+  const barbers = Array.from(barberCounts.entries());
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-neutral-100 sticky top-0 bg-white">
+          <h3 className="font-bold text-neutral-900 text-base">היסטוריה · {customerName}</h3>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">✕</button>
+        </div>
+
+        {loading ? (
+          <div className="px-5 py-10 text-center text-neutral-400 text-sm">טוען...</div>
+        ) : !data ? (
+          <div className="px-5 py-10 text-center text-neutral-400 text-sm">לא נמצאו נתונים</div>
+        ) : (
+          <div className="px-5 py-4 space-y-4">
+            {/* Notes about the customer */}
+            <div>
+              <p className="text-xs text-neutral-400 mb-1">הערה על הלקוח</p>
+              {note ? (
+                <p className="text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{note}</p>
+              ) : (
+                <p className="text-sm text-neutral-400 italic">אין הערות</p>
+              )}
+            </div>
+
+            {/* Barbers visited */}
+            <div>
+              <p className="text-xs text-neutral-400 mb-1.5">ספרים שהיה אצלם</p>
+              {barbers.length === 0 ? (
+                <p className="text-sm text-neutral-400 italic">אין ביקורים</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {barbers.map(([name, count]) => (
+                    <span key={name} className="text-xs bg-teal-50 text-teal-700 border border-teal-100 rounded-full px-2.5 py-1">
+                      {name} · {count}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Visit history list */}
+            <div>
+              <p className="text-xs text-neutral-400 mb-1.5">
+                ביקורים אחרונים {typeof data.totalVisits === "number" ? `(${data.totalVisits} תספורות)` : ""}
+              </p>
+              {past.length === 0 ? (
+                <p className="text-sm text-neutral-400 italic">אין היסטוריה</p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {past.slice(0, 30).map(a => (
+                    <li key={a.id} className="flex items-center justify-between gap-2 text-xs border border-neutral-100 rounded-lg px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-neutral-800 truncate">{a.service?.name || "שירות"}</p>
+                        <p className="text-neutral-500">{a.staff?.name || "—"}</p>
+                      </div>
+                      <div className="text-left shrink-0">
+                        <p className="text-neutral-700">{new Date(a.date).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "2-digit" })}</p>
+                        <p className="text-neutral-400" dir="ltr">{a.startTime}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -62,14 +62,14 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
       <div className="flex gap-3 px-5 py-4 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
         {stories.map((story, idx) => (
           <button key={story.id} onClick={() => openStory(idx)} className="flex flex-col items-center gap-1.5 flex-shrink-0">
-            <div className="w-[54px] h-[54px] rounded-full p-[2.5px]"
+            <div className="w-[62px] h-[62px] rounded-full p-[2.5px]"
               style={{ background: `linear-gradient(135deg, var(--brand), rgba(0,0,0,0.1))` }}>
               <div className="w-full h-full rounded-full overflow-hidden border-2 border-white">
-                <img src={story.mediaUrl} alt="" className="w-full h-full object-cover" />
+                <img src={story.staff?.avatarUrl || story.mediaUrl} alt="" className="w-full h-full object-cover" />
               </div>
             </div>
-            {story.caption && (
-              <span className="text-[10px] w-14 truncate text-center text-slate-500">{story.caption}</span>
+            {(story.staff?.name || story.caption) && (
+              <span className="text-[10px] w-16 truncate text-center font-medium text-slate-600">{story.staff?.name || story.caption}</span>
             )}
           </button>
         ))}
@@ -85,6 +85,24 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
               </div>
             ))}
           </div>
+          {/* Uploader (barber) identity — avatar + name below */}
+          {activeStory.staff && (
+            <div className="flex flex-col items-center gap-1.5 pb-2" onClick={e => e.stopPropagation()}>
+              <div className="w-14 h-14 rounded-full p-[2px] bg-white/30">
+                <div className="w-full h-full rounded-full overflow-hidden border-2 border-white">
+                  {activeStory.staff.avatarUrl ? (
+                    <img src={activeStory.staff.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg"
+                      style={{ background: "var(--brand)" }}>
+                      {activeStory.staff.name[0]}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <span className="text-white text-[13px] font-semibold">{activeStory.staff.name}</span>
+            </div>
+          )}
           <div className="flex-1 flex items-center justify-center px-3">
             <img src={activeStory.mediaUrl} alt="" className="max-h-[80vh] w-full object-contain rounded-2xl" />
           </div>
@@ -114,9 +132,26 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
   const [active, setActive] = useState(0);
   const startX = useRef(0);
   const isDragging = useRef(false);
+  const [paused, setPaused] = useState(false);
 
   const prev = useCallback(() => setActive(a => Math.max(0, a - 1)), []);
   const next = useCallback(() => setActive(a => Math.min(works.length - 1, a + 1)), [works.length]);
+
+  // Auto-advance: loop through works ~every 3.5s (pauses briefly after manual interaction)
+  useEffect(() => {
+    if (paused || works.length <= 1) return;
+    const t = setInterval(() => {
+      setActive(a => (a + 1) % works.length);
+    }, 3500);
+    return () => clearInterval(t);
+  }, [paused, works.length]);
+
+  // Pause auto-advance for a few seconds after the user interacts
+  const pauseBriefly = useCallback(() => {
+    setPaused(true);
+    const t = setTimeout(() => setPaused(false), 7000);
+    return () => clearTimeout(t);
+  }, []);
 
   function onTouchStart(e: React.TouchEvent) {
     startX.current = e.touches[0].clientX;
@@ -128,6 +163,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
     if (Math.abs(dx) > 40) {
       // RTL: swipe left (negative dx) = next; swipe right = prev
       if (dx < 0) next(); else prev();
+      pauseBriefly();
     }
     isDragging.current = false;
   }
@@ -160,7 +196,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
             return (
               <div
                 key={i}
-                onClick={() => abs > 0 && setActive(i)}
+                onClick={() => { if (abs > 0) { setActive(i); pauseBriefly(); } }}
                 style={{
                   position: "absolute",
                   transform: `translateX(${tx}px) scale(${scale})`,
@@ -182,18 +218,21 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
                   />
                   {/* Overlay only on active */}
                   {abs === 0 && (
-                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.78) 100%)" }}>
-                      <div style={{ position: "absolute", bottom: 14, right: 14, left: 14, display: "flex", alignItems: "center", gap: 8 }} dir="rtl">
-                        {work.staffAvatar ? (
-                          <img src={work.staffAvatar} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,0.55)", flexShrink: 0 }} />
-                        ) : (
-                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: brand, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 700 }}>
-                            {work.staffName[0]}
-                          </div>
-                        )}
-                        <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, flex: 1 }}>{work.staffName}</span>
+                    <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, transparent 45%, rgba(0,0,0,0.8) 100%)" }}>
+                      <div style={{ position: "absolute", bottom: 14, right: 14, left: 14, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 }} dir="rtl">
+                        {/* Barber: bigger avatar with name below */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, minWidth: 0 }}>
+                          {work.staffAvatar ? (
+                            <img src={work.staffAvatar} alt="" style={{ width: 46, height: 46, borderRadius: "50%", objectFit: "cover", border: "2.5px solid rgba(255,255,255,0.7)", flexShrink: 0 }} />
+                          ) : (
+                            <div style={{ width: 46, height: 46, borderRadius: "50%", background: brand, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 17, fontWeight: 700, border: "2.5px solid rgba(255,255,255,0.7)" }}>
+                              {work.staffName[0] || "?"}
+                            </div>
+                          )}
+                          <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, textAlign: "center", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{work.staffName}</span>
+                        </div>
                         <Link href="/book" dir="rtl"
-                          style={{ background: brand, borderRadius: 20, padding: "5px 13px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
+                          style={{ background: brand, borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0, marginBottom: 12 }}>
                           קבע תור
                         </Link>
                       </div>
@@ -210,7 +249,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
           {works.slice(0, 12).map((_, i) => (
             <button
               key={i}
-              onClick={() => setActive(i)}
+              onClick={() => { setActive(i); pauseBriefly(); }}
               style={{
                 width: i === active ? 20 : 6,
                 height: 6,
@@ -227,7 +266,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
 
         {/* Prev / Next arrows */}
         {active > 0 && (
-          <button onClick={prev}
+          <button onClick={() => { prev(); pauseBriefly(); }}
             className="absolute left-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-md z-20"
             style={{ background: "rgba(255,255,255,0.92)", border: "1px solid #E2E8F0" }}>
             <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -236,7 +275,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
           </button>
         )}
         {active < works.length - 1 && (
-          <button onClick={next}
+          <button onClick={() => { next(); pauseBriefly(); }}
             className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full flex items-center justify-center shadow-md z-20"
             style={{ background: "rgba(255,255,255,0.92)", border: "1px solid #E2E8F0" }}>
             <svg viewBox="0 0 24 24" className="w-4 h-4 text-slate-700" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

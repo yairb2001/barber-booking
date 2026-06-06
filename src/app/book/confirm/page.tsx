@@ -154,6 +154,7 @@ function ConfirmPageContent() {
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
   const [phone, setPhone]             = useState("");
   const [name, setName]               = useState("");
+  const [note, setNote]               = useState("");
   const [referralSource, setReferralSource] = useState("");
   const [referrerPhone, setReferrerPhone]   = useState(""); // kept for legacy / manual entry
   const [referrerId, setReferrerId]         = useState(""); // customer ID from autocomplete
@@ -217,6 +218,12 @@ function ConfirmPageContent() {
           setAutoVerified(true);
           // Pre-fill phone from session if localStorage didn't have it
           if (data.phone) setPhone(prev => prev || data.phone);
+          // Phone is the identity → always use the originally registered name,
+          // overriding whatever may be in localStorage.
+          if (data.name) {
+            setName(data.name);
+            try { localStorage.setItem("bk_customer", JSON.stringify({ name: data.name, phone: data.phone || "" })); } catch { /* ignore */ }
+          }
         }
       })
       .catch(() => { /* no session — normal OTP flow */ });
@@ -273,8 +280,12 @@ function ConfirmPageContent() {
         setOtpVerified(true);
         setOtpToken(data.token);
         setOtpError("");
+        // Phone is the identity. If this customer already exists, keep the name
+        // they first registered with (ignore a different name typed now).
+        const finalName = data.customerName || name;
+        if (data.customerName) setName(data.customerName);
         // Save for future visits — cookie is set server-side, name goes to localStorage
-        try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
+        try { localStorage.setItem("bk_customer", JSON.stringify({ name: finalName, phone })); } catch { /* ignore */ }
       }
     } catch { setOtpError("שגיאת חיבור — נסה שוב"); }
     setOtpVerifying(false);
@@ -293,6 +304,7 @@ function ConfirmPageContent() {
           referralSource: referralSource || undefined,
           referrerId:    (referralSource === "חבר הביא חבר" && referrerId)    ? referrerId    : undefined,
           referrerPhone: (referralSource === "חבר הביא חבר" && !referrerId && referrerPhone) ? referrerPhone : undefined,
+          note: note.trim() || undefined,
           otpToken,
         }),
       });
@@ -439,6 +451,15 @@ function ConfirmPageContent() {
               <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">שם מלא</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)}
                 placeholder="השם שלך" className={inputClass}
+                style={{ "--tw-ring-color": "var(--brand)" } as React.CSSProperties} />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">
+                הערה לתור <span className="text-slate-300 font-normal">(אופציונלי)</span>
+              </label>
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                placeholder="משהו שכדאי שהספר ידע? (לדוגמה: תספורת לאירוע)"
+                className={inputClass + " resize-none"}
                 style={{ "--tw-ring-color": "var(--brand)" } as React.CSSProperties} />
             </div>
           </div>
