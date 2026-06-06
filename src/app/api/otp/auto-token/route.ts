@@ -64,10 +64,18 @@ export async function POST(req: NextRequest) {
   const phoneVariants = Array.from(new Set([phone, displayPhone]));
   const existingCustomer = await prisma.customer.findFirst({
     where: { businessId, phone: { in: phoneVariants } },
-    select: { name: true },
+    select: { name: true, referralSource: true },
   });
 
-  const response = NextResponse.json({ ok: true, token, phone: displayPhone, name: existingCustomer?.name || null });
+  const response = NextResponse.json({
+    ok: true,
+    token,
+    phone: displayPhone,
+    name: existingCustomer?.name || null,
+    // If we already know how this customer found us, the booking form can
+    // skip the "how did you hear about us?" question entirely.
+    referralSource: existingCustomer?.referralSource || null,
+  });
   response.cookies.set("bk_session", newSession, {
     httpOnly: true,
     sameSite: "strict",

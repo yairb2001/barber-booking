@@ -162,6 +162,9 @@ function ConfirmPageContent() {
   const [referrerQuery, setReferrerQuery]   = useState(""); // search input
   const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string; displayPhone: string }[]>([]);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
+  // True once the system already knows how this returning customer found us →
+  // we hide the "how did you hear about us?" question.
+  const [referralKnown, setReferralKnown] = useState(false);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
 
@@ -223,6 +226,11 @@ function ConfirmPageContent() {
           if (data.name) {
             setName(data.name);
             try { localStorage.setItem("bk_customer", JSON.stringify({ name: data.name, phone: data.phone || "" })); } catch { /* ignore */ }
+          }
+          // We already know how this customer found us → skip the question
+          if (data.referralSource) {
+            setReferralSource(data.referralSource);
+            setReferralKnown(true);
           }
         }
       })
@@ -535,7 +543,8 @@ function ConfirmPageContent() {
           </div>
         </div>
 
-        {/* Referral source — highlighted section */}
+        {/* Referral source — hidden once we already know how the customer found us */}
+        {!referralKnown && (
         <div className="rounded-2xl border-2 border-teal-400 shadow-sm p-5"
           style={{ background: "linear-gradient(135deg, #f0fdfa 0%, #fff 100%)" }}>
           <div className="flex items-center gap-2 mb-3">
@@ -618,6 +627,7 @@ function ConfirmPageContent() {
             </div>
           )}
         </div>
+        )}
 
         {error && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-center">

@@ -1360,9 +1360,23 @@ function WhatsAppTab({
         <div className="flex items-center justify-between mb-1">
           <h2 className="font-semibold text-neutral-800">אוטומציות</h2>
         </div>
-        <p className="text-xs text-neutral-500 mb-4">
+        <p className="text-xs text-neutral-500 mb-3">
           בחר אילו הודעות לשלוח ועצב את הטקסט שלהן.
         </p>
+
+        {/* Link to the full message-templates editor — where EVERY customer message is editable
+            (new-customer reminder, 2nd-visit smart promotion, swap request, and more). */}
+        <Link href="/admin/templates"
+          className="flex items-center gap-3 mb-4 rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3 hover:bg-teal-50 hover:border-teal-300 transition group">
+          <span className="text-xl">💬</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-teal-900">עריכת כל ההודעות ללקוח →</p>
+            <p className="text-[11px] text-teal-700 leading-snug">
+              תזכורת ללקוח חדש (ביקור ראשון), קידום חכם (ביקור שני), בקשת החלפת תור, אישור ועוד — הכל ניתן לעריכה כאן
+            </p>
+          </div>
+          <span className="text-teal-400 group-hover:text-teal-600 text-lg shrink-0">›</span>
+        </Link>
 
         {/* Master toggle — confirmations */}
         <div className="flex items-start gap-3 pb-4 mb-4 border-b border-neutral-100">

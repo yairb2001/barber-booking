@@ -2082,18 +2082,17 @@ function DraftMoveSlotBlock({
       onClick={e => e.stopPropagation()}>
 
       <div
-        className="w-full h-full rounded-lg flex flex-col justify-between px-1.5 py-1 border-2 border-dashed overflow-hidden"
+        className="relative w-full h-full rounded-lg flex flex-col justify-between px-1 py-0.5 border-2 border-dashed"
         style={{ borderColor: "#0d9488", background: "rgba(20, 184, 166, 0.15)", backdropFilter: "blur(4px)" }}>
-        {/* Top row: time + dismiss */}
-        <div className="flex items-center justify-between gap-1">
-          <span className="text-[10px] font-bold text-teal-900 leading-none truncate" dir="ltr">↕ {startTime}</span>
-          <button className="text-teal-500 hover:text-teal-800 text-[11px] leading-none shrink-0 -m-0.5 p-0.5"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-        </div>
-        {/* Bottom row: confirm */}
+        {/* Dismiss — absolute corner so it never steals width from the time label */}
+        <button className="absolute top-0 left-0 z-10 text-teal-600 hover:text-teal-900 text-[11px] leading-none p-0.5"
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+        {/* Time — full width, centered, allowed to wrap so it stays readable in narrow week columns */}
+        <span className="text-[10px] font-bold text-teal-900 leading-none text-center pt-0.5" dir="ltr">↕ {startTime}</span>
+        {/* Confirm */}
         <button
-          className="w-full text-[10px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-1 py-1 transition text-center leading-none whitespace-nowrap truncate"
+          className="w-full text-[9px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-0.5 py-1 transition text-center leading-none"
           onPointerDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
           + העבר לכאן
