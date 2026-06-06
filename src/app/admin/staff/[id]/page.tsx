@@ -27,14 +27,22 @@ type ServiceRow = {
 
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
-function emptySchedule() {
+type BreakRange = { start: string; end: string };
+type ScheduleDay = {
+  dayOfWeek: number;
+  isWorking: boolean;
+  start: string;
+  end: string;
+  breaks: BreakRange[];
+};
+
+function emptySchedule(): ScheduleDay[] {
   return Array.from({ length: 7 }, (_, i) => ({
     dayOfWeek: i,
     isWorking: i >= 0 && i <= 5,
     start: "09:00",
     end: "20:00",
-    breakStart: "",
-    breakEnd: "",
+    breaks: [],
   }));
 }
 
@@ -79,14 +87,13 @@ export default function StaffSettingsPage() {
     const sched = emptySchedule();
     for (const d of data.schedules) {
       const slots = JSON.parse(d.slots);
-      const breaks = d.breaks ? JSON.parse(d.breaks) : [];
+      const breaks: BreakRange[] = d.breaks ? JSON.parse(d.breaks) : [];
       sched[d.dayOfWeek] = {
         dayOfWeek: d.dayOfWeek,
         isWorking: d.isWorking,
         start: slots[0]?.start || "09:00",
         end: slots[0]?.end || "20:00",
-        breakStart: breaks[0]?.start || "",
-        breakEnd: breaks[0]?.end || "",
+        breaks: Array.isArray(breaks) ? breaks : [],
       };
     }
     setSchedule(sched);
@@ -322,19 +329,66 @@ export default function StaffSettingsPage() {
                   <span className="font-medium text-sm text-neutral-800">יום {DAY_NAMES[i]}</span>
                 </div>
                 {day.isWorking && (
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    {[["start","התחלה"],["end","סיום"],["breakStart","הפסקה מ"],["breakEnd","הפסקה עד"]].map(([field, label]) => (
-                      <div key={field}>
-                        <label className="text-[11px] text-neutral-400 block mb-0.5">{label}</label>
-                        <input type="time" value={(day as unknown as Record<string,string>)[field] || ""}
-                          onChange={e => {
-                            const s = [...schedule];
-                            s[i] = { ...s[i], [field]: e.target.value };
-                            setSchedule(s);
-                          }}
-                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                  <div className="mt-2 space-y-3">
+                    {/* Working hours */}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[["start","התחלה"],["end","סיום"]].map(([field, label]) => (
+                        <div key={field}>
+                          <label className="text-[11px] text-neutral-400 block mb-0.5">{label}</label>
+                          <input type="time" value={(day as unknown as Record<string,string>)[field] || ""}
+                            onChange={e => {
+                              const s = [...schedule];
+                              s[i] = { ...s[i], [field]: e.target.value };
+                              setSchedule(s);
+                            }}
+                            className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Recurring breaks — multiple allowed */}
+                    <div>
+                      <label className="text-[11px] text-neutral-400 block mb-1">הפסקות קבועות</label>
+                      <div className="space-y-2">
+                        {day.breaks.map((br, bi) => (
+                          <div key={bi} className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-2 py-1.5">
+                            <input type="time" value={br.start}
+                              onChange={e => {
+                                const s = [...schedule];
+                                const breaks = [...s[i].breaks];
+                                breaks[bi] = { ...breaks[bi], start: e.target.value };
+                                s[i] = { ...s[i], breaks };
+                                setSchedule(s);
+                              }}
+                              className="flex-1 border border-orange-200 rounded px-2 py-1 text-sm" />
+                            <span className="text-orange-400 text-xs">–</span>
+                            <input type="time" value={br.end}
+                              onChange={e => {
+                                const s = [...schedule];
+                                const breaks = [...s[i].breaks];
+                                breaks[bi] = { ...breaks[bi], end: e.target.value };
+                                s[i] = { ...s[i], breaks };
+                                setSchedule(s);
+                              }}
+                              className="flex-1 border border-orange-200 rounded px-2 py-1 text-sm" />
+                            <button onClick={() => {
+                              const s = [...schedule];
+                              s[i] = { ...s[i], breaks: s[i].breaks.filter((_, j) => j !== bi) };
+                              setSchedule(s);
+                            }}
+                              className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                      <button onClick={() => {
+                        const s = [...schedule];
+                        s[i] = { ...s[i], breaks: [...s[i].breaks, { start: "13:00", end: "14:00" }] };
+                        setSchedule(s);
+                      }}
+                        className="mt-2 w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-1.5 rounded-lg text-xs hover:border-orange-300 hover:text-orange-600 transition">
+                        + הוסף הפסקה
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

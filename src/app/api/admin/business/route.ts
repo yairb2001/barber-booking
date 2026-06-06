@@ -50,6 +50,12 @@ export async function PATCH(req: NextRequest) {
       ...(body.reminder24hTemplate !== undefined && {
         reminder24hTemplate: body.reminder24hTemplate || null,
       }),
+      ...(body.reminder24hNewTemplate !== undefined && {
+        reminder24hNewTemplate: body.reminder24hNewTemplate || null,
+      }),
+      ...(body.reminder24hReturningTemplate !== undefined && {
+        reminder24hReturningTemplate: body.reminder24hReturningTemplate || null,
+      }),
       ...(body.reminder2hTemplate !== undefined && {
         reminder2hTemplate: body.reminder2hTemplate || null,
       }),
@@ -70,6 +76,12 @@ export async function PATCH(req: NextRequest) {
       }),
       ...(body.delayNotificationTemplate !== undefined && {
         delayNotificationTemplate: body.delayNotificationTemplate || null,
+      }),
+      ...(body.firstBookingTemplate !== undefined && {
+        firstBookingTemplate: body.firstBookingTemplate || null,
+      }),
+      ...(body.walkInTemplate !== undefined && {
+        walkInTemplate: body.walkInTemplate || null,
       }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {

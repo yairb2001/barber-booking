@@ -66,6 +66,36 @@ export const DEFAULT_24H_TEMPLATE =
 
 אם יש שינוי — נא להודיע מראש 🙏`;
 
+/** Default 24h reminder for a FIRST-TIME customer — same as the regular reminder
+ *  plus a warm welcome and room for arrival details. */
+export const DEFAULT_24H_NEW_TEMPLATE =
+`שלום {{name}} 👋
+
+תזכורת — מחר הביקור הראשון שלך ב*{{business}}*! ✂️
+📅 {{date}}
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+📍 *איך מגיעים אלינו:*
+[כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
+
+מתרגשים לארח אותך 🙏 אם יש שינוי — נא להודיע מראש`;
+
+/** Default 24h reminder for a customer on their SECOND visit — a "smart promotion"
+ *  that nudges loyalty/upsell. Admin can tailor the offer. */
+export const DEFAULT_24H_RETURNING_TEMPLATE =
+`שלום {{name}} 👋
+
+כיף שחזרת אלינו ל*{{business}}* ✂️
+תזכורת לתור מחר:
+📅 {{date}}
+🕒 {{time}}
+💈 אצל {{staff}}{{address_line}}
+
+🎁 *מבצע במיוחד בשבילך:* בביקור הזה תוכל לשדרג את התספורת עם טיפול זקן/עיצוב בהנחה — שווה לנסות!
+
+נתראה מחר 🙏`;
+
 /** Default template for 2-hour reminder. */
 export const DEFAULT_2H_TEMPLATE =
 `שלום {{name}} 👋
@@ -284,6 +314,34 @@ export const TEMPLATE_DEFS = {
     description: "תזכורת יום לפני התור.",
     field: "reminder24hTemplate" as const,
     default: DEFAULT_24H_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "business",     label: "שם העסק" },
+      { key: "date",         label: "תאריך" },
+      { key: "time",         label: "שעת התחלה" },
+      { key: "staff",        label: "שם הספר" },
+      { key: "address_line", label: "כתובת" },
+    ],
+  },
+  reminder_24h_new: {
+    label: "תזכורת 24 שעות — לקוח חדש (ביקור ראשון)",
+    description: "נשלחת במקום התזכורת הרגילה ללקוח שזה הביקור הראשון שלו. כאן אפשר להוסיף הנחיות הגעה ופרטים נוספים.",
+    field: "reminder24hNewTemplate" as const,
+    default: DEFAULT_24H_NEW_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "business",     label: "שם העסק" },
+      { key: "date",         label: "תאריך" },
+      { key: "time",         label: "שעת התחלה" },
+      { key: "staff",        label: "שם הספר" },
+      { key: "address_line", label: "כתובת" },
+    ],
+  },
+  reminder_24h_returning: {
+    label: "תזכורת 24 שעות — ביקור שני (קידום חכם)",
+    description: "נשלחת במקום התזכורת הרגילה ללקוח שזה הביקור השני שלו — מקום מצוין למבצע/קידום חכם שמעודד נאמנות.",
+    field: "reminder24hReturningTemplate" as const,
+    default: DEFAULT_24H_RETURNING_TEMPLATE,
     variables: [
       { key: "name",         label: "שם הלקוח" },
       { key: "business",     label: "שם העסק" },

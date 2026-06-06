@@ -727,6 +727,85 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [staffNote, setStaffNote] = useState(appt.staffNote || "");
   const [savingNote, setSavingNote] = useState(false);
   const [editMode, setEditMode] = useState(false);
+
+  // ── Inline single-field editing ──────────────────────────────────────────
+  // Each pencil edits ONLY its own field (name / date / time / price) instead
+  // of opening the full edit form.
+  const [inlineEdit, setInlineEdit] = useState<null | "name" | "date" | "time" | "price">(null);
+  const [inlineSaving, setInlineSaving] = useState(false);
+  const [inlineErr, setInlineErr] = useState<string | null>(null);
+  const [inlineConflict, setInlineConflict] = useState<string | null>(null);
+  // Local display copies — updated after a successful inline save so the modal
+  // reflects the change without needing to be reopened.
+  const [dispName,  setDispName]  = useState(appt.customer.name);
+  const [dispPhone, setDispPhone] = useState(appt.customer.phone);
+  const [dispDate,  setDispDate]  = useState(appt.date);
+  const [dispStart, setDispStart] = useState(appt.startTime);
+  const [dispEnd,   setDispEnd]   = useState(appt.endTime);
+  const [dispPrice, setDispPrice] = useState(appt.price);
+  // Working values for the currently-open inline editor
+  const [editName,  setEditName]  = useState(appt.customer.name);
+  const [editPhone, setEditPhone] = useState(appt.customer.phone);
+  const [editDate,  setEditDate]  = useState(appt.date.split("T")[0]);
+  const [editStart, setEditStart] = useState(appt.startTime);
+  const [editPrice, setEditPrice] = useState(String(appt.price));
+
+  function openInline(field: "name" | "date" | "time" | "price") {
+    setInlineErr(null);
+    setInlineConflict(null);
+    if (field === "name") { setEditName(dispName); setEditPhone(dispPhone); }
+    if (field === "date") setEditDate(dispDate.split("T")[0]);
+    if (field === "time") setEditStart(dispStart);
+    if (field === "price") setEditPrice(String(dispPrice));
+    setInlineEdit(field);
+  }
+
+  // PATCH the appointment with just the changed field(s). Returns the updated
+  // appointment on success, or null (and sets error/conflict state) on failure.
+  async function patchApptField(partial: Record<string, unknown>, override = false): Promise<Appt | null> {
+    setInlineSaving(true);
+    setInlineErr(null);
+    const body: Record<string, unknown> = { ...partial };
+    if (override) body.override = true;
+    const r = await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    setInlineSaving(false);
+    if (r.status === 409) { const j = await r.json().catch(() => ({})); setInlineConflict(j.error || "יש התנגשות"); return null; }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); setInlineErr(j.error || "שגיאה בשמירה"); return null; }
+    return await r.json().catch(() => null);
+  }
+
+  async function saveInlineName() {
+    setInlineSaving(true);
+    setInlineErr(null);
+    const r = await fetch(`/api/admin/customers/${appt.customer.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editName.trim(), phone: editPhone.trim() }),
+    });
+    setInlineSaving(false);
+    if (!r.ok) { const j = await r.json().catch(() => ({})); setInlineErr(j.error || "שגיאה בשמירה"); return; }
+    if (editName.trim()) setDispName(editName.trim());
+    if (editPhone.trim()) setDispPhone(editPhone.trim());
+    setInlineEdit(null);
+    onReload?.();
+  }
+
+  async function saveInlinePrice() {
+    const updated = await patchApptField({ price: Number(editPrice) });
+    if (updated) { setDispPrice(updated.price); setInlineEdit(null); onReload?.(); }
+  }
+
+  async function saveInlineDate(override = false) {
+    const updated = await patchApptField({ date: editDate }, override);
+    if (updated) { setDispDate(updated.date); setInlineConflict(null); setInlineEdit(null); onReload?.(); }
+  }
+
+  async function saveInlineTime(override = false) {
+    const updated = await patchApptField({ startTime: editStart }, override);
+    if (updated) { setDispStart(updated.startTime); setDispEnd(updated.endTime); setInlineConflict(null); setInlineEdit(null); onReload?.(); }
+  }
   const [referralSource, setReferralSource] = useState(appt.customer.referralSource || "");
   const [editingReferral, setEditingReferral] = useState(false);
   const [savingReferral, setSavingReferral] = useState(false);
@@ -861,7 +940,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     }
   }
 
-  const cleanPhone = appt.customer.phone.replace(/\D/g, "");
+  const cleanPhone = dispPhone.replace(/\D/g, "");
 
   if (editMode) {
     return <ApptEditForm
@@ -897,54 +976,122 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center shrink-0 hover:bg-neutral-200 transition text-sm">✕</button>
         </div>
 
-        {/* Customer — compact row with pencil to edit */}
-        <div className="px-4 py-2.5 border-b border-neutral-100 flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-700 font-bold shrink-0">
-            {appt.customer.name[0]}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-semibold text-neutral-900 text-sm truncate">{appt.customer.name}</p>
-            <p className="text-xs text-neutral-500" dir="ltr">{appt.customer.phone}</p>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button onClick={() => setShowHistory(true)} title="היסטוריית לקוח"
-              className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
-            <button onClick={() => setEditMode(true)} title="ערוך לקוח"
-              className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
-            <a href={`tel:${appt.customer.phone}`}
-              className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
-            <a href={`https://wa.me/${cleanPhone}`} target="_blank"
-              className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</a>
-          </div>
+        {/* Customer — compact row with pencil to edit (name/phone only) */}
+        <div className="px-4 py-2.5 border-b border-neutral-100">
+          {inlineEdit === "name" ? (
+            <div className="space-y-2">
+              <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="שם לקוח"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              <input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="טלפון" dir="ltr"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
+              <div className="flex gap-2">
+                <button onClick={saveInlineName} disabled={inlineSaving}
+                  className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50">
+                  {inlineSaving ? "שומר..." : "שמור"}
+                </button>
+                <button onClick={() => setInlineEdit(null)} className="px-3 text-xs text-neutral-500">ביטול</button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-700 font-bold shrink-0">
+                {dispName[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-neutral-900 text-sm truncate">{dispName}</p>
+                <p className="text-xs text-neutral-500" dir="ltr">{dispPhone}</p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setShowHistory(true)} title="היסטוריית לקוח"
+                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
+                <button onClick={() => openInline("name")} title="ערוך שם לקוח"
+                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
+                <a href={`tel:${dispPhone}`}
+                  className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
+                <a href={`https://wa.me/${cleanPhone}`} target="_blank"
+                  className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</a>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Details row — תאריך / שעה / מחיר each with pencil */}
-        <div className="px-4 py-2.5 border-b border-neutral-100 grid grid-cols-3 gap-2">
-          <div className="flex flex-col gap-0.5">
-            <p className="text-[10px] text-neutral-400">תאריך</p>
-            <div className="flex items-center gap-1">
-              <p className="font-medium text-neutral-800 text-xs leading-tight">{fmtDay(appt.date)}</p>
-              <button onClick={() => setEditMode(true)} title="ערוך תאריך"
-                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+        {/* Details row — תאריך / שעה / מחיר each with pencil (inline, per-field) */}
+        {inlineEdit === "date" || inlineEdit === "time" || inlineEdit === "price" ? (
+          <div className="px-4 py-3 border-b border-neutral-100 space-y-2">
+            {inlineEdit === "date" && (
+              <>
+                <label className="text-[11px] text-neutral-500 block">תאריך</label>
+                <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} dir="ltr"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </>
+            )}
+            {inlineEdit === "time" && (
+              <>
+                <label className="text-[11px] text-neutral-500 block">שעת התחלה</label>
+                <input type="time" value={editStart} onChange={e => setEditStart(e.target.value)} dir="ltr"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                <p className="text-[11px] text-neutral-400">המשך התור יחושב לפי אורך התור הקיים</p>
+              </>
+            )}
+            {inlineEdit === "price" && (
+              <>
+                <label className="text-[11px] text-neutral-500 block">מחיר (₪)</label>
+                <input type="number" min={0} value={editPrice} onChange={e => setEditPrice(e.target.value)}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </>
+            )}
+            {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
+            {inlineConflict ? (
+              <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-2.5 space-y-2">
+                <p className="text-slate-900">{inlineConflict}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => inlineEdit === "date" ? saveInlineDate(true) : saveInlineTime(true)} disabled={inlineSaving}
+                    className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-teal-700 disabled:opacity-50">כן, שמור בכל זאת</button>
+                  <button onClick={() => setInlineConflict(null)}
+                    className="flex-1 bg-white border border-slate-300 text-slate-700 rounded-lg py-1.5 text-xs">ביטול</button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2 pt-0.5">
+                <button
+                  onClick={() => inlineEdit === "date" ? saveInlineDate() : inlineEdit === "time" ? saveInlineTime() : saveInlinePrice()}
+                  disabled={inlineSaving}
+                  className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50">
+                  {inlineSaving ? "שומר..." : "שמור"}
+                </button>
+                <button onClick={() => { setInlineEdit(null); setInlineErr(null); }} className="px-3 text-xs text-neutral-500">ביטול</button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-2.5 border-b border-neutral-100 grid grid-cols-3 gap-2">
+            <div className="flex flex-col gap-0.5">
+              <p className="text-[10px] text-neutral-400">תאריך</p>
+              <div className="flex items-center gap-1">
+                <p className="font-medium text-neutral-800 text-xs leading-tight">{fmtDay(dispDate)}</p>
+                <button onClick={() => openInline("date")} title="ערוך תאריך"
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <p className="text-[10px] text-neutral-400">שעה</p>
+              <div className="flex items-center gap-1">
+                <p className="font-medium text-neutral-800 text-xs" dir="ltr">{dispStart}–{dispEnd}</p>
+                <button onClick={() => openInline("time")} title="ערוך שעה"
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <p className="text-[10px] text-neutral-400">מחיר</p>
+              <div className="flex items-center gap-1">
+                <p className="font-bold text-slate-800 text-xs">₪{dispPrice}</p>
+                <button onClick={() => openInline("price")} title="ערוך מחיר"
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+              </div>
             </div>
           </div>
-          <div className="flex flex-col gap-0.5">
-            <p className="text-[10px] text-neutral-400">שעה</p>
-            <div className="flex items-center gap-1">
-              <p className="font-medium text-neutral-800 text-xs" dir="ltr">{appt.startTime}–{appt.endTime}</p>
-              <button onClick={() => setEditMode(true)} title="ערוך שעה"
-                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
-            </div>
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <p className="text-[10px] text-neutral-400">מחיר</p>
-            <div className="flex items-center gap-1">
-              <p className="font-bold text-slate-800 text-xs">₪{appt.price}</p>
-              <button onClick={() => setEditMode(true)} title="ערוך מחיר"
-                className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Referral source */}
         <div className="px-5 py-3 border-b border-neutral-100">
@@ -1031,7 +1178,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               {proposalAsCandidate.status === "pending_response" && (
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
-                    onClick={() => onMarkSwap(proposalAsCandidate.id, "mark_accepted").then(onClose)}
+                    onClick={() => onMarkSwap(proposalAsCandidate.id, "mark_accepted").then(() => { refreshProposals(); onReload?.(); })}
                     className="py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold">
                     ✓ סמן שהסכים
                   </button>
@@ -1041,6 +1188,13 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                     ✗ סמן שדחה
                   </button>
                 </div>
+              )}
+              {/* Both sides can finalize the swap once the customer agreed */}
+              {proposalAsCandidate.status === "accepted_by_customer" && (
+                <button onClick={() => onApproveSwap(proposalAsCandidate.id)}
+                  className="w-full mt-1 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold">
+                  🤝 אשר החלפה (יבוצע ויישלח אישור לשני הלקוחות)
+                </button>
               )}
             </div>
           )}
@@ -1528,6 +1682,9 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   const [saved, setSaved] = useState(false);
   const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
+  // When true, break changes update the recurring weekly schedule (every <weekday>)
+  // instead of creating a one-day override.
+  const [applyRecurring, setApplyRecurring] = useState(false);
 
   useEffect(() => {
     // First check for a date-specific override, then fall back to weekly schedule
@@ -1592,14 +1749,47 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
     await doSave({ date, isWorking: false });
   }
 
-  async function removeBreak(idx: number) {
-    const newBreaks = breaks.filter((_, i) => i !== idx);
-    setBreaks(newBreaks);
-    await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: newBreaks });
+  function removeBreak(idx: number) {
+    setBreaks(prev => prev.filter((_, i) => i !== idx));
   }
 
   function addBreak() {
     setBreaks(prev => [...prev, { start: "13:00", end: "14:00" }]);
+  }
+
+  // Save breaks — either to the recurring weekly schedule (every <weekday>) or
+  // as a one-day override, depending on the `applyRecurring` toggle.
+  async function saveBreaks() {
+    if (applyRecurring) {
+      setSaving(true);
+      setSaveError(null);
+      setSaved(false);
+      try {
+        const dow = new Date(date + "T00:00:00").getDay();
+        const res = await fetch(`/api/admin/staff/${staffId}/schedule`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            dayOfWeek: dow,
+            isWorking: hours.isWorking,
+            slots: [{ start: hours.start, end: hours.end }],
+            breaks,
+          }),
+        });
+        if (!res.ok) {
+          const errText = await res.text().catch(() => "");
+          throw new Error(errText || `HTTP ${res.status}`);
+        }
+        setSaved(true);
+        onRefresh();
+        setTimeout(() => { setSaved(false); onClose(); }, 800);
+      } catch (e) {
+        setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
+      } finally {
+        setSaving(false);
+      }
+    } else {
+      await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks });
+    }
   }
 
   async function addToWaitlist() {
@@ -1711,11 +1901,22 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                 className="w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-2 rounded-xl text-sm hover:border-slate-300 hover:text-slate-800 transition">
                 + הוסף הפסקה
               </button>
+
+              {/* Recurring toggle — apply to every <weekday> or just this date */}
+              <label className="flex items-center gap-2 px-1 py-1 cursor-pointer select-none">
+                <input type="checkbox" checked={applyRecurring}
+                  onChange={e => setApplyRecurring(e.target.checked)}
+                  className="w-4 h-4 accent-teal-600" />
+                <span className="text-xs text-neutral-600">
+                  קבוע — החל על כל יום {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long" })}
+                </span>
+              </label>
+
               {saveError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 border border-red-200">{saveError}</p>}
               {saved && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200 font-semibold text-center">✓ נשמר!</p>}
-              <button onClick={saveHours} disabled={saving || saved}
+              <button onClick={saveBreaks} disabled={saving || saved}
                 className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                {saving ? "שומר..." : "שמור הפסקות"}
+                {saving ? "שומר..." : applyRecurring ? "שמור הפסקות קבועות" : "שמור הפסקות"}
               </button>
             </div>
           )}
@@ -1821,7 +2022,7 @@ type DragState = { staffId: string; date: string; startY: number; endY: number }
 // candidate to the current swap proposal.
 function DraftMoveSlotBlock({
   startY, durationMinutes,
-  onMove, onConfirm, onDismiss, onDragMoved,
+  onMove, onConfirm, onDismiss, onDragMoved, onHorizontalDragEnd,
 }: {
   startY: number;
   durationMinutes: number;   // must match primary appointment length
@@ -1829,6 +2030,8 @@ function DraftMoveSlotBlock({
   onConfirm: (startTime: string) => void;
   onDismiss: () => void;
   onDragMoved?: () => void;
+  /** Called when the user releases after a horizontal drag — clientX of the pointer */
+  onHorizontalDragEnd?: (clientX: number) => void;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
@@ -1836,50 +2039,64 @@ function DraftMoveSlotBlock({
   const blockH = Math.max((durationMinutes / 60) * hh, 36);
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const startTime = yToTimeFn(clampedTop, hh, calStart, calEnd);
-  const dragRef = useRef<{ clientY: number; startY: number } | null>(null);
+  const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
+  // CSS translateX so the block slides across columns while pointer capture is held
+  const [transX, setTransX] = React.useState(0);
 
   return (
     <div
-      className="no-touch-select absolute left-0.5 right-0.5 z-30 select-none cursor-grab active:cursor-grabbing"
-      style={{ top: clampedTop, height: blockH, touchAction: "none" }}
+      className="no-touch-select absolute left-0.5 right-0.5 select-none cursor-grab active:cursor-grabbing"
+      style={{
+        top: clampedTop,
+        height: blockH,
+        touchAction: "none",
+        transform: transX !== 0 ? `translateX(${transX}px)` : undefined,
+        zIndex: transX !== 0 ? 50 : 30,  // float above other columns when dragging sideways
+      }}
       onPointerDown={e => {
         // Don't hijack clicks that land on buttons — let them fire normally
         if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
         e.currentTarget.setPointerCapture(e.pointerId);
-        dragRef.current = { clientY: e.clientY, startY: clampedTop };
+        dragRef.current = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        setTransX(0);
       }}
       onPointerMove={e => {
         if (!dragRef.current) return;
         const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
         onMove(newY);
+        // Horizontal: slide block across columns visually (keeps pointer capture on this element)
+        setTransX(e.clientX - dragRef.current.clientX);
       }}
       onPointerUp={e => {
         e.stopPropagation();
-        if (dragRef.current && Math.abs(e.clientY - dragRef.current.clientY) > 5) {
-          onDragMoved?.();
-        }
+        const dy = dragRef.current ? Math.abs(e.clientY - dragRef.current.clientY) : 0;
+        const dx = dragRef.current ? Math.abs(e.clientX - dragRef.current.clientX) : 0;
+        if (dy > 5 || dx > 5) onDragMoved?.();
+        // Sticky to current day, but a small horizontal nudge slides to another day
+        if (dx > 15) onHorizontalDragEnd?.(e.clientX);
         dragRef.current = null;
+        setTransX(0);
       }}
-      onPointerCancel={() => { dragRef.current = null; }}
+      onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
       onClick={e => e.stopPropagation()}>
 
       <div
-        className="w-full h-full rounded-lg flex flex-col justify-between px-2 py-1.5 border-2 border-dashed"
+        className="w-full h-full rounded-lg flex flex-col justify-between px-1.5 py-1 border-2 border-dashed overflow-hidden"
         style={{ borderColor: "#0d9488", background: "rgba(20, 184, 166, 0.15)", backdropFilter: "blur(4px)" }}>
         {/* Top row: time + dismiss */}
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-bold text-teal-900">{startTime} ↕ גרור לדיוק</span>
-          <button className="text-teal-500 hover:text-teal-800 text-xs leading-none p-1"
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] font-bold text-teal-900 leading-none truncate" dir="ltr">↕ {startTime}</span>
+          <button className="text-teal-500 hover:text-teal-800 text-[11px] leading-none shrink-0 -m-0.5 p-0.5"
             onPointerDown={e => e.stopPropagation()}
             onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
         </div>
         {/* Bottom row: confirm */}
         <button
-          className="text-[11px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded-md px-2 py-1 transition text-center"
+          className="w-full text-[10px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-1 py-1 transition text-center leading-none whitespace-nowrap truncate"
           onPointerDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
-          + הוסף העברה לכאן
+          + העבר לכאן
         </button>
       </div>
     </div>
@@ -2470,19 +2687,24 @@ export default function AdminCalendar() {
     if (gridRef.current && !loading) gridRef.current.scrollTop = Math.max(nowPxFn(hourHeightRef.current, calStart) - 120, 0);
   }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch waitlist counts for visible dates
+  // Fetch waitlist counts for visible dates — scoped to the week's barber so the
+  // red badge only appears on the calendar of the staff member who actually has
+  // someone waiting (not on every barber's calendar).
   useEffect(() => {
     const dates = getDates();
+    // Week view always shows a single barber — scope the badge to that barber.
+    const effectiveStaffId = weekBarber || allStaff[0]?.id || "";
+    const staffParam = effectiveStaffId ? `&staffId=${effectiveStaffId}` : "";
     Promise.all(
       dates.map(d =>
-        fetch(`/api/admin/waitlist?date=${d}`).then(r => r.json()).then(data => [d, data.length])
+        fetch(`/api/admin/waitlist?date=${d}${staffParam}`).then(r => r.json()).then(data => [d, data.length])
       )
     ).then(results => {
       const counts: Record<string, number> = {};
       for (const [d, count] of results) counts[d as string] = count as number;
       setWaitlistCounts(counts);
     }).catch(() => {});
-  }, [getDates]);
+  }, [getDates, weekBarber, allStaff]);
 
   function saveLocalHours() {
     setCalStart(localCalStart);
@@ -2909,6 +3131,12 @@ export default function AdminCalendar() {
                             onConfirm={startTime => { toggleSwapMoveSlot(s.id, date, startTime); setDraftMoveSlot(null); }}
                             onDismiss={() => setDraftMoveSlot(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            onHorizontalDragEnd={clientX => {
+                              const target = findColumnByX(clientX);
+                              if (!target) return;
+                              suppressNextGridClick.current = true;
+                              setDraftMoveSlot(prev => prev ? { ...prev, staffId: target.staffId, date: target.date } : null);
+                            }}
                           />
                         )}
                         {getAppts(s.id, date).map(a => (
@@ -2997,6 +3225,12 @@ export default function AdminCalendar() {
                             onConfirm={startTime => { toggleSwapMoveSlot(s.id, d, startTime); setDraftMoveSlot(null); }}
                             onDismiss={() => setDraftMoveSlot(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            onHorizontalDragEnd={clientX => {
+                              const target = findColumnByX(clientX);
+                              if (!target) return;
+                              suppressNextGridClick.current = true;
+                              setDraftMoveSlot(prev => prev ? { ...prev, staffId: target.staffId, date: target.date } : null);
+                            }}
                           />
                         )}
                         {getAppts(s.id, d).map(a => (

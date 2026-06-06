@@ -5,8 +5,12 @@ import {
   hasFeature,
   applyTemplate,
   DEFAULT_24H_TEMPLATE,
+  DEFAULT_24H_NEW_TEMPLATE,
+  DEFAULT_24H_RETURNING_TEMPLATE,
   reminderVars,
 } from "@/lib/messaging";
+
+const CANCELLED_STATUSES = ["cancelled_by_customer", "cancelled_by_staff"];
 
 /**
  * Cron endpoint — runs daily at 07:00 UTC (= 10:00 Israel).
@@ -57,8 +61,29 @@ export async function GET(req: NextRequest) {
       weekday: "long", day: "numeric", month: "long",
     });
 
-    // Use custom template if set, otherwise fall back to default
-    const template = appt.business.reminder24hTemplate || DEFAULT_24H_TEMPLATE;
+    // ── Pick the reminder template by how many times the customer has visited ──
+    //   0 prior visits → first-time customer (warm welcome + arrival details)
+    //   1 prior visit  → second visit (smart promotion)
+    //   2+             → regular reminder
+    const priorVisits = await prisma.appointment.count({
+      where: {
+        customerId: appt.customerId,
+        businessId: appt.businessId,
+        id:     { not: appt.id },
+        date:   { lt: appt.date },
+        status: { notIn: CANCELLED_STATUSES },
+      },
+    });
+
+    let template: string;
+    if (priorVisits === 0) {
+      template = appt.business.reminder24hNewTemplate || DEFAULT_24H_NEW_TEMPLATE;
+    } else if (priorVisits === 1) {
+      template = appt.business.reminder24hReturningTemplate || DEFAULT_24H_RETURNING_TEMPLATE;
+    } else {
+      template = appt.business.reminder24hTemplate || DEFAULT_24H_TEMPLATE;
+    }
+
     const body = applyTemplate(template, reminderVars({
       customerName: appt.customer.name,
       businessName: appt.business.name,
