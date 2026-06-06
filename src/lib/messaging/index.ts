@@ -2,6 +2,16 @@ import { prisma } from "@/lib/prisma";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 
+/**
+ * Extract the first name for use in the {{name}} variable.
+ * Customers are stored with their full name ("אבי כהן"), but messages should
+ * greet them by first name only ("אבי"). Trims and takes the first whitespace
+ * token; falls back to the whole string if there's nothing to split.
+ */
+export function firstName(fullName: string): string {
+  return (fullName || "").trim().split(/\s+/)[0] || (fullName || "").trim();
+}
+
 /** Build provider from business config. Returns null if provider is "none". */
 export function providerForBusiness(business: {
   messagingProvider: string | null;
@@ -116,7 +126,7 @@ export function reminderVars(params: {
   address?: string | null;
 }): Record<string, string> {
   return {
-    name: params.customerName,
+    name: firstName(params.customerName),
     business: params.businessName,
     staff: params.staffName,
     time: params.startTime,
@@ -485,7 +495,7 @@ export function confirmationText(
 ): string {
   const tmpl = customTemplate || DEFAULT_CONFIRMATION_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:         params.customerName,
+    name:         firstName(params.customerName),
     business:     params.businessName,
     date:         params.dateLabel,
     time:         params.startTime,
@@ -516,7 +526,7 @@ export function swapProposalText(
 ): string {
   const tmpl = customTemplate || DEFAULT_SWAP_PROPOSAL_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:           params.candidateName,
+    name:           firstName(params.candidateName),
     business:       params.businessName,
     current_date:   params.candidateDateLabel,
     current_time:   params.candidateTime,
@@ -546,7 +556,7 @@ export function moveProposalText(
 ): string {
   const tmpl = customTemplate || DEFAULT_MOVE_PROPOSAL_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:           params.customerName,
+    name:           firstName(params.customerName),
     business:       params.businessName,
     current_date:   params.currentDateLabel,
     current_time:   params.currentTime,
@@ -573,7 +583,7 @@ export function swapConfirmationText(
 ): string {
   const tmpl = customTemplate || DEFAULT_SWAP_CONFIRMATION_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:     params.customerName,
+    name:     firstName(params.customerName),
     business: params.businessName,
     date:     params.newDateLabel,
     time:     params.newTime,
@@ -599,7 +609,7 @@ export function appointmentMovedText(
 ): string {
   const tmpl = customTemplate || DEFAULT_APPOINTMENT_MOVED_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:     params.customerName,
+    name:     firstName(params.customerName),
     business: params.businessName,
     date:     params.newDateLabel,
     time:     params.newTime,
@@ -623,7 +633,7 @@ export function delayNotificationText(
 ): string {
   const tmpl = customTemplate || DEFAULT_DELAY_NOTIFICATION_TEMPLATE;
   return applyTemplate(tmpl, {
-    name:          params.customerName,
+    name:          firstName(params.customerName),
     business:      params.businessName,
     time:          params.appointmentTime,
     delay_minutes: String(params.delayMinutes),

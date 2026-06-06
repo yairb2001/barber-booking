@@ -7,7 +7,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, applyTemplate } from "@/lib/messaging";
+import { sendMessage, applyTemplate, firstName } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
     if (recentMsg) { skipped++; continue; }
 
     const msgBody = applyTemplate(template, {
-      name:         customer.name,
+      name:         firstName(customer.name),
       business:     business.name,
       booking_link: bookingLink,
     });

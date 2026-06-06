@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -172,7 +172,7 @@ export async function POST(req: NextRequest) {
     const bookingLink = `${baseUrl}/book`;
     const tmpl = business.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
     const walkInBody = applyTemplate(tmpl, {
-      name:         appointment.customer.name,
+      name:         firstName(appointment.customer.name),
       business:     business.name,
       booking_link: bookingLink,
     });

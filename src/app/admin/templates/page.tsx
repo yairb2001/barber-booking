@@ -9,7 +9,7 @@ import { TEMPLATE_DEFS, type TemplateKey } from "@/lib/messaging";
 // will appear before sending it to a real customer.
 function applyPreview(template: string): string {
   const sample: Record<string, string> = {
-    name:           "אבי כהן",
+    name:           "אבי", // first name only — matches what {{name}} sends in real messages
     business:       "DOMINANT",
     date:           "ראשון, 5 במאי",
     time:           "14:30",

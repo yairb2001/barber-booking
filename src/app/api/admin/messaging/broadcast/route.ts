@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, applyTemplate } from "@/lib/messaging";
+import { sendMessage, applyTemplate, firstName } from "@/lib/messaging";
 import { getRequestSession, scopedStaffId } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
 
   const results = await Promise.allSettled(
     customers.map(async (customer) => {
-      const personalizedMsg = applyTemplate(message, { name: customer.name });
+      const personalizedMsg = applyTemplate(message, { name: firstName(customer.name) });
       await sendMessage({
         businessId: business.id,
         customerPhone: customer.phone,

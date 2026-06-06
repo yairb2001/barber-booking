@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff } from "@/lib/native/push";
 import { jwtVerify } from "jose";
 
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
       // Owner has customised the first-booking template → use it
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
       msgBody = applyTemplate(tmpl, {
-        name:         customer.name,
+        name:         firstName(customer.name),
         business:     business.name,
         date:         dateLabel,
         time:         startTime,
@@ -228,7 +228,7 @@ export async function POST(request: NextRequest) {
     } else if (isFirstBooking) {
       // No custom template yet → still send the default first-booking message
       msgBody = applyTemplate(DEFAULT_FIRST_BOOKING_TEMPLATE, {
-        name:         customer.name,
+        name:         firstName(customer.name),
         business:     business.name,
         date:         dateLabel,
         time:         startTime,

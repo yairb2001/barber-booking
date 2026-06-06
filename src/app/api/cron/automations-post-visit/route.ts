@@ -19,7 +19,7 @@
 
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, applyTemplate, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
@@ -212,7 +212,7 @@ export async function GET() {
     const bookingLink = `${baseUrl}/book`;
     const tmpl = biz.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
     const msgBody = applyTemplate(tmpl, {
-      name:         appt.customer.name,
+      name:         firstName(appt.customer.name),
       business:     biz.name,
       booking_link: bookingLink,
     });
