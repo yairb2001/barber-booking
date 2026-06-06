@@ -874,16 +874,11 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end justify-center z-50" onClick={onClose}>
-      <div className="bg-white rounded-t-2xl w-full max-w-lg shadow-2xl max-h-[78vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-
-        {/* Drag handle — visual cue that this is a bottom sheet */}
-        <div className="flex justify-center pt-2.5 pb-1">
-          <div className="w-10 h-1 rounded-full bg-neutral-200" />
-        </div>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[72vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-1 pb-2 border-b border-neutral-100">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-neutral-100">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <h3 className="font-bold text-base text-neutral-900 truncate">{appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
@@ -1859,7 +1854,7 @@ function DraftApptBlock({
 
 // ── Main Calendar ─────────────────────────────────────────────────────────────
 export default function AdminCalendar() {
-  const [view, setView] = useState<ViewType>("day");
+  const [view, setView] = useState<ViewType>("week");
   const [date, setDate] = useState(todayISO());
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -2095,8 +2090,11 @@ export default function AdminCalendar() {
       if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
         const dx = e.changedTouches[0].clientX - swipeStartX;
         const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
-        // Only trigger on clear horizontal swipes (> 55px, more horizontal than vertical)
-        if (Math.abs(dx) > 55 && Math.abs(dx) > dy * 1.5) {
+        // Don't navigate while an appointment drag-move is in progress
+        const dragActive = !!dragMoveRef.current;
+        // High threshold (90px) + clearly horizontal (2× horiz vs vertical)
+        // to avoid false-firing during appointment drags or short taps
+        if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
           // In RTL: swipe right (dx > 0) = go to earlier dates; swipe left = later
           navigateRef.current(dx > 0 ? -1 : 1);
         }
@@ -2120,15 +2118,27 @@ export default function AdminCalendar() {
       fetch("/api/admin/staff").then(r => r.json()),
       fetch("/api/admin/services").then(r => r.json()),
       fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([st, sv, biz]) => {
+      fetch("/api/admin/me").then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([st, sv, biz, me]) => {
       setAllStaff(st);
       setVisibleStaff(st.map((s: Staff) => s.id));
       if (st.length) {
-        // Prefer the previously selected barber if they're still in the staff list
         const saved = loadPrefs().weekBarber;
-        const validSaved = saved && st.some((s: Staff) => s.id === saved) ? saved : st[0].id;
-        setWeekBarber(validSaved);
-        setDayBarber(validSaved); // day view defaults to same barber
+        // Priority: 1) saved pref  2) logged-in barber's own staffId  3) first staff
+        const myStaffId: string | null = me?.staffId ?? null;
+        let defaultBarber = st[0].id;
+        if (saved && st.some((s: Staff) => s.id === saved)) {
+          defaultBarber = saved;
+        } else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
+          defaultBarber = myStaffId;
+        }
+        setWeekBarber(defaultBarber);
+        setDayBarber(defaultBarber);
+      }
+      // Owner / permission flags
+      if (me) {
+        setIsOwner(me.isOwner ?? true);
+        setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
       }
       setServices(sv);
       // Load calendar display hours from business settings JSON
@@ -2155,12 +2165,6 @@ export default function AdminCalendar() {
       setLocalCalStart(serverStart);
       setLocalCalEnd(serverEnd);
     });
-    // Load /api/admin/me for owner status and barber permissions
-    fetch("/api/admin/me").then(r => r.ok ? r.json() : null).then(me => {
-      if (!me) return;
-      setIsOwner(me.isOwner ?? true);
-      setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
-    }).catch(() => {});
   }, []);
 
   const getDates = useCallback(() => {
@@ -2612,12 +2616,12 @@ export default function AdminCalendar() {
   function renderTimeGrid() {
     const isDay = view === "day";
 
-    // ≤6 staff: columns share the full screen width evenly (no horizontal scroll).
-    // >6 staff: each column gets a fixed 80px and the grid scrolls horizontally.
+    // Day view: ≤6 staff → columns fill screen; >6 staff → 80px each + horizontal scroll.
+    // Week/month view: date columns always fill screen — never force a minWidth.
     const FIT_THRESHOLD = 6;
-    const fitOnScreen = isDay && displayedStaff.length <= FIT_THRESHOLD;
-    const colMinWidth = fitOnScreen ? undefined : 80;
-    const gridMinWidth = fitOnScreen ? undefined : `${56 + displayedStaff.length * 80}px`;
+    const tooManyStaff = isDay && displayedStaff.length > FIT_THRESHOLD;
+    const colMinWidth = tooManyStaff ? 80 : undefined;
+    const gridMinWidth = tooManyStaff ? `${56 + displayedStaff.length * 80}px` : undefined;
 
     return (
       <div className="flex flex-col flex-1 min-h-0">
@@ -2970,7 +2974,11 @@ export default function AdminCalendar() {
           {/* View switcher */}
           <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
             {(["day","week","month"] as ViewType[]).map(v => (
-              <button key={v} onClick={() => setView(v)}
+              <button key={v} onClick={() => {
+                setView(v);
+                // Switching to day view → always show all staff (כולם)
+                if (v === "day") setVisibleStaff(allStaff.map(s => s.id));
+              }}
                 className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
                 {v === "day" ? "יום" : v === "week" ? "שבוע" : "חודש"}
               </button>
@@ -2984,16 +2992,11 @@ export default function AdminCalendar() {
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          {(isOwner || barbersCanViewOthersCalendar) && view === "day" && allStaff.length > 1 && (
-            <select value={dayBarber} onChange={e => setDayBarber(e.target.value)}
-              className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 flex-1 min-w-0">
-              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          )}
+          {/* Day view staff selection is handled by the ✂️ filter button — no separate barber picker needed */}
 
           {/* Zoom — hidden on mobile (use pinch) / shown on desktop */}
           {view !== "month" && (
-            <div className="hidden sm:flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
+            <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
               <button onClick={() => setHourHeight(h => Math.max(28, h - 20))} disabled={hourHeight <= 28}
                 className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">−</button>
               <button onClick={() => setHourHeight(h => Math.min(220, h + 20))} disabled={hourHeight >= 220}
