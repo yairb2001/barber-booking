@@ -716,179 +716,141 @@ export default function Dashboard() {
   const secondVisitCustomers = a ? a.returnRate.returned : 0;
 
   return (
-    <div className="p-6 overflow-auto h-full space-y-6 max-w-5xl">
+    <div className="p-4 overflow-auto h-full max-w-2xl space-y-5">
 
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">{heading}</h1>
-          <p className="text-neutral-500 text-sm">סטטיסטיקות חודשיות</p>
-        </div>
-        <div className="flex items-center gap-2 bg-white rounded-xl border border-neutral-200 px-4 py-2 text-sm">
-          <button onClick={prevMonth} className="text-neutral-400 hover:text-neutral-700 px-1">◀</button>
-          <span className="font-semibold text-neutral-800 min-w-[9rem] text-center">{monthLabel}</span>
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="text-xl font-bold text-neutral-900">{heading}</h1>
+        <div className="flex items-center gap-1 bg-white rounded-xl border border-neutral-200 px-2 py-1.5">
+          {/* ▶ on right = go to earlier month (RTL: right = past) */}
+          <button onClick={prevMonth}
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm">▶</button>
+          <span className="font-semibold text-neutral-800 text-xs min-w-[7rem] text-center">{monthLabel}</span>
+          {/* ◀ on left = go to later month */}
           <button onClick={nextMonth} disabled={isCurrentMonth}
-            className="text-neutral-400 hover:text-neutral-700 px-1 disabled:opacity-30">▶</button>
+            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm disabled:opacity-30">◀</button>
           {!isCurrentMonth && (
             <button onClick={() => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); }}
-              className="text-xs text-slate-800 hover:underline mr-1">החודש</button>
+              className="text-xs text-teal-600 hover:underline px-1.5">החודש</button>
           )}
         </div>
       </div>
 
-      {/* ── For barbers: gamified weekly section; for owners: today strip ── */}
-      {!isOwner ? (
+      {/* ── Barber filter + deep-dive link (owners) ── */}
+      {isOwner && (
+        <div className="flex gap-2 flex-wrap items-center">
+          {allStaff.length > 1 && (
+            <>
+              <button onClick={() => setSelStaff(null)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition ${!selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"}`}>
+                כל הספרים
+              </button>
+              {allStaff.map(s => (
+                <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition ${selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"}`}>
+                  {s.name}
+                </button>
+              ))}
+            </>
+          )}
+          <Link href="/admin/dashboard/marketing"
+            className="mr-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-teal-600 text-teal-700 bg-white hover:bg-teal-600 hover:text-white transition">
+            📊 ניתוח מעמיק
+          </Link>
+        </div>
+      )}
+
+      {/* ── Barber gamified section (non-owners) ── */}
+      {!isOwner && (
         barberStats
           ? <BarberGamifiedSection stats={barberStats} />
           : <div className="animate-pulse bg-neutral-100 rounded-2xl h-40" />
-      ) : (
-        /* Owner: today strip */
-        a && (
-          <div>
-            <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ היום</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-              <MiniStat
-                icon="👥"
-                label="לקוחות היום"
-                value={a.todayAppointments}
-                sub={a.todayNewToBusiness > 0 ? `${a.todayNewToBusiness} חדשים למספרה` : undefined}
-              />
-              <MiniStat
-                icon="💰"
-                label="מחזור היום"
-                value={`₪${a.todayRevenue.toLocaleString("he-IL")}`}
-              />
-              <MiniStat
-                icon="📈"
-                label="תפוסה היום"
-                value={`${a.occupancyToday}%`}
-              />
-              <MiniStat
-                icon="📅"
-                label="נקבעו ב-24 שעות"
-                value={a.bookingsCreatedToday}
-                sub="כל התורים שנוצרו היום"
-              />
-            </div>
-          </div>
-        )
       )}
 
-      {/* Barber filter chips + insights button */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        {isOwner && allStaff.length > 0 ? (
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setSelStaff(null)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-                !selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
-              }`}>
-              כל הספרים
-            </button>
-            {allStaff.map(s => (
-              <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium border transition ${
-                  selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
-                }`}>
-                {s.name}
-              </button>
-            ))}
-          </div>
-        ) : <span />}
-        <Link
-          href="/admin/dashboard/marketing"
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold border border-teal-600 text-teal-700 bg-white hover:bg-teal-600 hover:text-white transition"
-        >
-          📊 שיווק מעמיק
-        </Link>
-      </div>
-
       {loading ? (
-        <div className="text-center py-20 text-neutral-400">טוען נתונים...</div>
+        <div className="text-center py-16 text-neutral-400 text-sm">טוען נתונים...</div>
       ) : !a ? (
-        <div className="text-center py-20 text-red-400 text-sm">שגיאה בטעינת הנתונים</div>
+        <div className="text-center py-16 text-red-400 text-sm">שגיאה בטעינת הנתונים</div>
       ) : (
         <>
-          {/* Stat cards (monthly) */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* ── 4 monthly stat cards ── */}
+          <div className="grid grid-cols-2 gap-3">
             <StatCard
-              label="הכנסה חודשית"
+              label="מחזור חודשי"
               value={`₪${a.totalRevenue.toLocaleString("he-IL")}`}
               color="text-slate-800"
               sub={a.totalAppointments > 0 ? `ממוצע ₪${Math.round(a.totalRevenue / a.totalAppointments)} לתור` : undefined}
             />
-            <StatCard label="תורים החודש" value={a.totalAppointments} color="text-neutral-900" sub={`תפוסה ${a.occupancyMonth}%`} />
             <StatCard
-              label={isStaffScoped ? "לקוחות חדשים אצלך" : "לקוחות חדשים"}
+              label="תורים החודש"
+              value={a.totalAppointments}
+              color="text-neutral-900"
+              sub={`תפוסה ${a.occupancyMonth}%`}
+            />
+            <StatCard
+              label={isStaffScoped ? "חדשים אצלך" : "לקוחות חדשים"}
               value={isStaffScoped ? a.newToStaff : a.newToBusiness}
               color="text-teal-600"
-              sub={isStaffScoped ? `מתוכם חדשים למספרה: ${a.newToBusiness}` : undefined}
-              badge={isStaffScoped ? undefined : "כל המספרה"}
             />
-            <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex flex-col gap-1">
-              <p className="text-xs text-neutral-400 font-medium">ביקור שני</p>
-              <p className="text-2xl font-bold text-emerald-600">{a.returnRate.returned}</p>
-              <p className="text-[10px] text-neutral-400">
-                {a.returnRate.cohortSize > 0 ? `${a.returnRate.rate}% מתוך ${a.returnRate.cohortSize}` : "אין נתונים"}
-              </p>
-            </div>
+            <StatCard
+              label="ביקור שני החודש"
+              value={a.prevMonthCohort.returnedThisMonth}
+              color="text-emerald-600"
+              sub={a.prevMonthCohort.newInPrevMonth > 0
+                ? `${a.prevMonthCohort.rate}% מלקוחות חודש שעבר`
+                : undefined}
+            />
           </div>
 
-          {/* Marketing */}
-          {a.newBySource.length > 0 && (
+          {/* ── Per-barber simple cards (owners, no filter) ── */}
+          {isOwner && !selStaff && a.staffSummary.length > 1 && (
             <div>
-              <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">📣 שיווק ומקורות הגעה</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-                  <h3 className="font-semibold text-neutral-800 text-sm mb-4">לקוחות לפי מקור הגעה</h3>
-                  <HBarChart data={a.newBySource} />
-                </div>
-                <div className="bg-white rounded-2xl border border-neutral-200 p-5 overflow-x-auto">
-                  <h3 className="font-semibold text-neutral-800 text-sm mb-4">חדשים vs ביקור שני לפי מקור</h3>
-                  <SourceTable data={a.newBySource} />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Retention */}
-          <div>
-            <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">🔄 שימור לקוחות</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
-              <ReturnRateCard returnRate={a.returnRate} windowDays={returnWindowDays} onWindowChange={setReturnWindowDays} />
-
-              <CohortCard cohort={a.prevMonthCohort} />
-            </div>
-          </div>
-
-          {/* Activity breakdown */}
-          <div>
-            <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">📊 מאפייני לקוחות — כל הזמנים</h2>
-            <ActivityBreakdownCard breakdown={a.activityBreakdown} />
-          </div>
-
-          {/* Revenue chart — owners only; barbers get the weekly trend chart instead */}
-          {isOwner && (
-            <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-neutral-800 text-sm">הכנסות יומיות — {monthLabel}</h3>
-                <span className="text-xs text-neutral-400">סה״כ ₪{a.totalRevenue.toLocaleString("he-IL")}</span>
-              </div>
-              <RevenueChart data={a.dailyRevenue} todayISO={todayISO} />
-            </div>
-          )}
-
-          {/* Per-barber grid */}
-          {isOwner && !selStaff && a.staffSummary.length > 0 && (
-            <div>
-              <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-3">✂️ לפי ספר — {monthLabel}</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2">✂️ לפי ספר — {monthLabel}</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {a.staffSummary.map(row => (
-                  <BarberCard key={row.staffId} row={row} selected={selStaff === row.staffId}
-                    windowDays={returnWindowDays}
-                    onClick={() => setSelStaff(p => p === row.staffId ? null : row.staffId)} />
+                  <button key={row.staffId}
+                    onClick={() => setSelStaff(p => p === row.staffId ? null : row.staffId)}
+                    className={`text-right rounded-2xl border p-4 transition ${
+                      selStaff === row.staffId
+                        ? "border-teal-600 bg-teal-50"
+                        : "border-neutral-200 bg-white hover:border-slate-300"
+                    }`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                        {row.name[0]}
+                      </div>
+                      <span className="font-semibold text-sm text-neutral-800">{row.name}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-right">
+                      <div>
+                        <p className="text-[10px] text-neutral-400">הכנסה</p>
+                        <p className="font-bold text-sm text-slate-800">₪{row.revenue.toLocaleString("he-IL")}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-400">תורים</p>
+                        <p className="font-bold text-sm">{row.appointments}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-400">חדשים</p>
+                        <p className="font-bold text-sm text-teal-600">{row.newToStaff}</p>
+                      </div>
+                    </div>
+                  </button>
                 ))}
               </div>
-              <p className="text-xs text-neutral-400 mt-2 text-center">לחץ על ספר לסינון הדשבורד כולו</p>
+            </div>
+          )}
+
+          {/* ── Today snapshot — owners only, at bottom ── */}
+          {isOwner && (
+            <div className="border-t border-neutral-100 pt-4">
+              <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2.5">⚡ היום</h2>
+              <div className="grid grid-cols-2 gap-2.5">
+                <MiniStat icon="👥" label="לקוחות היום" value={a.todayAppointments} />
+                <MiniStat icon="🆕" label="חדשים היום" value={a.todayNewToBusiness} />
+                <MiniStat icon="💰" label="מחזור יומי" value={`₪${a.todayRevenue.toLocaleString("he-IL")}`} />
+                <MiniStat icon="📅" label="נקבעו ב-24 שעות" value={a.bookingsCreatedToday} sub="ידני + עצמאי" />
+              </div>
             </div>
           )}
         </>
