@@ -752,6 +752,17 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [editDate,  setEditDate]  = useState(appt.date.split("T")[0]);
   const [editStart, setEditStart] = useState(appt.startTime);
   const [editPrice, setEditPrice] = useState(String(appt.price));
+  // Customer search in name editor
+  const [custSuggestions, setCustSuggestions] = useState<{id:string;name:string;phone:string}[]>([]);
+
+  useEffect(() => {
+    if (inlineEdit !== "name" || editName.length < 1) { setCustSuggestions([]); return; }
+    const t = setTimeout(() => {
+      fetch(`/api/admin/customers?q=${encodeURIComponent(editName)}`)
+        .then(r => r.json()).then(d => setCustSuggestions(Array.isArray(d) ? d.slice(0, 6) : []));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [editName, inlineEdit]);
 
   function openInline(field: "name" | "date" | "time" | "price") {
     setInlineErr(null);
@@ -983,8 +994,26 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         <div className="px-4 py-2.5 border-b border-neutral-100">
           {inlineEdit === "name" ? (
             <div className="space-y-2">
-              <input value={editName} onChange={e => setEditName(e.target.value)} placeholder="שם לקוח"
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              <div className="relative">
+                <input value={editName} onChange={e => { setEditName(e.target.value); }} placeholder="חפש לקוח..."
+                  autoFocus
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                {custSuggestions.length > 0 && (
+                  <div className="absolute right-0 left-0 top-full mt-1 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                    {custSuggestions.map(c => (
+                      <button key={c.id} type="button"
+                        onPointerDown={e => { e.preventDefault(); setEditName(c.name); setEditPhone(c.phone); setCustSuggestions([]); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-teal-50 text-right transition border-b border-neutral-50 last:border-0">
+                        <div className="w-7 h-7 rounded-full bg-neutral-200 text-neutral-700 flex items-center justify-center text-xs font-bold shrink-0">{c.name[0]}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                          <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="טלפון" dir="ltr"
                 className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
@@ -993,7 +1022,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50">
                   {inlineSaving ? "שומר..." : "שמור"}
                 </button>
-                <button onClick={() => setInlineEdit(null)} className="px-3 text-xs text-neutral-500">ביטול</button>
+                <button onClick={() => { setInlineEdit(null); setCustSuggestions([]); }} className="px-3 text-xs text-neutral-500">ביטול</button>
               </div>
             </div>
           ) : (
