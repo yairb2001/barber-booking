@@ -2725,6 +2725,11 @@ export default function AdminCalendar() {
     if (me) {
       setIsOwner(me.isOwner ?? true);
       setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
+      // Barbers always default to their own week view on first load
+      if (isFirstLoad && !me.isOwner) {
+        setView("week");
+        savePrefs({ view: "week" });
+      }
     }
     setServices(sv);
     if (isFirstLoad) {
