@@ -5,8 +5,8 @@ import { useEffect, useState } from "react";
 
 type NextAppointment = {
   id: string;
-  date: string; // ISO string from DB
-  startTime: string; // "HH:MM"
+  date: string;
+  startTime: string;
 };
 
 type Staff = {
@@ -28,29 +28,17 @@ type Staff = {
 };
 
 function formatNextAppt(appt: NextAppointment): string {
-  // appt.date is like "2026-05-05T00:00:00.000Z"
-  // Extract local date
   const apptDate = new Date(appt.date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const apptMidnight = new Date(apptDate);
   apptMidnight.setHours(0, 0, 0, 0);
-
   const daysDiff = Math.round((apptMidnight.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
   let dateLabel: string;
-  if (daysDiff === 0) {
-    dateLabel = "היום";
-  } else if (daysDiff === 1) {
-    dateLabel = "מחר";
-  } else if (daysDiff <= 6) {
-    dateLabel = `יום ${DAY_NAMES[apptMidnight.getDay()]}`;
-  } else {
-    const d = apptMidnight.getDate();
-    const mo = apptMidnight.getMonth() + 1;
-    dateLabel = `${d}/${mo}`;
-  }
-
+  if (daysDiff === 0) dateLabel = "היום";
+  else if (daysDiff === 1) dateLabel = "מחר";
+  else if (daysDiff <= 6) dateLabel = `יום ${DAY_NAMES[apptMidnight.getDay()]}`;
+  else { const d = apptMidnight.getDate(); const mo = apptMidnight.getMonth() + 1; dateLabel = `${d}/${mo}`; }
   return `${dateLabel} ${appt.startTime}`;
 }
 
@@ -72,6 +60,7 @@ export default function AdminStaffPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState(emptySchedule());
@@ -82,7 +71,6 @@ export default function AdminStaffPage() {
   const [editingAvatarId, setEditingAvatarId] = useState<string | null>(null);
   const [avatarUrlDraft, setAvatarUrlDraft] = useState("");
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  // Phone editing
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
 
@@ -92,19 +80,20 @@ export default function AdminStaffPage() {
       fetch("/api/admin/me").then((r) => r.ok ? r.json() : { isOwner: false }),
     ]);
     setStaff(data);
-    setIsOwner(me.isOwner ?? false);
+    const ownerFlag = me.isOwner ?? false;
+    setIsOwner(ownerFlag);
+    setMyStaffId(me.staffId ?? null);
     setLoading(false);
   }
 
   useEffect(() => { load(); }, []);
 
+  // Barbers see only their own card
+  const visibleStaff = isOwner ? staff : staff.filter(s => s.id === myStaffId);
+
   async function addStaff() {
-    if (!newStaff.name.trim() || !newStaff.phone.trim()) {
-      alert("שם וטלפון הם שדות חובה");
-      return;
-    }
+    if (!newStaff.name.trim() || !newStaff.phone.trim()) { alert("שם וטלפון הם שדות חובה"); return; }
     setSaving(true);
-    // Create staff with default password
     const res = await fetch("/api/admin/staff", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -112,7 +101,6 @@ export default function AdminStaffPage() {
     });
     if (res.ok) {
       const created = await res.json();
-      // Set default password automatically
       await fetch(`/api/admin/staff/${created.id}/set-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -178,11 +166,8 @@ export default function AdminStaffPage() {
     const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
     const data = await res.json();
     setUploadingAvatar(false);
-    if (data.url) {
-      setAvatarUrlDraft(data.url);
-    } else {
-      alert(data.error || "שגיאה בהעלאת תמונה");
-    }
+    if (data.url) setAvatarUrlDraft(data.url);
+    else alert(data.error || "שגיאה בהעלאת תמונה");
   }
 
   async function saveAvatar(id: string) {
@@ -201,11 +186,7 @@ export default function AdminStaffPage() {
   async function deleteStaff(id: string, name: string) {
     if (!confirm(`למחוק את ${name}?\n\nפעולה זו תמחק גם את לוח השעות, השירותים והגלריה שלו.`)) return;
     const res = await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const data = await res.json();
-      alert(data.error || "שגיאה במחיקה");
-      return;
-    }
+    if (!res.ok) { const data = await res.json(); alert(data.error || "שגיאה במחיקה"); return; }
     load();
   }
 
@@ -241,11 +222,16 @@ export default function AdminStaffPage() {
   }
 
   return (
-    <div className="p-8 overflow-auto h-full">
-      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
-        ← הגדרות עסק
+    <div className="p-4 md:p-8 overflow-auto h-full">
+      {/* Back link — owner goes to business settings, barber goes to their own settings */}
+      <Link
+        href={isOwner ? "/admin/settings" : "/admin/barber-settings"}
+        className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors"
+      >
+        ← {isOwner ? "הגדרות עסק" : "ההגדרות שלי"}
       </Link>
-      <div className="flex items-center justify-between mb-8">
+
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">ספרים</h1>
           <p className="text-neutral-500 text-sm mt-1">{staff.length} ספרים רשומים</p>
@@ -264,13 +250,13 @@ export default function AdminStaffPage() {
         <div className="text-center py-16 text-neutral-400">טוען...</div>
       ) : (
         <div className="space-y-3">
-          {staff.map((s) => (
+          {visibleStaff.map((s) => (
             <div
               key={s.id}
-              className={`bg-white rounded-2xl border ${s.isAvailable ? "border-neutral-200" : "border-neutral-100 opacity-60"} p-5`}
+              className={`bg-white rounded-2xl border ${s.isAvailable ? "border-neutral-200" : "border-neutral-100 opacity-60"} p-4`}
             >
-              <div className="flex items-center gap-4">
-                {/* Avatar with next-appointment badge */}
+              {/* ── Top row: avatar + name/info ── */}
+              <div className="flex items-start gap-3 mb-3">
                 <div className="relative flex-shrink-0">
                   {s.avatarUrl ? (
                     <img src={s.avatarUrl} alt={s.name} className="w-14 h-14 rounded-full object-cover" />
@@ -279,25 +265,23 @@ export default function AdminStaffPage() {
                       {s.name[0]}
                     </div>
                   )}
-                  {/* Blue dot on avatar when there's an upcoming appointment */}
                   {s.appointments && s.appointments.length > 0 ? (
                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-blue-500 border-2 border-white" />
                   ) : (
                     <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-neutral-300 border-2 border-white" />
                   )}
                 </div>
+
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-neutral-900">{s.name}</div>
+                  <div className="font-semibold text-neutral-900 text-base">{s.name}</div>
                   {s.phone
                     ? <div className="text-sm text-neutral-500" dir="ltr">{s.phone}</div>
                     : <div className="text-xs text-amber-600">⚠️ אין טלפון</div>
                   }
-                  {/* Next upcoming appointment indicator */}
                   {s.appointments && s.appointments.length > 0 ? (
                     <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[11px] font-medium">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
-                      <span>תור קרוב:</span>
-                      <span>{formatNextAppt(s.appointments[0])}</span>
+                      <span>תור קרוב: {formatNextAppt(s.appointments[0])}</span>
                     </div>
                   ) : (
                     <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-full bg-neutral-50 border border-neutral-200 text-neutral-400 text-[11px]">
@@ -306,81 +290,71 @@ export default function AdminStaffPage() {
                     </div>
                   )}
                   {s.staffServices?.length === 0 && (
-                    <div className="text-[11px] text-orange-600 mt-0.5 flex items-center gap-1">
-                      ⚠️ לא מוצג ללקוחות — אין שירותים מוגדרים
-                    </div>
+                    <div className="text-[11px] text-orange-600 mt-0.5">⚠️ לא מוצג ללקוחות — אין שירותים</div>
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  {/* Settings page — owner only */}
-                  {isOwner && (
-                    <Link
-                      href={`/admin/staff/${s.id}`}
-                      className="text-xs px-3 py-1.5 rounded-full border border-teal-200 text-teal-700 hover:bg-teal-50 transition"
-                    >
-                      ⚙️ הגדרות
-                    </Link>
-                  )}
-                  {/* Photo edit button */}
+              </div>
+
+              {/* ── Action buttons row ── */}
+              <div className="flex flex-wrap gap-1.5">
+                {isOwner && (
+                  <Link
+                    href={`/admin/staff/${s.id}`}
+                    className="text-xs px-3 py-1.5 rounded-full border border-teal-200 text-teal-700 hover:bg-teal-50 transition"
+                  >
+                    ⚙️ הגדרות
+                  </Link>
+                )}
+                <button
+                  onClick={() => { setEditingAvatarId(s.id); setAvatarUrlDraft(s.avatarUrl || ""); }}
+                  className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
+                >
+                  ✏️ תמונה
+                </button>
+                {isOwner && (
                   <button
-                    onClick={() => {
-                      setEditingAvatarId(s.id);
-                      setAvatarUrlDraft(s.avatarUrl || "");
-                    }}
+                    onClick={() => { setEditingPhoneId(s.id); setPhoneDraft(s.phone || ""); }}
                     className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
                   >
-                    ✏️ תמונה
+                    📞 טלפון
                   </button>
-                  {/* Phone edit — owner only */}
-                  {isOwner && (
-                    <button
-                      onClick={() => { setEditingPhoneId(s.id); setPhoneDraft(s.phone || ""); }}
-                      className="text-xs px-3 py-1.5 rounded-full border border-slate-200 text-slate-700 hover:bg-slate-50 transition"
-                    >
-                      📞 טלפון
-                    </button>
-                  )}
+                )}
+                <button
+                  onClick={() => toggleQuickPool(s.id, s.inQuickPool)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                    s.inQuickPool ? "bg-slate-50 border-slate-300 text-slate-700" : "border-neutral-200 text-neutral-400"
+                  }`}
+                >
+                  {s.inQuickPool ? "✓ תורים מהירים" : "תורים מהירים"}
+                </button>
+                <button
+                  onClick={() => { setSetPasswordFor(s); setNewPassword(""); }}
+                  className="text-xs px-3 py-1.5 rounded-full border border-violet-200 text-violet-600 hover:bg-violet-50 transition"
+                >
+                  🔑 סיסמה
+                </button>
+                <button
+                  onClick={() => openSchedule(s)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
+                >
+                  לוח שנה
+                </button>
+                <button
+                  onClick={() => toggleAvailable(s.id, s.isAvailable)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition ${
+                    s.isAvailable ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-neutral-200 text-neutral-400"
+                  }`}
+                >
+                  {s.isAvailable ? "פעיל" : "לא פעיל"}
+                </button>
+                {isOwner && (
                   <button
-                    onClick={() => toggleQuickPool(s.id, s.inQuickPool)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                      s.inQuickPool
-                        ? "bg-slate-50 border-slate-300 text-slate-700"
-                        : "border-neutral-200 text-neutral-400"
-                    }`}
+                    onClick={() => deleteStaff(s.id, s.name)}
+                    className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition"
                   >
-                    {s.inQuickPool ? "✓ תורים מהירים" : "תורים מהירים"}
+                    מחק
                   </button>
-                  <button
-                    onClick={() => { setSetPasswordFor(s); setNewPassword(""); }}
-                    className="text-xs px-3 py-1.5 rounded-full border border-violet-200 text-violet-600 hover:bg-violet-50 transition"
-                  >
-                    🔑 סיסמה
-                  </button>
-                  <button
-                    onClick={() => openSchedule(s)}
-                    className="text-xs px-3 py-1.5 rounded-full border border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition"
-                  >
-                    לוח שנה
-                  </button>
-                  <button
-                    onClick={() => toggleAvailable(s.id, s.isAvailable)}
-                    className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                      s.isAvailable
-                        ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                        : "border-neutral-200 text-neutral-400"
-                    }`}
-                  >
-                    {s.isAvailable ? "פעיל" : "לא פעיל"}
-                  </button>
-                  {isOwner && (
-                    <button
-                      onClick={() => deleteStaff(s.id, s.name)}
-                      className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition"
-                    >
-                      מחק
-                    </button>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Inline phone editor */}
@@ -395,27 +369,21 @@ export default function AdminStaffPage() {
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
                   />
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => savePhone(s.id)}
-                      disabled={saving || !phoneDraft.trim()}
-                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
-                    >
+                    <button onClick={() => savePhone(s.id)} disabled={saving || !phoneDraft.trim()}
+                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
                       {saving ? "שומר..." : "שמור"}
                     </button>
-                    <button
-                      onClick={() => { setEditingPhoneId(null); setPhoneDraft(""); }}
-                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200"
-                    >
+                    <button onClick={() => { setEditingPhoneId(null); setPhoneDraft(""); }}
+                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200">
                       ביטול
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Inline avatar editor — file upload or URL */}
+              {/* Inline avatar editor */}
               {editingAvatarId === s.id && (
                 <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100 space-y-3">
-                  {/* File upload */}
                   <div>
                     <label className="text-xs text-neutral-500 block mb-1.5">העלאה מהמכשיר</label>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -423,49 +391,29 @@ export default function AdminStaffPage() {
                         ${uploadingAvatar ? "border-slate-300 text-slate-700 bg-white" : "border-slate-700 text-slate-700 bg-white hover:bg-slate-50"}`}>
                         {uploadingAvatar ? "⏳ מעלה..." : "📷 בחר תמונה מהמכשיר"}
                       </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingAvatar}
-                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatarFile(s.id, f); }}
-                      />
+                      <input type="file" accept="image/*" className="hidden" disabled={uploadingAvatar}
+                        onChange={e => { const f = e.target.files?.[0]; if (f) uploadAvatarFile(s.id, f); }} />
                     </label>
                   </div>
-
-                  {/* OR URL */}
                   <div>
                     <label className="text-xs text-neutral-500 block mb-1.5">או הכנס קישור (URL)</label>
-                    <input
-                      value={avatarUrlDraft}
-                      onChange={(e) => setAvatarUrlDraft(e.target.value)}
-                      placeholder="https://..."
-                      dir="ltr"
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400"
-                    />
+                    <input value={avatarUrlDraft} onChange={(e) => setAvatarUrlDraft(e.target.value)}
+                      placeholder="https://..." dir="ltr"
+                      className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   </div>
-
-                  {/* Preview */}
                   {avatarUrlDraft && (
                     <div className="flex items-center gap-3">
                       <img src={avatarUrlDraft} alt="" className="w-14 h-14 rounded-full object-cover border-2 border-slate-300" />
                       <span className="text-xs text-neutral-500">תצוגה מקדימה</span>
                     </div>
                   )}
-
-                  {/* Actions */}
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => saveAvatar(s.id)}
-                      disabled={saving || uploadingAvatar || !avatarUrlDraft}
-                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
-                    >
+                    <button onClick={() => saveAvatar(s.id)} disabled={saving || uploadingAvatar || !avatarUrlDraft}
+                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
                       {saving ? "שומר..." : "שמור תמונה"}
                     </button>
-                    <button
-                      onClick={() => { setEditingAvatarId(null); setAvatarUrlDraft(""); }}
-                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200"
-                    >
+                    <button onClick={() => { setEditingAvatarId(null); setAvatarUrlDraft(""); }}
+                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200">
                       ביטול
                     </button>
                   </div>
@@ -482,60 +430,40 @@ export default function AdminStaffPage() {
           <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">ספר חדש</h3>
             <p className="text-xs text-neutral-500 mb-4 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-              💡 הספר יקבל סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span> — ניתן לשנות אחר כך
+              💡 הספר יקבל סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span>
             </p>
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שם *</label>
-                <input
-                  value={newStaff.name}
-                  onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
+                <input value={newStaff.name} onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  placeholder="שם הספר"
-                />
+                  placeholder="שם הספר" />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">טלפון * <span className="text-red-500">(חובה — משמש להתחברות)</span></label>
-                <input
-                  value={newStaff.phone}
-                  onChange={(e) => setNewStaff((p) => ({ ...p, phone: e.target.value }))}
+                <label className="text-xs text-neutral-500 block mb-1">טלפון * <span className="text-red-500">(חובה)</span></label>
+                <input value={newStaff.phone} onChange={(e) => setNewStaff((p) => ({ ...p, phone: e.target.value }))}
                   className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 ${!newStaff.phone.trim() ? "border-amber-300" : "border-neutral-200"}`}
-                  dir="ltr"
-                  placeholder="050-0000000"
-                />
+                  dir="ltr" placeholder="050-0000000" />
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">קישור לתמונה (URL)</label>
-                <input
-                  value={newStaff.avatarUrl}
-                  onChange={(e) => setNewStaff((p) => ({ ...p, avatarUrl: e.target.value }))}
+                <input value={newStaff.avatarUrl} onChange={(e) => setNewStaff((p) => ({ ...p, avatarUrl: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  dir="ltr"
-                  placeholder="https://..."
-                />
+                  dir="ltr" placeholder="https://..." />
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={newStaff.inQuickPool}
+                <input type="checkbox" checked={newStaff.inQuickPool}
                   onChange={(e) => setNewStaff((p) => ({ ...p, inQuickPool: e.target.checked }))}
-                  className="accent-slate-900"
-                />
-                <span className="text-sm text-neutral-700">הוסף לתורים המהירים בדף הבית</span>
+                  className="accent-slate-900" />
+                <span className="text-sm text-neutral-700">הוסף לתורים המהירים</span>
               </label>
             </div>
             <div className="flex gap-2 mt-5">
-              <button
-                onClick={addStaff}
-                disabled={saving || !newStaff.name.trim() || !newStaff.phone.trim()}
-                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
-              >
+              <button onClick={addStaff} disabled={saving || !newStaff.name.trim() || !newStaff.phone.trim()}
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50">
                 {saving ? "שומר..." : "הוסף"}
               </button>
-              <button
-                onClick={() => setShowAdd(false)}
-                className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium"
-              >
+              <button onClick={() => setShowAdd(false)} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium">
                 ביטול
               </button>
             </div>
@@ -549,38 +477,23 @@ export default function AdminStaffPage() {
           <div className="bg-white rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-1 text-lg">הגדרת סיסמה</h3>
             <p className="text-sm text-neutral-500 mb-4">
-              {setPasswordFor.name} יוכל להיכנס עם הטלפון שלו
-              {setPasswordFor.phone ? ` (${setPasswordFor.phone})` : ""} והסיסמה הזו
+              {setPasswordFor.name}{setPasswordFor.phone ? ` (${setPasswordFor.phone})` : ""}
             </p>
             {!setPasswordFor.phone && (
               <p className="text-xs text-slate-800 bg-slate-50 rounded-lg px-3 py-2 mb-3">
-                ⚠️ לא הוגדר טלפון לספר זה — הוסף טלפון קודם
+                ⚠️ לא הוגדר טלפון — הוסף טלפון קודם
               </p>
             )}
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs text-neutral-500 block mb-1">סיסמה חדשה (מינ׳ 4 תווים)</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  autoFocus
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
-                  dir="ltr"
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => setStaffPassword(setPasswordFor.id)}
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+              autoFocus placeholder="סיסמה חדשה (מינ׳ 4 תווים)"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 mb-4" dir="ltr" />
+            <div className="flex gap-2">
+              <button onClick={() => setStaffPassword(setPasswordFor.id)}
                 disabled={saving || newPassword.length < 4 || !setPasswordFor.phone}
-                className="flex-1 bg-violet-500 text-white py-2 rounded-xl text-sm font-semibold hover:bg-violet-400 disabled:opacity-50"
-              >
+                className="flex-1 bg-violet-500 text-white py-2 rounded-xl text-sm font-semibold hover:bg-violet-400 disabled:opacity-50">
                 {saving ? "שומר..." : "שמור סיסמה"}
               </button>
-              <button onClick={() => setSetPasswordFor(null)} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">
-                ביטול
-              </button>
+              <button onClick={() => setSetPasswordFor(null)} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm">ביטול</button>
             </div>
           </div>
         </div>
@@ -598,13 +511,8 @@ export default function AdminStaffPage() {
                 <div key={i} className={`rounded-xl border p-3 ${day.isWorking ? "border-neutral-200" : "border-neutral-100 bg-neutral-50"}`}>
                   <div className="flex items-center gap-3 mb-2">
                     <button
-                      onClick={() => {
-                        const s = [...schedule];
-                        s[i] = { ...s[i], isWorking: !s[i].isWorking };
-                        setSchedule(s);
-                      }}
-                      className={`w-10 h-5 rounded-full transition ${day.isWorking ? "bg-emerald-500" : "bg-neutral-300"}`}
-                    >
+                      onClick={() => { const s = [...schedule]; s[i] = { ...s[i], isWorking: !s[i].isWorking }; setSchedule(s); }}
+                      className={`w-10 h-5 rounded-full transition ${day.isWorking ? "bg-emerald-500" : "bg-neutral-300"}`}>
                       <div className={`w-4 h-4 bg-white rounded-full shadow transition mx-0.5 ${day.isWorking ? "translate-x-5" : ""}`} />
                     </button>
                     <span className="font-medium text-sm text-neutral-800">יום {DAY_NAMES[i]}</span>
@@ -613,55 +521,27 @@ export default function AdminStaffPage() {
                     <div className="grid grid-cols-2 gap-2 mt-2">
                       <div>
                         <label className="text-[11px] text-neutral-400 block mb-0.5">התחלה</label>
-                        <input
-                          type="time"
-                          value={day.start}
-                          onChange={(e) => {
-                            const s = [...schedule];
-                            s[i] = { ...s[i], start: e.target.value };
-                            setSchedule(s);
-                          }}
-                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm"
-                        />
+                        <input type="time" value={day.start}
+                          onChange={(e) => { const s = [...schedule]; s[i] = { ...s[i], start: e.target.value }; setSchedule(s); }}
+                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
                       </div>
                       <div>
                         <label className="text-[11px] text-neutral-400 block mb-0.5">סיום</label>
-                        <input
-                          type="time"
-                          value={day.end}
-                          onChange={(e) => {
-                            const s = [...schedule];
-                            s[i] = { ...s[i], end: e.target.value };
-                            setSchedule(s);
-                          }}
-                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm"
-                        />
+                        <input type="time" value={day.end}
+                          onChange={(e) => { const s = [...schedule]; s[i] = { ...s[i], end: e.target.value }; setSchedule(s); }}
+                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
                       </div>
                       <div>
                         <label className="text-[11px] text-neutral-400 block mb-0.5">הפסקה מ</label>
-                        <input
-                          type="time"
-                          value={day.breakStart}
-                          onChange={(e) => {
-                            const s = [...schedule];
-                            s[i] = { ...s[i], breakStart: e.target.value };
-                            setSchedule(s);
-                          }}
-                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm"
-                        />
+                        <input type="time" value={day.breakStart}
+                          onChange={(e) => { const s = [...schedule]; s[i] = { ...s[i], breakStart: e.target.value }; setSchedule(s); }}
+                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
                       </div>
                       <div>
                         <label className="text-[11px] text-neutral-400 block mb-0.5">הפסקה עד</label>
-                        <input
-                          type="time"
-                          value={day.breakEnd}
-                          onChange={(e) => {
-                            const s = [...schedule];
-                            s[i] = { ...s[i], breakEnd: e.target.value };
-                            setSchedule(s);
-                          }}
-                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm"
-                        />
+                        <input type="time" value={day.breakEnd}
+                          onChange={(e) => { const s = [...schedule]; s[i] = { ...s[i], breakEnd: e.target.value }; setSchedule(s); }}
+                          className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
                       </div>
                     </div>
                   )}
@@ -669,19 +549,11 @@ export default function AdminStaffPage() {
               ))}
             </div>
             <div className="flex gap-2 mt-5">
-              <button
-                onClick={saveSchedule}
-                disabled={saving}
-                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50"
-              >
+              <button onClick={saveSchedule} disabled={saving}
+                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50">
                 {saving ? "שומר..." : "שמור לוח שנה"}
               </button>
-              <button
-                onClick={() => setEditingSchedule(null)}
-                className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium"
-              >
-                ביטול
-              </button>
+              <button onClick={() => setEditingSchedule(null)} className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium">ביטול</button>
             </div>
           </div>
         </div>

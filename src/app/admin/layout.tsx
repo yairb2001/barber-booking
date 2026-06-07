@@ -26,6 +26,11 @@ const SETTINGS_SUB_PATHS = [
   "/admin/portfolio",
 ];
 
+// Pages that live "inside" Barber Settings — the Barber-Settings nav item stays highlighted
+const BARBER_SETTINGS_SUB_PATHS = [
+  "/admin/barber-settings",
+];
+
 // Sidebar — flat list. Everything that's a sub-page of settings is reached from inside /admin/settings.
 const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
@@ -34,8 +39,9 @@ const navItems: NavItem[] = [
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
-  { href: "/admin/staff",        label: "הפרופיל",        icon: "👤", barberOnly: true },
-  { href: "/admin/settings",     label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
+  { href: "/admin/staff",             label: "הפרופיל",        icon: "👤", barberOnly: true },
+  { href: "/admin/barber-settings",   label: "הגדרות שלי",     icon: "⚙️", barberOnly: true },
+  { href: "/admin/settings",          label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
   { href: "/admin/preview",      label: "תצוגת לקוח",     icon: "👁️" },
 ];
 
@@ -47,10 +53,10 @@ const bottomNavOwner: NavItem[] = [
   { href: "/admin/settings",  label: "הגדרות",  icon: "⚙️" },
 ];
 const bottomNavBarber: NavItem[] = [
-  { href: "/admin",           label: "יומן",     icon: "📅", exact: true },
-  { href: "/admin/customers", label: "לקוחות",   icon: "👥" },
-  { href: "/admin/messaging", label: "שיווק",    icon: "📢" },
-  { href: "/admin/staff",     label: "הפרופיל",  icon: "👤" },
+  { href: "/admin",                   label: "יומן",    icon: "📅", exact: true },
+  { href: "/admin/customers",         label: "לקוחות",  icon: "👥" },
+  { href: "/admin/messaging",         label: "שיווק",   icon: "📢" },
+  { href: "/admin/barber-settings",   label: "הגדרות",  icon: "⚙️" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -127,6 +133,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isActive = (item: { href: string; exact?: boolean }) => {
     // Sub-pages of business settings keep "הגדרות עסק" highlighted
     if (item.href === "/admin/settings" && SETTINGS_SUB_PATHS.some(p => pathname.startsWith(p))) return true;
+    // Sub-pages of barber settings keep "הגדרות שלי" highlighted
+    if (item.href === "/admin/barber-settings" && BARBER_SETTINGS_SUB_PATHS.some(p => pathname.startsWith(p))) return true;
     return item.exact ? pathname === item.href : pathname.startsWith(item.href);
   };
 

@@ -139,16 +139,21 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 }
 
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
-function WorkingOverlay({ staff, dow, override }: {
+type RawBreak = { start: string; end: string; name?: string; recurring?: boolean };
+
+function WorkingOverlay({ staff, dow, override, staffId, date, onBreakClick }: {
   staff: Staff;
   dow: number;
   override?: { isWorking: boolean; slots: string | null; breaks: string | null } | null;
+  staffId?: string;
+  date?: string;
+  onBreakClick?: (breakIdx: number, br: RawBreak) => void;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
 
   let working: { start: number; end: number }[];
-  let breakRanges: { start: number; end: number }[];
+  let rawBreaks: RawBreak[] = [];
 
   if (override) {
     // Use date-specific override
@@ -159,12 +164,15 @@ function WorkingOverlay({ staff, dow, override }: {
     }
     try { working = override.slots ? JSON.parse(override.slots).map((sl: { start: string; end: string }) => ({ start: toMin(sl.start), end: toMin(sl.end) })) : []; }
     catch { working = []; }
-    try { breakRanges = override.breaks ? JSON.parse(override.breaks).map((b: { start: string; end: string }) => ({ start: toMin(b.start), end: toMin(b.end) })) : []; }
-    catch { breakRanges = []; }
+    try { rawBreaks = override.breaks ? JSON.parse(override.breaks) : []; }
+    catch { rawBreaks = []; }
   } else {
     working = getWorkingRanges(staff, dow);
-    breakRanges = getBreakRanges(staff, dow);
+    const s = staff.schedules.find(x => x.dayOfWeek === dow);
+    try { rawBreaks = s?.breaks ? JSON.parse(s.breaks) : []; } catch { rawBreaks = []; }
   }
+
+  const breakRanges = rawBreaks.map(b => ({ start: toMin(b.start), end: toMin(b.end) }));
 
   const dayStartMin = calStart * 60;
   const dayEndMin = calEnd * 60;
@@ -172,7 +180,8 @@ function WorkingOverlay({ staff, dow, override }: {
     return <div className="absolute inset-0 bg-neutral-100/80 pointer-events-none" />;
   }
   // Build non-working segments
-  const segments: { start: number; end: number; type: "closed" | "break" }[] = [];
+  type Segment = { start: number; end: number; type: "closed" | "break"; rawIdx?: number };
+  const segments: Segment[] = [];
   let cursor = dayStartMin;
   const sorted = [...working].sort((a, b) => a.start - b.start);
   for (const w of sorted) {
@@ -180,7 +189,7 @@ function WorkingOverlay({ staff, dow, override }: {
     cursor = w.end;
   }
   if (cursor < dayEndMin) segments.push({ start: cursor, end: dayEndMin, type: "closed" });
-  for (const b of breakRanges) segments.push({ start: b.start, end: b.end, type: "break" });
+  breakRanges.forEach((b, idx) => segments.push({ start: b.start, end: b.end, type: "break", rawIdx: idx }));
 
   return (
     <>
@@ -188,13 +197,24 @@ function WorkingOverlay({ staff, dow, override }: {
         const top = ((seg.start - dayStartMin) / 60) * hh;
         const height = ((seg.end - seg.start) / 60) * hh;
         const isBreak = seg.type === "break";
+        const rawBreak = isBreak && seg.rawIdx !== undefined ? rawBreaks[seg.rawIdx] : null;
+        const breakName = rawBreak?.name || "הפסקה";
         return (
           <div key={i}
-            className={`absolute left-0 right-0 pointer-events-none flex items-center justify-center overflow-hidden ${isBreak ? "bg-orange-100/80 border-y border-orange-200/60" : "bg-neutral-100/70"}`}
-            style={{ top, height }}>
+            className={`absolute left-0 right-0 flex items-center justify-center overflow-hidden ${
+              isBreak
+                ? "bg-orange-100/80 border-y border-orange-200/60 cursor-pointer hover:bg-orange-200/70 transition-colors"
+                : "pointer-events-none bg-neutral-100/70"
+            }`}
+            style={{ top, height }}
+            onPointerDown={isBreak ? e => { e.stopPropagation(); } : undefined}
+            onClick={isBreak && onBreakClick && rawBreak && seg.rawIdx !== undefined
+              ? (e) => { e.stopPropagation(); onBreakClick(seg.rawIdx!, rawBreak); }
+              : undefined
+            }>
             {isBreak && height >= 18 && (
-              <div className="flex flex-col items-center leading-none gap-0.5 select-none">
-                <span className="text-orange-400 text-[9px] font-semibold tracking-wide">הפסקה</span>
+              <div className="flex flex-col items-center leading-none gap-0.5 select-none pointer-events-none">
+                <span className="text-orange-500 text-[9px] font-semibold tracking-wide">{breakName}</span>
                 {height >= 30 && (
                   <span className="text-orange-300 text-[8px]" dir="ltr">{minToTime(seg.start)}–{minToTime(seg.end)}</span>
                 )}
@@ -204,6 +224,119 @@ function WorkingOverlay({ staff, dow, override }: {
         );
       })}
     </>
+  );
+}
+
+// ── Break Edit Modal ─────────────────────────────────────────────────────────
+function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }: {
+  staffId: string;
+  date: string;
+  breakIdx: number;
+  initial: RawBreak;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const [name,  setName]  = useState(initial.name  || "הפסקה");
+  const [start, setStart] = useState(initial.start);
+  const [end,   setEnd]   = useState(initial.end);
+  const [saving, setSaving] = useState(false);
+  const [error,  setError]  = useState<string | null>(null);
+
+  async function getCurrentBreaks(): Promise<{ breaks: RawBreak[]; slots: { start: string; end: string }[]; isWorking: boolean }> {
+    // Try date-specific override first, then weekly schedule
+    const [override, allStaff] = await Promise.all([
+      fetch(`/api/admin/staff/${staffId}/schedule/override?date=${date}`).then(r => r.json()).catch(() => null),
+      fetch("/api/admin/staff").then(r => r.json()).catch(() => []),
+    ]);
+    if (override?.staffId) {
+      const slots = override.slots ? JSON.parse(override.slots) : [];
+      const breaks: RawBreak[] = override.breaks ? JSON.parse(override.breaks) : [];
+      return { breaks, slots, isWorking: override.isWorking };
+    }
+    const s = (allStaff as Staff[]).find(x => x.id === staffId);
+    const dow = new Date(date + "T00:00:00").getDay();
+    const sched = s?.schedules?.find(sc => sc.dayOfWeek === dow);
+    if (!sched) return { breaks: [], slots: [{ start: "09:00", end: "20:00" }], isWorking: true };
+    const slots = JSON.parse(sched.slots || "[]");
+    const breaks: RawBreak[] = sched.breaks ? JSON.parse(sched.breaks) : [];
+    return { breaks, slots, isWorking: sched.isWorking };
+  }
+
+  async function save() {
+    setSaving(true); setError(null);
+    try {
+      const { breaks, slots, isWorking } = await getCurrentBreaks();
+      const updated = [...breaks];
+      updated[breakIdx] = { start, end, name: name.trim() || "הפסקה" };
+      const breaksForApi = updated.map(({ start: s, end: e, name: n }) =>
+        n && n !== "הפסקה" ? { start: s, end: e, name: n } : { start: s, end: e }
+      );
+      const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, isWorking, slots, breaks: breaksForApi }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onRefresh(); onClose();
+    } catch (e) { setError("שגיאה בשמירה — נסה שוב"); }
+    finally { setSaving(false); }
+  }
+
+  async function remove() {
+    if (!confirm("למחוק את ההפסקה?")) return;
+    setSaving(true); setError(null);
+    try {
+      const { breaks, slots, isWorking } = await getCurrentBreaks();
+      const updated = breaks.filter((_, i) => i !== breakIdx);
+      const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, isWorking, slots, breaks: updated }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      onRefresh(); onClose();
+    } catch (e) { setError("שגיאה במחיקה — נסה שוב"); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end justify-center md:items-center" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl md:rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-neutral-900 text-base">עריכת הפסקה</h3>
+          <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center text-neutral-400 hover:bg-neutral-100 text-lg">✕</button>
+        </div>
+        {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">שם ההפסקה</label>
+            <input value={name} onChange={e => setName(e.target.value)}
+              placeholder="הפסקה"
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">שעת התחלה</label>
+              <input type="time" value={start} onChange={e => setStart(e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300" />
+            </div>
+            <div>
+              <label className="text-xs text-neutral-500 block mb-1">שעת סיום</label>
+              <input type="time" value={end} onChange={e => setEnd(e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-300" />
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-2 pt-1">
+          <button onClick={remove} disabled={saving}
+            className="px-4 py-2.5 rounded-xl text-sm border border-red-100 text-red-500 hover:bg-red-50 disabled:opacity-50 transition">
+            🗑 מחק
+          </button>
+          <button onClick={save} disabled={saving}
+            className="flex-1 bg-orange-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 transition">
+            {saving ? "שומר..." : "💾 שמור הפסקה"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -2289,10 +2422,12 @@ export default function AdminCalendar() {
   const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null);
   const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
+  const [editingBreak, setEditingBreak] = useState<{ staffId: string; date: string; breakIdx: number; initial: RawBreak } | null>(null);
   const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [draftMoveSlot, setDraftMoveSlot] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
+  const [swipeToast, setSwipeToast] = useState<string | null>(null);
   const isMobile = useIsMobile();
   // ── Zoom & drag ──────────────────────────────────────────────────────────────
   const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
@@ -2471,6 +2606,30 @@ export default function AdminCalendar() {
   const navigateRef = useRef<(dir: -1 | 1) => void>(() => {});
   navigateRef.current = navigate;
 
+  // Navigate between barbers in week/3day view (swipe gesture)
+  function navigateBarber(dir: -1 | 1) {
+    if (!allStaff.length) return;
+    const idx = allStaff.findIndex(s => s.id === weekBarber);
+    const base = idx === -1 ? 0 : idx;
+    const newIdx = (base + dir + allStaff.length) % allStaff.length;
+    const newS = allStaff[newIdx];
+    setWeekBarber(newS.id);
+    setSwipeToast(newS.name);
+  }
+  const navigateBarberRef = useRef<(dir: -1 | 1) => void>(() => {});
+  navigateBarberRef.current = navigateBarber;
+
+  // Expose current view to the swipe closure (which captures nothing via deps:[])
+  const viewRef = useRef<ViewType>(view);
+  viewRef.current = view;
+
+  // Auto-dismiss swipe toast after 1.4 s
+  useEffect(() => {
+    if (!swipeToast) return;
+    const t = setTimeout(() => setSwipeToast(null), 1400);
+    return () => clearTimeout(t);
+  }, [swipeToast]);
+
   // Pinch-to-zoom + horizontal swipe-to-navigate touch handler on the grid
   useEffect(() => {
     const el = gridRef.current;
@@ -2518,8 +2677,15 @@ export default function AdminCalendar() {
         // High threshold (90px) + clearly horizontal (2× horiz vs vertical)
         // to avoid false-firing during appointment drags or short taps
         if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
-          // In RTL: swipe right (dx > 0) = go to earlier dates; swipe left = later
-          navigateRef.current(dx > 0 ? -1 : 1);
+          // In RTL: swipe right (dx > 0) = earlier; swipe left = later/next
+          const dir = dx > 0 ? -1 : 1;
+          if (viewRef.current === "week" || viewRef.current === "3day") {
+            // Week/3day view: swipe switches which barber is shown
+            navigateBarberRef.current(dir);
+          } else {
+            // Day view: swipe navigates dates (1 day per swipe)
+            navigateRef.current(dir);
+          }
         }
       }
       swipeStartX = 0;
@@ -3148,7 +3314,9 @@ export default function AdminCalendar() {
                         onPointerMove={e => handlePointerMove(e, s.id, date)}
                         onPointerUp={e => handlePointerUp(e, s.id, date)}
                         onPointerCancel={() => setDrag(null)}>
-                        <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]} />
+                        <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]}
+                          staffId={s.id} date={date}
+                          onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
@@ -3248,7 +3416,9 @@ export default function AdminCalendar() {
                         onPointerMove={e => handlePointerMove(e, s.id, d)}
                         onPointerUp={e => handlePointerUp(e, s.id, d)}
                         onPointerCancel={() => setDrag(null)}>
-                        <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]} />
+                        <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]}
+                          staffId={s.id} date={d}
+                          onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
                         {/* Per-column now line — only today */}
                         {d === todayISO() && nowY >= 0 && nowY <= totalHeight && (
                           <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
@@ -3386,6 +3556,15 @@ export default function AdminCalendar() {
 
   return (
     <div className="flex flex-col h-full bg-white">
+      {/* ── Swipe-to-barber toast (week/3day view) ── */}
+      {swipeToast && (
+        <div className="fixed inset-x-0 top-16 z-50 flex justify-center pointer-events-none">
+          <div className="bg-neutral-900/80 text-white text-sm font-semibold px-5 py-2 rounded-full shadow-lg">
+            {swipeToast}
+          </div>
+        </div>
+      )}
+
       {/* ── Swap mode banner ── */}
       {swapMode && (() => {
         const swapCount = swapMode.candidates.filter(c => c.kind === "swap").length;
@@ -3556,6 +3735,16 @@ export default function AdminCalendar() {
         />
       )}
       {dayMenu && <DayPanel date={dayMenu.date} staffId={dayMenu.staffId} onClose={() => setDayMenu(null)} onRefresh={loadAppointments} />}
+      {editingBreak && (
+        <BreakEditModal
+          staffId={editingBreak.staffId}
+          date={editingBreak.date}
+          breakIdx={editingBreak.breakIdx}
+          initial={editingBreak.initial}
+          onClose={() => setEditingBreak(null)}
+          onRefresh={loadAppointments}
+        />
+      )}
 
       {/* ── In-drag action bar ── */}
       {/* Floats at the bottom of the screen WHILE the user is actively dragging */}
