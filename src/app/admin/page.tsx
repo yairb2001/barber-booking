@@ -262,22 +262,32 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
     return { breaks, slots, isWorking: sched.isWorking };
   }
 
+  async function postBreaks(newBreaks: RawBreak[]) {
+    const { slots, isWorking } = await getCurrentBreaks();
+    const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date, isWorking, slots, breaks: newBreaks }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || `שגיאת שרת ${res.status}`);
+    }
+  }
+
   async function save() {
     setSaving(true); setError(null);
     try {
-      const { breaks, slots, isWorking } = await getCurrentBreaks();
+      const { breaks } = await getCurrentBreaks();
       const updated = [...breaks];
       updated[breakIdx] = { start, end, name: name.trim() || "הפסקה" };
       const breaksForApi = updated.map(({ start: s, end: e, name: n }) =>
         n && n !== "הפסקה" ? { start: s, end: e, name: n } : { start: s, end: e }
       );
-      const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, isWorking, slots, breaks: breaksForApi }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await postBreaks(breaksForApi);
       onRefresh(); onClose();
-    } catch (e) { setError("שגיאה בשמירה — נסה שוב"); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "שגיאה בשמירה — נסה שוב");
+    }
     finally { setSaving(false); }
   }
 
@@ -285,15 +295,13 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
     if (!confirm("למחוק את ההפסקה?")) return;
     setSaving(true); setError(null);
     try {
-      const { breaks, slots, isWorking } = await getCurrentBreaks();
+      const { breaks } = await getCurrentBreaks();
       const updated = breaks.filter((_, i) => i !== breakIdx);
-      const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, isWorking, slots, breaks: updated }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await postBreaks(updated);
       onRefresh(); onClose();
-    } catch (e) { setError("שגיאה במחיקה — נסה שוב"); }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "שגיאה במחיקה — נסה שוב");
+    }
     finally { setSaving(false); }
   }
 

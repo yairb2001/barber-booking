@@ -10,7 +10,9 @@ const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","�
 type BarberStats = {
   thisWeek:  { appointments: number; revenue: number };
   lastWeek:  { appointments: number; revenue: number };
-  weeklyHistory: { weekStart: string; weekLabel: string; appointments: number; revenue: number }[];
+  weeklyHistory:  { weekStart: string; weekLabel: string; appointments: number; revenue: number }[];
+  monthlyHistory: { monthLabel: string; year: number; month: number; appointments: number; revenue: number }[];
+  newCustomers:   { today: number; thisWeek: number; thisMonth: number };
   lifetime: {
     totalAppointments: number;
     uniqueCustomers:   number;
@@ -558,24 +560,31 @@ function BarberCard({ row, selected, onClick, windowDays }: {
   );
 }
 
-// ── WeeklyBarChart ────────────────────────────────────────────────────────────
-function WeeklyBarChart({ data }: { data: BarberStats["weeklyHistory"] }) {
+// ── MiniBarChart ──────────────────────────────────────────────────────────────
+function MiniBarChart({
+  data, currentIdx, labelKey, tooltipFn, color = "bg-teal-500",
+}: {
+  data: { revenue: number; appointments: number }[];
+  currentIdx: number;
+  labelKey: string[];
+  tooltipFn: (i: number) => string;
+  color?: string;
+}) {
   const maxRev = Math.max(...data.map(d => d.revenue), 1);
   return (
-    <div className="flex items-end gap-1 h-16">
-      {data.map((week, i) => {
-        const pct       = (week.revenue / maxRev) * 100;
-        const isCurrent = i === data.length - 1;
+    <div className="flex items-end gap-0.5 h-16">
+      {data.map((d, i) => {
+        const pct       = (d.revenue / maxRev) * 100;
+        const isCurrent = i === currentIdx;
         return (
-          <div key={week.weekStart} className="flex-1 flex flex-col items-center group relative">
-            {/* Tooltip */}
+          <div key={i} className="flex-1 flex flex-col items-center gap-0.5 group relative">
             <div className="absolute bottom-full mb-1 bg-neutral-800 text-white text-[10px] px-2 py-1 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition pointer-events-none z-10 text-center">
-              <div>{week.weekLabel}</div>
-              <div>₪{week.revenue.toLocaleString("he-IL")}</div>
-              <div>{week.appointments} תורים</div>
+              <div>{tooltipFn(i)}</div>
+              <div>₪{d.revenue.toLocaleString("he-IL")}</div>
+              <div>{d.appointments} תורים</div>
             </div>
             <div
-              className={`w-full rounded-t transition-all ${isCurrent ? "bg-teal-500" : "bg-slate-200 group-hover:bg-slate-400"}`}
+              className={`w-full rounded-t transition-all ${isCurrent ? color : "bg-slate-200 group-hover:bg-slate-400"}`}
               style={{ height: `${Math.max(pct, 4)}%` }}
             />
           </div>
@@ -587,7 +596,7 @@ function WeeklyBarChart({ data }: { data: BarberStats["weeklyHistory"] }) {
 
 // ── BarberGamifiedSection ─────────────────────────────────────────────────────
 function BarberGamifiedSection({ stats }: { stats: BarberStats }) {
-  const { thisWeek, lastWeek, lifetime, returnRate, weeklyHistory } = stats;
+  const { thisWeek, lastWeek, lifetime, returnRate, weeklyHistory, monthlyHistory, newCustomers } = stats;
 
   const apptDiff = thisWeek.appointments - lastWeek.appointments;
   const apptPct  = lastWeek.appointments > 0
@@ -599,62 +608,34 @@ function BarberGamifiedSection({ stats }: { stats: BarberStats }) {
     : null;
 
   const rateColor =
-    returnRate.rate >= 40 ? "text-emerald-400" :
-    returnRate.rate >= 20 ? "text-slate-200"   : "text-red-400";
+    returnRate.rate >= 40 ? "text-emerald-600" :
+    returnRate.rate >= 20 ? "text-slate-800"   : "text-red-500";
 
   return (
     <div className="space-y-4">
-      {/* ── All-time summary strip ── */}
-      <div className="grid grid-cols-3 gap-2.5">
-        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">לקוחות ייחודיים</p>
-          <p className="text-2xl font-black text-teal-600">{lifetime.uniqueCustomers}</p>
-          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
-        </div>
-        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">חזרת לקוחות</p>
-          <p className={`text-2xl font-black ${rateColor.replace("text-slate-200", "text-slate-800")}`}>{returnRate.rate}%</p>
-          <p className="text-[10px] text-neutral-400">{returnRate.repeatCustomers} חזרו</p>
-        </div>
-        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 text-center">
-          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים כולל</p>
-          <p className="text-2xl font-black text-neutral-800">{lifetime.totalAppointments.toLocaleString("he-IL")}</p>
-          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
-        </div>
-      </div>
 
-      {/* ── This week vs last week ── */}
+      {/* ── ⚡ This week FIRST ── */}
       <div>
         <h2 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">⚡ שבוע זה (ראשון–שבת)</h2>
         <div className="grid grid-cols-2 gap-2.5">
-          {/* Appointments */}
           <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
             <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים השבוע</p>
             <p className="text-3xl font-black text-neutral-900">{thisWeek.appointments}</p>
             {apptDiff !== 0 ? (
               <p className={`text-xs font-semibold mt-1 ${apptDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                {apptDiff > 0 ? "↑" : "↓"}{" "}
-                {Math.abs(apptDiff)}
-                {apptPct !== null && ` (${Math.abs(apptPct)}%)`}
-                {" "}מהשבוע שעבר
+                {apptDiff > 0 ? "↑" : "↓"} {Math.abs(apptDiff)}{apptPct !== null && ` (${Math.abs(apptPct)}%)`} מהשבוע שעבר
               </p>
             ) : lastWeek.appointments > 0 ? (
               <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
             ) : null}
             <p className="text-[10px] text-neutral-400 mt-0.5">שבוע שעבר: {lastWeek.appointments}</p>
           </div>
-
-          {/* Revenue */}
           <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
             <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">הכנסה השבוע</p>
-            <p className="text-2xl font-black text-neutral-900">
-              ₪{thisWeek.revenue.toLocaleString("he-IL")}
-            </p>
+            <p className="text-2xl font-black text-neutral-900">₪{thisWeek.revenue.toLocaleString("he-IL")}</p>
             {revDiff !== 0 ? (
               <p className={`text-xs font-semibold mt-1 ${revDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
-                {revDiff > 0 ? "↑" : "↓"}{" "}
-                ₪{Math.abs(revDiff).toLocaleString("he-IL")}
-                {revPct !== null && ` (${Math.abs(revPct)}%)`}
+                {revDiff > 0 ? "↑" : "↓"} ₪{Math.abs(revDiff).toLocaleString("he-IL")}{revPct !== null && ` (${Math.abs(revPct)}%)`}
               </p>
             ) : lastWeek.revenue > 0 ? (
               <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
@@ -664,18 +645,83 @@ function BarberGamifiedSection({ stats }: { stats: BarberStats }) {
         </div>
       </div>
 
-      {/* ── 8-week trend chart ── */}
+      {/* ── New customers strip ── */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+        <h3 className="text-sm font-semibold text-neutral-800 mb-3">🆕 לקוחות חדשים אצלך</h3>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-[10px] text-neutral-400 uppercase tracking-wider mb-1">היום</p>
+            <p className="text-2xl font-black text-teal-600">{newCustomers?.today ?? 0}</p>
+          </div>
+          <div className="border-x border-neutral-100">
+            <p className="text-[10px] text-neutral-400 uppercase tracking-wider mb-1">השבוע</p>
+            <p className="text-2xl font-black text-teal-600">{newCustomers?.thisWeek ?? 0}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-neutral-400 uppercase tracking-wider mb-1">החודש</p>
+            <p className="text-2xl font-black text-teal-600">{newCustomers?.thisMonth ?? 0}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── All-time summary ── */}
+      <div className="grid grid-cols-3 gap-2.5">
+        <div className="bg-white rounded-xl border border-neutral-200 px-3 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">לקוחות ייחודיים</p>
+          <p className="text-2xl font-black text-teal-600">{lifetime.uniqueCustomers}</p>
+          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 px-3 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">חזרת לקוחות</p>
+          <p className={`text-2xl font-black ${rateColor}`}>{returnRate.rate}%</p>
+          <p className="text-[10px] text-neutral-400">{returnRate.repeatCustomers} חזרו</p>
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 px-3 py-3 text-center">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים כולל</p>
+          <p className="text-2xl font-black text-neutral-800">{lifetime.totalAppointments.toLocaleString("he-IL")}</p>
+          <p className="text-[10px] text-neutral-400">כל הזמנים</p>
+        </div>
+      </div>
+
+      {/* ── 12-week trend — below everything ── */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-5">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-neutral-800">📊 מגמת 12 שבועות</h3>
           <span className="text-xs text-neutral-400">הכנסות שבועיות</span>
         </div>
-        <WeeklyBarChart data={weeklyHistory} />
-        <div className="flex justify-between text-[9px] text-neutral-300 mt-2 pointer-events-none">
+        <MiniBarChart
+          data={weeklyHistory}
+          currentIdx={weeklyHistory.length - 1}
+          labelKey={weeklyHistory.map(w => w.weekLabel)}
+          tooltipFn={i => weeklyHistory[i]?.weekLabel ?? ""}
+          color="bg-teal-500"
+        />
+        <div className="flex justify-between text-[9px] text-neutral-300 mt-2">
           <span>{weeklyHistory[0]?.weekLabel}</span>
           <span className="text-teal-600 font-semibold">שבוע זה</span>
         </div>
       </div>
+
+      {/* ── 12-month trend ── */}
+      {monthlyHistory && monthlyHistory.length > 0 && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-neutral-800">📈 מגמת 12 חודשים</h3>
+            <span className="text-xs text-neutral-400">הכנסות חודשיות</span>
+          </div>
+          <MiniBarChart
+            data={monthlyHistory}
+            currentIdx={monthlyHistory.length - 1}
+            labelKey={monthlyHistory.map(m => m.monthLabel)}
+            tooltipFn={i => monthlyHistory[i]?.monthLabel ?? ""}
+            color="bg-emerald-500"
+          />
+          <div className="flex justify-between text-[9px] text-neutral-300 mt-2">
+            <span>{monthlyHistory[0]?.monthLabel}</span>
+            <span className="text-emerald-600 font-semibold">חודש זה</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -802,7 +848,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Barber filter + deep-dive link (owners) ── */}
-      {isOwner && (
+      {isOwner ? (
         <div className="flex gap-2 flex-wrap items-center">
           {allStaff.length > 1 && (
             <>
@@ -820,6 +866,14 @@ export default function Dashboard() {
           )}
           <Link href="/admin/dashboard/marketing"
             className="mr-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-teal-600 text-teal-700 bg-white hover:bg-teal-600 hover:text-white transition">
+            📊 ניתוח מעמיק
+          </Link>
+        </div>
+      ) : (
+        // Barber — just the deep-analysis button
+        <div className="flex justify-end">
+          <Link href="/admin/dashboard/marketing"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-teal-600 text-teal-700 bg-white hover:bg-teal-600 hover:text-white transition">
             📊 ניתוח מעמיק
           </Link>
         </div>

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { requireOwnStaffOrOwner } from "@/lib/session";
 
 // GET /api/admin/staff/[id]/services — all services with whether this staff offers them
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = requireOwner(req);
+  const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
 
   const [allServices, staffServices] = await Promise.all([
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 // POST /api/admin/staff/[id]/services — toggle or update a service for this staff
 // Body: { serviceId, enabled, customPrice?, customDuration? }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = requireOwner(req);
+  const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
   const body = await req.json();
   const { serviceId, enabled, customPrice, customDuration } = body;

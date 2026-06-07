@@ -110,11 +110,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
   }
 
-  const appointment = await prisma.appointment.update({
-    where: { id: params.id },
-    data,
-    include: { customer: true, staff: true, service: true },
-  });
+  let appointment;
+  try {
+    appointment = await prisma.appointment.update({
+      where: { id: params.id },
+      data,
+      include: { customer: true, staff: true, service: true },
+    });
+  } catch (err) {
+    console.error("[PATCH /appointments/:id] prisma error:", err);
+    const msg = err instanceof Error ? err.message : "שגיאת מסד נתונים";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 
   // If status just changed to completed → update customer's lastVisitAt
   // (Post-visit automations are now fired by /api/cron/automations-post-visit

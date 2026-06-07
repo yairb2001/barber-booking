@@ -42,8 +42,6 @@ function getLevel(uniqueCustomers: number) {
 }
 
 // ── Week boundary helpers ─────────────────────────────────────────────────────
-// Returns Sunday..Saturday (UTC) for a given week offset.
-// offsetWeeks=0 → current week, -1 → previous week, etc.
 function getWeekRange(offsetWeeks: number, baseDate: Date) {
   const day = baseDate.getUTCDay(); // 0=Sunday
   const sunday = new Date(baseDate);
@@ -53,6 +51,13 @@ function getWeekRange(offsetWeeks: number, baseDate: Date) {
   saturday.setUTCDate(sunday.getUTCDate() + 6);
   saturday.setUTCHours(23, 59, 59, 999);
   return { start: sunday, end: saturday };
+}
+
+// ── Month boundary helpers ────────────────────────────────────────────────────
+function getMonthRange(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month, 1, 0, 0, 0, 0));
+  const end   = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
+  return { start, end };
 }
 
 const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני",
@@ -66,7 +71,6 @@ function weekLabel(start: Date, end: Date) {
   if (startMonth === endMonth) {
     return `${startDay}–${endDay} ${MONTHS_HE[startMonth]}`;
   }
-  // Week crosses month boundary
   return `${startDay} ${MONTHS_HE[startMonth]}–${endDay} ${MONTHS_HE[endMonth]}`;
 }
 
@@ -78,7 +82,6 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const staffIdParam = searchParams.get("staffId");
 
-  // Determine whose stats to fetch
   let staffId: string;
   if (!session.isOwner && session.staffId) {
     staffId = session.staffId;
@@ -88,36 +91,51 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "no staff scope" }, { status: 400 });
   }
 
-  // Israel time ≈ UTC+2 (acceptable approximation for daily boundaries)
+  // Israel time ≈ UTC+2
   const nowIsrael = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
   const thisWeekRange = getWeekRange(0,  nowIsrael);
   const lastWeekRange = getWeekRange(-1, nowIsrael);
 
-  // 12 weeks of history: [-11, -10, ..., -1, 0] oldest → newest
+  // 12 weeks of weekly history
   const weekRanges = Array.from({ length: 12 }, (_, i) => getWeekRange(i - 11, nowIsrael));
 
-  // Earliest boundary we need
-  const earliest = weekRanges[0].start;
+  // 12 months of monthly history
+  const nowYear  = nowIsrael.getUTCFullYear();
+  const nowMonth = nowIsrael.getUTCMonth();
+  const monthRanges = Array.from({ length: 12 }, (_, i) => {
+    const totalMonth = nowYear * 12 + nowMonth - (11 - i);
+    const year  = Math.floor(totalMonth / 12);
+    const month = totalMonth % 12;
+    return { year, month, ...getMonthRange(year, month) };
+  });
 
-  // Base filter: non-cancelled appointments for this barber
+  // Today boundaries (Israel)
+  const todayStart = new Date(Date.UTC(
+    nowIsrael.getUTCFullYear(), nowIsrael.getUTCMonth(), nowIsrael.getUTCDate(), 0, 0, 0, 0
+  ));
+  const todayEnd = new Date(Date.UTC(
+    nowIsrael.getUTCFullYear(), nowIsrael.getUTCMonth(), nowIsrael.getUTCDate(), 23, 59, 59, 999
+  ));
+
+  // This month boundaries
+  const thisMonthRange = getMonthRange(nowYear, nowMonth);
+
+  const earliest = new Date(Math.min(weekRanges[0].start.getTime(), monthRanges[0].start.getTime()));
   const CANCELLED = ["cancelled_by_customer", "cancelled_by_staff"] as string[];
-  const baseWhere = {
-    staffId,
-    status: { notIn: CANCELLED },
-  };
 
-  // Fetch all appointments in the 8-week window in one query
-  const recentAppts = await prisma.appointment.findMany({
+  // All non-cancelled appointments for this barber from the earliest needed date
+  const allRecentAppts = await prisma.appointment.findMany({
     where: {
-      ...baseWhere,
+      staffId,
+      status: { notIn: CANCELLED },
       date: { gte: earliest, lte: thisWeekRange.end },
     },
     select: { date: true, price: true, customerId: true },
   });
 
   function sumRange(start: Date, end: Date) {
-    const appts = recentAppts.filter(a => a.date >= start && a.date <= end);
+    const appts = allRecentAppts.filter(a => a.date >= start && a.date <= end);
     return {
       appointments: appts.length,
       revenue:      appts.reduce((s, a) => s + a.price, 0),
@@ -133,24 +151,53 @@ export async function GET(req: NextRequest) {
     ...sumRange(wr.start, wr.end),
   }));
 
-  // ── Lifetime stats (all time, not just 8 weeks) ───────────────────────────
-  // Use aggregate + findMany instead of groupBy to avoid Prisma _count shape issues
+  const monthlyHistory = monthRanges.map(mr => ({
+    monthLabel: `${MONTHS_HE[mr.month]}`,
+    year: mr.year,
+    month: mr.month,
+    ...sumRange(mr.start, mr.end),
+  }));
+
+  // ── Lifetime stats ────────────────────────────────────────────────────────
   const lifetimeRaw = await prisma.appointment.groupBy({
     by:     ["customerId"],
-    where:  baseWhere,
+    where:  { staffId, status: { notIn: CANCELLED } },
     _count: { _all: true },
   });
   const totalLifetime   = lifetimeRaw.reduce((s, r) => s + r._count._all, 0);
   const uniqueCustomers = lifetimeRaw.length;
   const repeatCustomers = lifetimeRaw.filter(r => r._count._all >= 2).length;
-  const returnRate       = uniqueCustomers > 0
+  const returnRate      = uniqueCustomers > 0
     ? Math.round((repeatCustomers / uniqueCustomers) * 100)
     : 0;
+
+  // ── New customers — "first appointment with this barber" ─────────────────
+  // For each customer, find the date of their FIRST appointment with this barber
+  const firstVisitPerCustomer = await prisma.appointment.groupBy({
+    by:      ["customerId"],
+    where:   { staffId, status: { notIn: CANCELLED } },
+    _min:    { date: true },
+  });
+
+  function countNewInRange(start: Date, end: Date) {
+    return firstVisitPerCustomer.filter(r => {
+      const d = r._min.date;
+      return d !== null && d >= start && d <= end;
+    }).length;
+  }
+
+  const newCustomers = {
+    today:     countNewInRange(todayStart, todayEnd),
+    thisWeek:  countNewInRange(thisWeekRange.start, thisWeekRange.end),
+    thisMonth: countNewInRange(thisMonthRange.start, thisMonthRange.end),
+  };
 
   return NextResponse.json({
     thisWeek,
     lastWeek,
     weeklyHistory,
+    monthlyHistory,
+    newCustomers,
     lifetime: {
       totalAppointments: totalLifetime,
       uniqueCustomers,

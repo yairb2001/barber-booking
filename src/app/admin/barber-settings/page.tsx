@@ -32,13 +32,6 @@ type Story = {
   staff: { id: string; name: string } | null;
 };
 
-type PortfolioItem = {
-  id: string;
-  imageUrl: string;
-  caption: string | null;
-  sortOrder: number;
-};
-
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 function emptySchedule(): ScheduleDay[] {
@@ -51,7 +44,7 @@ function emptySchedule(): ScheduleDay[] {
   }));
 }
 
-type Tab = "services" | "schedule" | "booking" | "stories" | "gallery" | "password" | "photo";
+type Tab = "services" | "schedule" | "stories" | "password" | "photo";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function BarberSettingsPage() {
@@ -73,7 +66,7 @@ export default function BarberSettingsPage() {
   const [schedule, setSchedule] = useState(emptySchedule());
   const [schedSaved, setSchedSaved] = useState(false);
 
-  // ── Booking settings ──
+  // ── Booking settings (merged into schedule tab) ──
   const [horizonDays, setHorizonDays] = useState("");
   const [leadMins,    setLeadMins]    = useState("");
   const [bookSaved, setBookSaved]     = useState(false);
@@ -97,12 +90,6 @@ export default function BarberSettingsPage() {
   const [newExpiry, setNewExpiry]     = useState("");
   const [storyUploading, setStoryUploading] = useState(false);
   const [showAddStory, setShowAddStory]     = useState(false);
-
-  // ── Gallery (portfolio) ──
-  const [portfolio, setPortfolio]         = useState<PortfolioItem[]>([]);
-  const [galCaption, setGalCaption]       = useState("");
-  const [galUploading, setGalUploading]   = useState(false);
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
   // ── Load ──────────────────────────────────────────────────────────────────────
   async function loadMe() {
@@ -150,13 +137,6 @@ export default function BarberSettingsPage() {
     setStories(Array.isArray(data) ? data : []);
   }
 
-  async function loadPortfolio(id: string) {
-    const data = await fetch("/api/admin/portfolio").then(r => r.json());
-    // API returns array of staff-with-portfolio; find mine
-    const me = Array.isArray(data) ? data.find((s: { id: string }) => s.id === id) : null;
-    setPortfolio(me?.portfolio || []);
-  }
-
   useEffect(() => {
     (async () => {
       const id = await loadMe();
@@ -165,7 +145,6 @@ export default function BarberSettingsPage() {
         loadServices(id),
         loadStaff(id),
         loadStories(),
-        loadPortfolio(id),
       ]);
       setLoading(false);
     })();
@@ -331,46 +310,14 @@ export default function BarberSettingsPage() {
     await loadStories();
   }
 
-  // ── Gallery ───────────────────────────────────────────────────────────────────
-  async function uploadGalleryFile(file: File) {
-    if (!myId) return;
-    setGalUploading(true);
-    const { compressImage } = await import("@/lib/image-compress");
-    const compressed = await compressImage(file, "story");
-    const fd = new FormData();
-    fd.append("file", compressed);
-    const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
-    const data = await res.json();
-    if (data.url) {
-      await fetch("/api/admin/portfolio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId: myId, imageUrl: data.url, caption: galCaption || null }),
-      });
-      setGalCaption("");
-      await loadPortfolio(myId);
-    } else {
-      alert(data.error || "שגיאה");
-    }
-    setGalUploading(false);
-  }
-
-  async function deleteGalleryItem(id: string) {
-    if (!confirm("למחוק את התמונה?")) return;
-    await fetch(`/api/admin/portfolio/${id}`, { method: "DELETE" });
-    if (myId) await loadPortfolio(myId);
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────────
   if (loading) return <div className="p-8 text-neutral-400 text-center">טוען...</div>;
 
   const tabs: [Tab, string][] = [
     ["services", "🛠️ שירותים"],
-    ["schedule", "📅 שעות"],
-    ["booking",  "⚙️ יומן"],
+    ["schedule", "📅 שעות ויומן"],
     ["photo",    "🖼️ תמונה"],
     ["stories",  "📸 סטוריז"],
-    ["gallery",  "🖼️ גלריה"],
     ["password", "🔒 סיסמה"],
   ];
 
@@ -405,6 +352,11 @@ export default function BarberSettingsPage() {
         <div className="space-y-3">
           <p className="text-xs text-neutral-400 mb-3">בחר אילו שירותים אתה מציע. ניתן לקבוע מחיר ומשך מותאמים.</p>
           {svcSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ נשמר</div>}
+          {services.length === 0 && (
+            <div className="text-sm text-neutral-400 text-center py-10 bg-white rounded-2xl border border-neutral-100">
+              אין שירותים זמינים
+            </div>
+          )}
           {services.map(svc => (
             <div key={svc.id} className={`bg-white rounded-2xl border p-4 ${svc.enabled ? "border-teal-200" : "border-neutral-100"}`}>
               <div className="flex items-center gap-3">
@@ -438,13 +390,13 @@ export default function BarberSettingsPage() {
                     <div>
                       <label className="text-xs text-neutral-500 block mb-1">מחיר מותאם (₪)</label>
                       <input type="number" min={0} value={customPrice} onChange={e => setCustomPrice(e.target.value)}
-                        placeholder={`${svc.price}`}
+                        placeholder={`${svc.price} (ברירת מחדל)`}
                         className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                     </div>
                     <div>
                       <label className="text-xs text-neutral-500 block mb-1">משך מותאם (דקות)</label>
                       <input type="number" min={5} step={5} value={customDuration} onChange={e => setCustomDuration(e.target.value)}
-                        placeholder={`${svc.durationMinutes}`}
+                        placeholder={`${svc.durationMinutes} (ברירת מחדל)`}
                         className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                     </div>
                   </div>
@@ -463,82 +415,133 @@ export default function BarberSettingsPage() {
         </div>
       )}
 
-      {/* ── Tab: Schedule ── */}
+      {/* ── Tab: Schedule + Booking (merged) ── */}
       {activeTab === "schedule" && (
-        <div className="space-y-3">
-          {schedSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ לוח שנה נשמר</div>}
-          {schedule.map((day, i) => (
-            <div key={i} className={`rounded-xl border p-3 ${day.isWorking ? "border-neutral-200 bg-white" : "border-neutral-100 bg-neutral-50"}`}>
-              <div className="flex items-center gap-3 mb-2">
-                <button
-                  onClick={() => { const s = [...schedule]; s[i] = { ...s[i], isWorking: !s[i].isWorking }; setSchedule(s); }}
-                  className={`w-10 h-5 rounded-full transition ${day.isWorking ? "bg-teal-600" : "bg-neutral-300"}`}>
-                  <div className={`w-4 h-4 bg-white rounded-full shadow transition mx-0.5 ${day.isWorking ? "translate-x-5" : ""}`} />
-                </button>
-                <span className="font-medium text-sm text-neutral-800">יום {DAY_NAMES[i]}</span>
-              </div>
-              {day.isWorking && (
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <div>
-                    <label className="text-[11px] text-neutral-400 block mb-0.5">התחלה</label>
-                    <input type="time" value={day.start}
-                      onChange={e => { const s = [...schedule]; s[i] = { ...s[i], start: e.target.value }; setSchedule(s); }}
-                      className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+        <div className="space-y-6">
+          {/* ── Working hours section ── */}
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-700 mb-3">שעות עבודה קבועות</h2>
+            {schedSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">✓ שעות נשמרו</div>}
+            <div className="space-y-3">
+              {schedule.map((day, i) => (
+                <div key={i} className={`bg-white rounded-xl border p-3 ${day.isWorking ? "border-neutral-200" : "border-neutral-100 bg-neutral-50"}`}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <button
+                      onClick={() => { const s = [...schedule]; s[i] = { ...s[i], isWorking: !s[i].isWorking }; setSchedule(s); }}
+                      className={`w-10 h-5 rounded-full transition ${day.isWorking ? "bg-emerald-500" : "bg-neutral-300"}`}>
+                      <div className={`w-4 h-4 bg-white rounded-full shadow transition mx-0.5 ${day.isWorking ? "translate-x-5" : ""}`} />
+                    </button>
+                    <span className="font-medium text-sm text-neutral-800">יום {DAY_NAMES[i]}</span>
                   </div>
-                  <div>
-                    <label className="text-[11px] text-neutral-400 block mb-0.5">סיום</label>
-                    <input type="time" value={day.end}
-                      onChange={e => { const s = [...schedule]; s[i] = { ...s[i], end: e.target.value }; setSchedule(s); }}
-                      className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-          <button onClick={saveSchedule} disabled={saving}
-            className="w-full bg-teal-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition mt-2">
-            {saving ? "שומר..." : "💾 שמור לוח שנה"}
-          </button>
-        </div>
-      )}
+                  {day.isWorking && (
+                    <div className="mt-2 space-y-3">
+                      {/* Working hours */}
+                      <div className="grid grid-cols-2 gap-2">
+                        {[["start", "התחלה"], ["end", "סיום"]].map(([field, label]) => (
+                          <div key={field}>
+                            <label className="text-[11px] text-neutral-400 block mb-0.5">{label}</label>
+                            <input type="time" value={(day as unknown as Record<string, string>)[field] || ""}
+                              onChange={e => {
+                                const s = [...schedule];
+                                s[i] = { ...s[i], [field]: e.target.value };
+                                setSchedule(s);
+                              }}
+                              className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm" />
+                          </div>
+                        ))}
+                      </div>
 
-      {/* ── Tab: Booking ── */}
-      {activeTab === "booking" && (
-        <div className="space-y-4">
-          <p className="text-xs text-neutral-400">הגדרות אלו מתעדפות על פני ברירות המחדל של העסק.</p>
-          {bookSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ נשמר</div>}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-4 space-y-4">
-            <div>
-              <label className="text-sm font-medium text-neutral-700 block mb-1">
-                כמה ימים קדימה פתוח היומן?
-              </label>
-              <p className="text-xs text-neutral-400 mb-2">ריק = ברירת מחדל של העסק</p>
-              <div className="flex items-center gap-2">
-                <input type="number" min={1} max={365} value={horizonDays}
-                  onChange={e => setHorizonDays(e.target.value)}
-                  placeholder="30"
-                  className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-                <span className="text-sm text-neutral-500">ימים</span>
-              </div>
+                      {/* Recurring breaks */}
+                      <div>
+                        <label className="text-[11px] text-neutral-400 block mb-1">הפסקות קבועות</label>
+                        <div className="space-y-2">
+                          {day.breaks.map((br, bi) => (
+                            <div key={bi} className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-2 py-1.5">
+                              <input type="time" value={br.start}
+                                onChange={e => {
+                                  const s = [...schedule];
+                                  const breaks = [...s[i].breaks];
+                                  breaks[bi] = { ...breaks[bi], start: e.target.value };
+                                  s[i] = { ...s[i], breaks };
+                                  setSchedule(s);
+                                }}
+                                className="flex-1 border border-orange-200 rounded px-2 py-1 text-sm" />
+                              <span className="text-orange-400 text-xs">–</span>
+                              <input type="time" value={br.end}
+                                onChange={e => {
+                                  const s = [...schedule];
+                                  const breaks = [...s[i].breaks];
+                                  breaks[bi] = { ...breaks[bi], end: e.target.value };
+                                  s[i] = { ...s[i], breaks };
+                                  setSchedule(s);
+                                }}
+                                className="flex-1 border border-orange-200 rounded px-2 py-1 text-sm" />
+                              <button onClick={() => {
+                                const s = [...schedule];
+                                s[i] = { ...s[i], breaks: s[i].breaks.filter((_, j) => j !== bi) };
+                                setSchedule(s);
+                              }}
+                                className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                        <button onClick={() => {
+                          const s = [...schedule];
+                          s[i] = { ...s[i], breaks: [...s[i].breaks, { start: "13:00", end: "14:00" }] };
+                          setSchedule(s);
+                        }}
+                          className="mt-2 w-full border-2 border-dashed border-neutral-200 text-neutral-400 py-1.5 rounded-lg text-xs hover:border-orange-300 hover:text-orange-600 transition">
+                          + הוסף הפסקה
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="text-sm font-medium text-neutral-700 block mb-1">
-                זמן התראה מינימלי לפני תור
-              </label>
-              <p className="text-xs text-neutral-400 mb-2">לקוח לא יוכל לקבוע פחות מ-X דקות מעכשיו</p>
-              <div className="flex items-center gap-2">
-                <input type="number" min={0} step={15} value={leadMins}
-                  onChange={e => setLeadMins(e.target.value)}
-                  placeholder="60"
-                  className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-                <span className="text-sm text-neutral-500">דקות</span>
-              </div>
-            </div>
+            <button onClick={saveSchedule} disabled={saving}
+              className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mt-4 ${schedSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+              {saving ? "שומר..." : schedSaved ? "✓ נשמר" : "שמור שעות עבודה"}
+            </button>
           </div>
-          <button onClick={saveBooking} disabled={saving}
-            className="w-full bg-teal-600 text-white py-3 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
-            {saving ? "שומר..." : "💾 שמור הגדרות"}
-          </button>
+
+          {/* ── Divider ── */}
+          <div className="border-t border-neutral-100" />
+
+          {/* ── Booking settings section ── */}
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-700 mb-1">הגדרות יומן</h2>
+            <p className="text-xs text-neutral-400 mb-4">הגדרות אלו מתעדפות על פני ברירות המחדל של העסק.</p>
+            {bookSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-4">✓ הגדרות נשמרו</div>}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4 space-y-4">
+              <div>
+                <label className="text-sm font-medium text-neutral-700 block mb-1">כמה ימים קדימה פתוח היומן?</label>
+                <p className="text-xs text-neutral-400 mb-2">ריק = ברירת מחדל של העסק</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={1} max={365} value={horizonDays}
+                    onChange={e => setHorizonDays(e.target.value)}
+                    placeholder="30"
+                    className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  <span className="text-sm text-neutral-500">ימים</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-neutral-700 block mb-1">זמן התראה מינימלי לפני תור</label>
+                <p className="text-xs text-neutral-400 mb-2">לקוח לא יוכל לקבוע פחות מ-X דקות מעכשיו</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} step={15} value={leadMins}
+                    onChange={e => setLeadMins(e.target.value)}
+                    placeholder="60"
+                    className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  <span className="text-sm text-neutral-500">דקות</span>
+                </div>
+              </div>
+            </div>
+            <button onClick={saveBooking} disabled={saving}
+              className={`w-full py-2.5 rounded-xl text-sm font-semibold transition mt-4 ${bookSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
+              {saving ? "שומר..." : bookSaved ? "✓ נשמר" : "שמור הגדרות יומן"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -546,7 +549,6 @@ export default function BarberSettingsPage() {
       {activeTab === "photo" && (
         <div className="space-y-4">
           {photoSaved && <div className="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">✓ תמונה עודכנה</div>}
-          {/* Current avatar */}
           <div className="flex items-center gap-4 bg-white border border-neutral-200 rounded-2xl p-4">
             {avatarDraft
               ? <img src={avatarDraft} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-teal-200" />
@@ -557,7 +559,6 @@ export default function BarberSettingsPage() {
               <p className="text-xs text-neutral-400 mt-0.5">מוצגת ללקוחות בדף הבית</p>
             </div>
           </div>
-          {/* Upload */}
           <div className="bg-white border border-neutral-200 rounded-2xl p-4 space-y-3">
             <div>
               <label className="text-xs text-neutral-500 block mb-1.5">העלאת תמונה חדשה</label>
@@ -595,7 +596,6 @@ export default function BarberSettingsPage() {
             </button>
           </div>
 
-          {/* My stories */}
           {stories.filter(s => s.staff?.id === myId).length === 0
             ? <div className="text-sm text-neutral-400 text-center py-8 bg-white rounded-2xl border border-neutral-100">אין סטוריז עדיין</div>
             : (
@@ -620,7 +620,6 @@ export default function BarberSettingsPage() {
             )
           }
 
-          {/* Add story form */}
           {showAddStory && (
             <div className="fixed inset-0 bg-black/40 flex items-end justify-center z-50" onClick={() => setShowAddStory(false)}>
               <div className="bg-white rounded-t-2xl p-5 w-full max-w-lg space-y-3" onClick={e => e.stopPropagation()}>
@@ -652,47 +651,6 @@ export default function BarberSettingsPage() {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* ── Tab: Gallery ── */}
-      {activeTab === "gallery" && (
-        <div className="space-y-4">
-          <p className="text-xs text-neutral-400">גלריית עבודות — תמונות שאתה מציג ללקוחות</p>
-          {/* Upload */}
-          <div className="bg-white border border-neutral-200 rounded-2xl p-4 space-y-2">
-            <input value={galCaption} onChange={e => setGalCaption(e.target.value)}
-              placeholder="כיתוב לתמונה (אופציונלי)"
-              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
-            <label className="flex items-center gap-2 cursor-pointer">
-              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed text-sm font-medium w-full
-                ${galUploading ? "border-slate-300 text-slate-400" : "border-slate-700 text-slate-700 hover:bg-slate-50"}`}>
-                {galUploading ? "⏳ מעלה..." : "📷 הוסף תמונה לגלריה"}
-              </div>
-              <input type="file" accept="image/*" className="hidden" ref={fileRef} disabled={galUploading}
-                onChange={e => { const f = e.target.files?.[0]; if (f) uploadGalleryFile(f); }} />
-            </label>
-          </div>
-
-          {portfolio.length === 0
-            ? <div className="text-sm text-neutral-400 text-center py-8 bg-white rounded-2xl border border-neutral-100">אין תמונות עדיין</div>
-            : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {portfolio.map(item => (
-                  <div key={item.id} className="relative rounded-xl overflow-hidden border border-neutral-200 group">
-                    <img src={item.imageUrl} alt={item.caption || ""} className="w-full aspect-square object-cover" />
-                    {item.caption && (
-                      <div className="absolute bottom-0 inset-x-0 bg-black/50 text-white text-[10px] px-2 py-1 truncate">{item.caption}</div>
-                    )}
-                    <button onClick={() => deleteGalleryItem(item.id)}
-                      className="absolute top-1 left-1 bg-red-500 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition">
-                      מחק
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )
-          }
         </div>
       )}
 

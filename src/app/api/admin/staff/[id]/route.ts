@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner } from "@/lib/session";
 
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const staff = await prisma.staff.findUnique({
@@ -12,9 +12,31 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const body = await req.json();
+
+  // Barbers can update only their own record, and only limited fields
+  if (!session.isOwner) {
+    if (session.staffId !== params.id) {
+      return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+    }
+    // Only avatarUrl and settings are self-editable by barbers
+    const data: Record<string, unknown> = {};
+    if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
+    if (body.settings !== undefined) {
+      data.settings = body.settings === null ? null
+        : typeof body.settings === "string" ? body.settings
+        : JSON.stringify(body.settings);
+    }
+    const staff = await prisma.staff.update({ where: { id: params.id }, data });
+    return NextResponse.json(staff);
+  }
+
+  // Owner — full update
   const guard = requireOwner(req);
   if (guard) return guard;
-  const body = await req.json();
   const staff = await prisma.staff.update({
     where: { id: params.id },
     data: {
