@@ -76,17 +76,62 @@ function monthRange(year: number, month: number) {
 }
 
 // ── StatCard ──────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, color = "text-neutral-900", badge }: {
-  label: string; value: string | number; sub?: string; color?: string; badge?: string;
+function StatCard({ label, value, sub, color = "text-neutral-900", badge, onClick }: {
+  label: string; value: string | number; sub?: string; color?: string; badge?: string; onClick?: () => void;
 }) {
+  const Wrapper = onClick ? "button" : "div";
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-5 flex flex-col justify-between min-h-[110px]">
+    <Wrapper onClick={onClick} className={`bg-white rounded-2xl border border-neutral-200 p-5 flex flex-col justify-between min-h-[110px] text-right ${onClick ? "cursor-pointer hover:border-teal-300 hover:shadow-sm transition active:scale-[0.98]" : ""}`}>
       <div className="flex items-start justify-between">
         <p className="text-xs text-neutral-500">{label}</p>
         {badge && <span className="text-[10px] bg-slate-100 text-slate-700 font-semibold px-2 py-0.5 rounded-full">{badge}</span>}
       </div>
       <p className={`text-3xl font-bold mt-2 ${color}`}>{value}</p>
       {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
+      {onClick && <p className="text-[10px] text-teal-500 mt-1">לחץ לפרטים ←</p>}
+    </Wrapper>
+  );
+}
+
+// ── Customer list modal ───────────────────────────────────────────────────────
+function CustomerListModal({ title, customers, onClose }: {
+  title: string;
+  customers: { id: string; name: string; phone: string; firstVisit?: string }[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-neutral-100">
+          <h3 className="font-bold text-neutral-800">{title}</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full">{customers.length}</span>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-lg">✕</button>
+          </div>
+        </div>
+        <div className="overflow-y-auto flex-1 p-2">
+          {customers.length === 0 ? (
+            <p className="text-center text-neutral-400 py-8 text-sm">אין נתונים</p>
+          ) : (
+            customers.map((c, i) => (
+              <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
+                  {c.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                  <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                </div>
+                {c.firstVisit && (
+                  <span className="text-[10px] text-neutral-400 shrink-0">
+                    {new Date(c.firstVisit).toLocaleDateString("he-IL", { day: "numeric", month: "numeric" })}
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -661,6 +706,8 @@ export default function Dashboard() {
   const [me,           setMe]           = useState<Me | null>(null);
   const [allStaff,     setAllStaff]     = useState<Staff[]>([]);
   const [barberStats,  setBarberStats]  = useState<BarberStats | null>(null);
+  const [custModal,    setCustModal]    = useState<{ title: string; customers: { id: string; name: string; phone: string; firstVisit?: string }[] } | null>(null);
+  const [custLoading,  setCustLoading]  = useState(false);
 
   const { from, to, label: monthLabel } = useMemo(
     () => monthRange(viewYear, viewMonth),
@@ -705,6 +752,24 @@ export default function Dashboard() {
   const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
   const isOwner = me?.isOwner ?? false;
   const isStaffScoped = !!selStaff || (!isOwner && !!me?.staffId);
+
+  function openCustomerList(type: "new" | "returning") {
+    const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
+    const url = `/api/admin/analytics/customers?from=${from}&to=${to}&type=${type}${staffParam ? `&staffId=${staffParam}` : ""}`;
+    setCustLoading(true);
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        setCustModal({
+          title: type === "new"
+            ? (isStaffScoped ? "לקוחות חדשים אצלך" : "לקוחות חדשים")
+            : "לקוחות שחזרו לביקור שני",
+          customers: data,
+        });
+      })
+      .catch(() => setCustModal({ title: "שגיאה", customers: [] }))
+      .finally(() => setCustLoading(false));
+  }
 
   const heading = selStaff
     ? `דשבורד — ${allStaff.find(s => s.id === selStaff)?.name ?? ""}`
@@ -791,6 +856,7 @@ export default function Dashboard() {
               label={isStaffScoped ? "חדשים אצלך" : "לקוחות חדשים"}
               value={isStaffScoped ? a.newToStaff : a.newToBusiness}
               color="text-teal-600"
+              onClick={() => openCustomerList("new")}
             />
             <StatCard
               label="ביקור שני החודש"
@@ -799,6 +865,7 @@ export default function Dashboard() {
               sub={a.prevMonthCohort.newInPrevMonth > 0
                 ? `${a.prevMonthCohort.rate}% מלקוחות חודש שעבר`
                 : undefined}
+              onClick={() => openCustomerList("returning")}
             />
           </div>
 
@@ -854,6 +921,22 @@ export default function Dashboard() {
             </div>
           )}
         </>
+      )}
+
+      {/* Customer list loading overlay */}
+      {custLoading && (
+        <div className="fixed inset-0 z-50 bg-black/20 flex items-center justify-center">
+          <div className="bg-white rounded-xl px-6 py-4 shadow-lg text-sm text-neutral-600">טוען רשימה...</div>
+        </div>
+      )}
+
+      {/* Customer list modal */}
+      {custModal && (
+        <CustomerListModal
+          title={custModal.title}
+          customers={custModal.customers}
+          onClose={() => setCustModal(null)}
+        />
       )}
     </div>
   );
