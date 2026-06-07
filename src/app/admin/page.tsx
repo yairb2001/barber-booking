@@ -42,6 +42,9 @@ const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h
 const minToTime = (m: number) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const addDays = (iso: string, n: number) => { const d = new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
 const dayOfWeek = (iso: string) => new Date(iso).getDay();
+const HEB_DAY_LETTERS = ["א","ב","ג","ד","ה","ו","ש"];
+const hebDayLetter = (iso: string) => HEB_DAY_LETTERS[new Date(iso).getDay()];
+const fmtDateShort = (iso: string) => { const d = new Date(iso); return `${d.getDate()}/${d.getMonth()+1}`; };
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
 const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
@@ -3003,15 +3006,18 @@ export default function AdminCalendar() {
             <div className="w-14 shrink-0" />
             {isDay
               ? displayedStaff.map((s, si) => (
-                <div key={s.id} style={colMinWidth ? { minWidth: colMinWidth } : {}} className="flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
+                <div key={s.id} style={colMinWidth ? { minWidth: colMinWidth } : {}} className="flex-1 min-w-0 flex flex-col items-center py-1.5 border-r border-neutral-100 last:border-0">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-sm font-bold ${COLORS[si % COLORS.length].bg}`}>
                     {s.name[0]}
                   </div>
-                  <span className="text-[10px] text-neutral-700 mt-1 font-medium text-center leading-tight px-1 w-full break-words">{s.name}</span>
+                  <span className="text-[10px] text-neutral-700 mt-0.5 font-medium text-center leading-tight px-1 w-full break-words">{s.name}</span>
+                  <span className="text-[9px] text-neutral-400 leading-none mt-0.5">
+                    {hebDayLetter(date)}׳ {fmtDateShort(date)}
+                  </span>
                   <button
                     onClick={() => setDayMenu({ date, staffId: s.id })}
                     title="עריכת שעות יום"
-                    className="mt-1 text-[10px] text-neutral-400 hover:text-teal-600 px-1.5 py-0.5 rounded hover:bg-teal-50 transition-colors">
+                    className="text-[10px] text-neutral-400 hover:text-teal-600 px-1.5 py-0.5 rounded hover:bg-teal-50 transition-colors">
                     ⚙ שעות
                   </button>
                 </div>
@@ -3022,13 +3028,19 @@ export default function AdminCalendar() {
                 const weekOverride = staffForDay ? overrideMap[`${staffForDay.id}|${d}`] : undefined;
                 const isDayClosed = weekOverride ? !weekOverride.isWorking : false;
                 return (
-                  <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-2 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : ""}`}
+                  <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-1 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : ""}`}
                     onClick={() => staffForDay && setDayMenu({ date: d, staffId: staffForDay.id })}>
-                    <span className={`text-xs font-semibold ${isToday ? "text-teal-700" : isDayClosed ? "text-red-400" : "text-neutral-500"}`}>{fmtShort(d)}</span>
-                    {isDayClosed && <span className="text-[9px] text-red-400">🔒</span>}
-                    {!isDayClosed && isToday && <div className="w-1.5 h-1.5 rounded-full bg-teal-500 mt-0.5" />}
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                      isToday ? "bg-teal-600 text-white shadow-md ring-2 ring-teal-300" : isDayClosed ? "bg-red-100 text-red-400" : "bg-neutral-100 text-neutral-600"
+                    }`}>
+                      {hebDayLetter(d)}
+                    </div>
+                    <span className={`text-[10px] mt-0.5 font-medium leading-none ${isToday ? "text-teal-700 font-bold" : isDayClosed ? "text-red-400" : "text-neutral-400"}`}>
+                      {fmtDateShort(d)}
+                    </span>
+                    {isDayClosed && <span className="text-[8px] text-red-400 leading-none">🔒</span>}
                     {waitlistCounts[d] > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                      <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                         {waitlistCounts[d]}
                       </span>
                     )}
@@ -3047,8 +3059,8 @@ export default function AdminCalendar() {
               <TimeColumn />
               <div className="flex flex-1 relative">
                 <GridLines />
-                {/* Now line */}
-                {dates.includes(todayISO()) && nowY >= 0 && nowY <= totalHeight && (
+                {/* Now line — day view: spans all columns; week view: per-column (inside each day) */}
+                {isDay && dates.includes(todayISO()) && nowY >= 0 && nowY <= totalHeight && (
                   <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
                     <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
                     <div className="flex-1 border-t-2 border-red-400" />
@@ -3173,6 +3185,13 @@ export default function AdminCalendar() {
                         onPointerUp={e => handlePointerUp(e, s.id, d)}
                         onPointerCancel={() => setDrag(null)}>
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]} />
+                        {/* Per-column now line — only today */}
+                        {d === todayISO() && nowY >= 0 && nowY <= totalHeight && (
+                          <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
+                            <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                            <div className="flex-1 border-t-2 border-red-400" />
+                          </div>
+                        )}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
