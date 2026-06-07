@@ -2126,18 +2126,22 @@ function DraftMoveSlotBlock({
       onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
       onClick={e => e.stopPropagation()}>
 
+      {/* Floating time bubble — above the block so the finger can't hide it */}
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap z-50 ${clampedTop < 36 ? "top-full mt-1" : "-top-7"}`}
+        dir="ltr">
+        ↕ {startTime}
+      </div>
       <div
         className="relative w-full h-full rounded-lg flex flex-col justify-between px-1 py-0.5 border-2 border-dashed"
         style={{ borderColor: "#0d9488", background: "rgba(20, 184, 166, 0.15)", backdropFilter: "blur(4px)" }}>
-        {/* Dismiss — absolute corner so it never steals width from the time label */}
+        {/* Dismiss */}
         <button className="absolute top-0 left-0 z-10 text-teal-600 hover:text-teal-900 text-[11px] leading-none p-0.5"
           onPointerDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-        {/* Time — full width, centered, allowed to wrap so it stays readable in narrow week columns */}
-        <span className="text-[10px] font-bold text-teal-900 leading-none text-center pt-0.5" dir="ltr">↕ {startTime}</span>
         {/* Confirm */}
         <button
-          className="w-full text-[9px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-0.5 py-1 transition text-center leading-none"
+          className="w-full text-[9px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-0.5 py-1 mt-auto transition text-center leading-none"
           onPointerDown={e => e.stopPropagation()}
           onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
           + העבר לכאן
@@ -2212,15 +2216,22 @@ function DraftApptBlock({
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
-        // ── Mobile: thin draggable pill — buttons are in the fixed bottom bar
-        <div
-          className="w-full h-full rounded-md bg-teal-600/90 backdrop-blur-sm flex items-center justify-between px-2 shadow"
-          style={{ borderRight: "3px solid rgba(13, 148, 136, 1)" }}>
-          <span className="text-[11px] font-bold text-white" dir="ltr">{time}</span>
-          <button
-            className="w-5 h-5 flex items-center justify-center rounded text-white/70 hover:text-white text-xs leading-none"
-            onPointerDown={e => e.stopPropagation()}
-            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+        // ── Mobile: thin draggable pill — time floats ABOVE the finger
+        <div className="relative w-full h-full">
+          {/* Floating time bubble — always above the block so finger can't hide it */}
+          <div
+            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap z-50 ${clampedTop < 36 ? "top-7" : "-top-8"}`}
+            dir="ltr">
+            {time}
+          </div>
+          <div
+            className="w-full h-full rounded-md bg-teal-600/90 backdrop-blur-sm flex items-center justify-end px-2 shadow"
+            style={{ borderRight: "3px solid rgba(13, 148, 136, 1)" }}>
+            <button
+              className="w-5 h-5 flex items-center justify-center rounded text-white/70 hover:text-white text-xs leading-none"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+          </div>
         </div>
       ) : (
         // ── Desktop: compact horizontal pill
@@ -3150,18 +3161,22 @@ export default function AdminCalendar() {
                           </div>
                         )}
                         {/* Drag-to-MOVE drop ghost — shows where the appointment will land */}
-                        {isDropTarget && dragMove && (
-                          <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30 flex flex-col items-center justify-center px-1.5"
-                            style={{
-                              top: apptTop(dragMove.dropTarget!.startTime, hourHeight),
-                              height: apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight),
-                              borderColor: "#10b981",
-                              background: "rgba(16,185,129,0.18)",
-                            }}>
-                            <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
-                            <p className="text-[10px] text-emerald-800">{s.name} · {dragMove.dropTarget!.startTime}</p>
-                          </div>
-                        )}
+                        {isDropTarget && dragMove && (() => {
+                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight);
+                          const ghostH = apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight);
+                          return (
+                            <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
+                              style={{ top: ghostTop, height: ghostH, borderColor: "#10b981", background: "rgba(16,185,129,0.18)" }}>
+                              {/* Time bubble — above the ghost, so finger doesn't cover it */}
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                                {dragMove.dropTarget!.startTime}
+                              </div>
+                              <div className="flex flex-col items-center justify-center h-full">
+                                <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* Draft appointment block (Google Calendar style) */}
                         {colDraft && (
                           <DraftApptBlock
@@ -3252,18 +3267,21 @@ export default function AdminCalendar() {
                           </div>
                         )}
                         {/* Drag-to-MOVE drop ghost */}
-                        {isDropTarget && dragMove && (
-                          <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30 flex flex-col items-center justify-center px-1.5"
-                            style={{
-                              top: apptTop(dragMove.dropTarget!.startTime, hourHeight),
-                              height: apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight),
-                              borderColor: "#10b981",
-                              background: "rgba(16,185,129,0.18)",
-                            }}>
-                            <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
-                            <p className="text-[10px] text-emerald-800">{fmtShort(d)} · {dragMove.dropTarget!.startTime}</p>
-                          </div>
-                        )}
+                        {isDropTarget && dragMove && (() => {
+                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight);
+                          const ghostH = apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight);
+                          return (
+                            <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
+                              style={{ top: ghostTop, height: ghostH, borderColor: "#10b981", background: "rgba(16,185,129,0.18)" }}>
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                                {dragMove.dropTarget!.startTime}
+                              </div>
+                              <div className="flex flex-col items-center justify-center h-full">
+                                <p className="text-[10px] font-bold text-emerald-900 leading-tight">{dragMove.appt.customer.name}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {colDraft && (
                           <DraftApptBlock
                             startY={colDraft.startY}
