@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lt?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
-    OR?: Array<{ name: { contains: string } } | { phone: { contains: string } }>;
+    OR?: Array<{ name: { contains: string; mode?: "insensitive" | "default" } } | { phone: { contains: string } }>;
   };
 
   const where: WhereClause = {
@@ -145,11 +145,25 @@ export async function GET(req: NextRequest) {
     where.createdAt = { gte: cutoff };
   }
 
-  // Search query
+  // Search query — supports name or phone.
+  // Phone stored in DB may be "0X..." or "972X..." so we search both variants.
   if (q) {
+    const digits = q.replace(/\D/g, "");
+    const phoneVariants: string[] = [q];
+    if (digits.length >= 7) {
+      // Build both local (0...) and international (972...) forms
+      if (digits.startsWith("972")) {
+        phoneVariants.push("0" + digits.slice(3)); // 972XXXXXXXXX → 0XXXXXXXXX
+      } else if (digits.startsWith("0")) {
+        phoneVariants.push("972" + digits.slice(1)); // 0XXXXXXXXX → 972XXXXXXXXX
+      } else {
+        phoneVariants.push("972" + digits); // bare digits
+        phoneVariants.push("0" + digits);
+      }
+    }
     where.OR = [
-      { name: { contains: q } },
-      { phone: { contains: q } },
+      { name: { contains: q, mode: "insensitive" } },
+      ...phoneVariants.map(v => ({ phone: { contains: v } })),
     ];
   }
 
