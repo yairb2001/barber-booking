@@ -1355,76 +1355,37 @@ function WhatsAppTab({
         </div>
       </div>
 
-      {/* Automations & templates */}
+      {/* Customer messages — all editing + on/off now lives in the unified hub */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="font-semibold text-neutral-800">אוטומציות</h2>
+          <h2 className="font-semibold text-neutral-800">הודעות ללקוחות</h2>
         </div>
-        <p className="text-xs text-neutral-500 mb-3">
-          בחר אילו הודעות לשלוח ועצב את הטקסט שלהן.
+        <p className="text-xs text-neutral-500 mb-4">
+          כל ההודעות שהמערכת שולחת — הפעלה/כיבוי ועריכת הטקסט במקום אחד.
         </p>
 
-        {/* Link to the full message-templates editor — where EVERY customer message is editable
-            (new-customer reminder, 2nd-visit smart promotion, swap request, and more). */}
+        {/* Single entry point to the unified messages hub */}
         <Link href="/admin/templates"
-          className="flex items-center gap-3 mb-4 rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3 hover:bg-teal-50 hover:border-teal-300 transition group">
-          <span className="text-xl">💬</span>
+          className="flex items-center gap-3 rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-3.5 hover:bg-teal-50 hover:border-teal-300 transition group">
+          <span className="text-2xl">💬</span>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-teal-900">עריכת כל ההודעות ללקוח →</p>
+            <p className="text-sm font-semibold text-teal-900">ניהול כל ההודעות ללקוח →</p>
             <p className="text-[11px] text-teal-700 leading-snug">
-              תזכורת ללקוח חדש (ביקור ראשון), קידום חכם (ביקור שני), בקשת החלפת תור, אישור ועוד — הכל ניתן לעריכה כאן
+              אישור, תזכורות (כולל לקוח חדש וקידום חכם בביקור שני), החלפות והעברות תורים — הפעלה, עריכה ותצוגה מקדימה לכל הודעה
             </p>
           </div>
           <span className="text-teal-400 group-hover:text-teal-600 text-lg shrink-0">›</span>
         </Link>
 
-        {/* Master toggle — confirmations */}
-        <div className="flex items-start gap-3 pb-4 mb-4 border-b border-neutral-100">
-          <input type="checkbox" checked={form.features.reminders}
-            onChange={e => setField("features", { ...form.features, reminders: e.target.checked })}
-            className="accent-emerald-500 mt-0.5" />
+        {/* AI agent — link to dedicated page */}
+        <div className="flex items-start gap-3 pt-4 mt-4 border-t border-neutral-100">
+          <span className="text-lg mt-0.5">🤖</span>
           <div>
-            <p className="text-sm font-semibold text-neutral-800">✅ אישור מיידי</p>
-            <p className="text-xs text-neutral-500">נשלח ברגע שנקבע תור (מהאתר או מהאדמין)</p>
-          </div>
-        </div>
-
-        <div className="space-y-3">
-          {/* 24h reminder */}
-          <ReminderTemplateEditor
-            label="תזכורת 24 שעות לפני"
-            emoji="🔔"
-            description="נשלחת יום לפני התור, ב-10:00 בבוקר"
-            enabled={form.features.reminder_24h}
-            onToggle={() => setField("features", { ...form.features, reminder_24h: !form.features.reminder_24h })}
-            value={form.reminder24hTemplate}
-            onChange={v => setField("reminder24hTemplate", v)}
-            defaultTemplate={DEFAULT_24H_TEMPLATE}
-          />
-
-          {/* 2h reminder */}
-          <ReminderTemplateEditor
-            label="תזכורת שעתיים לפני"
-            emoji="⏰"
-            description="נשלחת כ-2 שעות לפני התור"
-            proNote="דורש הרצת cron כל שעה. ב-Vercel Hobby — הגדר שירות חיצוני (cron-job.org) שיפנה כל שעה לכתובת /api/cron/reminders-2h עם ה-CRON_SECRET."
-            enabled={form.features.reminder_2h}
-            onToggle={() => setField("features", { ...form.features, reminder_2h: !form.features.reminder_2h })}
-            value={form.reminder2hTemplate}
-            onChange={v => setField("reminder2hTemplate", v)}
-            defaultTemplate={DEFAULT_2H_TEMPLATE}
-          />
-
-          {/* AI agent — link to dedicated page */}
-          <div className="flex items-start gap-3 pt-1">
-            <span className="text-lg mt-0.5">🤖</span>
-            <div>
-              <p className="text-sm font-semibold text-neutral-800">סוכן AI</p>
-              <p className="text-xs text-neutral-500 mb-1">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
-              <a href="/admin/agent" className="text-xs text-slate-800 hover:text-slate-700 font-medium underline">
-                עבור להגדרות הסוכן ←
-              </a>
-            </div>
+            <p className="text-sm font-semibold text-neutral-800">סוכן AI</p>
+            <p className="text-xs text-neutral-500 mb-1">מענה אוטומטי וקביעת תורים ישירות מ-WhatsApp</p>
+            <a href="/admin/agent" className="text-xs text-slate-800 hover:text-slate-700 font-medium underline">
+              עבור להגדרות הסוכן ←
+            </a>
           </div>
         </div>
       </div>
