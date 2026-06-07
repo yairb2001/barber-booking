@@ -187,9 +187,20 @@ function WorkingOverlay({ staff, dow, override }: {
       {segments.map((seg, i) => {
         const top = ((seg.start - dayStartMin) / 60) * hh;
         const height = ((seg.end - seg.start) / 60) * hh;
+        const isBreak = seg.type === "break";
         return (
-          <div key={i} className={`absolute left-0 right-0 pointer-events-none ${seg.type === "closed" ? "bg-neutral-100/70" : "bg-orange-50/70"}`}
-            style={{ top, height }} />
+          <div key={i}
+            className={`absolute left-0 right-0 pointer-events-none flex items-center justify-center overflow-hidden ${isBreak ? "bg-orange-100/80 border-y border-orange-200/60" : "bg-neutral-100/70"}`}
+            style={{ top, height }}>
+            {isBreak && height >= 18 && (
+              <div className="flex flex-col items-center leading-none gap-0.5 select-none">
+                <span className="text-orange-400 text-[9px] font-semibold tracking-wide">הפסקה</span>
+                {height >= 30 && (
+                  <span className="text-orange-300 text-[8px]" dir="ltr">{minToTime(seg.start)}–{minToTime(seg.end)}</span>
+                )}
+              </div>
+            )}
+          </div>
         );
       })}
     </>
@@ -1707,16 +1718,13 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
 function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId: string; onClose: () => void; onRefresh: () => void }) {
   const [tab, setTab] = useState<"hours" | "breaks" | "waitlist">("hours");
   const [hours, setHours] = useState({ isWorking: true, start: "09:00", end: "20:00" });
-  const [breaks, setBreaks] = useState<{ start: string; end: string }[]>([]);
+  const [breaks, setBreaks] = useState<{ start: string; end: string; recurring?: boolean }[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
-  // When true, break changes update the recurring weekly schedule (every <weekday>)
-  // instead of creating a one-day override.
-  const [applyRecurring, setApplyRecurring] = useState(false);
 
   useEffect(() => {
     // First check for a date-specific override, then fall back to weekly schedule
@@ -1786,41 +1794,45 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   }
 
   function addBreak() {
-    setBreaks(prev => [...prev, { start: "13:00", end: "14:00" }]);
+    setBreaks(prev => [...prev, { start: "13:00", end: "14:00", recurring: false }]);
   }
 
-  // Save breaks — either to the recurring weekly schedule (every <weekday>) or
-  // as a one-day override, depending on the `applyRecurring` toggle.
+  // Save breaks:
+  // - Day override always gets ALL breaks (so today is always correct).
+  // - Breaks marked as recurring ALSO update the weekly schedule (PATCH).
   async function saveBreaks() {
-    if (applyRecurring) {
-      setSaving(true);
-      setSaveError(null);
-      setSaved(false);
-      try {
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      // Strip recurring flag for API calls (API doesn't know about it)
+      const breaksForApi = breaks.map(({ start, end }) => ({ start, end }));
+
+      // Always save as a day override first
+      const r1 = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: breaksForApi }),
+      });
+      if (!r1.ok) throw new Error(`HTTP ${r1.status}`);
+
+      // If any breaks are recurring → also update weekly schedule with recurring breaks only
+      const recurringBreaks = breaks.filter(b => b.recurring).map(({ start, end }) => ({ start, end }));
+      if (recurringBreaks.length > 0) {
         const dow = new Date(date + "T00:00:00").getDay();
-        const res = await fetch(`/api/admin/staff/${staffId}/schedule`, {
+        const r2 = await fetch(`/api/admin/staff/${staffId}/schedule`, {
           method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            dayOfWeek: dow,
-            isWorking: hours.isWorking,
-            slots: [{ start: hours.start, end: hours.end }],
-            breaks,
-          }),
+          body: JSON.stringify({ dayOfWeek: dow, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks: recurringBreaks }),
         });
-        if (!res.ok) {
-          const errText = await res.text().catch(() => "");
-          throw new Error(errText || `HTTP ${res.status}`);
-        }
-        setSaved(true);
-        onRefresh();
-        setTimeout(() => { setSaved(false); onClose(); }, 800);
-      } catch (e) {
-        setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
-      } finally {
-        setSaving(false);
+        if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
       }
-    } else {
-      await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks });
+
+      setSaved(true);
+      onRefresh();
+      setTimeout(() => { setSaved(false); onClose(); }, 800);
+    } catch (e) {
+      setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -1916,17 +1928,28 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
             <div className="space-y-3">
               {breaks.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">אין הפסקות מוגדרות</p>}
               {breaks.map((br, i) => (
-                <div key={i} className="flex items-center gap-2 bg-orange-50 rounded-xl px-3 py-2 border border-orange-100">
-                  <span className="text-sm font-mono font-medium text-orange-800 flex-1">{br.start} – {br.end}</span>
-                  <div className="flex gap-2">
+                <div key={i} className="bg-orange-50 rounded-xl px-3 py-2 border border-orange-100 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono font-medium text-orange-800 flex-1" dir="ltr">{br.start} – {br.end}</span>
+                    <button onClick={() => removeBreak(i)} className="text-red-400 text-sm hover:text-red-600 shrink-0">✕</button>
+                  </div>
+                  <div className="flex items-center gap-2" dir="ltr">
                     <input type="time" value={br.start}
                       onChange={e => setBreaks(prev => prev.map((b, j) => j === i ? { ...b, start: e.target.value } : b))}
-                      className="border border-orange-200 rounded px-1 py-0.5 text-xs" />
+                      className="border border-orange-200 rounded px-2 py-1 text-xs flex-1" />
+                    <span className="text-xs text-orange-400">—</span>
                     <input type="time" value={br.end}
                       onChange={e => setBreaks(prev => prev.map((b, j) => j === i ? { ...b, end: e.target.value } : b))}
-                      className="border border-orange-200 rounded px-1 py-0.5 text-xs" />
-                    <button onClick={() => removeBreak(i)} className="text-red-400 text-xs hover:text-red-600">✕</button>
+                      className="border border-orange-200 rounded px-2 py-1 text-xs flex-1" />
                   </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none w-fit">
+                    <input type="checkbox" checked={!!br.recurring}
+                      onChange={e => setBreaks(prev => prev.map((b, j) => j === i ? { ...b, recurring: e.target.checked } : b))}
+                      className="w-3.5 h-3.5 accent-teal-600" />
+                    <span className="text-[11px] text-neutral-500">
+                      קבוע — כל יום {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long" })}
+                    </span>
+                  </label>
                 </div>
               ))}
               <button onClick={addBreak}
@@ -1934,21 +1957,11 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                 + הוסף הפסקה
               </button>
 
-              {/* Recurring toggle — apply to every <weekday> or just this date */}
-              <label className="flex items-center gap-2 px-1 py-1 cursor-pointer select-none">
-                <input type="checkbox" checked={applyRecurring}
-                  onChange={e => setApplyRecurring(e.target.checked)}
-                  className="w-4 h-4 accent-teal-600" />
-                <span className="text-xs text-neutral-600">
-                  קבוע — החל על כל יום {new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long" })}
-                </span>
-              </label>
-
               {saveError && <p className="text-xs text-red-500 bg-red-50 rounded-lg px-3 py-2 border border-red-200">{saveError}</p>}
               {saved && <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2 border border-emerald-200 font-semibold text-center">✓ נשמר!</p>}
               <button onClick={saveBreaks} disabled={saving || saved}
                 className="w-full bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-                {saving ? "שומר..." : applyRecurring ? "שמור הפסקות קבועות" : "שמור הפסקות"}
+                {saving ? "שומר..." : "שמור הפסקות"}
               </button>
             </div>
           )}
@@ -2511,36 +2524,33 @@ export default function AdminCalendar() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load staff + services + calendar settings once
-  useEffect(() => {
-    Promise.all([
+  // ── Staff + services + settings loader (extracted so it can be re-called) ──
+  const loadStaff = useCallback(async (isFirstLoad = false) => {
+    const [st, sv, biz, me] = await Promise.all([
       fetch("/api/admin/staff").then(r => r.json()),
       fetch("/api/admin/services").then(r => r.json()),
       fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).catch(() => null),
       fetch("/api/admin/me").then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([st, sv, biz, me]) => {
-      setAllStaff(st);
+    ]);
+    setAllStaff(st);
+    if (isFirstLoad) {
       setVisibleStaff(st.map((s: Staff) => s.id));
       if (st.length) {
         const saved = loadPrefs().weekBarber;
-        // Priority: 1) saved pref  2) logged-in barber's own staffId  3) first staff
         const myStaffId: string | null = me?.staffId ?? null;
         let defaultBarber = st[0].id;
-        if (saved && st.some((s: Staff) => s.id === saved)) {
-          defaultBarber = saved;
-        } else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
-          defaultBarber = myStaffId;
-        }
+        if (saved && st.some((s: Staff) => s.id === saved)) defaultBarber = saved;
+        else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) defaultBarber = myStaffId;
         setWeekBarber(defaultBarber);
         setDayBarber(defaultBarber);
       }
-      // Owner / permission flags
-      if (me) {
-        setIsOwner(me.isOwner ?? true);
-        setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
-      }
-      setServices(sv);
-      // Load calendar display hours from business settings JSON
+    }
+    if (me) {
+      setIsOwner(me.isOwner ?? true);
+      setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
+    }
+    setServices(sv);
+    if (isFirstLoad) {
       let serverStart = DAY_START;
       let serverEnd = DAY_END;
       if (biz?.settings) {
@@ -2550,7 +2560,6 @@ export default function AdminCalendar() {
           if (typeof s.calendarEndHour   === "number") serverEnd = s.calendarEndHour;
         } catch { /* ignore */ }
       }
-      // Check localStorage for user-local override
       const savedHours = typeof window !== "undefined" ? localStorage.getItem("cal_hours") : null;
       if (savedHours) {
         try {
@@ -2563,8 +2572,19 @@ export default function AdminCalendar() {
       setCalEnd(serverEnd);
       setLocalCalStart(serverStart);
       setLocalCalEnd(serverEnd);
-    });
-  }, []);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load staff + services + calendar settings once on mount
+  useEffect(() => { loadStaff(true); }, [loadStaff]);
+
+  // Re-fetch staff (schedules/breaks) when the tab becomes visible again —
+  // this picks up changes made in settings without a full page refresh.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") loadStaff(false); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadStaff]);
 
   const getDates = useCallback(() => {
     if (view === "day") return [date];
