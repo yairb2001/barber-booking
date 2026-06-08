@@ -117,7 +117,7 @@ const savePrefs = (patch: Partial<CalendarPrefs>) => {
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type Staff = { id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[] };
-type Service = { id: string; name: string; price: number; durationMinutes: number };
+type Service = { id: string; name: string; price: number; durationMinutes: number; ownerStaffId?: string | null };
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
@@ -428,6 +428,43 @@ type ApptBlockSwapState =
   | { kind: "pending-swap" }           // appt has open proposal in pending_response state (no agreement yet)
   | { kind: "swap-agreed" };           // appt has open proposal in accepted_by_customer state (awaiting admin approval)
 
+// ── Auto-fitting single-line text ─────────────────────────────────────────────
+// Shrinks the font-size until the text fits on ONE line inside its container, so
+// a full customer name (first + last) always stays visible without wrapping.
+// Re-fits on container resize (zoom +/-, day/week switch, lane changes).
+function FitText({ text, maxPx, minPx = 5, className, title }: {
+  text: string; maxPx: number; minPx?: number; className?: string; title?: string;
+}) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const spanRef = useRef<HTMLSpanElement>(null);
+  const [size, setSize] = React.useState(maxPx);
+
+  React.useLayoutEffect(() => {
+    const box = boxRef.current, span = spanRef.current;
+    if (!box || !span) return;
+    const fit = () => {
+      const avail = box.clientWidth;
+      if (avail <= 0) return;
+      let s = maxPx;
+      span.style.fontSize = `${s}px`;
+      while (s > minPx && span.scrollWidth > avail) { s -= 0.5; span.style.fontSize = `${s}px`; }
+      setSize(prev => (prev === s ? prev : s));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [text, maxPx, minPx]);
+
+  return (
+    <div ref={boxRef} className={className} style={{ width: "100%", overflow: "hidden" }} title={title}>
+      <span ref={spanRef} style={{ whiteSpace: "nowrap", fontSize: size, display: "inline-block", lineHeight: 1.1 }}>
+        {text}
+      </span>
+    </div>
+  );
+}
+
 function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState, lane }: {
   appt: Appt;
   colorClass: string;
@@ -447,13 +484,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const laneStyle: React.CSSProperties = lanes > 1
     ? { left: `calc(${(lane!.lane * 100) / lanes}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` }
     : { left: 2, right: 2 };
-  // Scale typography with BOTH the block height (zoom level / duration) and the
-  // lane width, so the text shrinks in proportion and never overflows a short
-  // block into its neighbour. Shorter / narrower → smaller font, fewer lines.
+  // The name always stays on ONE line via FitText (auto-shrinks to the lane
+  // width). The cap scales a little with how much room the block has.
   const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
   const short = height < 46;
-  const nameSizePx = (lanes >= 3 || veryShort) ? 8 : (lanes === 2 || short) ? 9 : 10;
-  const nameLines = veryShort ? 1 : 2;
+  const nameMaxPx = veryShort ? 9 : lanes >= 3 ? 10 : 11;
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -529,12 +564,9 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      {/* Full customer name (first + last). Font + line-count scale with the
-          block size so it stays readable yet never overflows into the next slot. */}
-      <p className="font-bold break-words"
-        style={{ fontSize: nameSizePx, lineHeight: 1.05, display: "-webkit-box", WebkitLineClamp: nameLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-        {appt.customer.name}
-      </p>
+      {/* Full customer name (first + last) on a single line — the font auto-shrinks
+          to fit the block width so it never overflows or overlaps the next slot. */}
+      <FitText text={appt.customer.name} maxPx={nameMaxPx} minPx={5} className="font-bold" title={appt.customer.name} />
       {height > 44 && lanes < 3 && <p className="text-[9px] opacity-70 truncate">{appt.service.name}</p>}
       {height > 60 && lanes < 3 && <p className="text-[9px] opacity-60" dir="ltr">{appt.startTime}</p>}
     </div>
@@ -723,7 +755,9 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             <select value={form.serviceId} onChange={e => setForm(p => ({ ...p, serviceId: e.target.value }))}
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
               <option value="">בחר שירות...</option>
-              {services.map(s => <option key={s.id} value={s.id}>{s.name} – ₪{s.price} ({s.durationMinutes} דק׳)</option>)}
+              {services
+                .filter(s => !s.ownerStaffId || s.ownerStaffId === form.staffId)
+                .map(s => <option key={s.id} value={s.id}>{s.name} – ₪{s.price} ({s.durationMinutes} דק׳)</option>)}
             </select>
             {endTime && <p className="text-xs text-neutral-400 mt-1">יסתיים בשעה {endTime}</p>}
           </div>

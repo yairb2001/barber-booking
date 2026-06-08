@@ -23,6 +23,7 @@ type Business = {
   reengageWeeks: number;
   reengageTemplate: string;
   chatsEnabled: boolean;
+  staffManageOwnServices: boolean;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -85,6 +86,7 @@ const emptyBusiness: Business = {
   bookingHorizonDays: 30, minBookingLeadMinutes: 0,
   reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
   chatsEnabled: false,
+  staffManageOwnServices: false,
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -417,6 +419,19 @@ export default function AdminSettingsPage() {
     setTimeout(() => setBarberPermsSaved(false), 2500);
   }
 
+  // Whether each barber manages their own services (vs owner controls all)
+  const [savingSvcMode, setSavingSvcMode] = useState(false);
+  async function saveStaffServicesMode(value: boolean) {
+    setField("staffManageOwnServices", value);
+    setSavingSvcMode(true);
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ staffManageOwnServices: value }),
+    });
+    setSavingSvcMode(false);
+  }
+
   // Referral sources
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
@@ -453,6 +468,7 @@ export default function AdminSettingsPage() {
           reengageWeeks:       data.reengageWeeks       ?? 6,
           reengageTemplate:    data.reengageTemplate    || "",
           chatsEnabled:        data.chatsEnabled        ?? false,
+          staffManageOwnServices: data.staffManageOwnServices ?? false,
         });
         const settingsObj = data.settings || {};
         // Resolve theme preset (with backward compat for old "theme: light/dark")
@@ -552,6 +568,26 @@ export default function AdminSettingsPage() {
               <span className="text-xl">💈</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">שירותים</span>
             </Link>
+          </div>
+
+          {/* Who manages services: owner controls all, or each barber manages their own */}
+          <div className="mt-2 bg-white border border-neutral-200 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <button
+                onClick={() => saveStaffServicesMode(!form.staffManageOwnServices)}
+                disabled={savingSvcMode}
+                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${form.staffManageOwnServices ? "bg-teal-500" : "bg-neutral-200"}`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.staffManageOwnServices ? "right-0.5" : "left-0.5"}`} />
+              </button>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-neutral-800">כל ספר מנהל את השירותים שלו</p>
+                <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                  {form.staffManageOwnServices
+                    ? "כל ספר יכול להוסיף, לערוך ולמחוק שירותים משלו, בלי תלות בשירותי המנהל."
+                    : "המנהל הראשי קובע את השירותים לכולם. הספרים בוחרים רק מתוך הרשימה הקיימת."}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 

@@ -92,6 +92,8 @@ export async function PATCH(req: NextRequest) {
       }),
       // Chats feature toggle
       ...(body.chatsEnabled !== undefined && { chatsEnabled: Boolean(body.chatsEnabled) }),
+      // Whether barbers manage their own services (vs owner controls all)
+      ...(body.staffManageOwnServices !== undefined && { staffManageOwnServices: Boolean(body.staffManageOwnServices) }),
       // Re-engagement automation
       ...(body.reengageEnabled !== undefined && { reengageEnabled: Boolean(body.reengageEnabled) }),
       ...(body.reengageWeeks   !== undefined && { reengageWeeks:   Number(body.reengageWeeks) || 6 }),

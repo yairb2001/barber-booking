@@ -12,6 +12,7 @@ type Service = {
   isVisible: boolean;
   showDuration: boolean;
   sortOrder: number;
+  ownerStaffId?: string | null;
 };
 
 const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true };
@@ -26,7 +27,9 @@ export default function AdminServicesPage() {
 
   async function load() {
     const data = await fetch("/api/admin/services").then((r) => r.json());
-    setServices(data);
+    // This page manages the shared (owner) pool only — barbers' own services
+    // (ownerStaffId set) are managed from each barber's page.
+    setServices(Array.isArray(data) ? data.filter((s: Service) => !s.ownerStaffId) : []);
     setLoading(false);
   }
 

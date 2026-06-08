@@ -1,39 +1,131 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwnStaffOrOwner } from "@/lib/session";
+import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
 
 // GET /api/admin/staff/[id]/services — all services with whether this staff offers them
+// Returns: shared (owner-managed) services + this barber's own services.
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const session = getRequestSession(req);
 
-  const [allServices, staffServices] = await Promise.all([
-    prisma.service.findMany({ orderBy: { sortOrder: "asc" } }),
+  const [allServices, staffServices, business] = await Promise.all([
+    // Shared pool (ownerStaffId = null) + services owned by this barber.
+    prisma.service.findMany({
+      where: { OR: [{ ownerStaffId: null }, { ownerStaffId: params.id }] },
+      orderBy: { sortOrder: "asc" },
+    }),
     prisma.staffService.findMany({ where: { staffId: params.id } }),
+    prisma.business.findFirst({ select: { staffManageOwnServices: true } }),
   ]);
 
   const staffMap = Object.fromEntries(staffServices.map(ss => [ss.serviceId, ss]));
+  // The owner can always manage own services; a barber only when the toggle is on.
+  const canManageOwn = (session?.isOwner ?? false) || !!business?.staffManageOwnServices;
 
-  return NextResponse.json(
-    allServices.map(s => ({
+  return NextResponse.json({
+    canManageOwn,
+    services: allServices.map(s => ({
       id: s.id,
       name: s.name,
       price: s.price,
       durationMinutes: s.durationMinutes,
       isVisible: s.isVisible,
-      enabled: !!staffMap[s.id],
+      owned: s.ownerStaffId === params.id,          // belongs to this barber
+      enabled: s.ownerStaffId === params.id ? true : !!staffMap[s.id],
       customPrice: staffMap[s.id]?.customPrice ?? null,
       customDuration: staffMap[s.id]?.customDuration ?? null,
-    }))
-  );
+    })),
+  });
 }
 
-// POST /api/admin/staff/[id]/services — toggle or update a service for this staff
-// Body: { serviceId, enabled, customPrice?, customDuration? }
+// POST /api/admin/staff/[id]/services — manage this staff's services.
+// Actions:
+//   (default toggle)   { serviceId, enabled, customPrice?, customDuration? }
+//   create own service { action: "create-own", name, price, durationMinutes }
+//   update own service { action: "update-own", serviceId, name?, price?, durationMinutes? }
+//   delete own service { action: "delete-own", serviceId }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const session = getRequestSession(req);
   const body = await req.json();
+  const action = body.action as string | undefined;
+
+  // ── Own-service management (create/update/delete) ──
+  if (action === "create-own" || action === "update-own" || action === "delete-own") {
+    // A barber may only manage their own services when the owner enabled it.
+    if (session && !session.isOwner) {
+      const biz = await prisma.business.findFirst({ select: { staffManageOwnServices: true } });
+      if (!biz?.staffManageOwnServices) {
+        return NextResponse.json(
+          { error: "ניהול שירותים אישי מושבת. פנה למנהל." },
+          { status: 403 }
+        );
+      }
+    }
+
+    if (action === "create-own") {
+      const name = String(body.name || "").trim();
+      const price = parseFloat(body.price);
+      const durationMinutes = parseInt(body.durationMinutes);
+      if (!name || !(price >= 0) || !(durationMinutes > 0)) {
+        return NextResponse.json({ error: "נתונים חסרים" }, { status: 400 });
+      }
+      const staff = await prisma.staff.findUnique({ where: { id: params.id }, select: { businessId: true } });
+      if (!staff) return NextResponse.json({ error: "ספר לא נמצא" }, { status: 404 });
+
+      const service = await prisma.service.create({
+        data: {
+          businessId: staff.businessId,
+          ownerStaffId: params.id,
+          name,
+          price,
+          durationMinutes,
+          isVisible: body.isVisible ?? true,
+          showDuration: body.showDuration ?? true,
+        },
+      });
+      // Auto-enable for the owning barber.
+      await prisma.staffService.create({ data: { staffId: params.id, serviceId: service.id } });
+      return NextResponse.json({ ok: true, id: service.id }, { status: 201 });
+    }
+
+    // For update/delete, verify the service is actually owned by this barber.
+    const svc = await prisma.service.findUnique({
+      where: { id: body.serviceId },
+      select: { ownerStaffId: true },
+    });
+    if (!svc || svc.ownerStaffId !== params.id) {
+      return NextResponse.json({ error: "שירות לא נמצא" }, { status: 404 });
+    }
+
+    if (action === "update-own") {
+      await prisma.service.update({
+        where: { id: body.serviceId },
+        data: {
+          ...(body.name !== undefined && { name: String(body.name).trim() }),
+          ...(body.price !== undefined && { price: parseFloat(body.price) }),
+          ...(body.durationMinutes !== undefined && { durationMinutes: parseInt(body.durationMinutes) }),
+        },
+      });
+      return NextResponse.json({ ok: true });
+    }
+
+    // delete-own
+    const apptCount = await prisma.appointment.count({ where: { serviceId: body.serviceId } });
+    if (apptCount > 0) {
+      return NextResponse.json(
+        { error: "לא ניתן למחוק שירות עם תורים. ניתן להסתיר אותו במקום." },
+        { status: 400 }
+      );
+    }
+    await prisma.staffService.deleteMany({ where: { serviceId: body.serviceId } });
+    await prisma.service.delete({ where: { id: body.serviceId } });
+    return NextResponse.json({ ok: true });
+  }
+
+  // ── Default: toggle a shared service on/off for this barber ──
   const { serviceId, enabled, customPrice, customDuration } = body;
 
   if (enabled) {

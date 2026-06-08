@@ -21,6 +21,7 @@ type ServiceRow = {
   price: number;
   durationMinutes: number;
   enabled: boolean;
+  owned: boolean;
   customPrice: number | null;
   customDuration: number | null;
 };
@@ -59,6 +60,9 @@ export default function StaffSettingsPage() {
   const [editingService, setEditingService] = useState<string | null>(null);
   const [customPrice, setCustomPrice] = useState("");
   const [customDuration, setCustomDuration] = useState("");
+  // Own-service management (barber's private services)
+  const [canManageOwn, setCanManageOwn] = useState(false);
+  const [ownForm, setOwnForm] = useState<{ id: string | null; name: string; price: string; durationMinutes: string } | null>(null);
 
   // Schedule
   const [schedule, setSchedule] = useState(emptySchedule());
@@ -110,7 +114,49 @@ export default function StaffSettingsPage() {
 
   async function loadServices() {
     const data = await fetch(`/api/admin/staff/${id}/services`).then(r => r.json());
-    setServices(data);
+    // New shape: { canManageOwn, services }. Backward-compat: plain array.
+    if (Array.isArray(data)) {
+      setServices(data);
+    } else {
+      setServices(Array.isArray(data.services) ? data.services : []);
+      setCanManageOwn(!!data.canManageOwn);
+    }
+  }
+
+  async function saveOwnService() {
+    if (!ownForm) return;
+    if (!ownForm.name.trim() || !ownForm.price || !ownForm.durationMinutes) return;
+    setSaving(true);
+    await fetch(`/api/admin/staff/${id}/services`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: ownForm.id ? "update-own" : "create-own",
+        serviceId: ownForm.id ?? undefined,
+        name: ownForm.name.trim(),
+        price: ownForm.price,
+        durationMinutes: ownForm.durationMinutes,
+      }),
+    });
+    setOwnForm(null);
+    await loadServices();
+    setSaving(false);
+  }
+
+  async function deleteOwnService(serviceId: string) {
+    if (!confirm("למחוק שירות זה?")) return;
+    setSaving(true);
+    const res = await fetch(`/api/admin/staff/${id}/services`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete-own", serviceId }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(j.error || "מחיקה נכשלה");
+    }
+    await loadServices();
+    setSaving(false);
   }
 
   useEffect(() => {
@@ -246,7 +292,9 @@ export default function StaffSettingsPage() {
       {activeTab === "services" && (
         <div className="space-y-3">
           <p className="text-xs text-neutral-400 mb-4">בחר אילו שירותים {staff.name} מציע. ניתן לקבוע מחיר/משך מותאמים.</p>
-          {services.map(svc => (
+
+          {/* Shared (owner-managed) services — toggle on/off + custom price/duration */}
+          {services.filter(s => !s.owned).map(svc => (
             <div key={svc.id} className={`bg-white rounded-2xl border p-4 ${svc.enabled ? "border-teal-200" : "border-neutral-100"}`}>
               <div className="flex items-center gap-3">
                 {/* Toggle */}
@@ -308,6 +356,91 @@ export default function StaffSettingsPage() {
               )}
             </div>
           ))}
+
+          {/* Own services — the barber's private services (independent of the owner) */}
+          {(canManageOwn || services.some(s => s.owned)) && (
+            <div className="pt-4 mt-2 border-t border-neutral-100">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-800">השירותים של {staff.name}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">שירותים אישיים, ללא תלות בשירותי המנהל</p>
+                </div>
+                {canManageOwn && (
+                  <button
+                    onClick={() => setOwnForm({ id: null, name: "", price: "", durationMinutes: "30" })}
+                    className="bg-teal-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
+                    + שירות חדש
+                  </button>
+                )}
+              </div>
+
+              {/* Add/edit form */}
+              {ownForm && (
+                <div className="bg-white rounded-2xl border border-teal-200 p-4 mb-3 space-y-3">
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">שם השירות *</label>
+                    <input value={ownForm.name}
+                      onChange={e => setOwnForm(p => p && ({ ...p, name: e.target.value }))}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">מחיר (₪) *</label>
+                      <input type="number" min={0} value={ownForm.price} dir="ltr"
+                        onChange={e => setOwnForm(p => p && ({ ...p, price: e.target.value }))}
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-neutral-500 block mb-1">משך (דקות) *</label>
+                      <input type="number" min={5} step={5} value={ownForm.durationMinutes} dir="ltr"
+                        onChange={e => setOwnForm(p => p && ({ ...p, durationMinutes: e.target.value }))}
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={saveOwnService} disabled={saving || !ownForm.name.trim() || !ownForm.price || !ownForm.durationMinutes}
+                      className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
+                      {saving ? "שומר..." : "שמור"}
+                    </button>
+                    <button onClick={() => setOwnForm(null)}
+                      className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm transition hover:bg-neutral-200">
+                      ביטול
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Own service cards */}
+              <div className="space-y-3">
+                {services.filter(s => s.owned).map(svc => (
+                  <div key={svc.id} className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-neutral-900 text-sm">{svc.name}</span>
+                        <span className="text-[10px] bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full font-medium">שלי</span>
+                      </div>
+                      <div className="text-xs text-neutral-400 mt-0.5">₪{svc.price} · {svc.durationMinutes} דק'</div>
+                    </div>
+                    {canManageOwn && (
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button onClick={() => setOwnForm({ id: svc.id, name: svc.name, price: String(svc.price), durationMinutes: String(svc.durationMinutes) })}
+                          className="text-xs text-neutral-500 hover:text-teal-700 px-2 py-1 rounded-lg border border-neutral-200 hover:border-teal-300 transition">
+                          ✏️ ערוך
+                        </button>
+                        <button onClick={() => deleteOwnService(svc.id)}
+                          className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded-lg border border-neutral-200 hover:border-red-200 transition">
+                          מחק
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {services.filter(s => s.owned).length === 0 && (
+                  <p className="text-xs text-neutral-300 text-center py-4">אין עדיין שירותים אישיים</p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

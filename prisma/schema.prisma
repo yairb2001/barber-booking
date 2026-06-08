@@ -56,6 +56,10 @@ model Business {
   minBookingLeadMinutes Int      @default(0)  @map("min_booking_lead_minutes")
   // ── Chats / customer messaging ──
   chatsEnabled          Boolean  @default(false) @map("chats_enabled")
+  // ── Services ownership ──
+  // When true, each barber manages their own services (create/edit/delete) in
+  // their own interface. When false (default), the owner controls all services.
+  staffManageOwnServices Boolean @default(false) @map("staff_manage_own_services")
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -168,6 +172,9 @@ model StaffScheduleOverride {
 model Service {
   id              String   @id @default(uuid())
   businessId      String   @map("business_id")
+  // null = shared business service (owner-managed pool).
+  // set = a service owned by a specific barber (managed by them).
+  ownerStaffId    String?  @map("owner_staff_id")
   name            String
   description     String?
   price           Float
