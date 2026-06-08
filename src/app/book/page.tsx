@@ -149,16 +149,31 @@ export default function ChooseBarberPage() {
       {/* ── Welcome back banner (returning customer) ── */}
       {welcomeName && (
         <div className="px-4 pt-4 pb-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">👋</span>
-            <div>
-              <p className="text-[17px] font-bold leading-tight" style={{ color: "var(--text-pri)" }}>
-                ברוך הבא, {welcomeName}!
-              </p>
-              <p className="text-[12px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
-                שמחים לראות אותך שוב — בוא נקבע לך תור
-              </p>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xl">👋</span>
+              <div className="min-w-0">
+                <p className="text-[17px] font-bold leading-tight truncate" style={{ color: "var(--text-pri)" }}>
+                  ברוך הבא, {welcomeName}!
+                </p>
+                <p className="text-[12px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  שמחים לראות אותך שוב — בוא נקבע לך תור
+                </p>
+              </div>
             </div>
+            {/* My Appointments — returning customer shortcut */}
+            <Link href="/book/my-appointments"
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
+              style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                style={{ color: "var(--brand)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-[12px] font-bold whitespace-nowrap" style={{ color: "var(--text-pri)" }}>
+                התורים שלי
+              </span>
+            </Link>
           </div>
         </div>
       )}

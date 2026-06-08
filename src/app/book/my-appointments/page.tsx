@@ -1,0 +1,242 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+
+type Appt = {
+  id: string;
+  date: string;        // ISO date
+  startTime: string;
+  endTime: string;
+  status: string;
+  price: number;
+  staff:   { id: string; name: string; avatarUrl: string | null };
+  service: { id: string; name: string; durationMinutes: number };
+};
+
+// ── Back arrow (matches the booking flow style) ──────────────────────────────
+function BackArrow({ href }: { href: string }) {
+  return (
+    <Link href={href}
+      className="w-9 h-9 flex items-center justify-center rounded-full transition-colors"
+      style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+        style={{ color: "var(--text-sec)" }}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+      </svg>
+    </Link>
+  );
+}
+
+// ── Hebrew date label: "יום שלישי, 12 ביוני" ─────────────────────────────────
+function dateLabel(iso: string): { weekday: string; full: string; rel: string } {
+  const d = new Date(iso + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+  const weekday = d.toLocaleDateString("he-IL", { weekday: "long" });
+  const full = d.toLocaleDateString("he-IL", { day: "numeric", month: "long" });
+  let rel = "";
+  if (diff === 0) rel = "היום";
+  else if (diff === 1) rel = "מחר";
+  return { weekday, full, rel };
+}
+
+export default function MyAppointmentsPage() {
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+  const [name, setName]       = useState("");
+  const [upcoming, setUpcoming] = useState<Appt[]>([]);
+  const [past, setPast]         = useState<Appt[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        // 1) Exchange the bk_session cookie for a fresh OTP token (no SMS).
+        const authRes = await fetch("/api/otp/auto-token", { method: "POST" });
+        if (!authRes.ok) {
+          setError("not-signed-in");
+          setLoading(false);
+          return;
+        }
+        const auth = await authRes.json();
+        if (auth?.name) setName(String(auth.name).split(" ")[0]);
+
+        // 2) Fetch this customer's appointments using phone + token.
+        const url = `/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`;
+        const res = await fetch(url);
+        if (!res.ok) {
+          setError("load-failed");
+          setLoading(false);
+          return;
+        }
+        const data = await res.json();
+        setUpcoming(Array.isArray(data.upcoming) ? data.upcoming : []);
+        setPast(Array.isArray(data.past) ? data.past : []);
+        setLoading(false);
+      } catch {
+        setError("load-failed");
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  return (
+    <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
+
+      {/* ── Sticky header ── */}
+      <div className="sticky top-0 z-20 px-4 py-3"
+        style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
+        <div className="flex items-center justify-between">
+          <BackArrow href="/book" />
+          <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
+            התורים שלי
+          </h1>
+          <div className="w-9" />
+        </div>
+      </div>
+
+      {/* ── Greeting ── */}
+      {!loading && !error && name && (
+        <div className="px-4 pt-4 pb-1">
+          <p className="text-[17px] font-bold leading-tight" style={{ color: "var(--text-pri)" }}>
+            היי {name} 👋
+          </p>
+          <p className="text-[12px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
+            {upcoming.length > 0
+              ? `יש לך ${upcoming.length} ${upcoming.length === 1 ? "תור עתידי" : "תורים עתידיים"}`
+              : "אין לך תורים עתידיים כרגע"}
+          </p>
+        </div>
+      )}
+
+      {/* ── Loading skeleton ── */}
+      {loading && (
+        <div className="px-4 pt-5 space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="animate-pulse rounded-2xl h-24" style={{ background: "var(--card)" }} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Not signed in ── */}
+      {!loading && error === "not-signed-in" && (
+        <div className="px-6 pt-20 text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <p className="text-[16px] font-bold mb-1" style={{ color: "var(--text-pri)" }}>
+            עדיין לא קבעת תור
+          </p>
+          <p className="text-[13px] mb-6" style={{ color: "var(--text-muted)" }}>
+            אחרי שתקבע תור ראשון, תוכל לראות כאן את כל התורים שלך
+          </p>
+          <Link href="/book"
+            className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
+            style={{ background: "var(--brand)" }}>
+            קבע תור עכשיו
+          </Link>
+        </div>
+      )}
+
+      {/* ── Load failed ── */}
+      {!loading && error === "load-failed" && (
+        <div className="px-6 pt-20 text-center">
+          <div className="text-5xl mb-4">😕</div>
+          <p className="text-[15px] font-semibold mb-4" style={{ color: "var(--text-pri)" }}>
+            לא הצלחנו לטעון את התורים
+          </p>
+          <button onClick={() => location.reload()}
+            className="px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
+            style={{ background: "var(--brand)" }}>
+            נסה שוב
+          </button>
+        </div>
+      )}
+
+      {/* ── Upcoming ── */}
+      {!loading && !error && (
+        <div className="px-4 pt-4">
+          {upcoming.length > 0 ? (
+            <div className="space-y-3">
+              {upcoming.map(a => {
+                const dl = dateLabel(a.date);
+                return (
+                  <div key={a.id} className="rounded-2xl p-4 relative overflow-hidden"
+                    style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
+                    {/* Brand accent stripe */}
+                    <div className="absolute top-0 bottom-0 right-0 w-1" style={{ background: "var(--brand)" }} />
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          {dl.rel && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                              style={{ background: "var(--brand)" }}>{dl.rel}</span>
+                          )}
+                          <p className="text-[14px] font-bold truncate" style={{ color: "var(--text-pri)" }}>
+                            {dl.weekday}, {dl.full}
+                          </p>
+                        </div>
+                        <p className="text-[12px] mt-1.5 truncate" style={{ color: "var(--text-sec)" }}>
+                          {a.service.name} · אצל {a.staff.name}
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-center pl-2 flex-shrink-0">
+                        <span className="text-[20px] font-extrabold tracking-wide leading-none" dir="ltr"
+                          style={{ color: "var(--brand)" }}>{a.startTime}</span>
+                        <span className="text-[10px] mt-1" style={{ color: "var(--text-muted)" }} dir="ltr">
+                          {a.startTime}–{a.endTime}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center pt-12 pb-6">
+              <div className="text-5xl mb-4">📅</div>
+              <p className="text-[15px] font-semibold mb-1" style={{ color: "var(--text-pri)" }}>
+                אין תורים עתידיים
+              </p>
+              <p className="text-[13px] mb-6" style={{ color: "var(--text-muted)" }}>
+                בוא נקבע לך תור חדש
+              </p>
+              <Link href="/book"
+                className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
+                style={{ background: "var(--brand)" }}>
+                קבע תור
+              </Link>
+            </div>
+          )}
+
+          {/* ── Past appointments ── */}
+          {past.length > 0 && (
+            <div className="mt-8">
+              <p className="text-[10px] tracking-[0.3em] uppercase font-medium mb-3 px-1" style={{ color: "var(--text-muted)" }}>
+                היסטוריה
+              </p>
+              <div className="space-y-2">
+                {past.slice(0, 10).map(a => {
+                  const dl = dateLabel(a.date);
+                  return (
+                    <div key={a.id} className="rounded-xl px-4 py-3 flex items-center justify-between"
+                      style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold truncate" style={{ color: "var(--text-sec)" }}>
+                          {dl.weekday}, {dl.full}
+                        </p>
+                        <p className="text-[11px] mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>
+                          {a.service.name} · {a.staff.name}
+                        </p>
+                      </div>
+                      <span className="text-[13px] font-bold pl-2 flex-shrink-0" dir="ltr"
+                        style={{ color: "var(--text-muted)" }}>{a.startTime}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
