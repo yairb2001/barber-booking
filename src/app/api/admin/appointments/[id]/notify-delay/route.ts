@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
 import { sendMessage, delayNotificationText } from "@/lib/messaging";
 
 /**
@@ -15,8 +15,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const body = await req.json().catch(() => null);
   const delayMinutes = body?.delayMinutes;
@@ -32,6 +32,10 @@ export async function POST(
     },
   });
   if (!appt) return NextResponse.json({ error: "תור לא נמצא" }, { status: 404 });
+
+  // Owner can notify for any appointment; a barber only for their own.
+  const guard = requireOwnStaffOrOwner(req, appt.staffId);
+  if (guard) return guard;
 
   const business = await prisma.business.findUnique({ where: { id: appt.businessId } });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 500 });
@@ -54,5 +58,13 @@ export async function POST(
     body:          text,
   });
 
-  return NextResponse.json({ ok: result.ok, error: result.error });
+  // Surface real send failures to the client (HTTP 502) instead of a silent 200.
+  if (!result.ok) {
+    return NextResponse.json(
+      { ok: false, error: result.error || "send_failed" },
+      { status: 502 },
+    );
+  }
+
+  return NextResponse.json({ ok: true });
 }

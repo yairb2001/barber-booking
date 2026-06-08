@@ -496,11 +496,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
     const phone = selectedCustomer?.phone || newCustomer.phone;
     const name = selectedCustomer?.name || newCustomer.name;
     if (!phone || !name) return;
-    // For NEW customers, referral source is required (mirrors customer-facing booking flow)
-    if (customerMode === "new" && !referralSource) {
-      setErrMsg("נא לבחור מקור הגעה ללקוח החדש");
-      return;
-    }
+    // Referral source is optional — no longer required to confirm the appointment.
     setErrMsg(null);
     setConflictMsg(null);
     setSaving(true);
@@ -694,10 +690,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                   placeholder="טלפון" dir="ltr"
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
 
-                {/* Referral source — required for new customers */}
+                {/* Referral source — optional */}
                 <div className="pt-1">
                   <label className="text-[11px] text-neutral-500 block mb-1">
-                    מקור הגעה <span className="text-red-500">*</span>
+                    מקור הגעה <span className="text-neutral-400">(לא חובה)</span>
                   </label>
                   <select
                     value={referralSource}
@@ -777,8 +773,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             </div>
           )}
           <button onClick={() => save(false)} disabled={saving || !!conflictMsg || !form.staffId || !form.serviceId ||
-            !(selectedCustomer || (newCustomer.name && newCustomer.phone)) ||
-            (customerMode === "new" && !referralSource)}
+            !(selectedCustomer || (newCustomer.name && newCustomer.phone))}
             className="w-full bg-teal-600 text-white py-3 rounded-xl font-semibold hover:bg-teal-700 disabled:opacity-40 transition">
             {saving ? "שומר..." : "קבע תור"}
           </button>
@@ -989,6 +984,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [delayMinutes, setDelayMinutes] = useState("");
   const [delaySending, setDelaySending] = useState(false);
   const [delaySent, setDelaySent] = useState(false);
+  const [delayError, setDelayError] = useState<string | null>(null);
 
   // Quick message
   const [showQuickMsg, setShowQuickMsg] = useState(false);
@@ -1092,17 +1088,26 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     const mins = parseInt(delayMinutes, 10);
     if (!mins || mins <= 0) return;
     setDelaySending(true);
-    const r = await fetch(`/api/admin/appointments/${appt.id}/notify-delay`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delayMinutes: mins }),
-    });
-    setDelaySending(false);
-    if (r.ok) {
-      setDelaySent(true);
-      setShowDelayInput(false);
-      setDelayMinutes("");
-      setTimeout(() => setDelaySent(false), 3000);
+    setDelayError(null);
+    try {
+      const r = await fetch(`/api/admin/appointments/${appt.id}/notify-delay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delayMinutes: mins }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.ok) {
+        setDelaySent(true);
+        setShowDelayInput(false);
+        setDelayMinutes("");
+        setTimeout(() => setDelaySent(false), 3000);
+      } else {
+        setDelayError(j.error || "שליחת ההודעה נכשלה");
+      }
+    } catch {
+      setDelayError("שגיאת רשת — נסה שוב");
+    } finally {
+      setDelaySending(false);
     }
   }
 
@@ -1131,7 +1136,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       />
     )}
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[72vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-neutral-100">
@@ -1249,36 +1254,36 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             )}
           </div>
         ) : (
-          <div className="px-4 py-2.5 border-b border-neutral-100 grid grid-cols-3 gap-2">
+          <div className="px-4 py-3 border-b border-neutral-100 grid grid-cols-3 gap-2">
             <div className="flex flex-col gap-0.5">
-              <p className="text-[10px] text-neutral-400">תאריך</p>
+              <p className="text-[11px] text-neutral-400">תאריך</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium text-neutral-800 text-xs leading-tight">{fmtDay(dispDate)}</p>
+                <p className="font-medium text-neutral-800 text-sm leading-tight">{fmtDay(dispDate)}</p>
                 <button onClick={() => openInline("date")} title="ערוך תאריך"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
             <div className="flex flex-col gap-0.5">
-              <p className="text-[10px] text-neutral-400">שעה</p>
+              <p className="text-[11px] text-neutral-400">שעה</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium text-neutral-800 text-xs" dir="ltr">{dispStart}–{dispEnd}</p>
+                <p className="font-medium text-neutral-800 text-sm" dir="ltr">{dispStart}–{dispEnd}</p>
                 <button onClick={() => openInline("time")} title="ערוך שעה"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
             <div className="flex flex-col gap-0.5">
-              <p className="text-[10px] text-neutral-400">מחיר</p>
+              <p className="text-[11px] text-neutral-400">מחיר</p>
               <div className="flex items-center gap-1">
-                <p className="font-bold text-slate-800 text-xs">₪{dispPrice}</p>
+                <p className="font-bold text-slate-800 text-sm">₪{dispPrice}</p>
                 <button onClick={() => openInline("price")} title="ערוך מחיר"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-xs transition">✏️</button>
+                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
           </div>
         )}
 
         {/* Referral source */}
-        <div className="px-5 py-3 border-b border-neutral-100">
+        <div className="px-4 py-3 border-b border-neutral-100">
           <div className="flex items-center justify-between mb-1">
             <p className="text-xs text-neutral-400">מקור הגעה</p>
             {!editingReferral && (
@@ -1313,14 +1318,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Customer note */}
         {appt.note && (
-          <div className="px-5 py-3 border-b border-neutral-100">
+          <div className="px-4 py-3 border-b border-neutral-100">
             <p className="text-xs text-neutral-400 mb-1">הערת לקוח</p>
             <p className="text-sm text-neutral-700 bg-neutral-50 rounded-lg px-3 py-2">{appt.note}</p>
           </div>
         )}
 
         {/* Staff note */}
-        <div className="px-5 py-3 border-b border-neutral-100">
+        <div className="px-4 py-3 border-b border-neutral-100">
           <p className="text-xs text-neutral-400 mb-1.5">הערת ספר</p>
           <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
             placeholder="הוסף הערה פנימית..."
@@ -1334,7 +1339,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Status actions */}
-        <div className="px-5 py-3 border-b border-neutral-100">
+        <div className="px-4 py-3 border-b border-neutral-100">
           <p className="text-xs text-neutral-400 mb-2">שינוי סטטוס</p>
           <div className="grid grid-cols-2 gap-2">
             {[
@@ -1348,7 +1353,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* ── Swap panel ── */}
-        <div className="px-5 py-3 border-b border-neutral-100">
+        <div className="px-4 py-3 border-b border-neutral-100">
           {/* Case 1: appointment is currently a candidate in someone else's swap proposal */}
           {proposalAsCandidate && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 mb-3">
@@ -1462,7 +1467,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Delay notification */}
-        <div className="px-5 py-3 border-b border-neutral-100">
+        <div className="px-4 py-3 border-b border-neutral-100">
           {delaySent ? (
             <p className="text-sm text-emerald-600 font-medium text-center">✓ עדכון עיכוב נשלח ללקוח</p>
           ) : showDelayInput ? (
@@ -1486,11 +1491,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   {delaySending ? "..." : "שלח"}
                 </button>
                 <button
-                  onClick={() => { setShowDelayInput(false); setDelayMinutes(""); }}
+                  onClick={() => { setShowDelayInput(false); setDelayMinutes(""); setDelayError(null); }}
                   className="text-neutral-400 hover:text-neutral-600 px-2 rounded-lg hover:bg-neutral-50 transition">
                   ✕
                 </button>
               </div>
+              {delayError && (
+                <p className="text-xs text-red-600 font-medium">{delayError}</p>
+              )}
             </div>
           ) : (
             <button
@@ -1502,7 +1510,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Actions */}
-        <div className="px-5 py-4 space-y-2">
+        <div className="px-4 py-4 space-y-2">
           {/* Quick message — sends from system, persists in chats */}
           {quickSent ? (
             <p className="text-sm text-emerald-600 font-medium text-center py-2">✓ ההודעה נשלחה ל-{appt.customer.name}</p>
@@ -2310,7 +2318,7 @@ function DraftApptBlock({
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  const blockH = isMobile ? 28 : 36;
+  const blockH = isMobile ? 44 : 36;
   const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
@@ -2357,19 +2365,21 @@ function DraftApptBlock({
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
-        // ── Mobile: thin draggable pill — time floats ABOVE the finger
+        // ── Mobile: appointment-like draggable block — time floats ABOVE the finger
         <div className="relative w-full h-full">
-          {/* Floating time bubble — always above the block so finger can't hide it */}
+          {/* Floating time bubble — always above the block so the finger can't hide it */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap z-50 ${clampedTop < 36 ? "top-7" : "-top-8"}`}
+            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-sm font-extrabold px-3.5 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 48 ? "top-[52px]" : "-top-9"}`}
             dir="ltr">
             {time}
           </div>
           <div
-            className="w-full h-full rounded-md bg-teal-600/90 backdrop-blur-sm flex items-center justify-end px-2 shadow"
-            style={{ borderRight: "3px solid rgba(13, 148, 136, 1)" }}>
+            className="w-full h-full rounded-lg bg-teal-600/95 backdrop-blur-sm flex items-center justify-between px-2.5 shadow-lg ring-1 ring-teal-700/40"
+            style={{ borderRight: "4px solid rgba(13, 148, 136, 1)" }}>
+            <span className="text-white text-[13px] font-bold tabular-nums" dir="ltr">{time}</span>
+            <span className="text-white/85 text-[11px] font-medium">תור חדש · גרור להזזה</span>
             <button
-              className="w-5 h-5 flex items-center justify-center rounded text-white/70 hover:text-white text-xs leading-none"
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-white/20 text-white text-xs leading-none"
               onPointerDown={e => e.stopPropagation()}
               onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
           </div>
@@ -2707,7 +2717,9 @@ export default function AdminCalendar() {
       el.removeEventListener("touchmove", onTouchMove);
       el.removeEventListener("touchend", onTouchEnd);
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // Re-attach when the grid (re)mounts: it only exists once loading finishes
+    // and is replaced by a placeholder in month view, so gridRef.current changes.
+  }, [loading, view]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Staff + services + settings loader (extracted so it can be re-called) ──
   const loadStaff = useCallback(async (isFirstLoad = false) => {
@@ -3320,7 +3332,8 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={colMinWidth ? { minWidth: colMinWidth } : {}}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          if (colDraft) { setDraftAppt(null); return; }
+                          // Any tap on the grid while a draft is open cancels it (tap elsewhere = close)
+                          if (draftAppt) { setDraftAppt(null); return; }
                           handleGridClick(e, s.id, date);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
@@ -3422,7 +3435,8 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          if (colDraft) { setDraftAppt(null); return; }
+                          // Any tap on the grid while a draft is open cancels it (tap elsewhere = close)
+                          if (draftAppt) { setDraftAppt(null); return; }
                           handleGridClick(e, s.id, d);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
