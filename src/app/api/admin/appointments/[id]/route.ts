@@ -4,6 +4,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
 import { getRequestSession } from "@/lib/session";
 import { sendMessage, cancellationText } from "@/lib/messaging";
+import { pushToOwner } from "@/lib/native/push";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
 
@@ -158,6 +159,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     CANCEL_STATUSES.has(appointment.status);
 
   if (justCancelled) {
+    // 0) Notify the business owner/manager (native app) — always.
+    {
+      const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+      pushToOwner(before.businessId, {
+        title: "תור בוטל ❌",
+        body: `${appointment.customer.name} אצל ${appointment.staff.name}\n${dateLabel} בשעה ${appointment.startTime}`,
+        data: { type: "appointment_cancelled", appointmentId: appointment.id },
+      }).catch(() => {});
+    }
+
     // 1) Tell the waitlist a slot opened up.
     if (body.notifyWaitlist !== false) {
       notifyWaitlistForCancellation({

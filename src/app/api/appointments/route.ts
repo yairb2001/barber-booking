@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
-import { pushToStaff } from "@/lib/native/push";
+import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -184,11 +184,17 @@ export async function POST(request: NextRequest) {
   });
 
   // Native push to the assigned barber — "you have a new appointment".
+  // Also notify the business owner/manager (who has the app installed).
   {
     const pushDateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
     pushToStaff(staffId, {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
+      data: { type: "appointment", appointmentId: appointment.id, date },
+    }).catch(() => {});
+    pushToOwner(staff.businessId, {
+      title: "תור חדש נקבע 📅",
+      body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       data: { type: "appointment", appointmentId: appointment.id, date },
     }).catch(() => {});
   }

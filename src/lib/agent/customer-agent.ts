@@ -17,6 +17,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
+import { pushToOwner } from "@/lib/native/push";
 import {
   generateSlots,
   getDayOfWeek,
@@ -316,7 +317,7 @@ async function execTool(
       case "cancel_appointment": {
         const appt = await prisma.appointment.findUnique({
           where: { id: input.appointmentId },
-          include: { staff: true, service: true },
+          include: { staff: true, service: true, customer: { select: { name: true } } },
         });
         if (!appt || appt.businessId !== bizId) return "תור לא נמצא.";
         if (["cancelled_by_customer", "cancelled_by_staff"].includes(appt.status)) return "תור זה כבר בוטל.";
@@ -325,6 +326,18 @@ async function execTool(
           where: { id: appt.id },
           data: { status: "cancelled_by_customer", cancelledAt: new Date() },
         });
+
+        // Notify the business owner/manager (native app) — a customer self-cancelled
+        {
+          const ownerDateStr = new Date(appt.date).toLocaleDateString("he-IL", {
+            weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
+          });
+          pushToOwner(appt.businessId, {
+            title: "תור בוטל ע״י הלקוח ❌",
+            body: `${appt.customer.name} אצל ${appt.staff.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
+            data: { type: "appointment_cancelled", appointmentId: appt.id },
+          }).catch(() => {});
+        }
 
         // Notify waitlist members — a slot just freed up
         notifyWaitlistForCancellation({

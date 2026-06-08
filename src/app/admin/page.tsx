@@ -496,9 +496,15 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   // width). The cap scales a little with how much room the block has.
   const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
   const short = height < 46;
-  // Cap the name font to the block height too, so the single line never gets
-  // clipped vertically when the calendar is fully zoomed out.
-  const nameMaxPx = height < 18 ? 8 : veryShort ? 9 : lanes >= 3 ? 10 : 11;
+  // The name font scales with the zoom level (hourHeight) so text grows when you
+  // zoom in and shrinks when you zoom out — then it's capped by the block height
+  // so it never clips vertically on short, zoomed-out blocks.
+  const zoomFont = Math.max(8, Math.min(20, Math.round(8 + (hh - 28) * 0.1)));
+  const heightCap = Math.max(7, height - (veryShort ? 3 : 5));
+  let nameMaxPx = Math.min(zoomFont, heightCap);
+  if (lanes >= 3) nameMaxPx = Math.min(nameMaxPx, 12);
+  // Secondary lines (service, time) scale with the name but stay a bit smaller.
+  const subFont = Math.max(8, Math.round(nameMaxPx * 0.82));
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -577,8 +583,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {/* Full customer name (first + last) on a single line — the font auto-shrinks
           to fit the block width so it never overflows or overlaps the next slot. */}
       <FitText text={appt.customer.name} maxPx={nameMaxPx} minPx={5} className="font-bold" title={appt.customer.name} />
-      {height > 44 && lanes < 3 && <p className="text-[9px] opacity-70 truncate">{appt.service.name}</p>}
-      {height > 60 && lanes < 3 && <p className="text-[9px] opacity-60" dir="ltr">{appt.startTime}</p>}
+      {height > 44 && lanes < 3 && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
+      {height > 60 && lanes < 3 && <p className="opacity-60" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
   );
 }

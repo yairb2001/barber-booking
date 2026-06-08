@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -149,23 +149,52 @@ export async function POST(req: NextRequest) {
   const wantsNotify = body.notifyCustomer !== false && (body.notifyCustomer === true || isUpcoming);
   if (!body.walkIn && wantsNotify && hasFeature(business.features, "reminders")) {
     const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
-    const confirmBody = confirmationText({
-      customerName: appointment.customer.name,
-      businessName: business.name,
-      staffName: appointment.staff.name,
-      serviceName: appointment.service.name,
-      dateLabel,
-      startTime: appointment.startTime,
-      endTime: appointment.endTime,
-      price: appointment.price,
-      address: business.address,
-    }, business.confirmationTemplate);
+
+    // First-booking detection — even when the ADMIN books for a new customer,
+    // send the special new-customer welcome (parity with the /book self-booking flow).
+    const apptCount = await prisma.appointment.count({
+      where: { customerId: customer.id, businessId: business.id },
+    });
+    const isFirstBooking = apptCount === 1;
+
+    let msgBody: string;
+    let msgKind: "confirmation" | "first_booking";
+
+    if (isFirstBooking) {
+      const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
+      msgBody = applyTemplate(tmpl, {
+        name:         firstName(appointment.customer.name),
+        business:     business.name,
+        date:         dateLabel,
+        time:         appointment.startTime,
+        end_time:     appointment.endTime,
+        staff:        appointment.staff.name,
+        service:      appointment.service.name,
+        price:        String(appointment.price),
+        address_line: business.address ? `\n📍 ${business.address}` : "",
+      });
+      msgKind = "first_booking";
+    } else {
+      msgBody = confirmationText({
+        customerName: appointment.customer.name,
+        businessName: business.name,
+        staffName: appointment.staff.name,
+        serviceName: appointment.service.name,
+        dateLabel,
+        startTime: appointment.startTime,
+        endTime: appointment.endTime,
+        price: appointment.price,
+        address: business.address,
+      }, business.confirmationTemplate);
+      msgKind = "confirmation";
+    }
+
     sendMessage({
       businessId: business.id,
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
-      kind: "confirmation",
-      body: confirmBody,
+      kind: msgKind,
+      body: msgBody,
     }).catch(err => console.error("confirmation send failed", err));
   }
 

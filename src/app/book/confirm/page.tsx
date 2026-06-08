@@ -84,7 +84,75 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   );
 }
 
-// ── App teaser — always shown after booking ───────────────────────────────────
+// ── Add to calendar (Google + Apple/.ics) ─────────────────────────────────────
+function AddToCalendar({
+  title, staffName, serviceName, date, time, durationMin, location,
+}: {
+  title: string; staffName: string; serviceName: string;
+  date: string; time: string; durationMin: number; location: string;
+}) {
+  // Build tz-safe wall-clock timestamps from the appointment strings (no Date()
+  // parsing → no device-timezone drift). Times are Israel local; we tag the
+  // event with TZID=Asia/Jerusalem so it lands correctly on any device.
+  if (!date || !time) return null;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const [y, mo, d] = date.split("-");
+  const [hh, mm] = time.split(":").map(Number);
+  const startMin = hh * 60 + mm;
+  const endMin = startMin + (durationMin || 30);
+  const startStr = `${y}${mo}${d}T${pad(hh)}${pad(mm)}00`;
+  const endStr = `${y}${mo}${d}T${pad(Math.floor(endMin / 60) % 24)}${pad(endMin % 60)}00`;
+
+  const detailParts = [
+    serviceName && `שירות: ${serviceName}`,
+    staffName && `ספר: ${staffName}`,
+  ].filter(Boolean) as string[];
+  const details = detailParts.join("\n");
+
+  const googleUrl =
+    `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+    `&text=${encodeURIComponent(title)}` +
+    `&dates=${startStr}/${endStr}` +
+    `&details=${encodeURIComponent(details)}` +
+    `&location=${encodeURIComponent(location || "")}` +
+    `&ctz=Asia/Jerusalem`;
+
+  const ics = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DOMINANT//Booking//HE",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT",
+    `UID:${startStr}-${Math.random().toString(36).slice(2)}@dominant`,
+    `DTSTAMP:${startStr}`,
+    `DTSTART;TZID=Asia/Jerusalem:${startStr}`,
+    `DTEND;TZID=Asia/Jerusalem:${endStr}`,
+    `SUMMARY:${title.replace(/\n/g, " ")}`,
+    `DESCRIPTION:${details.replace(/\n/g, "\\n")}`,
+    `LOCATION:${(location || "").replace(/\n/g, " ")}`,
+    "BEGIN:VALARM", "TRIGGER:-PT2H", "ACTION:DISPLAY", "DESCRIPTION:תזכורת לתור",
+    "END:VALARM", "END:VEVENT", "END:VCALENDAR",
+  ].join("\r\n");
+  const icsHref = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">📅</span>
+        <p className="text-[13px] font-bold text-slate-800">הוסף את התור ליומן</p>
+      </div>
+      <div className="flex gap-2">
+        <a href={googleUrl} target="_blank" rel="noopener noreferrer"
+          className="flex-1 flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-700 text-[12px] font-bold text-center py-2.5 rounded-xl active:bg-slate-100">
+          <span>🟢</span> Google
+        </a>
+        <a href={icsHref} download="appointment.ics"
+          className="flex-1 flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-700 text-[12px] font-bold text-center py-2.5 rounded-xl active:bg-slate-100">
+          <span>🍎</span> Apple / אחר
+        </a>
+      </div>
+    </div>
+  );
+}
+
+// ── App teaser — shown after booking only when store links exist ───────────────
 function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playStoreUrl?: string }) {
   const hasLinks = !!(appStoreUrl || playStoreUrl);
   return (
@@ -180,6 +248,8 @@ function ConfirmPageContent() {
   const [businessId,   setBusinessId]   = useState("");
   const [appStoreUrl,  setAppStoreUrl]  = useState("");
   const [playStoreUrl, setPlayStoreUrl] = useState("");
+  const [businessName,    setBusinessName]    = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
 
   // Autocomplete: search customers as user types referrer name
   useEffect(() => {
@@ -197,6 +267,8 @@ function ConfirmPageContent() {
     fetch("/api/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
     fetch("/api/business").then(r => r.json()).then(biz => {
       if (biz?.id) setBusinessId(biz.id);
+      if (biz?.name) setBusinessName(biz.name);
+      if (biz?.address) setBusinessAddress(biz.address);
       try {
         const s = typeof biz?.settings === "string" ? JSON.parse(biz.settings) : (biz?.settings || {});
         if (s.appStoreUrl)  setAppStoreUrl(s.appStoreUrl);
@@ -330,7 +402,7 @@ function ConfirmPageContent() {
         `&staffId=${staffId}&serviceId=${serviceId}` +
         `&staffName=${encodeURIComponent(appointment.staff.name)}` +
         `&serviceName=${encodeURIComponent(appointment.service.name)}` +
-        `&date=${date}&time=${time}&price=${price}` +
+        `&date=${date}&time=${time}&price=${price}&duration=${duration}` +
         `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`
       );
     } catch {
@@ -379,7 +451,20 @@ function ConfirmPageContent() {
             <SummaryRow label="מחיר" value={`₪${successPrice}`} large />
           </div>
 
-          <AppTeaser appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
+          <AddToCalendar
+            title={`תור${businessName ? ` ב${businessName}` : ""}`}
+            staffName={searchParams.get("staffName") || ""}
+            serviceName={searchParams.get("serviceName") || ""}
+            date={successDate}
+            time={successTime}
+            durationMin={Number(searchParams.get("duration")) || 30}
+            location={businessAddress}
+          />
+
+          {/* App download teaser — only when real store links are configured */}
+          {(appStoreUrl || playStoreUrl) && (
+            <AppTeaser appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
+          )}
 
           {successPhone && successStaffId && successSvcId && successDate && (
             <WaitlistCard phone={successPhone} name={successName}

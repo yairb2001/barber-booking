@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { pushToOwner } from "@/lib/native/push";
 
 /**
  * Public endpoint — customers join the waitlist.
@@ -68,6 +69,16 @@ export async function POST(request: Request) {
   // Waitlist members are only messaged when a slot actually frees up
   // (see src/lib/waitlist-notify.ts — cancellations, day re-open, break removed,
   //  hours added, and customer self-cancel via the WhatsApp agent).
+
+  // Notify the business owner/manager (native app) — someone joined the waitlist.
+  {
+    const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+    pushToOwner(biz.id, {
+      title: "הצטרפות לרשימת המתנה ⏳",
+      body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+      data: { type: "waitlist", waitlistId: entry.id },
+    }).catch(() => {});
+  }
 
   return NextResponse.json(entry, { status: 201 });
 }
