@@ -49,6 +49,43 @@ const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { week
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
 const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
 const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
+
+// ── Overlap lane packing ──────────────────────────────────────────────────────
+// Given a column's appointments, work out how to lay overlapping ones SIDE BY
+// SIDE so they don't stack on top of each other. Returns a map id → { lane,
+// lanes } where `lanes` is how many columns the overlap-cluster needs and
+// `lane` is this appointment's column index (0-based).
+function computeApptLanes(appts: { id: string; startTime: string; endTime: string }[]): Record<string, { lane: number; lanes: number }> {
+  const items = appts
+    .map(a => ({ id: a.id, start: toMin(a.startTime), end: toMin(a.endTime), lane: 0 }))
+    .sort((x, y) => x.start - y.start || x.end - y.end);
+  const result: Record<string, { lane: number; lanes: number }> = {};
+  let cluster: typeof items = [];
+  let columnsEnd: number[] = []; // end-minute of the last appt placed in each column
+  let clusterEnd = -1;
+
+  const flush = () => {
+    const lanes = Math.max(columnsEnd.length, 1);
+    for (const it of cluster) result[it.id] = { lane: it.lane, lanes };
+    cluster = [];
+    columnsEnd = [];
+    clusterEnd = -1;
+  };
+
+  for (const it of items) {
+    // If this appointment starts after everything in the current cluster has
+    // ended, the cluster is closed — finalize it before starting fresh.
+    if (cluster.length && it.start >= clusterEnd) flush();
+    let placed = columnsEnd.findIndex(end => end <= it.start);
+    if (placed === -1) { placed = columnsEnd.length; columnsEnd.push(it.end); }
+    else columnsEnd[placed] = it.end;
+    it.lane = placed;
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.end);
+  }
+  flush();
+  return result;
+}
 const nowPxFn = (hh: number, ds = DAY_START) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - ds * 60) / 60) * hh; };
 // Snap to 10-minute increments — the calendar grid "magnetizes" to clean times.
 const SNAP_MIN = 5;
@@ -391,17 +428,27 @@ type ApptBlockSwapState =
   | { kind: "pending-swap" }           // appt has open proposal in pending_response state (no agreement yet)
   | { kind: "swap-agreed" };           // appt has open proposal in accepted_by_customer state (awaiting admin approval)
 
-function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState }: {
+function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState, lane }: {
   appt: Appt;
   colorClass: string;
   onClick: () => void;
   onLongPress: (clientX: number, clientY: number) => void;
   isMoving: boolean; // true if THIS appointment is the one being moved → fade out the original
   swapState: ApptBlockSwapState;
+  /** Side-by-side placement among overlapping appointments. */
+  lane?: { lane: number; lanes: number };
 }) {
   const hh = React.useContext(HHCtx);
   const top = apptTop(appt.startTime, hh);
   const height = apptH(appt.startTime, appt.endTime, hh);
+  // When this appointment overlaps others, share the column width so they sit
+  // beside each other instead of stacking. Otherwise use the full column.
+  const lanes = lane && lane.lanes > 1 ? lane.lanes : 1;
+  const laneStyle: React.CSSProperties = lanes > 1
+    ? { left: `calc(${(lane!.lane * 100) / lanes}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` }
+    : { left: 2, right: 2 };
+  // Tighten typography as lanes get narrower so the name still reads.
+  const nameClass = lanes >= 3 ? "text-[8px]" : lanes === 2 ? "text-[9px]" : "text-[10px]";
 
   // Long-press state — refs (no re-render)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -444,8 +491,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   }
 
   return (
-    <div className={`no-touch-select absolute left-0.5 right-0.5 rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1.5 py-1 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
-      style={{ top, height, touchAction: "none", ...extraStyle }}
+    <div className={`no-touch-select absolute rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1 py-0.5 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+      style={{ top, height, touchAction: "none", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
@@ -476,9 +523,14 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      <p className="text-[11px] font-bold leading-tight truncate">{appt.customer.name}</p>
-      {height > 36 && <p className="text-[10px] opacity-70 truncate">{appt.service.name}</p>}
-      {height > 52 && <p className="text-[10px] opacity-60">{appt.startTime}</p>}
+      {/* Full customer name (first + last) — wraps to 2 lines in a small font so
+          it stays readable even in narrow week-view / overlap lanes. */}
+      <p className={`${nameClass} font-bold leading-[1.1] break-words`}
+        style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        {appt.customer.name}
+      </p>
+      {height > 38 && lanes < 3 && <p className="text-[9px] opacity-70 truncate">{appt.service.name}</p>}
+      {height > 54 && lanes < 3 && <p className="text-[9px] opacity-60" dir="ltr">{appt.startTime}</p>}
     </div>
   );
 }
@@ -3611,13 +3663,18 @@ export default function AdminCalendar() {
                             }}
                           />
                         )}
-                        {getAppts(s.id, date).map(a => (
-                          <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                            isMoving={dragMove?.appt.id === a.id}
-                            swapState={swapStateFor(a.id)}
-                            onClick={() => handleApptClick(a)}
-                            onLongPress={(x, y) => startMoveDrag(a, x, y)} />
-                        ))}
+                        {(() => {
+                          const dayAppts = getAppts(s.id, date);
+                          const lanes = computeApptLanes(dayAppts);
+                          return dayAppts.map(a => (
+                            <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                              isMoving={dragMove?.appt.id === a.id}
+                              swapState={swapStateFor(a.id)}
+                              lane={lanes[a.id]}
+                              onClick={() => handleApptClick(a)}
+                              onLongPress={(x, y) => startMoveDrag(a, x, y)} />
+                          ));
+                        })()}
                         {renderMoveSlotMarkers(s.id, date)}
                       </div>
                     );
@@ -3722,13 +3779,18 @@ export default function AdminCalendar() {
                             }}
                           />
                         )}
-                        {getAppts(s.id, d).map(a => (
-                          <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
-                            isMoving={dragMove?.appt.id === a.id}
-                            swapState={swapStateFor(a.id)}
-                            onClick={() => handleApptClick(a)}
-                            onLongPress={(x, y) => startMoveDrag(a, x, y)} />
-                        ))}
+                        {(() => {
+                          const dayAppts = getAppts(s.id, d);
+                          const lanes = computeApptLanes(dayAppts);
+                          return dayAppts.map(a => (
+                            <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                              isMoving={dragMove?.appt.id === a.id}
+                              swapState={swapStateFor(a.id)}
+                              lane={lanes[a.id]}
+                              onClick={() => handleApptClick(a)}
+                              onLongPress={(x, y) => startMoveDrag(a, x, y)} />
+                          ));
+                        })()}
                         {renderMoveSlotMarkers(s.id, d)}
                       </div>
                     );

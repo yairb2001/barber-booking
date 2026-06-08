@@ -428,21 +428,8 @@ export default function HomePage() {
       0%, 100% { opacity: 1; text-shadow: 0 0 10px rgba(${brandRgb},0.9), 0 0 2px rgba(255,255,255,0.6); }
       50%      { opacity: 0.45; text-shadow: 0 0 2px rgba(${brandRgb},0.3); }
     }
-    @keyframes slot-marquee {
-      from { transform: translateX(0); }
-      to   { transform: translateX(-50%); }
-    }
-    .slot-marquee-track {
-      display: flex;
-      gap: 0.625rem;
-      width: max-content;
-      animation: slot-marquee linear infinite;
-    }
-    .slot-marquee-mask:active .slot-marquee-track,
-    .slot-marquee-track:hover { animation-play-state: paused; }
     @media (prefers-reduced-motion: reduce) {
       .available-now-blink { animation: none !important; }
-      .slot-marquee-track  { animation: none !important; }
     }
   `;
 
@@ -602,31 +589,24 @@ export default function HomePage() {
               <Link href="/book" className="text-white/50 text-[11px] hover:text-white/80 transition-colors">כל התורים ←</Link>
             </div>
 
-            {/* Infinite marquee — slots glide on their own and loop back seamlessly.
-                The track is rendered twice; translateX(-50%) lands exactly on the copy. */}
-            <div className="slot-marquee-mask overflow-hidden pb-1">
-              <div
-                className="slot-marquee-track"
-                style={{ animationDuration: `${Math.max(quickSlots.length * 3.5, 14)}s` }}
-              >
-                {[...quickSlots, ...quickSlots].map((slot, i) => (
-                  <Link key={i}
-                    href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
-                    aria-hidden={i >= quickSlots.length}
-                    className="flex-shrink-0 rounded-2xl p-3.5 active:scale-95 transition-transform"
-                    style={{
-                      background: "rgba(255,255,255,0.10)",
-                      backdropFilter: "blur(20px)",
-                      WebkitBackdropFilter: "blur(20px)",
-                      border: "1px solid rgba(255,255,255,0.18)",
-                      minWidth: 108,
-                    }}>
-                    <p className="text-[18px] font-bold tracking-widest text-white leading-none mb-1.5" dir="ltr">{slot.time}</p>
-                    <p className="text-[11px] text-white/75 font-medium">{slot.dayLabel}</p>
-                    <p className="text-[10px] text-white/45 truncate mt-0.5">{slot.staffName}</p>
-                  </Link>
-                ))}
-              </div>
+            {/* Swipe row — the customer scrolls through open slots with a finger. */}
+            <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
+              {quickSlots.map((slot, i) => (
+                <Link key={i}
+                  href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                  className="flex-shrink-0 rounded-2xl p-3.5 active:scale-95 transition-transform"
+                  style={{
+                    background: "rgba(255,255,255,0.10)",
+                    backdropFilter: "blur(20px)",
+                    WebkitBackdropFilter: "blur(20px)",
+                    border: "1px solid rgba(255,255,255,0.18)",
+                    minWidth: 108,
+                  }}>
+                  <p className="text-[18px] font-bold tracking-widest text-white leading-none mb-1.5" dir="ltr">{slot.time}</p>
+                  <p className="text-[11px] text-white/75 font-medium">{slot.dayLabel}</p>
+                  <p className="text-[10px] text-white/45 truncate mt-0.5">{slot.staffName}</p>
+                </Link>
+              ))}
             </div>
           </div>
         )}
