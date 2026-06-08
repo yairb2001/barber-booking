@@ -1224,7 +1224,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       />
     )}
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-2xl w-full max-w-[20rem] shadow-2xl max-h-[82vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-neutral-100">
@@ -1236,7 +1236,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Customer — compact row with pencil to edit (name/phone only) */}
-        <div className="px-4 py-2.5 border-b border-neutral-100">
+        <div className="px-4 py-2 border-b border-neutral-100">
           {inlineEdit === "name" ? (
             <div className="space-y-2">
               <div className="relative">
@@ -1295,7 +1295,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Details row — תאריך / שעה / מחיר each with pencil (inline, per-field) */}
         {inlineEdit === "date" || inlineEdit === "time" || inlineEdit === "price" ? (
-          <div className="px-4 py-3 border-b border-neutral-100 space-y-2">
+          <div className="px-4 py-2 border-b border-neutral-100 space-y-2">
             {inlineEdit === "date" && (
               <>
                 <label className="text-[11px] text-neutral-500 block">תאריך</label>
@@ -1365,7 +1365,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             )}
           </div>
         ) : (
-          <div className="px-4 py-3 border-b border-neutral-100 grid grid-cols-3 gap-2">
+          <div className="px-4 py-2 border-b border-neutral-100 grid grid-cols-3 gap-2">
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">תאריך</p>
               <div className="flex items-center gap-1">
@@ -1394,7 +1394,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         )}
 
         {/* Referral source — blinks while missing so it's caught on the next visit too */}
-        <div className={`px-4 py-3 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
+        <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
           <div className="flex items-center justify-between mb-1">
             <p className={`text-xs ${!referralSource && !editingReferral ? "text-amber-700 font-semibold" : "text-neutral-400"}`}>
               מקור הגעה{!referralSource && !editingReferral ? " — ⚠ חסר" : ""}
@@ -1431,14 +1431,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Customer note */}
         {appt.note && (
-          <div className="px-4 py-3 border-b border-neutral-100">
+          <div className="px-4 py-2 border-b border-neutral-100">
             <p className="text-xs text-neutral-400 mb-1">הערת לקוח</p>
             <p className="text-sm text-neutral-700 bg-neutral-50 rounded-lg px-3 py-2">{appt.note}</p>
           </div>
         )}
 
         {/* Staff note */}
-        <div className="px-4 py-3 border-b border-neutral-100">
+        <div className="px-4 py-2 border-b border-neutral-100">
           <p className="text-xs text-neutral-400 mb-1.5">הערת ספר</p>
           <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
             placeholder="הוסף הערה פנימית..."
@@ -1452,7 +1452,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Status actions */}
-        <div className="px-4 py-3 border-b border-neutral-100">
+        <div className="px-4 py-2 border-b border-neutral-100">
           <p className="text-xs text-neutral-400 mb-2">שינוי סטטוס</p>
           {confirmingCancel ? (
             <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
@@ -1493,7 +1493,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* ── Swap panel ── */}
-        <div className="px-4 py-3 border-b border-neutral-100">
+        <div className="px-4 py-2 border-b border-neutral-100">
           {/* Case 1: appointment is currently a candidate in someone else's swap proposal */}
           {proposalAsCandidate && (
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 mb-3">
@@ -1607,7 +1607,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Delay notification */}
-        <div className="px-4 py-3 border-b border-neutral-100">
+        <div className="px-4 py-2 border-b border-neutral-100">
           {delaySent ? (
             <p className="text-sm text-emerald-600 font-medium text-center">✓ עדכון עיכוב נשלח ללקוח</p>
           ) : showDelayInput ? (
@@ -1650,7 +1650,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         </div>
 
         {/* Actions */}
-        <div className="px-4 py-4 space-y-2">
+        <div className="px-4 py-3 space-y-2">
           {/* Quick message — sends from system, persists in chats */}
           {quickSent ? (
             <p className="text-sm text-emerald-600 font-medium text-center py-2">✓ ההודעה נשלחה ל-{appt.customer.name}</p>
@@ -2356,7 +2356,7 @@ type DragState = { staffId: string; date: string; startY: number; endY: number }
 // candidate to the current swap proposal.
 function DraftMoveSlotBlock({
   startY, durationMinutes,
-  onMove, onConfirm, onDismiss, onDragMoved, onHorizontalDragEnd,
+  onMove, onConfirm, onDismiss, onDragMoved, onHorizontalDragEnd, columnSnapDeltaX,
 }: {
   startY: number;
   durationMinutes: number;   // must match primary appointment length
@@ -2366,12 +2366,16 @@ function DraftMoveSlotBlock({
   onDragMoved?: () => void;
   /** Called when the user releases after a horizontal drag — clientX of the pointer */
   onHorizontalDragEnd?: (clientX: number) => void;
+  /** Magnetize horizontal drag to the day/staff axis (same as a real appointment). */
+  columnSnapDeltaX?: (clientX: number, originClientX: number) => number | null;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
+  const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  const blockH = Math.max((durationMinutes / 60) * hh, 36);
-  const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
+  const blockH = Math.max((durationMinutes / 60) * hh, isMobile ? 40 : 36);
+  // Magnetize to the 5-minute grid, exactly like dragging a real appointment.
+  const clampedTop = snapYToGrid(Math.max(0, Math.min(totalH - blockH, startY)), hh);
   const startTime = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
   // CSS translateX so the block slides across columns while pointer capture is held
@@ -2379,7 +2383,7 @@ function DraftMoveSlotBlock({
 
   return (
     <div
-      className="no-touch-select absolute left-0.5 right-0.5 select-none cursor-grab active:cursor-grabbing"
+      className="no-touch-select absolute left-1 right-1 select-none cursor-grab active:cursor-grabbing"
       style={{
         top: clampedTop,
         height: blockH,
@@ -2399,8 +2403,10 @@ function DraftMoveSlotBlock({
         if (!dragRef.current) return;
         const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
         onMove(newY);
-        // Horizontal: slide block across columns visually (keeps pointer capture on this element)
-        setTransX(e.clientX - dragRef.current.clientX);
+        // Horizontal: MAGNETIZE to the day/staff axis (locks onto the column under
+        // the finger), falling back to a free slide only off the grid.
+        const snapped = columnSnapDeltaX?.(e.clientX, dragRef.current.clientX);
+        setTransX(snapped != null ? snapped : e.clientX - dragRef.current.clientX);
       }}
       onPointerUp={e => {
         e.stopPropagation();
@@ -2415,26 +2421,36 @@ function DraftMoveSlotBlock({
       onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
       onClick={e => e.stopPropagation()}>
 
-      {/* Floating time bubble — above the block so the finger can't hide it */}
-      <div
-        className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg pointer-events-none whitespace-nowrap z-50 ${clampedTop < 36 ? "top-full mt-1" : "-top-7"}`}
-        dir="ltr">
-        ↕ {startTime}
-      </div>
-      <div
-        className="relative w-full h-full rounded-lg flex flex-col justify-between px-1 py-0.5 border-2 border-dashed"
-        style={{ borderColor: "#0d9488", background: "rgba(20, 184, 166, 0.15)", backdropFilter: "blur(4px)" }}>
-        {/* Dismiss */}
-        <button className="absolute top-0 left-0 z-10 text-teal-600 hover:text-teal-900 text-[11px] leading-none p-0.5"
-          onPointerDown={e => e.stopPropagation()}
-          onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
-        {/* Confirm */}
-        <button
-          className="w-full text-[9px] font-semibold text-white bg-teal-600 hover:bg-teal-700 rounded px-0.5 py-1 mt-auto transition text-center leading-none"
-          onPointerDown={e => e.stopPropagation()}
-          onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
-          + העבר לכאן
-        </button>
+      <div className="relative w-full h-full">
+        {/* Floating time bubble — above the bar so the finger can't hide it */}
+        <div
+          className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-[13px] font-extrabold px-3 py-0.5 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 40 ? "top-[40px]" : "-top-8"}`}
+          dir="ltr">
+          ↕ {startTime}
+        </div>
+        {/* Slim draggable bar (grip + time) — the grab area; NOT a button so it
+            can be dragged anywhere along it. A compact confirm sits at the end. */}
+        <div
+          className="absolute inset-x-0 top-0 h-7 rounded-lg bg-teal-600 flex items-center gap-2 px-2 shadow-lg ring-1 ring-teal-700/50"
+          style={{ borderRight: "4px solid rgba(13, 148, 136, 1)" }}>
+          {/* Dismiss */}
+          <button className="shrink-0 text-white/80 hover:text-white text-[11px] leading-none p-0.5"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+          {/* grip dots — signals "drag me" */}
+          <span className="flex flex-col gap-[3px] shrink-0 opacity-80">
+            <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
+            <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
+          </span>
+          <span className="text-white text-[14px] font-extrabold tabular-nums" dir="ltr">{startTime}</span>
+          {/* Confirm — compact, doesn't cover the drag area */}
+          <button
+            className="shrink-0 mr-auto text-[10px] font-bold text-teal-700 bg-white hover:bg-teal-50 rounded px-2 py-1 leading-none transition"
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onConfirm(startTime); }}>
+            ✓ העבר לכאן
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -2602,9 +2618,6 @@ export default function AdminCalendar() {
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [editingBreak, setEditingBreak] = useState<{ staffId: string; date: string; breakIdx: number; initial: RawBreak } | null>(null);
   const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
-  // Which column (`${staffId}|${date}`) the draft is being dragged over — used to
-  // highlight the target day column so the day-axis lock is visible.
-  const [draftDragCol, setDraftDragCol] = useState<string | null>(null);
   const [draftMoveSlot, setDraftMoveSlot] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
@@ -2703,13 +2716,6 @@ export default function AdminCalendar() {
     return target.left - origin.left;
   }, []);
 
-  // Highlight the day column under the finger while dragging the draft block.
-  const handleDraftColHover = React.useCallback((clientX: number | null) => {
-    if (clientX == null) { setDraftDragCol(null); return; }
-    const col = findColumnByX(clientX);
-    setDraftDragCol(col ? `${col.staffId}|${col.date}` : null);
-  }, [findColumnByX]);
-
   // When a DraftApptBlock or DraftMoveSlotBlock is dragged, the browser fires a
   // `click` on the grid after mouseup (because the mouse ends up outside the
   // 32px block). This ref lets us swallow that one ghost click so the block
@@ -2782,6 +2788,9 @@ export default function AdminCalendar() {
       toggleSwapCandidate(a.id);
       return;
     }
+    // Opening an existing appointment exits any open time-selection draft.
+    setDraftAppt(null);
+    setDraftMoveSlot(null);
     setSelectedAppt(a);
   }
 
@@ -3383,13 +3392,6 @@ export default function AdminCalendar() {
     setDraftAppt({ staffId, date: d, startY: y });
   }
 
-  // Tapping a different time while a draft is open moves it there (snapped to the grid).
-  function relocateDraft(e: React.MouseEvent<HTMLDivElement>, staffId: string, d: string) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = snapYToGrid(e.clientY - rect.top, hourHeight);
-    setDraftAppt({ staffId, date: d, startY: y });
-  }
-
   function handleStatusChange(id: string, status: string) {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     if (selectedAppt?.id === id) setSelectedAppt(prev => prev ? { ...prev, status } : null);
@@ -3529,10 +3531,10 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={colMinWidth ? { minWidth: colMinWidth } : {}}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // While a draft is open, tapping another time on the grid
-                          // RELOCATES the draft to that time (stays in creation mode).
-                          // Exiting creation is done via the ✕ in the action sheet.
-                          if (draftAppt) { relocateDraft(e, s.id, date); return; }
+                          // While a draft is open, tapping anything else EXITS creation
+                          // mode (the draft is repositioned by dragging the block itself).
+                          if (draftAppt) { setDraftAppt(null); return; }
+                          if (draftMoveSlot) { setDraftMoveSlot(null); return; }
                           handleGridClick(e, s.id, date);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
@@ -3542,11 +3544,6 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]}
                           staffId={s.id} date={date}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
-                        {/* Day-axis lock highlight — shows which column the draft will land on */}
-                        {draftDragCol === colKey && (
-                          <div className="absolute inset-0 pointer-events-none z-10 rounded-sm"
-                            style={{ background: "rgba(13,148,136,0.10)", boxShadow: "inset 0 0 0 2px rgba(13,148,136,0.5)" }} />
-                        )}
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
@@ -3587,7 +3584,6 @@ export default function AdminCalendar() {
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
-                            onColHover={handleDraftColHover}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
@@ -3606,6 +3602,7 @@ export default function AdminCalendar() {
                             onConfirm={startTime => { toggleSwapMoveSlot(s.id, date, startTime); setDraftMoveSlot(null); }}
                             onDismiss={() => setDraftMoveSlot(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            columnSnapDeltaX={columnSnapDeltaX}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
@@ -3641,9 +3638,10 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // While a draft is open, tapping another time RELOCATES it
-                          // (stays in creation mode). Exit via the ✕ in the action sheet.
-                          if (draftAppt) { relocateDraft(e, s.id, d); return; }
+                          // While a draft is open, tapping anything else EXITS creation
+                          // mode (the draft is repositioned by dragging the block itself).
+                          if (draftAppt) { setDraftAppt(null); return; }
+                          if (draftMoveSlot) { setDraftMoveSlot(null); return; }
                           handleGridClick(e, s.id, d);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
@@ -3653,11 +3651,6 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]}
                           staffId={s.id} date={d}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
-                        {/* Day-axis lock highlight — shows which day column the draft will land on */}
-                        {draftDragCol === colKey && (
-                          <div className="absolute inset-0 pointer-events-none z-10 rounded-sm"
-                            style={{ background: "rgba(13,148,136,0.10)", boxShadow: "inset 0 0 0 2px rgba(13,148,136,0.5)" }} />
-                        )}
                         {/* Per-column now line — only today */}
                         {d === todayISO() && nowY >= 0 && nowY <= totalHeight && (
                           <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
@@ -3702,7 +3695,6 @@ export default function AdminCalendar() {
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
-                            onColHover={handleDraftColHover}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
@@ -3721,6 +3713,7 @@ export default function AdminCalendar() {
                             onConfirm={startTime => { toggleSwapMoveSlot(s.id, d, startTime); setDraftMoveSlot(null); }}
                             onDismiss={() => setDraftMoveSlot(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            columnSnapDeltaX={columnSnapDeltaX}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
