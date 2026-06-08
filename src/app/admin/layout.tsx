@@ -64,6 +64,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
+  const [linkCopied, setLinkCopied] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
   // No-op on the regular web browser.
   const { platform } = useNativeShell();
@@ -128,6 +129,28 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const handleLogout = async () => {
     await fetch("/api/admin/auth/logout", { method: "POST" });
     window.location.href = "/admin/login";
+  };
+
+  // Share / copy the public booking link so the owner can distribute it easily.
+  const handleShareLink = async () => {
+    const url = window.location.origin + "/";
+    const title = "DOMINANT — קביעת תור";
+    // Prefer the native share sheet (mobile / installed app), fall back to clipboard.
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share({ title, url });
+        return;
+      } catch {
+        /* user cancelled or share unavailable — fall through to copy */
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      window.prompt("העתק את קישור העסק:", url);
+    }
   };
 
   const isActive = (item: { href: string; exact?: boolean }) => {
@@ -203,6 +226,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </nav>
 
         <div className="px-4 py-3 border-t border-slate-200 space-y-2">
+          {/* Share the public booking link — easy to distribute to customers */}
+          <button
+            onClick={handleShareLink}
+            className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition ${
+              linkCopied ? "bg-emerald-50 text-emerald-700" : "bg-teal-50 text-teal-700 hover:bg-teal-100"
+            }`}
+          >
+            <span className="text-base">{linkCopied ? "✓" : "🔗"}</span>
+            <span>{linkCopied ? "הקישור הועתק!" : "קישור העסק — שתף"}</span>
+          </button>
           <Link
             href="/"
             onClick={() => setDrawerOpen(false)}
