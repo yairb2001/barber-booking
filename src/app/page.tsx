@@ -400,6 +400,17 @@ export default function HomePage() {
   const T: Theme = business?.theme || THEMES.onyx;
   const brand = T.brand;
 
+  // Tapping the referral pill → invite another friend (share sheet / WhatsApp).
+  const inviteFriend = async () => {
+    const url = window.location.origin + "/";
+    const bizName = business?.name || "מספרה";
+    const text = `קבעתי תור ב${bizName} 💈 ממליץ לך גם! קבע דרך הקישור:`;
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try { await navigator.share({ title: bizName, text, url }); return; } catch { /* cancelled */ }
+    }
+    window.open(`https://wa.me/?text=${encodeURIComponent(text + " " + url)}`, "_blank");
+  };
+
   // RGB breakdown for glow effects
   const br = parseInt(brand.slice(1, 3) || "C9", 16);
   const bg2 = parseInt(brand.slice(3, 5) || "A8", 16);
@@ -721,16 +732,30 @@ export default function HomePage() {
         const remaining = Math.max(0, referral.goal - referral.referralCount);
         return (
           <div className="px-5 py-3 flex justify-center bg-slate-50 border-b border-slate-100">
-            <div className="inline-flex items-center gap-2.5 rounded-full pr-3 pl-2.5 py-1.5 shadow-sm"
-              style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
-              <span className="text-[12px] font-bold text-white whitespace-nowrap" dir="ltr">🙌 {shown}/{referral.goal}</span>
-              <div className="h-1.5 w-14 rounded-full bg-white/25 overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "#5eead4" }} />
+            <button onClick={inviteFriend}
+              className="w-full max-w-[280px] rounded-2xl px-3.5 py-2.5 shadow-sm text-white text-right active:scale-[0.97] transition-transform"
+              style={{ background: brand }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[12px] font-bold">🙌 תודה על ההמלצות!</span>
+                <span className="text-[12px] font-extrabold" dir="ltr">{shown}/{referral.goal}</span>
               </div>
-              <span className="text-[10.5px] text-teal-100 whitespace-nowrap">
-                {reached ? `${referral.giftLabel}! 🎁` : `עוד ${remaining} ל${referral.giftLabel}`}
-              </span>
-            </div>
+              <div className="h-1.5 rounded-full bg-white/25 overflow-hidden mb-1.5">
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "rgba(255,255,255,0.9)" }} />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10.5px] text-white/85 leading-snug">
+                  {reached
+                    ? `הגעת ליעד — מגיעה לך ${referral.giftLabel}! 🎁`
+                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} עליך 💈`}
+                </p>
+                <span className="flex items-center gap-0.5 text-[10.5px] font-bold text-white whitespace-nowrap flex-shrink-0">
+                  הזמינו חבר
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </span>
+              </div>
+            </button>
           </div>
         );
       })()}
