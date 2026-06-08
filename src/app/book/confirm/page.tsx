@@ -3,7 +3,6 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { getReferralFriendSource } from "@/lib/referral";
 
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
@@ -313,13 +312,18 @@ function ConfirmPageContent() {
         const s = typeof biz?.settings === "string" ? JSON.parse(biz.settings) : (biz?.settings || {});
         if (s.appStoreUrl)  setAppStoreUrl(s.appStoreUrl);
         if (s.playStoreUrl) setPlayStoreUrl(s.playStoreUrl);
-        setReferralProgram({
-          enabled: s.referralProgramEnabled !== false,
-          goal: Number(s.referralGoal) > 0 ? Math.round(Number(s.referralGoal)) : 3,
-          giftLabel: (typeof s.referralGiftLabel === "string" && s.referralGiftLabel.trim()) ? s.referralGiftLabel.trim() : "תספורת חינם",
-        });
-        setFriendSource(getReferralFriendSource(s));
       } catch { /* ignore */ }
+      // Referral config comes resolved from the API (raw settings are stripped
+      // server-side), so the friend-source follows the owner's chosen name.
+      const ref = biz?.referral;
+      if (ref) {
+        setReferralProgram({
+          enabled: ref.enabled !== false,
+          goal: Number(ref.goal) > 0 ? Math.round(Number(ref.goal)) : 3,
+          giftLabel: (typeof ref.giftLabel === "string" && ref.giftLabel.trim()) ? ref.giftLabel.trim() : "תספורת חינם",
+        });
+        setFriendSource(ref.friendSource ?? null);
+      }
     }).catch(() => {});
 
     // Returning referrer — show a thank-you + progress meter (identity via cookie)

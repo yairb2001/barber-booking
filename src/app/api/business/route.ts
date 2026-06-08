@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveTheme } from "@/lib/themes";
+import { getReferralConfig, getReferralFriendSource, getReferralSources } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
 
@@ -58,9 +59,19 @@ export async function GET(req: NextRequest) {
     }
   } catch { /* ignore */ }
 
+  // Referral config the public booking flow needs. We expose ONLY the resolved
+  // referral settings (never the raw settings blob), so the confirm page can
+  // open the friend-picker for the owner's chosen source name.
+  const referral = {
+    ...getReferralConfig(business.settings),          // enabled, goal, giftLabel
+    friendSource: getReferralFriendSource(business.settings),
+    sources: getReferralSources(business.settings),
+  };
+
   return NextResponse.json({
     ...business,
     settings: undefined, // strip raw settings — theme is exposed instead
+    referral,      // resolved referral config (enabled/goal/giftLabel/friendSource)
     socialLinks,
     theme,         // full palette object: bg, brand, fontDisplay, etc.
     themeId: theme.id,
