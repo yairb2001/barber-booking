@@ -269,6 +269,16 @@ export const DEFAULT_DELAY_NOTIFICATION_TEMPLATE =
 
 מצטערים על אי הנוחות 🙏`;
 
+export const DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE =
+`שלום {{name}} 👋
+
+התור שלך ב*{{business}}* בוטל.
+📅 {{date}}
+🕒 {{time}}
+
+מצטערים על אי הנוחות 🙏
+לקביעת תור חדש פשוט כתבו לנו כאן.`;
+
 export const DEFAULT_FIRST_BOOKING_TEMPLATE =
 `שלום {{name}} 👋
 
@@ -637,5 +647,23 @@ export function delayNotificationText(
     business:      params.businessName,
     time:          params.appointmentTime,
     delay_minutes: String(params.delayMinutes),
+  });
+}
+
+export function cancellationText(
+  params: {
+    customerName: string;
+    businessName: string;
+    dateLabel: string;
+    startTime: string;
+  },
+  customTemplate?: string | null,
+): string {
+  const tmpl = customTemplate || DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE;
+  return applyTemplate(tmpl, {
+    name:     firstName(params.customerName),
+    business: params.businessName,
+    date:     params.dateLabel,
+    time:     params.startTime,
   });
 }

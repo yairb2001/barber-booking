@@ -141,8 +141,13 @@ export async function POST(req: NextRequest) {
   ).getTime();
   const isUpcoming = apptTimestamp > Date.now();
 
-  // ── Confirmation (future appointments only, non-walk-in) ─────────────────────
-  if (!body.walkIn && isUpcoming && hasFeature(business.features, "reminders")) {
+  // ── Confirmation ─────────────────────────────────────────────────────────────
+  // Sent when the booker asked to notify the customer (default true from the
+  // admin modal) OR — for programmatic callers without the flag — when the
+  // appointment is genuinely upcoming. `notifyCustomer: false` lets a barber
+  // record a past/quiet appointment without messaging the customer.
+  const wantsNotify = body.notifyCustomer !== false && (body.notifyCustomer === true || isUpcoming);
+  if (!body.walkIn && wantsNotify && hasFeature(business.features, "reminders")) {
     const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
     const confirmBody = confirmationText({
       customerName: appointment.customer.name,

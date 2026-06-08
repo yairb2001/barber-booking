@@ -84,8 +84,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   });
 
-  // If availability expanded (day opened / break removed / hours added) → notify waitlist
-  if (afterAvail > beforeAvail) {
+  // If availability expanded (day opened / break removed / hours added) → notify waitlist,
+  // unless the caller explicitly opted out (notifyWaitlist: false).
+  if (afterAvail > beforeAvail && body.notifyWaitlist !== false) {
     // Look up businessId from staff record
     const staff = await prisma.staff.findUnique({
       where: { id: params.id },

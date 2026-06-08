@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
 import { getRequestSession } from "@/lib/session";
+import { sendMessage, cancellationText } from "@/lib/messaging";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
 
@@ -51,26 +52,40 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let nextStaffId   = (body.staffId as string) ?? before.staffId;
   let nextServiceId = (body.serviceId as string) ?? before.serviceId;
 
-  if (body.startTime !== undefined || body.durationMinutes !== undefined || body.serviceId !== undefined) {
+  if (body.startTime !== undefined || body.endTime !== undefined || body.durationMinutes !== undefined || body.serviceId !== undefined) {
     const startStr = body.startTime !== undefined ? String(body.startTime) : before.startTime;
     const [sh, sm] = startStr.split(":").map(Number);
     const startMins = sh * 60 + sm;
 
-    let durMin: number;
-    if (body.durationMinutes !== undefined && Number(body.durationMinutes) > 0) {
-      durMin = Number(body.durationMinutes);
+    let endMins: number;
+    if (body.endTime !== undefined) {
+      // Explicit end time — the user edited it directly.
+      endMins = timeToMinutes(String(body.endTime));
     } else {
-      // derive from current endTime or from service default
-      const prevStart = timeToMinutes(before.startTime);
-      const prevEnd   = timeToMinutes(before.endTime);
-      durMin = prevEnd - prevStart;
-      if (body.serviceId !== undefined) {
-        const svc = await prisma.service.findUnique({ where: { id: body.serviceId } });
-        if (svc) durMin = svc.durationMinutes;
+      let durMin: number;
+      if (body.durationMinutes !== undefined && Number(body.durationMinutes) > 0) {
+        durMin = Number(body.durationMinutes);
+      } else {
+        // derive from current endTime or from service default
+        const prevStart = timeToMinutes(before.startTime);
+        const prevEnd   = timeToMinutes(before.endTime);
+        durMin = prevEnd - prevStart;
+        if (body.serviceId !== undefined) {
+          const svc = await prisma.service.findUnique({ where: { id: body.serviceId } });
+          if (svc) durMin = svc.durationMinutes;
+        }
       }
+      endMins = startMins + durMin;
     }
 
-    const endMins = startMins + durMin;
+    // End must be after start.
+    if (endMins <= startMins) {
+      return NextResponse.json(
+        { error: "שעת הסיום חייבת להיות אחרי שעת ההתחלה" },
+        { status: 400 }
+      );
+    }
+
     nextStartTime = startStr;
     nextEndTime   = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
     data.startTime = nextStartTime;
@@ -79,7 +94,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   // Conflict check when time/date/staff changes (unless override)
   const timingChanged =
-    body.startTime !== undefined || body.durationMinutes !== undefined ||
+    body.startTime !== undefined || body.endTime !== undefined || body.durationMinutes !== undefined ||
     body.date !== undefined || body.staffId !== undefined || body.serviceId !== undefined;
 
   if (timingChanged && !body.override) {
@@ -135,18 +150,44 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }).catch(console.error);
   }
 
-  // If status just changed to cancelled → notify waitlist
+  // If status just changed to cancelled → optionally notify customer + waitlist.
+  // The admin chooses each via `notifyCustomer` / `notifyWaitlist` (both default
+  // true to preserve prior behaviour for callers that don't send the flags).
   const justCancelled =
     !CANCEL_STATUSES.has(before.status) &&
     CANCEL_STATUSES.has(appointment.status);
 
   if (justCancelled) {
-    notifyWaitlistForCancellation({
-      businessId: before.businessId,
-      staffId:    before.staffId,
-      date:       before.date,
-      startTime:  before.startTime,
-    }).catch(console.error);
+    // 1) Tell the waitlist a slot opened up.
+    if (body.notifyWaitlist !== false) {
+      notifyWaitlistForCancellation({
+        businessId: before.businessId,
+        staffId:    before.staffId,
+        date:       before.date,
+        startTime:  before.startTime,
+      }).catch(console.error);
+    }
+
+    // 2) Tell the customer their appointment was cancelled.
+    if (body.notifyCustomer === true) {
+      const business = await prisma.business.findUnique({ where: { id: before.businessId } });
+      if (business) {
+        const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+        const cancelBody = cancellationText({
+          customerName: appointment.customer.name,
+          businessName: business.name,
+          dateLabel,
+          startTime:    appointment.startTime,
+        });
+        sendMessage({
+          businessId:    before.businessId,
+          appointmentId: appointment.id,
+          customerPhone: appointment.customer.phone,
+          kind:          "appointment_cancelled",
+          body:          cancelBody,
+        }).catch(err => console.error("cancellation send failed", err));
+      }
+    }
   }
 
   return NextResponse.json(appointment);

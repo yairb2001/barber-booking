@@ -12,6 +12,37 @@
   50%       { box-shadow: 0 0 18px 2px rgba(255,255,255,0.12), 0 4px 16px rgba(0,0,0,0.25); }
 }
 
+/* ── "Missing referral source" attention blink ─────────────────────────────────
+   Draws the barber's eye to a referral source that was never filled in. Used both
+   when creating an appointment and in the customer detail view on the next visit.
+   Pulses the amber ring + background so it's impossible to miss but not jarring. */
+@keyframes referral-blink {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    background-color: rgba(254, 243, 199, 0.55);
+    border-color: rgba(245, 158, 11, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.28);
+    background-color: rgba(253, 230, 138, 0.95);
+    border-color: rgba(217, 119, 6, 0.95);
+  }
+}
+.referral-missing {
+  animation: referral-blink 1.15s ease-in-out infinite;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 0.6rem;
+}
+@media (prefers-reduced-motion: reduce) {
+  .referral-missing {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.3);
+    background-color: rgba(253, 230, 138, 0.9);
+    border-color: rgba(217, 119, 6, 0.9);
+  }
+}
+
 * {
   box-sizing: border-box;
   margin: 0;

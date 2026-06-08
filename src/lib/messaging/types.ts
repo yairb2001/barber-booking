@@ -21,6 +21,8 @@ export type MessageKind =
   | "appointment_moved"  // sent to a customer when their appointment is moved by admin
   // Delay notifications
   | "delay_notification" // sent to a customer when the barber is running late
+  // Appointment cancelled by the business
+  | "appointment_cancelled" // sent to a customer when staff cancels their appointment
   // First-time customer booking — replaces the regular confirmation
   | "first_booking"
   // Walk-in customers — thank-you + booking link after appointment ends

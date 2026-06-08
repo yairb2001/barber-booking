@@ -50,9 +50,16 @@ const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { we
 const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
 const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
 const nowPxFn = (hh: number, ds = DAY_START) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - ds * 60) / 60) * hh; };
+// Snap to 10-minute increments — the calendar grid "magnetizes" to clean times.
+const SNAP_MIN = 10;
 const yToTimeFn = (y: number, hh: number, ds = DAY_START, de = DAY_END) => {
-  const mins = Math.round((y / hh) * 60 / 5) * 5 + ds * 60;
-  return minToTime(Math.max(ds * 60, Math.min(de * 60 - 5, mins)));
+  const mins = Math.round((y / hh) * 60 / SNAP_MIN) * SNAP_MIN + ds * 60;
+  return minToTime(Math.max(ds * 60, Math.min(de * 60 - SNAP_MIN, mins)));
+};
+// Snap a raw pixel offset to the nearest 10-minute grid line (magnetize to the axis).
+const snapYToGrid = (y: number, hh: number) => {
+  const slotPx = (hh * SNAP_MIN) / 60;
+  return Math.round(y / slotPx) * slotPx;
 };
 
 // ── Saved calendar preferences (view / zoom / week barber) ───────────────────
@@ -241,6 +248,9 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
   const [end,   setEnd]   = useState(initial.end);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState<string | null>(null);
+  // Delete confirmation — ask whether to tell the waitlist a slot freed up.
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const [removeNotifyWaitlist, setRemoveNotifyWaitlist] = useState(true);
 
   async function getCurrentBreaks(): Promise<{ breaks: RawBreak[]; slots: { start: string; end: string }[]; isWorking: boolean }> {
     // Try date-specific override first, then weekly schedule
@@ -262,11 +272,11 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
     return { breaks, slots, isWorking: sched.isWorking };
   }
 
-  async function postBreaks(newBreaks: RawBreak[]) {
+  async function postBreaks(newBreaks: RawBreak[], notifyWaitlist = true) {
     const { slots, isWorking } = await getCurrentBreaks();
     const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, isWorking, slots, breaks: newBreaks }),
+      body: JSON.stringify({ date, isWorking, slots, breaks: newBreaks, notifyWaitlist }),
     });
     if (!res.ok) {
       const j = await res.json().catch(() => ({}));
@@ -292,12 +302,11 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
   }
 
   async function remove() {
-    if (!confirm("למחוק את ההפסקה?")) return;
     setSaving(true); setError(null);
     try {
       const { breaks } = await getCurrentBreaks();
       const updated = breaks.filter((_, i) => i !== breakIdx);
-      await postBreaks(updated);
+      await postBreaks(updated, removeNotifyWaitlist);
       onRefresh(); onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה במחיקה — נסה שוב");
@@ -333,16 +342,37 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
             </div>
           </div>
         </div>
-        <div className="flex gap-2 pt-1">
-          <button onClick={remove} disabled={saving}
-            className="px-4 py-2.5 rounded-xl text-sm border border-red-100 text-red-500 hover:bg-red-50 disabled:opacity-50 transition">
-            🗑 מחק
-          </button>
-          <button onClick={save} disabled={saving}
-            className="flex-1 bg-orange-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 transition">
-            {saving ? "שומר..." : "💾 שמור הפסקה"}
-          </button>
-        </div>
+        {confirmingRemove ? (
+          <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
+            <p className="text-sm font-semibold text-red-700">למחוק את ההפסקה?</p>
+            <button type="button" onClick={() => setRemoveNotifyWaitlist(v => !v)}
+              className="w-full flex items-center gap-2.5 text-right">
+              <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${removeNotifyWaitlist ? "bg-teal-500" : "bg-neutral-300"}`}>
+                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${removeNotifyWaitlist ? "right-0.5" : "right-4"}`} />
+              </div>
+              <span className="text-sm text-slate-700">עדכן את רשימת ההמתנה שהתפנה זמן</span>
+            </button>
+            <div className="flex gap-2 pt-0.5">
+              <button onClick={remove} disabled={saving}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-lg py-2.5 text-sm font-semibold disabled:opacity-50">
+                {saving ? "מוחק..." : "כן, מחק הפסקה"}
+              </button>
+              <button onClick={() => setConfirmingRemove(false)} disabled={saving}
+                className="px-4 bg-white border border-slate-300 text-slate-700 rounded-lg py-2.5 text-sm">חזרה</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2 pt-1">
+            <button onClick={() => { setRemoveNotifyWaitlist(true); setConfirmingRemove(true); }} disabled={saving}
+              className="px-4 py-2.5 rounded-xl text-sm border border-red-100 text-red-500 hover:bg-red-50 disabled:opacity-50 transition">
+              🗑 מחק
+            </button>
+            <button onClick={save} disabled={saving}
+              className="flex-1 bg-orange-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 disabled:opacity-50 transition">
+              {saving ? "שומר..." : "💾 שמור הפסקה"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -470,6 +500,9 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const [referrerPhone, setReferrerPhone] = useState("");
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
   const [walkIn, setWalkIn] = useState(false);
+  // Whether to send the customer a WhatsApp confirmation. On by default so a
+  // barber booking for their own customer always notifies them.
+  const [notifyCustomer, setNotifyCustomer] = useState(true);
   const [saving, setSaving] = useState(false);
   const [conflictMsg, setConflictMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
@@ -511,6 +544,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         referralSource: customerMode === "new" ? referralSource : undefined,
         referrerPhone:  customerMode === "new" && referralSource === "חבר הביא חבר" ? referrerPhone.trim() : undefined,
         walkIn,
+        notifyCustomer,
         override,
       }),
     });
@@ -690,15 +724,22 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                   placeholder="טלפון" dir="ltr"
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
 
-                {/* Referral source — optional */}
-                <div className="pt-1">
-                  <label className="text-[11px] text-neutral-500 block mb-1">
-                    מקור הגעה <span className="text-neutral-400">(לא חובה)</span>
+                {/* Referral source — optional, but blinks while empty so it's not forgotten */}
+                <div className={`pt-1 ${!referralSource ? "referral-missing px-2 py-1.5 -mx-2" : ""}`}>
+                  <label className="text-[11px] text-neutral-500 block mb-1 flex items-center gap-1">
+                    מקור הגעה{" "}
+                    {!referralSource ? (
+                      <span className="text-amber-700 font-semibold">⚠ לא הוזן — מומלץ למלא</span>
+                    ) : (
+                      <span className="text-neutral-400">(לא חובה)</span>
+                    )}
                   </label>
                   <select
                     value={referralSource}
                     onChange={e => setReferralSource(e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${
+                      !referralSource ? "border-amber-400" : "border-neutral-200"
+                    }`}
                   >
                     <option value="">איך הוא הגיע אלינו?</option>
                     {referralOptions.map(opt => (
@@ -748,6 +789,29 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               </div>
               <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${walkIn ? "bg-teal-500" : "bg-neutral-300"}`}>
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${walkIn ? "right-1" : "right-5"}`} />
+              </div>
+            </button>
+          )}
+
+          {/* Notify customer toggle — sends a WhatsApp confirmation. Hidden for
+              walk-ins (those get their own thank-you message at the end). */}
+          {!walkIn && (
+            <button
+              type="button"
+              onClick={() => setNotifyCustomer(v => !v)}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors ${
+                notifyCustomer
+                  ? "bg-teal-50 border-teal-300 text-teal-800"
+                  : "bg-neutral-50 border-neutral-200 text-neutral-500"
+              }`}
+            >
+              <span className="text-xl">💬</span>
+              <div className="flex-1 text-right">
+                <p className="text-sm font-medium">שלח אישור ללקוח</p>
+                <p className="text-xs opacity-70">הודעת וואטסאפ עם פרטי התור</p>
+              </div>
+              <div className={`w-10 h-6 rounded-full transition-colors relative shrink-0 ${notifyCustomer ? "bg-teal-500" : "bg-neutral-300"}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${notifyCustomer ? "right-1" : "right-5"}`} />
               </div>
             </button>
           )}
@@ -877,6 +941,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [staffNote, setStaffNote] = useState(appt.staffNote || "");
   const [savingNote, setSavingNote] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  // Cancel confirmation — ask the barber what to notify before cancelling.
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+  const [cancelNotifyCustomer, setCancelNotifyCustomer] = useState(true);
+  const [cancelNotifyWaitlist, setCancelNotifyWaitlist] = useState(true);
 
   // ── Inline single-field editing ──────────────────────────────────────────
   // Each pencil edits ONLY its own field (name / date / time / price) instead
@@ -898,6 +966,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [editPhone, setEditPhone] = useState(appt.customer.phone);
   const [editDate,  setEditDate]  = useState(appt.date.split("T")[0]);
   const [editStart, setEditStart] = useState(appt.startTime);
+  const [editEnd,   setEditEnd]   = useState(appt.endTime);
   const [editPrice, setEditPrice] = useState(String(appt.price));
   // Customer search in name editor
   const [custSuggestions, setCustSuggestions] = useState<{id:string;name:string;phone:string}[]>([]);
@@ -916,7 +985,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     setInlineConflict(null);
     if (field === "name") { setEditName(dispName); setEditPhone(dispPhone); }
     if (field === "date") setEditDate(dispDate.split("T")[0]);
-    if (field === "time") setEditStart(dispStart);
+    if (field === "time") { setEditStart(dispStart); setEditEnd(dispEnd); }
     if (field === "price") setEditPrice(String(dispPrice));
     setInlineEdit(field);
   }
@@ -964,7 +1033,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }
 
   async function saveInlineTime(override = false) {
-    const updated = await patchApptField({ startTime: editStart }, override);
+    // Send both start and end — the barber can adjust either independently.
+    const updated = await patchApptField({ startTime: editStart, endTime: editEnd }, override);
     if (updated) { setDispStart(updated.startTime); setDispEnd(updated.endTime); setInlineConflict(null); setInlineEdit(null); onReload?.(); }
   }
   const [referralSource, setReferralSource] = useState(appt.customer.referralSource || "");
@@ -1074,6 +1144,24 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     });
     onChange(appt.id, status);
     setUpdating(false);
+  }
+
+  // Cancel with explicit choices, then close the window (the appointment is gone).
+  async function confirmCancel() {
+    setUpdating(true);
+    await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "cancelled_by_staff",
+        notifyCustomer: cancelNotifyCustomer,
+        notifyWaitlist: cancelNotifyWaitlist,
+      }),
+    });
+    onChange(appt.id, "cancelled_by_staff");
+    setUpdating(false);
+    setConfirmingCancel(false);
+    onReload?.();
+    onClose(); // close the customer window after cancelling
   }
 
   async function saveNote() {
@@ -1217,10 +1305,23 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             )}
             {inlineEdit === "time" && (
               <>
-                <label className="text-[11px] text-neutral-500 block">שעת התחלה</label>
-                <input type="time" value={editStart} onChange={e => setEditStart(e.target.value)} dir="ltr"
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-                <p className="text-[11px] text-neutral-400">המשך התור יחושב לפי אורך התור הקיים</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] text-neutral-500 block mb-1">שעת התחלה</label>
+                    <input type="time" step={600} value={editStart} onChange={e => setEditStart(e.target.value)} dir="ltr"
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-neutral-500 block mb-1">שעת סיום</label>
+                    <input type="time" step={600} value={editEnd} onChange={e => setEditEnd(e.target.value)} dir="ltr"
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                </div>
+                <p className="text-[11px] text-neutral-400">
+                  {toMin(editEnd) > toMin(editStart)
+                    ? `אורך התור: ${toMin(editEnd) - toMin(editStart)} דקות`
+                    : "⚠ שעת הסיום חייבת להיות אחרי שעת ההתחלה"}
+                </p>
               </>
             )}
             {inlineEdit === "price" && (
@@ -1282,14 +1383,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </div>
         )}
 
-        {/* Referral source */}
-        <div className="px-4 py-3 border-b border-neutral-100">
+        {/* Referral source — blinks while missing so it's caught on the next visit too */}
+        <div className={`px-4 py-3 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
           <div className="flex items-center justify-between mb-1">
-            <p className="text-xs text-neutral-400">מקור הגעה</p>
+            <p className={`text-xs ${!referralSource && !editingReferral ? "text-amber-700 font-semibold" : "text-neutral-400"}`}>
+              מקור הגעה{!referralSource && !editingReferral ? " — ⚠ חסר" : ""}
+            </p>
             {!editingReferral && (
               <button onClick={() => setEditingReferral(true)}
-                className="text-xs text-slate-800 hover:underline">
-                {referralSource ? "ערוך" : "הוסף"}
+                className={`text-xs hover:underline ${referralSource ? "text-slate-800" : "text-amber-700 font-semibold"}`}>
+                {referralSource ? "ערוך" : "הוסף עכשיו"}
               </button>
             )}
           </div>
@@ -1310,8 +1413,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                 className="text-xs text-neutral-400 px-1">✕</button>
             </div>
           ) : (
-            <p className={`text-sm ${referralSource ? "text-neutral-800" : "text-neutral-400 italic"}`}>
-              {referralSource || "לא צוין"}
+            <p className={`text-sm ${referralSource ? "text-neutral-800" : "text-amber-700 italic font-medium"}`}>
+              {referralSource || "לא הוזן — לחץ \"הוסף עכשיו\""}
             </p>
           )}
         </div>
@@ -1341,15 +1444,42 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         {/* Status actions */}
         <div className="px-4 py-3 border-b border-neutral-100">
           <p className="text-xs text-neutral-400 mb-2">שינוי סטטוס</p>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { v: "confirmed",          l: "✓ מאשר",    c: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
-              { v: "cancelled_by_staff", l: "בטל תור",  c: "bg-red-50 text-red-600 border border-red-200" },
-            ].map(({ v, l, c }) => (
-              <button key={v} disabled={appt.status === v || updating} onClick={() => setStatus(v)}
-                className={`py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-default ${c}`}>{l}</button>
-            ))}
-          </div>
+          {confirmingCancel ? (
+            <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
+              <p className="text-sm font-semibold text-red-700">לבטל את התור של {dispName}?</p>
+              {/* notify customer toggle */}
+              <button type="button" onClick={() => setCancelNotifyCustomer(v => !v)}
+                className="w-full flex items-center gap-2.5 text-right">
+                <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${cancelNotifyCustomer ? "bg-teal-500" : "bg-neutral-300"}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${cancelNotifyCustomer ? "right-0.5" : "right-4"}`} />
+                </div>
+                <span className="text-sm text-slate-700">עדכן את הלקוח על הביטול בוואטסאפ</span>
+              </button>
+              {/* notify waitlist toggle */}
+              <button type="button" onClick={() => setCancelNotifyWaitlist(v => !v)}
+                className="w-full flex items-center gap-2.5 text-right">
+                <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${cancelNotifyWaitlist ? "bg-teal-500" : "bg-neutral-300"}`}>
+                  <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${cancelNotifyWaitlist ? "right-0.5" : "right-4"}`} />
+                </div>
+                <span className="text-sm text-slate-700">עדכן את רשימת ההמתנה שהתפנה תור</span>
+              </button>
+              <div className="flex gap-2 pt-0.5">
+                <button onClick={confirmCancel} disabled={updating}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-lg py-2 text-sm font-semibold disabled:opacity-50">
+                  {updating ? "מבטל..." : "כן, בטל תור"}
+                </button>
+                <button onClick={() => setConfirmingCancel(false)} disabled={updating}
+                  className="px-4 bg-white border border-slate-300 text-slate-700 rounded-lg py-2 text-sm">חזרה</button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button disabled={appt.status === "confirmed" || updating} onClick={() => setStatus("confirmed")}
+                className="py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-default bg-emerald-50 text-emerald-700 border border-emerald-200">✓ מאשר</button>
+              <button disabled={appt.status === "cancelled_by_staff" || updating} onClick={() => { setCancelNotifyCustomer(true); setCancelNotifyWaitlist(true); setConfirmingCancel(true); }}
+                className="py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-default bg-red-50 text-red-600 border border-red-200">בטל תור</button>
+            </div>
+          )}
         </div>
 
         {/* ── Swap panel ── */}
@@ -2318,8 +2448,10 @@ function DraftApptBlock({
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  const blockH = isMobile ? 44 : 36;
-  const clampedTop = Math.max(0, Math.min(totalH - blockH, startY));
+  // Generous invisible touch area for easy grabbing; the visible bar is slim.
+  const blockH = isMobile ? 40 : 36;
+  // Magnetize the block to the 10-minute grid so it locks onto clean times.
+  const clampedTop = snapYToGrid(Math.max(0, Math.min(totalH - blockH, startY)), hh);
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
   // CSS translateX so the block slides across columns while pointer capture is held
@@ -2365,23 +2497,27 @@ function DraftApptBlock({
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
-        // ── Mobile: appointment-like draggable block — time floats ABOVE the finger
+        // ── Mobile: slim draggable bar pinned to the start time. The big touch
+        //    area (blockH) makes it easy to grab; the visible bar stays compact
+        //    so it doesn't look like it swallows a whole hour.
         <div className="relative w-full h-full">
-          {/* Floating time bubble — always above the block so the finger can't hide it */}
+          {/* Floating time bubble — always above the bar so the finger can't hide it */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-sm font-extrabold px-3.5 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 48 ? "top-[52px]" : "-top-9"}`}
+            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-base font-extrabold px-4 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 44 ? "top-[44px]" : "-top-9"}`}
             dir="ltr">
             {time}
           </div>
+          {/* Slim visible bar, aligned to the top (the actual start line) */}
           <div
-            className="w-full h-full rounded-lg bg-teal-600/95 backdrop-blur-sm flex items-center justify-between px-2.5 shadow-lg ring-1 ring-teal-700/40"
+            className="absolute inset-x-0 top-0 h-7 rounded-lg bg-teal-600 flex items-center gap-2 px-2.5 shadow-lg ring-1 ring-teal-700/50"
             style={{ borderRight: "4px solid rgba(13, 148, 136, 1)" }}>
-            <span className="text-white text-[13px] font-bold tabular-nums" dir="ltr">{time}</span>
-            <span className="text-white/85 text-[11px] font-medium">תור חדש · גרור להזזה</span>
-            <button
-              className="w-6 h-6 flex items-center justify-center rounded-full bg-white/20 text-white text-xs leading-none"
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+            {/* grip dots — signals "drag me" */}
+            <span className="flex flex-col gap-[3px] shrink-0 opacity-80">
+              <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
+              <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
+            </span>
+            <span className="text-white text-[15px] font-extrabold tabular-nums" dir="ltr">{time}</span>
+            <span className="text-white/80 text-[10px] font-medium mr-auto">גרור</span>
           </div>
         </div>
       ) : (
@@ -3193,6 +3329,13 @@ export default function AdminCalendar() {
     setDraftAppt({ staffId, date: d, startY: y });
   }
 
+  // Tapping a different time while a draft is open moves it there (snapped to the grid).
+  function relocateDraft(e: React.MouseEvent<HTMLDivElement>, staffId: string, d: string) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = snapYToGrid(e.clientY - rect.top, hourHeight);
+    setDraftAppt({ staffId, date: d, startY: y });
+  }
+
   function handleStatusChange(id: string, status: string) {
     setAppointments(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     if (selectedAppt?.id === id) setSelectedAppt(prev => prev ? { ...prev, status } : null);
@@ -3332,8 +3475,10 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={colMinWidth ? { minWidth: colMinWidth } : {}}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // Any tap on the grid while a draft is open cancels it (tap elsewhere = close)
-                          if (draftAppt) { setDraftAppt(null); return; }
+                          // While a draft is open, tapping another time on the grid
+                          // RELOCATES the draft to that time (stays in creation mode).
+                          // Exiting creation is done via the ✕ in the action sheet.
+                          if (draftAppt) { relocateDraft(e, s.id, date); return; }
                           handleGridClick(e, s.id, date);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
@@ -3435,8 +3580,9 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // Any tap on the grid while a draft is open cancels it (tap elsewhere = close)
-                          if (draftAppt) { setDraftAppt(null); return; }
+                          // While a draft is open, tapping another time RELOCATES it
+                          // (stays in creation mode). Exit via the ✕ in the action sheet.
+                          if (draftAppt) { relocateDraft(e, s.id, d); return; }
                           handleGridClick(e, s.id, d);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
