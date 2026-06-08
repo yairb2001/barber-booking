@@ -437,12 +437,16 @@ type ApptBlockSwapState =
 // Shrinks the font-size until the text fits on ONE line inside its container, so
 // a full customer name (first + last) always stays visible without wrapping.
 // Re-fits on container resize (zoom +/-, day/week switch, lane changes).
-function FitText({ text, maxPx, minPx = 5, className, title }: {
+function FitText({ text, maxPx, minPx = 5, className, title, onFit }: {
   text: string; maxPx: number; minPx?: number; className?: string; title?: string;
+  /** Reports the final fitted px each time the text is (re)fit. */
+  onFit?: (px: number) => void;
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const spanRef = useRef<HTMLSpanElement>(null);
   const [size, setSize] = React.useState(maxPx);
+  const onFitRef = useRef(onFit);
+  onFitRef.current = onFit;
 
   React.useLayoutEffect(() => {
     const box = boxRef.current, span = spanRef.current;
@@ -454,6 +458,7 @@ function FitText({ text, maxPx, minPx = 5, className, title }: {
       span.style.fontSize = `${s}px`;
       while (s > minPx && span.scrollWidth > avail) { s -= 0.5; span.style.fontSize = `${s}px`; }
       setSize(prev => (prev === s ? prev : s));
+      onFitRef.current?.(s);
     };
     fit();
     const ro = new ResizeObserver(fit);
@@ -503,8 +508,18 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const heightCap = Math.max(7, height - (veryShort ? 3 : 5));
   let nameMaxPx = Math.min(zoomFont, heightCap);
   if (lanes >= 3) nameMaxPx = Math.min(nameMaxPx, 12);
-  // Secondary lines (service, time) scale with the name but stay a bit smaller.
-  const subFont = Math.max(8, Math.round(nameMaxPx * 0.82));
+  // The NAME is the most important text and must always read as the largest.
+  // In narrow week columns FitText shrinks the (long) name to fit one line, so we
+  // track its ACTUAL rendered size and size the secondary lines (service, time)
+  // strictly below it — otherwise the short "11:00" would look bigger than the name.
+  const [fittedName, setFittedName] = React.useState(nameMaxPx);
+  // Secondary size is a bit below the name AND hard-capped at the name's actual
+  // rendered size, so even when a long name shrinks to the floor in a narrow week
+  // column, the time/service can never end up looking bigger than the name.
+  const subFont = Math.min(
+    Math.round(fittedName),
+    Math.max(6, Math.round(Math.min(nameMaxPx, fittedName) * 0.85))
+  );
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -582,7 +597,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       )}
       {/* Full customer name (first + last) on a single line — the font auto-shrinks
           to fit the block width so it never overflows or overlaps the next slot. */}
-      <FitText text={appt.customer.name} maxPx={nameMaxPx} minPx={5} className="font-bold" title={appt.customer.name} />
+      <FitText text={appt.customer.name} maxPx={nameMaxPx} minPx={5} className="font-bold" title={appt.customer.name} onFit={setFittedName} />
       {height > 44 && lanes < 3 && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
       {height > 60 && lanes < 3 && <p className="opacity-60" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
@@ -2753,6 +2768,10 @@ export default function AdminCalendar() {
   }, [draftAppt, hourHeight, calStart, calEnd]);
   const draftTime = draftAppt ? yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) : null;
   const gridRef = useRef<HTMLDivElement>(null);
+  // The week/3day grid wrapper — translated horizontally during swipe-to-page-weeks.
+  const weekPagerRef = useRef<HTMLDivElement>(null);
+  // Tracks a horizontal swipe over the barber-name picker (switches barbers).
+  const barberSwipe = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const refreshTimer = useRef<ReturnType<typeof setInterval>>();
 
   // ── Drag-to-MOVE existing appointments ──────────────────────────────────────
@@ -2946,6 +2965,39 @@ export default function AdminCalendar() {
   const navigateBarberRef = useRef<(dir: -1 | 1) => void>(() => {});
   navigateBarberRef.current = navigateBarber;
 
+  // Swipe left/right over the barber-name picker → switch between barbers' calendars.
+  function onBarberTouchStart(e: React.TouchEvent) {
+    if (e.touches.length !== 1) return;
+    barberSwipe.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+  function onBarberTouchEnd(e: React.TouchEvent) {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dx = t.clientX - barberSwipe.current.x;
+    const dy = Math.abs(t.clientY - barberSwipe.current.y);
+    if (Math.abs(dx) > 35 && Math.abs(dx) > dy * 1.5) {
+      navigateBarber(dx > 0 ? -1 : 1);
+    }
+  }
+
+  // Slide the week grid in from the side after a swipe — "paging" feedback so the
+  // user sees the week move/flip rather than snap. `dx` is the swipe delta.
+  function playWeekSlide(dx: number) {
+    const el = weekPagerRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 320;
+    // New week enters from the opposite edge of the swipe direction.
+    const from = dx > 0 ? -w : w;
+    el.style.transition = "none";
+    el.style.transform = `translateX(${from}px)`;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.style.transition = "transform 0.22s cubic-bezier(0.22, 1, 0.36, 1)";
+      el.style.transform = "translateX(0)";
+    }));
+  }
+  const playWeekSlideRef = useRef<(dx: number) => void>(() => {});
+  playWeekSlideRef.current = playWeekSlide;
+
   // Expose current view to the swipe closure (which captures nothing via deps:[])
   const viewRef = useRef<ViewType>(view);
   viewRef.current = view;
@@ -2966,6 +3018,10 @@ export default function AdminCalendar() {
     let swipeStartX = 0;
     let swipeStartY = 0;
     let isPinch = false;
+    let axis: null | "x" | "y" = null; // locked gesture axis for the current touch
+    let paging = false;                // live horizontal week-paging in progress
+
+    const isWeekView = () => viewRef.current === "week" || viewRef.current === "3day";
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
@@ -2977,6 +3033,8 @@ export default function AdminCalendar() {
         startHH = hourHeightRef.current;
       } else if (e.touches.length === 1) {
         isPinch = false;
+        axis = null;
+        paging = false;
         swipeStartX = e.touches[0].clientX;
         swipeStartY = e.touches[0].clientY;
         startDist = 0;
@@ -2992,30 +3050,60 @@ export default function AdminCalendar() {
         const scale = dist / startDist;
         const newHH = Math.max(28, Math.min(220, Math.round(startHH * scale)));
         setHourHeight(newHH);
+        return;
+      }
+      if (isPinch || e.touches.length !== 1 || swipeStartX === 0) return;
+      const dx = e.touches[0].clientX - swipeStartX;
+      const dy = e.touches[0].clientY - swipeStartY;
+      // Lock to an axis once the finger has clearly moved.
+      if (axis === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+      }
+      // Live week-paging: only in week/3day view, only when dragging horizontally,
+      // and never while moving an appointment. The whole grid follows the finger.
+      if (axis === "x" && isWeekView() && !dragMoveRef.current) {
+        paging = true;
+        e.preventDefault(); // stop vertical scroll from fighting the page drag
+        const el = weekPagerRef.current;
+        if (el) { el.style.transition = "none"; el.style.transform = `translateX(${dx}px)`; }
       }
     };
     const onTouchEnd = (e: TouchEvent) => {
       startDist = 0;
-      if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
-        const dx = e.changedTouches[0].clientX - swipeStartX;
-        const dy = Math.abs(e.changedTouches[0].clientY - swipeStartY);
-        // Don't navigate while an appointment drag-move is in progress
-        const dragActive = !!dragMoveRef.current;
-        // High threshold (90px) + clearly horizontal (2× horiz vs vertical)
-        // to avoid false-firing during appointment drags or short taps
-        if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
-          // In RTL: swipe right (dx > 0) = earlier; swipe left = later/next
-          const dir = dx > 0 ? -1 : 1;
-          if (viewRef.current === "week" || viewRef.current === "3day") {
-            // Week/3day view: swipe switches which barber is shown
-            navigateBarberRef.current(dir);
-          } else {
-            // Day view: swipe navigates dates (1 day per swipe)
-            navigateRef.current(dir);
+      const dx = (e.changedTouches[0]?.clientX ?? swipeStartX) - swipeStartX;
+      const dy = Math.abs((e.changedTouches[0]?.clientY ?? swipeStartY) - swipeStartY);
+
+      if (paging) {
+        // Live week-paging finished — commit (slide new week in) or snap back.
+        const el = weekPagerRef.current;
+        const committed = Math.abs(dx) > 70;
+        if (committed) {
+          // User's requested direction: drag left→right (dx>0) = NEXT week.
+          const weekDir: -1 | 1 = dx > 0 ? 1 : -1;
+          if (el) {
+            const w = el.clientWidth || 320;
+            el.style.transition = "transform 0.14s ease-out";
+            el.style.transform = `translateX(${dx > 0 ? w : -w}px)`;
           }
+          window.setTimeout(() => {
+            navigateRef.current(weekDir);          // advance one week
+            playWeekSlideRef.current(dx);          // slide the new week in
+          }, 140);
+        } else if (el) {
+          el.style.transition = "transform 0.16s ease-out";
+          el.style.transform = "translateX(0)";
+        }
+      } else if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
+        // Non-paging gesture (day view) — navigate dates on a strong horizontal flick.
+        const dragActive = !!dragMoveRef.current;
+        if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
+          // Day view keeps the RTL convention: swipe right = earlier, left = later.
+          navigateRef.current(dx > 0 ? -1 : 1);
         }
       }
       swipeStartX = 0;
+      axis = null;
+      paging = false;
     };
 
     el.addEventListener("touchstart", onTouchStart, { passive: true });
@@ -3567,7 +3655,7 @@ export default function AdminCalendar() {
     const gridMinWidth = tooManyStaff ? `${56 + displayedStaff.length * 80}px` : undefined;
 
     return (
-      <div className="flex flex-col flex-1 min-h-0">
+      <div ref={weekPagerRef} className="flex flex-col flex-1 min-h-0 will-change-transform">
         {/* Column headers — scrollable horizontally to match the grid */}
         <div className="overflow-x-auto shrink-0 border-b border-neutral-200 bg-white">
           <div className="flex" style={{ minWidth: gridMinWidth }}>
@@ -4012,12 +4100,15 @@ export default function AdminCalendar() {
             ))}
           </div>
 
-          {/* Barber picker */}
+          {/* Barber picker — swipe left/right here to switch between barbers' calendars */}
           {(isOwner || barbersCanViewOthersCalendar) && (view === "week" || view === "3day") && allStaff.length > 1 && (
-            <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
-              className="border border-neutral-200 rounded-lg px-2 py-1 text-xs text-neutral-700 flex-1 min-w-0">
-              {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <div className="relative flex-1 min-w-0" onTouchStart={onBarberTouchStart} onTouchEnd={onBarberTouchEnd}>
+              <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
+                className="border border-neutral-200 rounded-lg pr-2 pl-6 py-1 text-xs text-neutral-700 w-full appearance-none">
+                {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[11px] text-neutral-400 select-none">‹ ›</span>
+            </div>
           )}
           {/* Day view staff selection is handled by the ✂️ filter button — no separate barber picker needed */}
 
@@ -4063,11 +4154,13 @@ export default function AdminCalendar() {
         </div>
       </div>
 
-      {/* ── Calendar body ── */}
-      {loading && appointments.length === 0
-        ? <div className="flex-1 flex items-center justify-center text-neutral-400">טוען...</div>
-        : view === "month" ? renderMonth() : renderTimeGrid()
-      }
+      {/* ── Calendar body ── (overflow-x-hidden clips the week page-slide) */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-x-hidden">
+        {loading && appointments.length === 0
+          ? <div className="flex-1 flex items-center justify-center text-neutral-400">טוען...</div>
+          : view === "month" ? renderMonth() : renderTimeGrid()
+        }
+      </div>
 
       {/* ── Modals ── */}
       {selectedAppt && <ApptModal
