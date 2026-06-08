@@ -27,6 +27,6 @@
     {
       "path": "/api/cron/reengage",
       "schedule": "0 11 * * *"
-    },
+    }
   ]
 }
