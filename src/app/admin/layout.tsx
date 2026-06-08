@@ -13,6 +13,7 @@ type NavItem = {
   ownerOnly?: boolean;
   barberOnly?: boolean;
   requiresChats?: boolean;  // only shown when business.chatsEnabled === true
+  requiresReferral?: boolean; // only shown when the referral program is enabled
 };
 
 // Pages that live "inside" Business Settings — the Settings nav item stays highlighted on these
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
   { href: "/admin/chats",        label: "שיחות",          icon: "💬", requiresChats: true },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
+  { href: "/admin/referrals",    label: "חבר מביא חבר",   icon: "🤝", requiresReferral: true },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
   { href: "/admin/staff",             label: "הפרופיל",        icon: "👤", barberOnly: true },
@@ -62,7 +64,7 @@ const bottomNavBarber: NavItem[] = [
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
@@ -105,10 +107,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
+  const referralEnabled = me?.referralProgramEnabled ?? false;
   const visibleNav = navItems.filter(item => {
     if (item.ownerOnly && !isOwner) return false;
     if (item.barberOnly && isOwner) return false;
     if (item.requiresChats && !showChats) return false;
+    if (item.requiresReferral && !referralEnabled) return false;
     return true;
   });
   // Bottom nav: only show "שיחות" if feature enabled — otherwise drop in favor of fallback

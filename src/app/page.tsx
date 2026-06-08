@@ -331,6 +331,7 @@ export default function HomePage() {
   const [scrolled, setScrolled] = useState(false);
   const [welcomeName, setWelcomeName] = useState("");
   const [myUpcoming, setMyUpcoming] = useState<MyAppt[]>([]);
+  const [referral, setReferral] = useState<{ referralCount: number; goal: number; giftLabel: string } | null>(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
@@ -363,6 +364,18 @@ export default function HomePage() {
         if (Array.isArray(data.upcoming)) setMyUpcoming(data.upcoming);
       } catch { /* ignore */ }
     })();
+  }, []);
+
+  // Returning referrer — load their "friend brings friend" progress (cookie-based).
+  useEffect(() => {
+    fetch("/api/customers/referral-status")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.ok && data.referralCount > 0) {
+          setReferral({ referralCount: data.referralCount, goal: data.goal, giftLabel: data.giftLabel });
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -699,6 +712,28 @@ export default function HomePage() {
           </Link>
         </section>
       )}
+
+      {/* ── Referrer progress — compact minimalist pill (below "My appointments") ── */}
+      {referral && (() => {
+        const reached = referral.referralCount >= referral.goal;
+        const shown = Math.min(referral.referralCount, referral.goal);
+        const pct = Math.min(100, Math.round((referral.referralCount / Math.max(1, referral.goal)) * 100));
+        const remaining = Math.max(0, referral.goal - referral.referralCount);
+        return (
+          <div className="px-5 py-3 flex justify-center bg-slate-50 border-b border-slate-100">
+            <div className="inline-flex items-center gap-2.5 rounded-full pr-3 pl-2.5 py-1.5 shadow-sm"
+              style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
+              <span className="text-[12px] font-bold text-white whitespace-nowrap" dir="ltr">🙌 {shown}/{referral.goal}</span>
+              <div className="h-1.5 w-14 rounded-full bg-white/25 overflow-hidden">
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "#5eead4" }} />
+              </div>
+              <span className="text-[10.5px] text-teal-100 whitespace-nowrap">
+                {reached ? `${referral.giftLabel}! 🎁` : `עוד ${remaining} ל${referral.giftLabel}`}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Staff — choose your barber ── */}
       {staff.length > 0 && (

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
+import { getReferralConfig } from "@/lib/referral";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -33,5 +34,6 @@ export async function GET(req: NextRequest) {
     chatsEnabled: business?.chatsEnabled ?? false,
     barbersCanViewOthersCalendar: bSettings.barbersCanViewOthersCalendar ?? false,
     barbersCanAccessChats: bSettings.barbersCanAccessChats ?? false,
+    referralProgramEnabled: getReferralConfig(business?.settings ?? null).enabled,
   });
 }
