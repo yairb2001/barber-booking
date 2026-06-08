@@ -19,6 +19,12 @@ type Staff = {
   id: string; name: string; avatarUrl: string | null;
   portfolio: { id: string; imageUrl: string; caption: string | null }[];
 };
+type MyAppt = {
+  id: string; date: string; startTime: string; endTime: string;
+  status: string; price: number;
+  staff: { id: string; name: string; avatarUrl: string | null };
+  service: { id: string; name: string };
+};
 type Announcement = { id: string; title: string; content: string | null; isPinned: boolean };
 type Product = { id: string; name: string; description: string | null; price: number; imageUrl: string | null };
 type BusinessInfo = {
@@ -288,6 +294,17 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
   );
 }
 
+// ── Friendly Hebrew day label for an appointment ────────────────────────────────
+function apptDayLabel(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
+  if (diff === 0) return "היום";
+  if (diff === 1) return "מחר";
+  if (diff > 1 && diff < 7) return d.toLocaleDateString("he-IL", { weekday: "long" });
+  return d.toLocaleDateString("he-IL", { day: "numeric", month: "long" });
+}
+
 // ── Section header — admin-style ────────────────────────────────────────────────
 function SecLabel({ label, sub, action }: { label: string; sub?: string; action?: React.ReactNode }) {
   return (
@@ -312,6 +329,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [scrolled, setScrolled] = useState(false);
   const [welcomeName, setWelcomeName] = useState("");
+  const [myUpcoming, setMyUpcoming] = useState<MyAppt[]>([]);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
@@ -325,6 +343,25 @@ export default function HomePage() {
       const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
       if (saved?.name) setWelcomeName(String(saved.name).split(" ")[0]); // first name only
     } catch { /* ignore */ }
+  }, []);
+
+  // Returning customer — load their upcoming appointments (secure: via bk_session
+  // cookie → fresh OTP token → /api/my-appointments). Silently no-op if signed out.
+  useEffect(() => {
+    (async () => {
+      try {
+        const authRes = await fetch("/api/otp/auto-token", { method: "POST" });
+        if (!authRes.ok) return;
+        const auth = await authRes.json();
+        if (auth?.name) setWelcomeName(String(auth.name).split(" ")[0]);
+        const res = await fetch(
+          `/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.upcoming)) setMyUpcoming(data.upcoming);
+      } catch { /* ignore */ }
+    })();
   }, []);
 
   useEffect(() => {
@@ -495,13 +532,86 @@ export default function HomePage() {
             </div>
           )}
 
-          {welcomeName && (
+          {welcomeName && myUpcoming.length === 0 && (
             <div className="mb-3 px-5 py-2 rounded-full"
               style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
               <p className="text-white text-[14px] font-semibold tracking-wide">
                 👋 ברוך הבא, {welcomeName}!
               </p>
             </div>
+          )}
+
+          {/* ── My next appointment — elegant glass card (returning customer) ── */}
+          {myUpcoming.length > 0 && (
+            <Link href="/book/my-appointments"
+              className="block mb-5 w-full active:scale-[0.98] transition-transform"
+              style={{ maxWidth: 370 }}>
+              <div className="rounded-[26px] p-4 text-right relative overflow-hidden"
+                style={{
+                  background: "rgba(255,255,255,0.10)",
+                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  boxShadow: `0 10px 44px rgba(0,0,0,0.4), 0 0 30px rgba(${brandRgb},0.12)`,
+                }}>
+                {/* Header row */}
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-white/90 text-[13px] font-semibold">👋 היי {welcomeName}</span>
+                  <span className="text-[11px] font-bold flex items-center gap-0.5" style={{ color: brand }}>
+                    התורים שלי
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </span>
+                </div>
+
+                {/* Eyebrow */}
+                <p className="text-white/45 text-[9px] font-bold tracking-[0.25em] uppercase mb-2">
+                  התור הקרוב שלך
+                </p>
+
+                {/* Next appointment */}
+                {(() => {
+                  const a = myUpcoming[0];
+                  return (
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/25">
+                        {a.staff.avatarUrl ? (
+                          <img src={a.staff.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg"
+                            style={{ background: brand }}>
+                            {a.staff.name[0]}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white text-[24px] font-extrabold leading-none tracking-wide" dir="ltr">
+                            {a.startTime}
+                          </span>
+                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full text-white"
+                            style={{ background: brand }}>
+                            {apptDayLabel(a.date)}
+                          </span>
+                        </div>
+                        <p className="text-white/70 text-[12px] mt-1.5 truncate">
+                          {a.service.name} · אצל {a.staff.name}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* More appointments hint */}
+                {myUpcoming.length > 1 && (
+                  <div className="mt-3 pt-2.5 border-t border-white/10 text-center">
+                    <span className="text-white/55 text-[11px] font-medium">
+                      + עוד {myUpcoming.length - 1} {myUpcoming.length - 1 === 1 ? "תור עתידי" : "תורים עתידיים"}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </Link>
           )}
 
           <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"

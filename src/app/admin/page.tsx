@@ -51,12 +51,12 @@ const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60)
 const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
 const nowPxFn = (hh: number, ds = DAY_START) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - ds * 60) / 60) * hh; };
 // Snap to 10-minute increments — the calendar grid "magnetizes" to clean times.
-const SNAP_MIN = 10;
+const SNAP_MIN = 5;
 const yToTimeFn = (y: number, hh: number, ds = DAY_START, de = DAY_END) => {
   const mins = Math.round((y / hh) * 60 / SNAP_MIN) * SNAP_MIN + ds * 60;
   return minToTime(Math.max(ds * 60, Math.min(de * 60 - SNAP_MIN, mins)));
 };
-// Snap a raw pixel offset to the nearest 10-minute grid line (magnetize to the axis).
+// Snap a raw pixel offset to the nearest 5-minute grid line (magnetize to the axis).
 const snapYToGrid = (y: number, hh: number) => {
   const slotPx = (hh * SNAP_MIN) / 60;
   return Math.round(y / slotPx) * slotPx;
@@ -2443,7 +2443,7 @@ function DraftMoveSlotBlock({
 // ── Draft Appointment Block (Google-Calendar style click-to-place) ─────────────
 function DraftApptBlock({
   startY, staffName,
-  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved, onHorizontalDragEnd, columnSnapDeltaX,
+  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved, onHorizontalDragEnd, columnSnapDeltaX, onColHover,
 }: {
   startY: number; staffName: string; date: string;
   onMove: (y: number) => void;
@@ -2457,6 +2457,9 @@ function DraftApptBlock({
    *  clientX, returns the translateX that snaps the block onto the column under
    *  the finger (so it locks to a day instead of floating between days). */
   columnSnapDeltaX?: (clientX: number, originClientX: number) => number | null;
+  /** Reports the pointer X during a drag so the parent can highlight the target
+   *  day column (null on release/cancel). Makes the day-axis lock visible. */
+  onColHover?: (clientX: number | null) => void;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
@@ -2464,7 +2467,7 @@ function DraftApptBlock({
   const totalH = (calEnd - calStart) * hh;
   // Generous invisible touch area for easy grabbing; the visible bar is slim.
   const blockH = isMobile ? 40 : 36;
-  // Magnetize the block to the 10-minute grid so it locks onto clean times.
+  // Magnetize the block to the 5-minute grid so it locks onto clean times.
   const clampedTop = snapYToGrid(Math.max(0, Math.min(totalH - blockH, startY)), hh);
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
   const dragRef = useRef<{ clientY: number; clientX: number; startY: number } | null>(null);
@@ -2500,6 +2503,8 @@ function DraftApptBlock({
         // we can't resolve a column (e.g. dragged off the grid).
         const snapped = columnSnapDeltaX?.(e.clientX, dragRef.current.clientX);
         setTransX(snapped != null ? snapped : e.clientX - dragRef.current.clientX);
+        // Highlight the day column under the finger (visible day-axis lock).
+        onColHover?.(e.clientX);
       }}
       onPointerUp={e => {
         e.stopPropagation();
@@ -2508,10 +2513,11 @@ function DraftApptBlock({
         if (dy > 5 || dx > 5) onDragMoved?.();
         // If horizontal drag happened, inform parent of final clientX so it can pick target column
         if (dx > 15) onHorizontalDragEnd?.(e.clientX);
+        onColHover?.(null);
         dragRef.current = null;
         setTransX(0);
       }}
-      onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
+      onPointerCancel={() => { dragRef.current = null; setTransX(0); onColHover?.(null); }}
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
@@ -2596,6 +2602,9 @@ export default function AdminCalendar() {
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [editingBreak, setEditingBreak] = useState<{ staffId: string; date: string; breakIdx: number; initial: RawBreak } | null>(null);
   const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
+  // Which column (`${staffId}|${date}`) the draft is being dragged over — used to
+  // highlight the target day column so the day-axis lock is visible.
+  const [draftDragCol, setDraftDragCol] = useState<string | null>(null);
   const [draftMoveSlot, setDraftMoveSlot] = useState<{ staffId: string; date: string; startY: number } | null>(null);
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
@@ -2693,6 +2702,13 @@ export default function AdminCalendar() {
     if (!origin || !target) return null;
     return target.left - origin.left;
   }, []);
+
+  // Highlight the day column under the finger while dragging the draft block.
+  const handleDraftColHover = React.useCallback((clientX: number | null) => {
+    if (clientX == null) { setDraftDragCol(null); return; }
+    const col = findColumnByX(clientX);
+    setDraftDragCol(col ? `${col.staffId}|${col.date}` : null);
+  }, [findColumnByX]);
 
   // When a DraftApptBlock or DraftMoveSlotBlock is dragged, the browser fires a
   // `click` on the grid after mouseup (because the mouse ends up outside the
@@ -3526,6 +3542,11 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]}
                           staffId={s.id} date={date}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
+                        {/* Day-axis lock highlight — shows which column the draft will land on */}
+                        {draftDragCol === colKey && (
+                          <div className="absolute inset-0 pointer-events-none z-10 rounded-sm"
+                            style={{ background: "rgba(13,148,136,0.10)", boxShadow: "inset 0 0 0 2px rgba(13,148,136,0.5)" }} />
+                        )}
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
@@ -3566,6 +3587,7 @@ export default function AdminCalendar() {
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
+                            onColHover={handleDraftColHover}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
@@ -3631,6 +3653,11 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]}
                           staffId={s.id} date={d}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
+                        {/* Day-axis lock highlight — shows which day column the draft will land on */}
+                        {draftDragCol === colKey && (
+                          <div className="absolute inset-0 pointer-events-none z-10 rounded-sm"
+                            style={{ background: "rgba(13,148,136,0.10)", boxShadow: "inset 0 0 0 2px rgba(13,148,136,0.5)" }} />
+                        )}
                         {/* Per-column now line — only today */}
                         {d === todayISO() && nowY >= 0 && nowY <= totalHeight && (
                           <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
@@ -3675,6 +3702,7 @@ export default function AdminCalendar() {
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
+                            onColHover={handleDraftColHover}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
