@@ -1308,7 +1308,17 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[11px] text-neutral-500 block mb-1">שעת התחלה</label>
-                    <input type="time" step={600} value={editStart} onChange={e => setEditStart(e.target.value)} dir="ltr"
+                    <input type="time" step={600} value={editStart} dir="ltr"
+                      onChange={e => {
+                        // Moving the start shifts the end by the same amount so the
+                        // appointment keeps its length — the end stays editable below.
+                        const newStart = e.target.value;
+                        const dur = toMin(editEnd) - toMin(editStart);
+                        setEditStart(newStart);
+                        if (dur > 0 && newStart) {
+                          setEditEnd(minToTime(Math.min(toMin(newStart) + dur, 23 * 60 + 59)));
+                        }
+                      }}
                       className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   </div>
                   <div>
