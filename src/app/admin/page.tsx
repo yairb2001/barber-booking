@@ -48,7 +48,12 @@ const fmtDateShort = (iso: string) => { const d = new Date(iso); return `${d.get
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
 const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
-const apptH = (s: string, e: string, hh: number) => Math.max(((toMin(e) - toMin(s)) / 60) * hh, 20);
+// Height of an appointment block. We keep a minimum so tiny appointments stay
+// tappable, but the floor never exceeds a half-hour slot at the current zoom —
+// otherwise zoomed-out 30-min blocks get inflated and visually overlap the
+// next slot. So at full zoom-out the blocks genuinely shrink.
+const apptH = (s: string, e: string, hh: number) =>
+  Math.max(((toMin(e) - toMin(s)) / 60) * hh, Math.min(20, hh * 0.5));
 
 // ── Overlap lane packing ──────────────────────────────────────────────────────
 // Given a column's appointments, work out how to lay overlapping ones SIDE BY
@@ -457,7 +462,10 @@ function FitText({ text, maxPx, minPx = 5, className, title }: {
   }, [text, maxPx, minPx]);
 
   return (
-    <div ref={boxRef} className={className} style={{ width: "100%", overflow: "hidden" }} title={title}>
+    // fontSize + lineHeight on the box make its line-box hug the (small) text
+    // instead of inheriting the parent's 16px strut — otherwise the name gets
+    // pushed down and clipped inside short, zoomed-out blocks.
+    <div ref={boxRef} className={className} style={{ width: "100%", overflow: "hidden", fontSize: size, lineHeight: 1.1 }} title={title}>
       <span ref={spanRef} style={{ whiteSpace: "nowrap", fontSize: size, display: "inline-block", lineHeight: 1.1 }}>
         {text}
       </span>
@@ -488,7 +496,9 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   // width). The cap scales a little with how much room the block has.
   const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
   const short = height < 46;
-  const nameMaxPx = veryShort ? 9 : lanes >= 3 ? 10 : 11;
+  // Cap the name font to the block height too, so the single line never gets
+  // clipped vertically when the calendar is fully zoomed out.
+  const nameMaxPx = height < 18 ? 8 : veryShort ? 9 : lanes >= 3 ? 10 : 11;
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -532,7 +542,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   }
 
   return (
-    <div className={`no-touch-select absolute ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: "none", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
