@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
-import { getReferralConfig, REFERRAL_SOURCE } from "@/lib/referral";
+import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -74,6 +74,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Staff not found" }, { status: 404 });
   }
 
+  // Load the business early — we need its settings to resolve which referral
+  // source is the (owner-renamable) "friend" source.
+  const business = await prisma.business.findUnique({ where: { id: staff.businessId } });
+  const friendSource = getReferralFriendSource(business?.settings ?? null);
+
   // Find or create customer
   let customer = await prisma.customer.findUnique({
     where: {
@@ -88,7 +93,7 @@ export async function POST(request: NextRequest) {
   let referredById: string | undefined;
   let referrerRecord: { id: string; name: string; phone: string } | null = null;
 
-  if (referralSource === REFERRAL_SOURCE) {
+  if (friendSource && referralSource === friendSource) {
     if (referrerId) {
       // Preferred path: look up by ID (from autocomplete selection)
       referrerRecord = await prisma.customer.findUnique({
@@ -203,7 +208,7 @@ export async function POST(request: NextRequest) {
   // Send WhatsApp confirmation (fire-and-forget)
   // For first-time customers: use the special first_booking welcome template.
   // For returning customers: use the regular confirmation template.
-  const business = await prisma.business.findUnique({ where: { id: staff.businessId } });
+  // (business was loaded earlier — see friend-source resolution above)
   if (business && hasFeature(business.features, "reminders")) {
     const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 

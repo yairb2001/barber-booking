@@ -437,6 +437,9 @@ export default function AdminSettingsPage() {
   const [referralSources, setReferralSources] = useState<string[]>([]);
   const [newSource, setNewSource] = useState("");
   const [savingReferral, setSavingReferral] = useState(false);
+  const [savedReferral, setSavedReferral] = useState(false);
+  // Which source opens the "friend brought a friend" picker (owner-renamable)
+  const [referralFriendSource, setReferralFriendSource] = useState("");
 
   // Referral program ("חבר מביא חבר") — master toggle + goal + gift
   const [referralEnabled, setReferralEnabled] = useState(true);
@@ -504,6 +507,7 @@ export default function AdminSettingsPage() {
         setReferralEnabled(settingsObj.referralProgramEnabled !== false);
         if (Number(settingsObj.referralGoal) > 0) setReferralGoal(Math.round(Number(settingsObj.referralGoal)));
         if (typeof settingsObj.referralGiftLabel === "string" && settingsObj.referralGiftLabel.trim()) setReferralGift(settingsObj.referralGiftLabel.trim());
+        if (typeof settingsObj.referralFriendSource === "string") setReferralFriendSource(settingsObj.referralFriendSource);
       }
       setBizLoading(false);
     });
@@ -513,12 +517,40 @@ export default function AdminSettingsPage() {
 
   async function saveReferralSources() {
     setSavingReferral(true);
+    const sources = referralSources.map(s => s.trim()).filter(Boolean);
+    // Keep the dedicated endpoint as the source of truth for the list…
     await fetch("/api/admin/referral-sources", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(referralSources),
+      body: JSON.stringify(sources),
+    });
+    // …and persist which source opens the friend picker (merge into settings).
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          ...currentSettings,
+          referralSources: sources,
+          referralFriendSource: sources.includes(referralFriendSource) ? referralFriendSource : "",
+        },
+      }),
     });
     setSavingReferral(false);
+    setSavedReferral(true); setTimeout(() => setSavedReferral(false), 2000);
+  }
+
+  function editSource(idx: number, value: string) {
+    setReferralSources(prev => {
+      const next = [...prev];
+      const old = next[idx];
+      next[idx] = value;
+      // Keep the friend-source marker pointing at the same row after a rename.
+      if (old && old === referralFriendSource) setReferralFriendSource(value);
+      return next;
+    });
   }
 
   async function saveReferralProgram() {
@@ -550,7 +582,10 @@ export default function AdminSettingsPage() {
   }
 
   function removeSource(idx: number) {
-    setReferralSources(prev => prev.filter((_, i) => i !== idx));
+    setReferralSources(prev => {
+      if (prev[idx] === referralFriendSource) setReferralFriendSource("");
+      return prev.filter((_, i) => i !== idx);
+    });
   }
 
   function moveSource(idx: number, dir: -1 | 1) {
@@ -1117,21 +1152,32 @@ export default function AdminSettingsPage() {
 
             {/* Referral sources */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-1">
                 <h2 className="font-semibold text-neutral-800">מקורות הגעה</h2>
                 <button onClick={saveReferralSources} disabled={savingReferral}
-                  className="text-xs bg-neutral-900 text-white px-3 py-1.5 rounded-lg hover:bg-neutral-700 disabled:opacity-50">
-                  {savingReferral ? "שומר..." : "שמור רשימה"}
+                  className={`text-xs px-3 py-1.5 rounded-lg disabled:opacity-50 ${savedReferral ? "bg-emerald-500 text-white" : "bg-neutral-900 text-white hover:bg-neutral-700"}`}>
+                  {savingReferral ? "שומר..." : savedReferral ? "✓ נשמר" : "שמור רשימה"}
                 </button>
               </div>
               <p className="text-xs text-neutral-400 mb-4">
-                האופציות שיופיעו ללקוח ב״מאיפה הכרת אותנו?״ ולך ביומן הניהול
+                האופציות שיופיעו ללקוח ב״מאיפה הכרת אותנו?״ ולך ביומן הניהול. אפשר לערוך, לסדר ולמחוק.
+                סמן ב🤝 איזו אופציה פותחת את בחירת החבר (תוכנית ההמלצות).
               </p>
 
               <div className="space-y-2 mb-3">
-                {referralSources.map((src, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-neutral-50 rounded-xl px-3 py-2">
-                    <span className="flex-1 text-sm text-neutral-800">{src}</span>
+                {referralSources.map((src, i) => {
+                  const isFriend = !!src.trim() && src === referralFriendSource;
+                  return (
+                  <div key={i} className="flex items-center gap-1.5 bg-neutral-50 rounded-xl px-2.5 py-2">
+                    <button
+                      type="button"
+                      onClick={() => setReferralFriendSource(isFriend ? "" : src)}
+                      title={isFriend ? "זו אופציית ההמלצה" : "סמן כאופציית ההמלצה (פותחת בחירת חבר)"}
+                      className={`flex-shrink-0 w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-colors ${isFriend ? "bg-teal-600 text-white" : "bg-white border border-neutral-200 text-neutral-300 hover:text-neutral-500"}`}>
+                      🤝
+                    </button>
+                    <input value={src} onChange={e => editSource(i, e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent text-sm text-neutral-800 px-1 py-1 rounded focus:outline-none focus:bg-white focus:ring-2 focus:ring-teal-400" />
                     <button onClick={() => moveSource(i, -1)} disabled={i === 0}
                       className="text-neutral-400 hover:text-neutral-600 disabled:opacity-20 text-xs px-1">▲</button>
                     <button onClick={() => moveSource(i, 1)} disabled={i === referralSources.length - 1}
@@ -1139,7 +1185,8 @@ export default function AdminSettingsPage() {
                     <button onClick={() => removeSource(i)}
                       className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
                   </div>
-                ))}
+                  );
+                })}
                 {referralSources.length === 0 && (
                   <p className="text-sm text-neutral-400 italic text-center py-2">אין אופציות — הוסף למטה</p>
                 )}
@@ -1155,6 +1202,13 @@ export default function AdminSettingsPage() {
                   + הוסף
                 </button>
               </div>
+
+              {referralEnabled && referralSources.length > 0 && !referralSources.includes(referralFriendSource) && (
+                <p className="text-[11px] text-amber-600 mt-3 leading-relaxed">
+                  ⚠ תוכנית ההמלצות פעילה אך לא סימנת איזו אופציה היא ״המלצת חבר״.
+                  סמן 🤝 ליד האופציה הנכונה (למשל ״המלצה של חבר״) כדי שבחירת החבר תיפתח.
+                </p>
+              )}
             </div>
 
             {/* Social */}

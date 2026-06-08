@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { pickFriendSource } from "@/lib/referral";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_HOUR_HEIGHT = 64;
@@ -644,6 +645,8 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const selectedService = services.find(s => s.id === form.serviceId);
   const endTime = selectedService
     ? minToTime(toMin(form.time) + selectedService.durationMinutes) : "";
+  // Which source (owner-renamable) opens the referrer field.
+  const friendSource = pickFriendSource(referralOptions);
 
   async function save(override = false) {
     if (!form.staffId || !form.serviceId || !form.date || !form.time) return;
@@ -663,7 +666,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         customerName: name,
         // Referral fields are only meaningful for new customers
         referralSource: customerMode === "new" ? referralSource : undefined,
-        referrerPhone:  customerMode === "new" && referralSource === "חבר הביא חבר" ? referrerPhone.trim() : undefined,
+        referrerPhone:  customerMode === "new" && !!friendSource && referralSource === friendSource ? referrerPhone.trim() : undefined,
         walkIn,
         notifyCustomer,
         override,
@@ -872,7 +875,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                 </div>
 
                 {/* If "friend referred friend" — collect referrer's phone */}
-                {referralSource === "חבר הביא חבר" && (
+                {!!friendSource && referralSource === friendSource && (
                   <input
                     value={referrerPhone}
                     onChange={e => setReferrerPhone(e.target.value)}

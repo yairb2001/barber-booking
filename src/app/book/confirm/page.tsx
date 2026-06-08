@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { getReferralFriendSource } from "@/lib/referral";
 
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
@@ -265,6 +266,8 @@ function ConfirmPageContent() {
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
   // Referral program config (owner can disable the whole thing).
   const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string }>({ enabled: true, goal: 3, giftLabel: "תספורת חינם" });
+  // Which referral source opens the friend picker (owner-renamable).
+  const [friendSource, setFriendSource] = useState<string | null>(null);
   // Returning referrer: their thank-you + progress meter.
   const [referralStatus, setReferralStatus] = useState<{ name: string; referralCount: number; goal: number; giftLabel: string } | null>(null);
   // True once the system already knows how this returning customer found us →
@@ -315,6 +318,7 @@ function ConfirmPageContent() {
           goal: Number(s.referralGoal) > 0 ? Math.round(Number(s.referralGoal)) : 3,
           giftLabel: (typeof s.referralGiftLabel === "string" && s.referralGiftLabel.trim()) ? s.referralGiftLabel.trim() : "תספורת חינם",
         });
+        setFriendSource(getReferralFriendSource(s));
       } catch { /* ignore */ }
     }).catch(() => {});
 
@@ -434,8 +438,8 @@ function ConfirmPageContent() {
           staffId, serviceId, date, startTime: time,
           customerPhone: phone, customerName: name,
           referralSource: referralSource || undefined,
-          referrerId:    (referralSource === "חבר הביא חבר" && referrerId)    ? referrerId    : undefined,
-          referrerPhone: (referralSource === "חבר הביא חבר" && !referrerId && referrerPhone) ? referrerPhone : undefined,
+          referrerId:    (!!friendSource && referralSource === friendSource && referrerId)    ? referrerId    : undefined,
+          referrerPhone: (!!friendSource && referralSource === friendSource && !referrerId && referrerPhone) ? referrerPhone : undefined,
           note: note.trim() || undefined,
           otpToken,
         }),
@@ -707,7 +711,7 @@ function ConfirmPageContent() {
             {referralOptions.map(src => <option key={src} value={src}>{src}</option>)}
           </select>
 
-          {referralSource === "חבר הביא חבר" && referralProgram.enabled && (
+          {!!friendSource && referralSource === friendSource && referralProgram.enabled && (
             <div className="mt-3 space-y-2">
               <label className="text-[12px] font-bold text-teal-800 block">
                 מי זה החבר? <span className="font-medium text-teal-600">(אנחנו נדאג לפרגן לו 🎁)</span>
