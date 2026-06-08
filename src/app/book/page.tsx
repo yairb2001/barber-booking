@@ -93,6 +93,9 @@ export default function ChooseBarberPage() {
   const [nearestByStaff, setNearestByStaff] = useState<Record<string, QuickSlot>>({});
   const [loading, setLoading] = useState(true);
   const [welcomeName, setWelcomeName] = useState("");
+  // Returning referrer — thank-you + progress meter ("חבר מביא חבר")
+  const [referral, setReferral] = useState<{ name: string; referralCount: number; goal: number; giftLabel: string } | null>(null);
+  const [referralPop, setReferralPop] = useState(false); // celebratory modal on a NEW referral
 
   useEffect(() => {
     Promise.all([
@@ -126,6 +129,23 @@ export default function ChooseBarberPage() {
       const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
       if (saved?.name) setWelcomeName(String(saved.name).split(" ")[0]); // first name only
     } catch { /* ignore */ }
+
+    // Returning referrer — thank them + show their progress toward the gift.
+    // Identity comes from the httpOnly bk_session cookie (sent automatically).
+    fetch("/api/customers/referral-status")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data?.ok || data.referralCount <= 0) return;
+        setReferral({ name: data.name, referralCount: data.referralCount, goal: data.goal, giftLabel: data.giftLabel });
+        // "Pop" a celebration only when the count grew since we last showed it,
+        // so a returning customer isn't nagged on every visit.
+        try {
+          const seen = Number(localStorage.getItem("bk_referral_seen") || "0");
+          if (data.referralCount > seen) setReferralPop(true);
+          localStorage.setItem("bk_referral_seen", String(data.referralCount));
+        } catch { /* ignore */ }
+      })
+      .catch(() => {});
   }, []);
 
   const getBarberSlot = (staffId: string) =>
@@ -174,6 +194,58 @@ export default function ChooseBarberPage() {
                 התורים שלי
               </span>
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ── Referrer progress banner ── */}
+      {referral && (() => {
+        const reached = referral.referralCount >= referral.goal;
+        const shown = Math.min(referral.referralCount, referral.goal);
+        const pct = Math.min(100, Math.round((referral.referralCount / Math.max(1, referral.goal)) * 100));
+        const remaining = Math.max(0, referral.goal - referral.referralCount);
+        return (
+          <div className="px-4 pt-3">
+            <div className="rounded-2xl p-4 text-white shadow-md" style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[13px] font-bold text-white">🙌 תודה על ההמלצות!</span>
+                <span className="text-[14px] font-extrabold text-white" dir="ltr">{shown}/{referral.goal}</span>
+              </div>
+              <div className="h-2.5 rounded-full bg-white/20 overflow-hidden mb-2">
+                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "#5eead4" }} />
+              </div>
+              <p className="text-[11px] text-teal-100 leading-snug">
+                {reached
+                  ? `הגעת ליעד — מגיעה לך ${referral.giftLabel}! 🎁`
+                  : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} עליך 💈`}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── New-referral celebration modal ── */}
+      {referralPop && referral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
+          onClick={() => setReferralPop(false)}>
+          <div className="w-full max-w-xs rounded-3xl p-6 text-center shadow-2xl"
+            style={{ background: "var(--card)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="text-5xl mb-2">🎉</div>
+            <p className="text-[18px] font-bold" style={{ color: "var(--text-pri)" }}>
+              תודה, {referral.name.split(" ")[0]}!
+            </p>
+            <p className="text-[13px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)" }}>
+              {referral.referralCount >= referral.goal
+                ? `הבאת ${referral.referralCount} חברים — מגיעה לך ${referral.giftLabel}! דבר איתנו 💈`
+                : `חבר נוסף שהמלצת עליו קבע תור! כבר הבאת ${referral.referralCount} מתוך ${referral.goal} ל${referral.giftLabel} 🎁`}
+            </p>
+            <button onClick={() => setReferralPop(false)}
+              className="mt-5 w-full py-3 rounded-full text-[13px] font-bold text-white"
+              style={{ background: "var(--brand)" }}>
+              מגניב! ✨
+            </button>
           </div>
         </div>
       )}

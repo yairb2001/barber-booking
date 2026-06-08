@@ -208,6 +208,39 @@ function SummaryRow({ label, value, large }: { label: string; value: React.React
   );
 }
 
+// ── Returning-referrer thank-you + progress meter ──────────────────────────────
+function ReferralThankYou({ status }: { status: { name: string; referralCount: number; goal: number; giftLabel: string } }) {
+  const first = status.name.split(" ")[0];
+  const reached = status.referralCount >= status.goal;
+  const shown = Math.min(status.referralCount, status.goal);
+  const pct = Math.min(100, Math.round((status.referralCount / Math.max(1, status.goal)) * 100));
+  const remaining = Math.max(0, status.goal - status.referralCount);
+  return (
+    <div className="rounded-2xl p-5 text-white shadow-md" style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
+      <div className="flex items-center gap-2 mb-1">
+        <span className="text-2xl">🙌</span>
+        <p className="text-[15px] font-bold text-white">תודה {first}!</p>
+      </div>
+      <p className="text-[12px] text-teal-100 leading-relaxed mb-3">
+        {reached
+          ? `הבאת ${status.referralCount} חברים — מגיעה לך ${status.giftLabel}! 🎁`
+          : `כבר הבאת לנו ${status.referralCount} ${status.referralCount === 1 ? "חבר" : "חברים"} — אנחנו מעריכים אותך מאוד 🤩`}
+      </p>
+
+      {/* Progress meter */}
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] font-semibold text-teal-100">
+          {reached ? "🎉 הגעת ליעד!" : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${status.giftLabel}`}
+        </span>
+        <span className="text-[13px] font-extrabold text-white" dir="ltr">{shown}/{status.goal}</span>
+      </div>
+      <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "#5eead4" }} />
+      </div>
+    </div>
+  );
+}
+
 // ── Main page content ──────────────────────────────────────────────────────────
 function ConfirmPageContent() {
   const searchParams = useSearchParams();
@@ -228,8 +261,12 @@ function ConfirmPageContent() {
   const [referrerId, setReferrerId]         = useState(""); // customer ID from autocomplete
   const [referrerName, setReferrerName]     = useState(""); // display name once selected
   const [referrerQuery, setReferrerQuery]   = useState(""); // search input
-  const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string; displayPhone: string }[]>([]);
+  const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
+  // Referral program config (owner can disable the whole thing).
+  const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string }>({ enabled: true, goal: 3, giftLabel: "תספורת חינם" });
+  // Returning referrer: their thank-you + progress meter.
+  const [referralStatus, setReferralStatus] = useState<{ name: string; referralCount: number; goal: number; giftLabel: string } | null>(null);
   // True once the system already knows how this returning customer found us →
   // we hide the "how did you hear about us?" question.
   const [referralKnown, setReferralKnown] = useState(false);
@@ -273,8 +310,23 @@ function ConfirmPageContent() {
         const s = typeof biz?.settings === "string" ? JSON.parse(biz.settings) : (biz?.settings || {});
         if (s.appStoreUrl)  setAppStoreUrl(s.appStoreUrl);
         if (s.playStoreUrl) setPlayStoreUrl(s.playStoreUrl);
+        setReferralProgram({
+          enabled: s.referralProgramEnabled !== false,
+          goal: Number(s.referralGoal) > 0 ? Math.round(Number(s.referralGoal)) : 3,
+          giftLabel: (typeof s.referralGiftLabel === "string" && s.referralGiftLabel.trim()) ? s.referralGiftLabel.trim() : "תספורת חינם",
+        });
       } catch { /* ignore */ }
     }).catch(() => {});
+
+    // Returning referrer — show a thank-you + progress meter (identity via cookie)
+    fetch("/api/customers/referral-status")
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.ok && data.referralCount > 0) {
+          setReferralStatus({ name: data.name, referralCount: data.referralCount, goal: data.goal, giftLabel: data.giftLabel });
+        }
+      })
+      .catch(() => {});
 
     // ── Returning customer: pre-fill name/phone + auto-skip OTP ─────────────
     try {
@@ -514,6 +566,9 @@ function ConfirmPageContent() {
 
       <div className="px-4 pt-5 space-y-3">
 
+        {/* Returning referrer — thank-you + progress meter */}
+        {referralStatus && <ReferralThankYou status={referralStatus} />}
+
         {/* Summary card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 pt-4 pb-2">
@@ -652,10 +707,10 @@ function ConfirmPageContent() {
             {referralOptions.map(src => <option key={src} value={src}>{src}</option>)}
           </select>
 
-          {referralSource === "חבר הביא חבר" && (
+          {referralSource === "חבר הביא חבר" && referralProgram.enabled && (
             <div className="mt-3 space-y-2">
-              <label className="text-[11px] font-semibold text-teal-700 block">
-                🔍 מי החבר שהמליץ? (חפש לפי שם)
+              <label className="text-[12px] font-bold text-teal-800 block">
+                מי זה החבר? <span className="font-medium text-teal-600">(אנחנו נדאג לפרגן לו 🎁)</span>
               </label>
 
               {referrerId ? (
@@ -671,13 +726,13 @@ function ConfirmPageContent() {
                   </button>
                 </div>
               ) : (
-                /* Autocomplete search */
+                /* Autocomplete search — names only, no phone numbers */
                 <div className="relative">
                   <input
                     type="text"
                     value={referrerQuery}
                     onChange={e => setReferrerQuery(e.target.value)}
-                    placeholder="הקלד שם החבר..."
+                    placeholder="הקלד את שם החבר..."
                     className={inputClass + " border-teal-200"}
                   />
                   {referrerSuggestions.length > 0 && (
@@ -692,10 +747,9 @@ function ConfirmPageContent() {
                             setReferrerQuery(s.name);
                             setReferrerSuggestions([]);
                           }}
-                          className="w-full text-right px-4 py-2.5 hover:bg-teal-50 flex items-center justify-between border-b border-slate-50 last:border-0 transition-colors"
+                          className="w-full text-right px-4 py-2.5 hover:bg-teal-50 border-b border-slate-50 last:border-0 transition-colors"
                         >
                           <span className="text-[13px] font-medium text-slate-800">{s.name}</span>
-                          <span className="text-[11px] text-slate-400 font-mono">{s.displayPhone}</span>
                         </button>
                       ))}
                     </div>
@@ -707,7 +761,7 @@ function ConfirmPageContent() {
               )}
 
               <p className="text-[11px] text-teal-600 leading-relaxed font-medium">
-                🎁 כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם
+                🎁 כל {referralProgram.goal} חברים שהוא מביא — {referralProgram.giftLabel} עליו!
               </p>
             </div>
           )}

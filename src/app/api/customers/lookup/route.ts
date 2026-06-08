@@ -5,8 +5,8 @@
  * "חבר הביא חבר" as their referral source. Lets them search for the friend
  * who referred them by name.
  *
- * Returns limited info (id + name + masked phone) so we don't expose full
- * phone numbers publicly.
+ * Returns ONLY id + name — phone numbers are never exposed publicly (a customer
+ * shouldn't see other customers' phone numbers when crediting a friend).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -30,17 +30,11 @@ export async function GET(req: NextRequest) {
       name: { contains: q, mode: "insensitive" },
       isBlocked: false,
     },
-    select: { id: true, name: true, phone: true },
+    select: { id: true, name: true },
     take: 8,
     orderBy: { name: "asc" },
   });
 
-  // Mask phone: show only last 3 digits for disambiguation
-  const result = customers.map(c => ({
-    id: c.id,
-    name: c.name,
-    displayPhone: c.phone.slice(-3).padStart(c.phone.length, "•"),
-  }));
-
-  return NextResponse.json(result);
+  // id + name only — never expose phone numbers to other customers.
+  return NextResponse.json(customers);
 }

@@ -438,6 +438,13 @@ export default function AdminSettingsPage() {
   const [newSource, setNewSource] = useState("");
   const [savingReferral, setSavingReferral] = useState(false);
 
+  // Referral program ("חבר מביא חבר") — master toggle + goal + gift
+  const [referralEnabled, setReferralEnabled] = useState(true);
+  const [referralGoal, setReferralGoal] = useState(3);
+  const [referralGift, setReferralGift] = useState("תספורת חינם");
+  const [savingProgram, setSavingProgram] = useState(false);
+  const [savedProgram, setSavedProgram] = useState(false);
+
   useEffect(() => {
     fetch("/api/admin/business").then(r => r.json()).then(data => {
       if (data) {
@@ -493,6 +500,10 @@ export default function AdminSettingsPage() {
         // Barber permissions
         if (typeof settingsObj.barbersCanViewOthersCalendar === "boolean") setBarbersCanViewOthersCalendar(settingsObj.barbersCanViewOthersCalendar);
         if (typeof settingsObj.barbersCanAccessChats === "boolean") setBarbersCanAccessChats(settingsObj.barbersCanAccessChats);
+        // Referral program ("חבר מביא חבר")
+        setReferralEnabled(settingsObj.referralProgramEnabled !== false);
+        if (Number(settingsObj.referralGoal) > 0) setReferralGoal(Math.round(Number(settingsObj.referralGoal)));
+        if (typeof settingsObj.referralGiftLabel === "string" && settingsObj.referralGiftLabel.trim()) setReferralGift(settingsObj.referralGiftLabel.trim());
       }
       setBizLoading(false);
     });
@@ -508,6 +519,27 @@ export default function AdminSettingsPage() {
       body: JSON.stringify(referralSources),
     });
     setSavingReferral(false);
+  }
+
+  async function saveReferralProgram() {
+    setSavingProgram(true);
+    // Merge into existing settings so we don't clobber unrelated keys.
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          ...currentSettings,
+          referralProgramEnabled: referralEnabled,
+          referralGoal: Math.max(1, Math.round(referralGoal) || 3),
+          referralGiftLabel: referralGift.trim() || "תספורת חינם",
+        },
+      }),
+    });
+    setSavingProgram(false);
+    setSavedProgram(true); setTimeout(() => setSavedProgram(false), 2000);
   }
 
   function addSource() {
@@ -1039,6 +1071,48 @@ export default function AdminSettingsPage() {
                   </button>
                 </label>
               </div>
+            </div>
+
+            {/* Referral program — "חבר מביא חבר" */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <div className="flex items-center justify-between mb-1">
+                <h2 className="font-semibold text-neutral-800">תוכנית חבר מביא חבר 🎁</h2>
+                <button onClick={saveReferralProgram} disabled={savingProgram}
+                  className={`text-xs px-3 py-1.5 rounded-lg disabled:opacity-50 ${savedProgram ? "bg-emerald-500 text-white" : "bg-neutral-900 text-white hover:bg-neutral-700"}`}>
+                  {savingProgram ? "שומר..." : savedProgram ? "✓ נשמר" : "שמור"}
+                </button>
+              </div>
+              <p className="text-xs text-neutral-400 mb-4">
+                כשלקוח חדש מציין מי המליץ עליו — אנחנו מודים לממליץ ומראים לו התקדמות למתנה.
+              </p>
+
+              {/* Master toggle */}
+              <label className="flex items-center justify-between bg-neutral-50 rounded-xl px-4 py-3 cursor-pointer mb-3">
+                <div>
+                  <span className="text-sm font-medium text-neutral-800">הפעל את התוכנית</span>
+                  <p className="text-[11px] text-neutral-400 mt-0.5">כיבוי מסתיר את בחירת החבר ומפסיק את הודעות התודה</p>
+                </div>
+                <input type="checkbox" checked={referralEnabled} onChange={e => setReferralEnabled(e.target.checked)}
+                  className="w-5 h-5 rounded accent-teal-600 flex-shrink-0" />
+              </label>
+
+              <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 transition-opacity ${referralEnabled ? "" : "opacity-40 pointer-events-none"}`}>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">כמה חברים = מתנה?</label>
+                  <input type="number" min={1} value={referralGoal}
+                    onChange={e => setReferralGoal(Math.max(1, Number(e.target.value) || 1))}
+                    className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">המתנה</label>
+                  <input value={referralGift} onChange={e => setReferralGift(e.target.value)}
+                    placeholder="תספורת חינם"
+                    className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-2">
+                לדוגמה: כל {Math.max(1, referralGoal)} חברים = {referralGift.trim() || "תספורת חינם"}.
+              </p>
             </div>
 
             {/* Referral sources */}

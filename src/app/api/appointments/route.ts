@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
+import { getReferralConfig, REFERRAL_SOURCE } from "@/lib/referral";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -87,7 +88,7 @@ export async function POST(request: NextRequest) {
   let referredById: string | undefined;
   let referrerRecord: { id: string; name: string; phone: string } | null = null;
 
-  if (referralSource === "חבר הביא חבר") {
+  if (referralSource === REFERRAL_SOURCE) {
     if (referrerId) {
       // Preferred path: look up by ID (from autocomplete selection)
       referrerRecord = await prisma.customer.findUnique({
@@ -270,13 +271,25 @@ export async function POST(request: NextRequest) {
     }).catch(err => console.error("confirmation send failed", err));
   }
 
-  // Send thank-you to the referrer (fire-and-forget)
-  if (referrerRecord && business) {
+  // Send thank-you to the referrer (fire-and-forget) — only when the referral
+  // program is switched on by the owner.
+  const referralConfig = getReferralConfig(business?.settings ?? null);
+  if (referrerRecord && business && referralConfig.enabled) {
+    // How many friends has the referrer now brought in (including this one)?
+    const referralCount = await prisma.customer.count({
+      where: { businessId: staff.businessId, referredById: referrerRecord.id },
+    });
+    const { goal, giftLabel } = referralConfig;
+    const reached = referralCount >= goal;
+    const remaining = Math.max(0, goal - referralCount);
+    const progressLine = reached
+      ? `🎉 הבאת ${referralCount} חברים — מגיעה לך ${giftLabel}! דבר/י איתנו 💈`
+      : `הבאת *${referralCount}* מתוך *${goal}* — עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${giftLabel} עליך! 💈`;
     const thankYouBody =
       `שלום ${referrerRecord.name} 🙌\n\n` +
       `${customer.name} קבע תור ב*${business.name}* ✂️ והזכיר את שמך כמי שהמליץ!\n\n` +
       `תודה על ההמלצה — אנחנו מעריכים אותך 🤩\n` +
-      `כל 2 חברים שתביא — מוצר במתנה | 3 חברים — תספורת חינם 💈`;
+      progressLine;
     sendMessage({
       businessId: staff.businessId,
       customerPhone: referrerRecord.phone,
