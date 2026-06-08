@@ -54,6 +54,7 @@ model Business {
   // ── Booking calendar ──
   bookingHorizonDays    Int      @default(30) @map("booking_horizon_days")
   minBookingLeadMinutes Int      @default(0)  @map("min_booking_lead_minutes")
+  firstApptLeadMinutes  Int      @default(0)  @map("first_appt_lead_minutes")
   // ── Chats / customer messaging ──
   chatsEnabled          Boolean  @default(false) @map("chats_enabled")
   // ── Services ownership ──

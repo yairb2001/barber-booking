@@ -74,6 +74,7 @@ export default function BarberSettingsPage() {
   // ── Booking settings (merged into schedule tab) ──
   const [horizonDays, setHorizonDays] = useState("");
   const [leadMins,    setLeadMins]    = useState("");
+  const [firstLeadMins, setFirstLeadMins] = useState("");
   const [bookSaved, setBookSaved]     = useState(false);
 
   // ── Password ──
@@ -180,6 +181,7 @@ export default function BarberSettingsPage() {
       const s = data.settings ? JSON.parse(data.settings) : {};
       if (s.bookingHorizonDays !== undefined) setHorizonDays(String(s.bookingHorizonDays));
       if (s.minBookingLeadMinutes !== undefined) setLeadMins(String(s.minBookingLeadMinutes));
+      if (s.firstApptLeadMinutes !== undefined) setFirstLeadMins(String(s.firstApptLeadMinutes));
     } catch { /* ignore */ }
   }
 
@@ -257,8 +259,9 @@ export default function BarberSettingsPage() {
       try { return staffData.settings ? JSON.parse(staffData.settings) : {}; } catch { return {}; }
     })();
     const patch: Record<string, number> = {};
-    if (horizonDays !== "") patch.bookingHorizonDays = Number(horizonDays);
-    if (leadMins    !== "") patch.minBookingLeadMinutes = Number(leadMins);
+    if (horizonDays   !== "") patch.bookingHorizonDays = Number(horizonDays);
+    if (leadMins      !== "") patch.minBookingLeadMinutes = Number(leadMins);
+    if (firstLeadMins !== "") patch.firstApptLeadMinutes = Number(firstLeadMins);
     await fetch(`/api/admin/staff/${myId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -681,6 +684,17 @@ export default function BarberSettingsPage() {
                   <input type="number" min={0} step={15} value={leadMins}
                     onChange={e => setLeadMins(e.target.value)}
                     placeholder="60"
+                    className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  <span className="text-sm text-neutral-500">דקות</span>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-neutral-700 block mb-1">זמן מינימלי לתור ראשון של אותו היום</label>
+                <p className="text-xs text-neutral-400 mb-2">חל רק כשאין עדיין תורים באותו יום — מונע הזמנת התור הראשון ברגע האחרון</p>
+                <div className="flex items-center gap-2">
+                  <input type="number" min={0} step={15} value={firstLeadMins}
+                    onChange={e => setFirstLeadMins(e.target.value)}
+                    placeholder="ברירת מחדל"
                     className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   <span className="text-sm text-neutral-500">דקות</span>
                 </div>

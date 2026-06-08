@@ -78,6 +78,7 @@ export default function StaffSettingsPage() {
   // Booking settings (per-staff)
   const [horizonDays, setHorizonDays] = useState("");
   const [leadMins, setLeadMins] = useState("");
+  const [firstLeadMins, setFirstLeadMins] = useState("");
   const [bookingSaved, setBookingSaved] = useState(false);
 
   // Permissions
@@ -107,6 +108,7 @@ export default function StaffSettingsPage() {
       const s = data.settings ? JSON.parse(data.settings) : {};
       if (s.bookingHorizonDays !== undefined) setHorizonDays(String(s.bookingHorizonDays));
       if (s.minBookingLeadMinutes !== undefined) setLeadMins(String(s.minBookingLeadMinutes));
+      if (s.firstApptLeadMinutes !== undefined) setFirstLeadMins(String(s.firstApptLeadMinutes));
     } catch { /* ignore */ }
     setCanViewAllCalendars(!!data.canViewAllCalendars);
     setCanViewAllChats(!!data.canViewAllChats);
@@ -240,8 +242,9 @@ export default function StaffSettingsPage() {
       try { return staffData.settings ? JSON.parse(staffData.settings) : {}; } catch { return {}; }
     })();
     const patch: Record<string, number> = {};
-    if (horizonDays !== "") patch.bookingHorizonDays = Number(horizonDays);
-    if (leadMins    !== "") patch.minBookingLeadMinutes = Number(leadMins);
+    if (horizonDays   !== "") patch.bookingHorizonDays = Number(horizonDays);
+    if (leadMins      !== "") patch.minBookingLeadMinutes = Number(leadMins);
+    if (firstLeadMins !== "") patch.firstApptLeadMinutes = Number(firstLeadMins);
     await fetch(`/api/admin/staff/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -568,6 +571,19 @@ export default function StaffSettingsPage() {
                 className="w-28 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               <span className="text-sm text-neutral-500">דקות</span>
             </div>
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">זמן מינימלי לתור ראשון של אותו היום</label>
+            <div className="flex items-center gap-3">
+              <input type="number" min={0} max={1440} value={firstLeadMins}
+                onChange={e => setFirstLeadMins(e.target.value)}
+                placeholder="ברירת מחדל של העסק"
+                className="w-28 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              <span className="text-sm text-neutral-500">דקות</span>
+            </div>
+            <p className="text-[11px] text-neutral-400 mt-1">
+              חל רק כשאין עדיין תורים באותו יום — מונע הזמנת התור הראשון של היום ברגע האחרון.
+            </p>
           </div>
           <button onClick={saveBookingSettings} disabled={saving}
             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${bookingSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>

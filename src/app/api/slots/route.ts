@@ -97,17 +97,39 @@ export async function GET(request: Request) {
         if (staffRecord?.settings) staffSettings = JSON.parse(staffRecord.settings);
       } catch { /* ignore malformed settings JSON — fall through to business default */ }
 
+      // Resolve regular lead time (per-barber override → business default).
       let leadMinutes = 0;
+      // Resolve "first appointment of the day" lead time the same way.
+      let firstLeadMinutes = 0;
+      const needBizDefaults =
+        staffSettings.minBookingLeadMinutes === undefined ||
+        staffSettings.firstApptLeadMinutes === undefined;
+      const biz = needBizDefaults
+        ? (businessId
+            ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
+            : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }))
+        : null;
+
       if (staffSettings.minBookingLeadMinutes !== undefined) {
         const parsed = Number(staffSettings.minBookingLeadMinutes);
         leadMinutes = isNaN(parsed) ? 0 : parsed;
       } else {
-        const biz = businessId
-          ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true } })
-          : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
         leadMinutes = biz?.minBookingLeadMinutes ?? 0;
       }
-      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + leadMinutes);
+
+      if (staffSettings.firstApptLeadMinutes !== undefined) {
+        const parsed = Number(staffSettings.firstApptLeadMinutes);
+        firstLeadMinutes = isNaN(parsed) ? 0 : parsed;
+      } else {
+        firstLeadMinutes = biz?.firstApptLeadMinutes ?? 0;
+      }
+
+      // When there are no appointments yet today, the next booking IS the first
+      // of the day — apply the larger of the two lead times.
+      const effectiveLead = appointments.length === 0
+        ? Math.max(firstLeadMinutes, leadMinutes)
+        : leadMinutes;
+      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + effectiveLead);
     }
   } catch (e) {
     console.error("getBusinessNow failed, skipping past-slot filter:", e);

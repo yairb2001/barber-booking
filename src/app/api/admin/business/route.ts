@@ -90,6 +90,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.minBookingLeadMinutes !== undefined && {
         minBookingLeadMinutes: Math.max(0, Number(body.minBookingLeadMinutes) || 0),
       }),
+      ...(body.firstApptLeadMinutes !== undefined && {
+        firstApptLeadMinutes: Math.max(0, Number(body.firstApptLeadMinutes) || 0),
+      }),
       // Chats feature toggle
       ...(body.chatsEnabled !== undefined && { chatsEnabled: Boolean(body.chatsEnabled) }),
       // Whether barbers manage their own services (vs owner controls all)

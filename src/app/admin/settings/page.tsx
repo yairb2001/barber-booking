@@ -19,6 +19,7 @@ type Business = {
   reminder2hTemplate: string;
   bookingHorizonDays: number;
   minBookingLeadMinutes: number;
+  firstApptLeadMinutes: number;
   reengageEnabled: boolean;
   reengageWeeks: number;
   reengageTemplate: string;
@@ -83,7 +84,7 @@ const emptyBusiness: Business = {
   whatsappNumber: "", messagingProvider: "green_api", greenApiInstanceId: "", greenApiToken: "",
   features: { reminders: true, reminder_24h: true, reminder_2h: false, agent: false },
   reminder24hTemplate: "", reminder2hTemplate: "",
-  bookingHorizonDays: 30, minBookingLeadMinutes: 0,
+  bookingHorizonDays: 30, minBookingLeadMinutes: 0, firstApptLeadMinutes: 0,
   reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
   chatsEnabled: false,
   staffManageOwnServices: false,
@@ -464,6 +465,7 @@ export default function AdminSettingsPage() {
           reminder2hTemplate:  data.reminder2hTemplate  || "",
           bookingHorizonDays:     data.bookingHorizonDays     ?? 30,
           minBookingLeadMinutes:  data.minBookingLeadMinutes  ?? 0,
+          firstApptLeadMinutes:   data.firstApptLeadMinutes   ?? 0,
           reengageEnabled:        data.reengageEnabled        ?? false,
           reengageWeeks:       data.reengageWeeks       ?? 6,
           reengageTemplate:    data.reengageTemplate    || "",
@@ -939,6 +941,24 @@ export default function AdminSettingsPage() {
                     {form.minBookingLeadMinutes === 0
                       ? "לקוחות יכולים לקבוע תור ״מעכשיו לעכשיו״"
                       : `לקוחות לא יוכלו לקבוע תור פחות מ-${form.minBookingLeadMinutes} דקות מעכשיו`}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">זמן מינימלי לתור ראשון של אותו היום</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number" min={0} max={1440}
+                      value={form.firstApptLeadMinutes}
+                      onChange={e => setField("firstApptLeadMinutes", Number(e.target.value))}
+                      className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    />
+                    <span className="text-sm text-neutral-500">דקות</span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    {form.firstApptLeadMinutes === 0
+                      ? "אין הגבלה מיוחדת לתור הראשון של היום"
+                      : `כשאין עדיין תורים באותו יום, לא ניתן לקבוע את התור הראשון פחות מ-${form.firstApptLeadMinutes} דקות מעכשיו`}
                   </p>
                 </div>
               </div>

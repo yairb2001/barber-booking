@@ -27,9 +27,10 @@ export async function GET(request: Request) {
 
   // Get business-wide min lead time for bookings
   const biz = resolvedBusinessId
-    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true } })
-    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true } });
+    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
+    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
+  const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
 
   // Get staff members in the quick pool
   const bizScope = resolvedBusinessId ? { businessId: resolvedBusinessId } : {};
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
       name: true,
       avatarUrl: true,
       poolPriority: true,
+      settings: true,
       // Only include staff who have the default service assigned
       staffServices: defaultServiceForFilter
         ? { where: { serviceId: defaultServiceForFilter.id }, take: 1, select: { serviceId: true } }
@@ -138,10 +140,32 @@ export async function GET(request: Request) {
 
       const slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 
+      // Resolve per-staff lead-time overrides (fall back to business defaults).
+      let staffLead = leadMinutes;
+      let staffFirstLead = bizFirstLead;
+      try {
+        if (staff.settings) {
+          const ss = JSON.parse(staff.settings) as Record<string, unknown>;
+          if (ss.minBookingLeadMinutes !== undefined) {
+            const p = Number(ss.minBookingLeadMinutes);
+            if (!isNaN(p)) staffLead = p;
+          }
+          if (ss.firstApptLeadMinutes !== undefined) {
+            const p = Number(ss.firstApptLeadMinutes);
+            if (!isNaN(p)) staffFirstLead = p;
+          }
+        }
+      } catch { /* malformed settings — keep business defaults */ }
+
+      // When no appointments yet today, the next slot is the first of the day.
+      const effectiveLead = appointments.length === 0
+        ? Math.max(staffFirstLead, staffLead)
+        : staffLead;
+
       // Filter out slots whose time has already passed (for today) OR
       // slots that fall within the configured minimum lead time from now.
       const available = dayOffset === 0
-        ? slots.filter((s) => timeToMinutes(s) >= nowBiz.minutes + leadMinutes)
+        ? slots.filter((s) => timeToMinutes(s) >= nowBiz.minutes + effectiveLead)
         : slots;
 
       for (const time of available) {
