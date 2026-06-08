@@ -447,8 +447,14 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const laneStyle: React.CSSProperties = lanes > 1
     ? { left: `calc(${(lane!.lane * 100) / lanes}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` }
     : { left: 2, right: 2 };
-  // Tighten typography as lanes get narrower so the name still reads.
-  const nameClass = lanes >= 3 ? "text-[8px]" : lanes === 2 ? "text-[9px]" : "text-[10px]";
+  // Scale typography with BOTH the block height (zoom level / duration) and the
+  // lane width, so the text shrinks in proportion and never overflows a short
+  // block into its neighbour. Shorter / narrower → smaller font, fewer lines.
+  const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
+  const short = height < 46;
+  const nameSizePx = (lanes >= 3 || veryShort) ? 8 : (lanes === 2 || short) ? 9 : 10;
+  const nameLines = veryShort ? 1 : 2;
+  const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -491,7 +497,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   }
 
   return (
-    <div className={`no-touch-select absolute rounded-lg border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden px-1 py-0.5 z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: "none", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
@@ -523,14 +529,14 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      {/* Full customer name (first + last) — wraps to 2 lines in a small font so
-          it stays readable even in narrow week-view / overlap lanes. */}
-      <p className={`${nameClass} font-bold leading-[1.1] break-words`}
-        style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+      {/* Full customer name (first + last). Font + line-count scale with the
+          block size so it stays readable yet never overflows into the next slot. */}
+      <p className="font-bold break-words"
+        style={{ fontSize: nameSizePx, lineHeight: 1.05, display: "-webkit-box", WebkitLineClamp: nameLines, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
         {appt.customer.name}
       </p>
-      {height > 38 && lanes < 3 && <p className="text-[9px] opacity-70 truncate">{appt.service.name}</p>}
-      {height > 54 && lanes < 3 && <p className="text-[9px] opacity-60" dir="ltr">{appt.startTime}</p>}
+      {height > 44 && lanes < 3 && <p className="text-[9px] opacity-70 truncate">{appt.service.name}</p>}
+      {height > 60 && lanes < 3 && <p className="text-[9px] opacity-60" dir="ltr">{appt.startTime}</p>}
     </div>
   );
 }
