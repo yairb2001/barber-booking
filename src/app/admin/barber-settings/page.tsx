@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 type ServiceRow = {
   id: string;
   name: string;
+  description: string | null;
   price: number;
   durationMinutes: number;
   enabled: boolean;
@@ -64,7 +65,7 @@ export default function BarberSettingsPage() {
   const [svcSaved, setSvcSaved] = useState(false);
   // Own services (the barber's private services)
   const [canManageOwn, setCanManageOwn] = useState(false);
-  const [ownForm, setOwnForm] = useState<{ id: string | null; name: string; price: string; durationMinutes: string } | null>(null);
+  const [ownForm, setOwnForm] = useState<{ id: string | null; name: string; description: string; price: string; durationMinutes: string } | null>(null);
 
   // ── Schedule ──
   const [schedule, setSchedule] = useState(emptySchedule());
@@ -126,6 +127,7 @@ export default function BarberSettingsPage() {
         action: ownForm.id ? "update-own" : "create-own",
         serviceId: ownForm.id ?? undefined,
         name: ownForm.name.trim(),
+        description: ownForm.description.trim(),
         price: ownForm.price,
         durationMinutes: ownForm.durationMinutes,
       }),
@@ -472,7 +474,7 @@ export default function BarberSettingsPage() {
                 </div>
                 {canManageOwn && (
                   <button
-                    onClick={() => setOwnForm({ id: null, name: "", price: "", durationMinutes: "30" })}
+                    onClick={() => setOwnForm({ id: null, name: "", description: "", price: "", durationMinutes: "30" })}
                     className="bg-teal-600 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
                     + שירות חדש
                   </button>
@@ -492,6 +494,12 @@ export default function BarberSettingsPage() {
                     <label className="text-xs text-neutral-500 block mb-1">שם השירות *</label>
                     <input value={ownForm.name}
                       onChange={e => setOwnForm(p => p && ({ ...p, name: e.target.value }))}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">תיאור</label>
+                    <input value={ownForm.description}
+                      onChange={e => setOwnForm(p => p && ({ ...p, description: e.target.value }))}
                       className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -530,11 +538,12 @@ export default function BarberSettingsPage() {
                         <span className="font-medium text-neutral-900 text-sm">{svc.name}</span>
                         <span className="text-[10px] bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full font-medium">שלי</span>
                       </div>
+                      {svc.description && <div className="text-xs text-neutral-400 mt-0.5 truncate">{svc.description}</div>}
                       <div className="text-xs text-neutral-400 mt-0.5">₪{svc.price} · {svc.durationMinutes} דק'</div>
                     </div>
                     {canManageOwn && (
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <button onClick={() => setOwnForm({ id: svc.id, name: svc.name, price: String(svc.price), durationMinutes: String(svc.durationMinutes) })}
+                        <button onClick={() => setOwnForm({ id: svc.id, name: svc.name, description: svc.description ?? "", price: String(svc.price), durationMinutes: String(svc.durationMinutes) })}
                           className="text-xs text-neutral-500 hover:text-teal-700 px-2 py-1 rounded-lg border border-neutral-200 hover:border-teal-300 transition">
                           ✏️ ערוך
                         </button>

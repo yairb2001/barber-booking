@@ -28,6 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     services: allServices.map(s => ({
       id: s.id,
       name: s.name,
+      description: s.description,
       price: s.price,
       durationMinutes: s.durationMinutes,
       isVisible: s.isVisible,
@@ -80,6 +81,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           businessId: staff.businessId,
           ownerStaffId: params.id,
           name,
+          description: body.description ? String(body.description).trim() : null,
           price,
           durationMinutes,
           isVisible: body.isVisible ?? true,
@@ -105,6 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         where: { id: body.serviceId },
         data: {
           ...(body.name !== undefined && { name: String(body.name).trim() }),
+          ...(body.description !== undefined && { description: body.description ? String(body.description).trim() : null }),
           ...(body.price !== undefined && { price: parseFloat(body.price) }),
           ...(body.durationMinutes !== undefined && { durationMinutes: parseInt(body.durationMinutes) }),
         },

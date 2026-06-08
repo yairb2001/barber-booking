@@ -2902,7 +2902,9 @@ export default function AdminCalendar() {
 
   useEffect(() => { savePrefs({ view }); }, [view]);
   useEffect(() => { savePrefs({ hourHeight }); }, [hourHeight]);
-  useEffect(() => { if (weekBarber) savePrefs({ weekBarber }); }, [weekBarber]);
+  // Only owners persist their chosen barber. For a barber, switching is temporary —
+  // they always reopen on their own calendar (handled in loadStaff).
+  useEffect(() => { if (weekBarber && isOwner) savePrefs({ weekBarber }); }, [weekBarber, isOwner]);
 
   // Update nowY whenever hourHeight or calStart changes
   useEffect(() => {
@@ -3026,9 +3028,17 @@ export default function AdminCalendar() {
       if (st.length) {
         const saved = loadPrefs().weekBarber;
         const myStaffId: string | null = me?.staffId ?? null;
+        const iAmBarber = !!me && !me.isOwner;
         let defaultBarber = st[0].id;
-        if (saved && st.some((s: Staff) => s.id === saved)) defaultBarber = saved;
-        else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) defaultBarber = myStaffId;
+        if (iAmBarber && myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
+          // A barber always lands on their OWN calendar — never a remembered
+          // selection of someone else's. Switching to another barber is temporary.
+          defaultBarber = myStaffId;
+        } else if (saved && st.some((s: Staff) => s.id === saved)) {
+          defaultBarber = saved;
+        } else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
+          defaultBarber = myStaffId;
+        }
         setWeekBarber(defaultBarber);
         setDayBarber(defaultBarber);
       }
