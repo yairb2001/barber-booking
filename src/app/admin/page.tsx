@@ -2443,7 +2443,7 @@ function DraftMoveSlotBlock({
 // ── Draft Appointment Block (Google-Calendar style click-to-place) ─────────────
 function DraftApptBlock({
   startY, staffName,
-  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved, onHorizontalDragEnd,
+  onMove, onConfirm, onAddBreak, onDismiss, onDragMoved, onHorizontalDragEnd, columnSnapDeltaX,
 }: {
   startY: number; staffName: string; date: string;
   onMove: (y: number) => void;
@@ -2453,6 +2453,10 @@ function DraftApptBlock({
   onDragMoved?: () => void;
   /** Called when the user releases after a horizontal drag — clientX of the pointer */
   onHorizontalDragEnd?: (clientX: number) => void;
+  /** Magnetize horizontal drag to the day/staff axis. Given current + origin
+   *  clientX, returns the translateX that snaps the block onto the column under
+   *  the finger (so it locks to a day instead of floating between days). */
+  columnSnapDeltaX?: (clientX: number, originClientX: number) => number | null;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
@@ -2490,8 +2494,12 @@ function DraftApptBlock({
         // Vertical: update time
         const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
         onMove(newY);
-        // Horizontal: slide block across columns visually (keeps pointer capture on this element)
-        setTransX(e.clientX - dragRef.current.clientX);
+        // Horizontal: MAGNETIZE to the day/staff axis — snap the block so it
+        // aligns exactly with the column under the finger, instead of floating
+        // freely in the gap between two days. Falls back to free slide only if
+        // we can't resolve a column (e.g. dragged off the grid).
+        const snapped = columnSnapDeltaX?.(e.clientX, dragRef.current.clientX);
+        setTransX(snapped != null ? snapped : e.clientX - dragRef.current.clientX);
       }}
       onPointerUp={e => {
         e.stopPropagation();
@@ -2664,6 +2672,26 @@ export default function AdminCalendar() {
       }
     }
     return null;
+  }, []);
+
+  // Magnetize horizontal drags to the day/staff axis: given where the drag
+  // STARTED (originClientX) and where the finger is NOW (clientX), return the
+  // exact translateX that snaps the block to align with the column under the
+  // finger. This makes the block jump cleanly column-to-column instead of
+  // floating in the gap between two days.
+  const columnSnapDeltaX = React.useCallback((clientX: number, originClientX: number): number | null => {
+    const rectAt = (x: number): DOMRect | null => {
+      for (const el of Object.values(colRefs.current)) {
+        if (!el) continue;
+        const rect = el.getBoundingClientRect();
+        if (x >= rect.left && x <= rect.right) return rect;
+      }
+      return null;
+    };
+    const origin = rectAt(originClientX);
+    const target = rectAt(clientX);
+    if (!origin || !target) return null;
+    return target.left - origin.left;
   }, []);
 
   // When a DraftApptBlock or DraftMoveSlotBlock is dragged, the browser fires a
@@ -3537,6 +3565,7 @@ export default function AdminCalendar() {
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            columnSnapDeltaX={columnSnapDeltaX}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
@@ -3645,6 +3674,7 @@ export default function AdminCalendar() {
                             onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
+                            columnSnapDeltaX={columnSnapDeltaX}
                             onHorizontalDragEnd={clientX => {
                               const target = findColumnByX(clientX);
                               if (!target) return;
