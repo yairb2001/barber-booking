@@ -30,7 +30,7 @@ function BackArrow({ href }: { href: string }) {
 
 // ── Hebrew date label: "יום שלישי, 12 ביוני" ─────────────────────────────────
 function dateLabel(iso: string): { weekday: string; full: string; rel: string } {
-  const d = new Date(iso + "T00:00:00");
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
   const weekday = d.toLocaleDateString("he-IL", { weekday: "long" });

@@ -143,12 +143,12 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
   const prev = useCallback(() => setActive(a => Math.max(0, a - 1)), []);
   const next = useCallback(() => setActive(a => Math.min(works.length - 1, a + 1)), [works.length]);
 
-  // Auto-advance: loop through works ~every 3.5s (pauses briefly after manual interaction)
+  // Auto-advance: loop through works every 2s (pauses briefly after manual interaction)
   useEffect(() => {
     if (paused || works.length <= 1) return;
     const t = setInterval(() => {
       setActive(a => (a + 1) % works.length);
-    }, 3500);
+    }, 2000);
     return () => clearInterval(t);
   }, [paused, works.length]);
 
@@ -295,8 +295,9 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
 }
 
 // ── Friendly Hebrew day label for an appointment ────────────────────────────────
+// Accepts either "YYYY-MM-DD" or a full ISO datetime ("...T00:00:00.000Z").
 function apptDayLabel(iso: string): string {
-  const d = new Date(iso + "T00:00:00");
+  const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
   if (diff === 0) return "היום";
@@ -423,6 +424,13 @@ export default function HomePage() {
       font-family: var(--font-heebo), system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
     }
+    @keyframes available-blink {
+      0%, 100% { opacity: 1; text-shadow: 0 0 10px rgba(${brandRgb},0.9), 0 0 2px rgba(255,255,255,0.6); }
+      50%      { opacity: 0.45; text-shadow: 0 0 2px rgba(${brandRgb},0.3); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .available-now-blink { animation: none !important; }
+    }
   `;
 
   return (
@@ -482,7 +490,15 @@ export default function HomePage() {
               <a href={social.waze} target="_blank" rel="noopener noreferrer"
                 className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                 style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-                <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]"><path fill="#33CCFF" d="M12 2C6.486 2 2 6.486 2 12c0 1.527.35 2.97.97 4.26L2 22l5.74-.97A9.953 9.953 0 0012 22c5.514 0 10-4.486 10-10S17.514 2 12 2zm-2 9a1 1 0 110-2 1 1 0 010 2zm4 0a1 1 0 110-2 1 1 0 010 2zm-5 3s1 2 3 2 3-2 3-2H9z" /></svg>
+                <svg viewBox="0 0 24 24" className="w-[19px] h-[19px]">
+                  {/* Waze — cyan smiley speech bubble with two wheels */}
+                  <path fill="#33CCFF" d="M12 2.6c-5.04 0-9 3.43-9 7.74 0 1.42.46 2.77 1.27 3.94.2 1-.18 2.1-.86 2.78-.42.42-.13 1.14.46 1.16 1.6.06 3.2-.46 4.28-1.45.99.4 2.04.6 3.1.6 5.05 0 9-3.43 9-7.78S17.05 2.6 12 2.6z" />
+                  <circle cx="9.3" cy="9.6" r="1.15" fill="#0A2540" />
+                  <circle cx="14.7" cy="9.6" r="1.15" fill="#0A2540" />
+                  <path d="M8.6 12.2c.85.95 2.05 1.5 3.4 1.5s2.55-.55 3.4-1.5" fill="none" stroke="#0A2540" strokeWidth="1.1" strokeLinecap="round" />
+                  <circle cx="9" cy="19.4" r="1.25" fill="none" stroke="#0A2540" strokeWidth="1" />
+                  <circle cx="15" cy="19.4" r="1.25" fill="none" stroke="#0A2540" strokeWidth="1" />
+                </svg>
               </a>
             )}
             {social.facebook && (
@@ -532,86 +548,13 @@ export default function HomePage() {
             </div>
           )}
 
-          {welcomeName && myUpcoming.length === 0 && (
+          {welcomeName && (
             <div className="mb-3 px-5 py-2 rounded-full"
               style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
               <p className="text-white text-[14px] font-semibold tracking-wide">
                 👋 ברוך הבא, {welcomeName}!
               </p>
             </div>
-          )}
-
-          {/* ── My next appointment — elegant glass card (returning customer) ── */}
-          {myUpcoming.length > 0 && (
-            <Link href="/book/my-appointments"
-              className="block mb-5 w-full active:scale-[0.98] transition-transform"
-              style={{ maxWidth: 370 }}>
-              <div className="rounded-[26px] p-4 text-right relative overflow-hidden"
-                style={{
-                  background: "rgba(255,255,255,0.10)",
-                  backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)",
-                  border: "1px solid rgba(255,255,255,0.18)",
-                  boxShadow: `0 10px 44px rgba(0,0,0,0.4), 0 0 30px rgba(${brandRgb},0.12)`,
-                }}>
-                {/* Header row */}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-white/90 text-[13px] font-semibold">👋 היי {welcomeName}</span>
-                  <span className="text-[11px] font-bold flex items-center gap-0.5" style={{ color: brand }}>
-                    התורים שלי
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                    </svg>
-                  </span>
-                </div>
-
-                {/* Eyebrow */}
-                <p className="text-white/45 text-[9px] font-bold tracking-[0.25em] uppercase mb-2">
-                  התור הקרוב שלך
-                </p>
-
-                {/* Next appointment */}
-                {(() => {
-                  const a = myUpcoming[0];
-                  return (
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-white/25">
-                        {a.staff.avatarUrl ? (
-                          <img src={a.staff.avatarUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg"
-                            style={{ background: brand }}>
-                            {a.staff.name[0]}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white text-[24px] font-extrabold leading-none tracking-wide" dir="ltr">
-                            {a.startTime}
-                          </span>
-                          <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full text-white"
-                            style={{ background: brand }}>
-                            {apptDayLabel(a.date)}
-                          </span>
-                        </div>
-                        <p className="text-white/70 text-[12px] mt-1.5 truncate">
-                          {a.service.name} · אצל {a.staff.name}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* More appointments hint */}
-                {myUpcoming.length > 1 && (
-                  <div className="mt-3 pt-2.5 border-t border-white/10 text-center">
-                    <span className="text-white/55 text-[11px] font-medium">
-                      + עוד {myUpcoming.length - 1} {myUpcoming.length - 1 === 1 ? "תור עתידי" : "תורים עתידיים"}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </Link>
           )}
 
           <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"
@@ -634,11 +577,14 @@ export default function HomePage() {
         {!loading && quickSlots.length > 0 && (
           <div className="relative z-10 px-4 pb-6">
             <div className="flex items-center gap-2.5 mb-3 px-1">
-              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+              <span className="relative flex h-3 w-3 flex-shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
               </span>
-              <span className="text-white text-[11px] tracking-[0.25em] uppercase font-bold">תורים פנויים עכשיו</span>
+              <span className="available-now-blink text-white text-[13px] tracking-[0.22em] uppercase font-extrabold"
+                style={{ animation: "available-blink 1.05s ease-in-out infinite" }}>
+                תורים פנויים עכשיו
+              </span>
               <div className="flex-1 h-px bg-white/10" />
               <Link href="/book" className="text-white/50 text-[11px] hover:text-white/80 transition-colors">כל התורים ←</Link>
             </div>
@@ -684,6 +630,73 @@ export default function HomePage() {
             }))}
             brand={brand}
           />
+        </section>
+      )}
+
+      {/* ── My next appointment — returning customer, below the stories ── */}
+      {myUpcoming.length > 0 && (
+        <section className="bg-slate-50 py-8 px-5 border-b border-slate-100">
+          <Link href="/book/my-appointments" className="block active:scale-[0.99] transition-transform">
+            <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 relative overflow-hidden">
+              {/* Brand accent stripe */}
+              <div className="absolute top-0 bottom-0 right-0 w-1.5" style={{ background: brand }} />
+
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-3 pr-2">
+                <span className="text-[10px] font-bold tracking-[0.25em] uppercase" style={{ color: brand }}>
+                  התור הקרוב שלך
+                </span>
+                <span className="text-[12px] font-bold flex items-center gap-0.5" style={{ color: brand }}>
+                  התורים שלי
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                  </svg>
+                </span>
+              </div>
+
+              {/* Next appointment */}
+              {(() => {
+                const a = myUpcoming[0];
+                return (
+                  <div className="flex items-center gap-3 pr-2">
+                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 border-2 border-slate-100">
+                      {a.staff.avatarUrl ? (
+                        <img src={a.staff.avatarUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg"
+                          style={{ background: brand }}>
+                          {a.staff.name[0]}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-900 text-[24px] font-extrabold leading-none tracking-wide" dir="ltr">
+                          {a.startTime}
+                        </span>
+                        <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full text-white"
+                          style={{ background: brand }}>
+                          {apptDayLabel(a.date)}
+                        </span>
+                      </div>
+                      <p className="text-slate-500 text-[12px] mt-1.5 truncate">
+                        {a.service.name} · אצל {a.staff.name}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* More appointments hint */}
+              {myUpcoming.length > 1 && (
+                <div className="mt-3 pt-2.5 border-t border-slate-100 text-center">
+                  <span className="text-slate-400 text-[11px] font-medium">
+                    + עוד {myUpcoming.length - 1} {myUpcoming.length - 1 === 1 ? "תור עתידי" : "תורים עתידיים"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </Link>
         </section>
       )}
 
