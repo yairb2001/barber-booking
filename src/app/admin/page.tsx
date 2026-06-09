@@ -204,7 +204,7 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
 type RawBreak = { start: string; end: string; name?: string; recurring?: boolean };
 
-function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, onBreakClick }: {
+function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, onBreakClick, onBreakLongPress, movingBreak }: {
   staff: Staff;
   dow: number;
   override?: { isWorking: boolean; slots: string | null; breaks: string | null } | null;
