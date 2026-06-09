@@ -1439,7 +1439,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     }
   }
 
-  const cleanPhone = dispPhone.replace(/\D/g, "");
+  const cleanPhone = dispPhone.replace(/\D/g, "").replace(/^0/, "972");
 
   if (editMode) {
     return <ApptEditForm

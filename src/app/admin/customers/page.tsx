@@ -118,7 +118,7 @@ export default function CustomersPage() {
                   <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
                     <div className="flex gap-3">
                       <a href={`tel:${c.phone}`} className="text-xs text-neutral-500 hover:text-neutral-800">📞</a>
-                      <a href={`https://wa.me/${c.phone.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-500 hover:text-emerald-700">💬</a>
+                      <a href={`https://wa.me/${c.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-500 hover:text-emerald-700">💬</a>
                     </div>
                   </td>
                 </tr>
@@ -368,7 +368,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             className="flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl py-3 text-sm">
             <span>🔁</span> תור קבוע
           </button>
-          <a href={`https://wa.me/${detail.phone.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+          <a href={`https://wa.me/${detail.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer"
             className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl py-3 text-sm">
             <span>💬</span> הודעת WhatsApp
           </a>

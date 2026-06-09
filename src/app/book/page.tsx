@@ -212,7 +212,6 @@ export default function ChooseBarberPage() {
       {referral && (() => {
         const reached = referral.referralCount >= referral.goal;
         const shown = Math.min(referral.referralCount, referral.goal);
-        const pct = Math.min(100, Math.round((referral.referralCount / Math.max(1, referral.goal)) * 100));
         const remaining = Math.max(0, referral.goal - referral.referralCount);
         return (
           <div className="px-4 pt-3 flex justify-center">
@@ -222,9 +221,6 @@ export default function ChooseBarberPage() {
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[12px] font-bold">🙌 תודה על ההמלצות!</span>
                 <span className="text-[12px] font-extrabold" dir="ltr">{shown}/{referral.goal}</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-white/25 overflow-hidden mb-1.5">
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "rgba(255,255,255,0.9)" }} />
               </div>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-[10.5px] text-white/85 leading-snug">

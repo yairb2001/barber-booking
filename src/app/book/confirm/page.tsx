@@ -216,12 +216,12 @@ function ReferralThankYou({ status }: { status: { name: string; referralCount: n
   const pct = Math.min(100, Math.round((status.referralCount / Math.max(1, status.goal)) * 100));
   const remaining = Math.max(0, status.goal - status.referralCount);
   return (
-    <div className="rounded-2xl p-5 text-white shadow-md" style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
+    <div className="rounded-2xl p-5 text-white shadow-md" style={{ background: "var(--brand)" }}>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-2xl">🙌</span>
         <p className="text-[15px] font-bold text-white">תודה {first}!</p>
       </div>
-      <p className="text-[12px] text-teal-100 leading-relaxed mb-3">
+      <p className="text-[12px] text-white/85 leading-relaxed mb-3">
         {reached
           ? `הבאת ${status.referralCount} חברים — מגיעה לך ${status.giftLabel}! 🎁`
           : `כבר הבאת לנו ${status.referralCount} ${status.referralCount === 1 ? "חבר" : "חברים"} — אנחנו מעריכים אותך מאוד 🤩`}
@@ -229,13 +229,13 @@ function ReferralThankYou({ status }: { status: { name: string; referralCount: n
 
       {/* Progress meter */}
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-semibold text-teal-100">
+        <span className="text-[11px] font-semibold text-white/85">
           {reached ? "🎉 הגעת ליעד!" : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${status.giftLabel}`}
         </span>
         <span className="text-[13px] font-extrabold text-white" dir="ltr">{shown}/{status.goal}</span>
       </div>
       <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "#5eead4" }} />
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "rgba(255,255,255,0.9)" }} />
       </div>
     </div>
   );
@@ -391,8 +391,13 @@ function ConfirmPageContent() {
   const price    = serviceInfo ? (serviceInfo.customPrice ?? serviceInfo.price) : 0;
   const duration = serviceInfo ? (serviceInfo.customDuration ?? serviceInfo.durationMinutes) : 0;
 
+  // Require a real full name — first + last (two words, each ≥ 2 chars).
+  const isFullName = (n: string) => n.trim().split(/\s+/).filter(w => w.length >= 2).length >= 2;
+  const nameValid = isFullName(name);
+
   async function sendOtp() {
     if (!phone) { setOtpError("הזן מספר טלפון תחילה"); return; }
+    if (!nameValid) { setOtpError("נא להזין שם פרטי ושם משפחה"); return; }
     setOtpSending(true); setOtpError("");
     try {
       const res = await fetch("/api/otp/send", {
@@ -433,6 +438,7 @@ function ConfirmPageContent() {
 
   async function handleSubmit() {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
+    if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
     if (!otpVerified) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
     setSubmitting(true); setError("");
     try {
@@ -604,10 +610,13 @@ function ConfirmPageContent() {
                 style={{ "--tw-ring-color": "var(--brand)" } as React.CSSProperties} />
             </div>
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">שם מלא</label>
+              <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">שם פרטי ושם משפחה</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)}
-                placeholder="השם שלך" className={inputClass}
+                placeholder="לדוגמה: ישראל ישראלי" className={inputClass}
                 style={{ "--tw-ring-color": "var(--brand)" } as React.CSSProperties} />
+              {name.trim().length > 0 && !nameValid && (
+                <p className="text-[11px] text-amber-600 mt-1">יש להזין שם פרטי ושם משפחה</p>
+              )}
             </div>
             <div>
               <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">
@@ -627,7 +636,7 @@ function ConfirmPageContent() {
                 {!otpSent ? (
                   <div className="space-y-2">
                     {otpError && <p className="text-[12px] text-red-500">{otpError}</p>}
-                    <button onClick={sendOtp} disabled={otpSending || !phone}
+                    <button onClick={sendOtp} disabled={otpSending || !phone || !nameValid}
                       className="w-full text-[13px] font-bold tracking-[0.1em] py-3 rounded-full border-2 transition-all disabled:opacity-40"
                       style={{ border: `2px solid var(--brand)`, color: "var(--brand)", background: "transparent" }}>
                       {otpSending ? "שולח..." : "📲 שלח קוד אימות ב-WhatsApp"}
@@ -784,7 +793,7 @@ function ConfirmPageContent() {
 
         {/* Submit */}
         <button onClick={handleSubmit}
-          disabled={submitting || !phone || !name || !otpVerified}
+          disabled={submitting || !phone || !nameValid || !otpVerified}
           className="w-full text-[14px] font-bold tracking-[0.15em] uppercase py-4 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
           style={{ background: "var(--brand)" }}>
           {submitting ? "קובע תור..." : "קביעת תור! ✓"}

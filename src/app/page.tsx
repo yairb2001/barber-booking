@@ -132,7 +132,7 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
 }
 
 // ── Focus Carousel — portfolio works ──────────────────────────────────────────
-type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null };
+type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null; staffId: string | null };
 
 function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: string }) {
   const [active, setActive] = useState(0);
@@ -237,7 +237,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
                           )}
                           <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, textAlign: "center", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{work.staffName}</span>
                         </div>
-                        <Link href="/book" dir="rtl"
+                        <Link href={work.staffId ? `/book/service?staffId=${work.staffId}` : "/book"} dir="rtl"
                           style={{ background: brand, borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0, marginBottom: 12 }}>
                           קבע תור
                         </Link>
@@ -421,7 +421,7 @@ export default function HomePage() {
   function toUrl(key: string, val: string): string {
     if (!val) return "";
     if (val.startsWith("http")) return val;
-    if (key === "whatsapp") return `https://wa.me/${val.replace(/\D/g, "")}`;
+    if (key === "whatsapp") return `https://wa.me/${val.replace(/\D/g, "").replace(/^0/, "972")}`;
     if (key === "instagram") return `https://instagram.com/${val.replace("@", "")}`;
     if (key === "facebook") return `https://facebook.com/${val.replace("@", "")}`;
     return val;
@@ -435,7 +435,7 @@ export default function HomePage() {
 
   const portfolioWorks: PortfolioWork[] = staff
     .filter(s => s.portfolio.length > 0)
-    .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl })));
+    .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl, staffId: s.id })));
 
   // Global CSS — only the brand color comes from the theme.
   // All backgrounds, text and fonts are forced to match the admin's clean slate palette.
@@ -651,6 +651,7 @@ export default function HomePage() {
               imageUrl: s.mediaUrl,
               staffName: s.staff?.name || s.caption || "",
               staffAvatar: s.staff?.avatarUrl || null,
+              staffId: s.staff?.id || null,
             }))}
             brand={brand}
           />
