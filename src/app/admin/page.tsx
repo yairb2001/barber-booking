@@ -214,6 +214,10 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
   staffId?: string;
   date?: string;
   onBreakClick?: (breakIdx: number, br: RawBreak) => void;
+  /** Long-press on a break card → start dragging it to a new time/column. */
+  onBreakLongPress?: (breakIdx: number, br: RawBreak, startMin: number, endMin: number, clientX: number, clientY: number) => void;
+  /** The break currently being dragged — its original card fades out. */
+  movingBreak?: { staffId: string; date: string; breakIdx: number } | null;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
@@ -274,34 +278,74 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
       {segments.map((seg, i) => {
         const top = ((seg.start - dayStartMin) / 60) * hh;
         const height = ((seg.end - seg.start) / 60) * hh;
-        const isBreak = seg.type === "break";
-        const rawBreak = isBreak && seg.rawIdx !== undefined ? rawBreaks[seg.rawIdx] : null;
+        // Closed / non-working time → flat full-width grey band (background only).
+        if (seg.type !== "break") {
+          return <div key={i} className="absolute left-0 right-0 pointer-events-none bg-neutral-100/70" style={{ top, height }} />;
+        }
+        // Break → render like a regular appointment card (inset, rounded) but
+        // in the break (amber) palette, and draggable via long-press.
+        const rawBreak = seg.rawIdx !== undefined ? rawBreaks[seg.rawIdx] : null;
         const breakName = rawBreak?.name || "הפסקה";
+        const isMoving = !!movingBreak && movingBreak.staffId === staffId && movingBreak.date === date && movingBreak.breakIdx === seg.rawIdx;
         return (
-          <div key={i}
-            className={`absolute left-0 right-0 flex items-center justify-center overflow-hidden ${
-              isBreak
-                ? "bg-orange-100/80 border-y border-orange-200/60 cursor-pointer hover:bg-orange-200/70 transition-colors"
-                : "pointer-events-none bg-neutral-100/70"
-            }`}
-            style={{ top, height }}
-            onPointerDown={isBreak ? e => { e.stopPropagation(); } : undefined}
-            onClick={isBreak && onBreakClick && rawBreak && seg.rawIdx !== undefined
-              ? (e) => { e.stopPropagation(); onBreakClick(seg.rawIdx!, rawBreak); }
-              : undefined
-            }>
-            {isBreak && height >= 18 && (
-              <div className="flex flex-col items-center leading-none gap-0.5 select-none pointer-events-none">
-                <span className="text-orange-500 text-[9px] font-semibold tracking-wide">{breakName}</span>
-                {height >= 30 && (
-                  <span className="text-orange-300 text-[8px]" dir="ltr">{minToTime(seg.start)}–{minToTime(seg.end)}</span>
-                )}
-              </div>
-            )}
-          </div>
+          <BreakCard key={i}
+            top={top} height={height} name={breakName}
+            startMin={seg.start} endMin={seg.end}
+            isMoving={isMoving}
+            onClick={() => { if (onBreakClick && rawBreak && seg.rawIdx !== undefined) onBreakClick(seg.rawIdx, rawBreak); }}
+            onLongPress={(x, y) => { if (onBreakLongPress && rawBreak && seg.rawIdx !== undefined) onBreakLongPress(seg.rawIdx, rawBreak, seg.start, seg.end, x, y); }}
+          />
         );
       })}
     </>
+  );
+}
+
+// ── Break card — looks like an appointment block, in the break (amber) palette.
+//    Tap → edit; long-press → drag to a new time/column (like a regular appt). ──
+function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onLongPress }: {
+  top: number; height: number; name: string; startMin: number; endMin: number;
+  isMoving: boolean;
+  onClick: () => void;
+  onLongPress: (clientX: number, clientY: number) => void;
+}) {
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lpStart = useRef<{ x: number; y: number } | null>(null);
+  const lpFired = useRef(false);
+  const clearLP = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
+  const veryShort = height < 28;
+  return (
+    <div
+      className={`no-touch-select absolute left-0.5 right-0.5 flex flex-col items-center justify-center ${veryShort ? "rounded-md" : "rounded-lg"} border border-amber-300 bg-amber-100 text-amber-700 overflow-hidden cursor-pointer hover:bg-amber-200/80 transition-colors z-10 ${isMoving ? "opacity-30" : ""}`}
+      style={{ top, height, touchAction: "none" }}
+      onClick={e => e.stopPropagation()}
+      onPointerDown={e => {
+        e.stopPropagation();
+        lpStart.current = { x: e.clientX, y: e.clientY };
+        lpFired.current = false;
+        clearLP();
+        lpTimer.current = setTimeout(() => { lpFired.current = true; onLongPress(e.clientX, e.clientY); }, LONG_PRESS_MS);
+      }}
+      onPointerMove={e => {
+        if (lpFired.current || !lpStart.current) return;
+        const dx = Math.abs(e.clientX - lpStart.current.x);
+        const dy = Math.abs(e.clientY - lpStart.current.y);
+        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) clearLP();
+      }}
+      onPointerUp={e => {
+        e.stopPropagation();
+        clearLP();
+        if (!lpFired.current) onClick();
+        lpStart.current = null; lpFired.current = false;
+      }}
+      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; }}>
+      {height >= 14 && (
+        <span className="text-[9px] font-semibold tracking-wide leading-none px-1 truncate max-w-full">☕ {name}</span>
+      )}
+      {height >= 30 && (
+        <span className="text-amber-500 text-[8px] leading-none mt-0.5" dir="ltr">{minToTime(startMin)}–{minToTime(endMin)}</span>
+      )}
+    </div>
   );
 }
 
@@ -2633,30 +2677,36 @@ function DraftMoveSlotBlock({
         // Don't hijack clicks that land on buttons — let them fire normally
         if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        dragRef.current = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        // Listen on `window` (not pointer-capture) so the drag survives the
+        // per-move re-render that `onMove` triggers — mobile WebKit otherwise
+        // drops the capture and the drag freezes. See DraftApptBlock for detail.
+        const start = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        dragRef.current = start;
         setTransX(0);
+        let moved = false;
+        const onWinMove = (ev: PointerEvent) => {
+          ev.preventDefault();
+          const newY = Math.max(0, Math.min(totalH - blockH, start.startY + ev.clientY - start.clientY));
+          onMove(newY);
+          const snapped = columnSnapDeltaX?.(ev.clientX, start.clientX);
+          setTransX(snapped != null ? snapped : ev.clientX - start.clientX);
+          if (Math.abs(ev.clientY - start.clientY) > 5 || Math.abs(ev.clientX - start.clientX) > 5) moved = true;
+        };
+        const onWinUp = (ev: PointerEvent) => {
+          const dx = Math.abs(ev.clientX - start.clientX);
+          if (moved) onDragMoved?.();
+          // Sticky to current day, but a small horizontal nudge slides to another day
+          if (dx > 15) onHorizontalDragEnd?.(ev.clientX);
+          dragRef.current = null;
+          setTransX(0);
+          window.removeEventListener("pointermove", onWinMove);
+          window.removeEventListener("pointerup", onWinUp);
+          window.removeEventListener("pointercancel", onWinUp);
+        };
+        window.addEventListener("pointermove", onWinMove, { passive: false });
+        window.addEventListener("pointerup", onWinUp);
+        window.addEventListener("pointercancel", onWinUp);
       }}
-      onPointerMove={e => {
-        if (!dragRef.current) return;
-        const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
-        onMove(newY);
-        // Horizontal: MAGNETIZE to the day/staff axis (locks onto the column under
-        // the finger), falling back to a free slide only off the grid.
-        const snapped = columnSnapDeltaX?.(e.clientX, dragRef.current.clientX);
-        setTransX(snapped != null ? snapped : e.clientX - dragRef.current.clientX);
-      }}
-      onPointerUp={e => {
-        e.stopPropagation();
-        const dy = dragRef.current ? Math.abs(e.clientY - dragRef.current.clientY) : 0;
-        const dx = dragRef.current ? Math.abs(e.clientX - dragRef.current.clientX) : 0;
-        if (dy > 5 || dx > 5) onDragMoved?.();
-        // Sticky to current day, but a small horizontal nudge slides to another day
-        if (dx > 15) onHorizontalDragEnd?.(e.clientX);
-        dragRef.current = null;
-        setTransX(0);
-      }}
-      onPointerCancel={() => { dragRef.current = null; setTransX(0); }}
       onClick={e => e.stopPropagation()}>
 
       <div className="relative w-full h-full">
@@ -2746,36 +2796,44 @@ function DraftApptBlock({
       onPointerDown={e => {
         if ((e.target as HTMLElement).closest("button")) return;
         e.stopPropagation();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        dragRef.current = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        // NOTE: we deliberately do NOT use setPointerCapture here. `onMove`
+        // re-renders this block on every move, and mobile WebKit drops the
+        // capture when the captured element re-renders mid-gesture — which made
+        // the drag "freeze/cancel" after the first tiny movement. Instead we
+        // listen on `window`, which keeps receiving events across re-renders.
+        const start = { clientY: e.clientY, clientX: e.clientX, startY: clampedTop };
+        dragRef.current = start;
         setTransX(0);
+        let moved = false;
+        const onWinMove = (ev: PointerEvent) => {
+          ev.preventDefault();
+          // Vertical: update time
+          const newY = Math.max(0, Math.min(totalH - blockH, start.startY + ev.clientY - start.clientY));
+          onMove(newY);
+          // Horizontal: MAGNETIZE to the day/staff axis — snap the block so it
+          // aligns exactly with the column under the finger.
+          const snapped = columnSnapDeltaX?.(ev.clientX, start.clientX);
+          setTransX(snapped != null ? snapped : ev.clientX - start.clientX);
+          // Highlight the day column under the finger (visible day-axis lock).
+          onColHover?.(ev.clientX);
+          if (Math.abs(ev.clientY - start.clientY) > 5 || Math.abs(ev.clientX - start.clientX) > 5) moved = true;
+        };
+        const onWinUp = (ev: PointerEvent) => {
+          const dx = Math.abs(ev.clientX - start.clientX);
+          if (moved) onDragMoved?.();
+          // If horizontal drag happened, inform parent of final clientX so it can pick target column
+          if (dx > 15) onHorizontalDragEnd?.(ev.clientX);
+          onColHover?.(null);
+          dragRef.current = null;
+          setTransX(0);
+          window.removeEventListener("pointermove", onWinMove);
+          window.removeEventListener("pointerup", onWinUp);
+          window.removeEventListener("pointercancel", onWinUp);
+        };
+        window.addEventListener("pointermove", onWinMove, { passive: false });
+        window.addEventListener("pointerup", onWinUp);
+        window.addEventListener("pointercancel", onWinUp);
       }}
-      onPointerMove={e => {
-        if (!dragRef.current) return;
-        // Vertical: update time
-        const newY = Math.max(0, Math.min(totalH - blockH, dragRef.current.startY + e.clientY - dragRef.current.clientY));
-        onMove(newY);
-        // Horizontal: MAGNETIZE to the day/staff axis — snap the block so it
-        // aligns exactly with the column under the finger, instead of floating
-        // freely in the gap between two days. Falls back to free slide only if
-        // we can't resolve a column (e.g. dragged off the grid).
-        const snapped = columnSnapDeltaX?.(e.clientX, dragRef.current.clientX);
-        setTransX(snapped != null ? snapped : e.clientX - dragRef.current.clientX);
-        // Highlight the day column under the finger (visible day-axis lock).
-        onColHover?.(e.clientX);
-      }}
-      onPointerUp={e => {
-        e.stopPropagation();
-        const dy = dragRef.current ? Math.abs(e.clientY - dragRef.current.clientY) : 0;
-        const dx = dragRef.current ? Math.abs(e.clientX - dragRef.current.clientX) : 0;
-        if (dy > 5 || dx > 5) onDragMoved?.();
-        // If horizontal drag happened, inform parent of final clientX so it can pick target column
-        if (dx > 15) onHorizontalDragEnd?.(e.clientX);
-        onColHover?.(null);
-        dragRef.current = null;
-        setTransX(0);
-      }}
-      onPointerCancel={() => { dragRef.current = null; setTransX(0); onColHover?.(null); }}
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
@@ -2930,6 +2988,18 @@ export default function AdminCalendar() {
   // / date-flicking so adjusting the slot left/right doesn't switch the week.
   const draftApptRef = useRef<typeof draftAppt>(null);
   draftApptRef.current = draftAppt;
+
+  // ── Drag-to-MOVE breaks (same long-press → ghost → drop model as appts) ──────
+  type BreakDragState = {
+    staffId: string; date: string; breakIdx: number;
+    name: string; durationMin: number; origStartMin: number;
+    pointerX: number; pointerY: number;
+    dropTarget: { staffId: string; date: string; startTime: string } | null;
+  };
+  const [breakDrag, setBreakDrag] = useState<BreakDragState | null>(null);
+  const breakDragRef = useRef<BreakDragState | null>(null);
+  breakDragRef.current = breakDrag;
+  const breakDragProcessed = useRef(false);
 
   // Guard against double-finalize: when the user taps the in-drag ✓/✕ buttons
   // their onPointerDown fires before the global pointerup, so without this flag
@@ -3213,7 +3283,7 @@ export default function AdminCalendar() {
       }
       // Live week-paging: only in week/3day view, only when dragging horizontally,
       // and never while moving an appointment. The whole grid follows the finger.
-      if (axis === "x" && isWeekView() && !dragMoveRef.current && !draftApptRef.current) {
+      if (axis === "x" && isWeekView() && !dragMoveRef.current && !draftApptRef.current && !breakDragRef.current) {
         paging = true;
         e.preventDefault(); // stop vertical scroll from fighting the page drag
         const el = weekPagerRef.current;
@@ -3247,7 +3317,7 @@ export default function AdminCalendar() {
         }
       } else if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
         // Non-paging gesture (day view) — navigate dates on a strong horizontal flick.
-        const dragActive = !!dragMoveRef.current || !!draftApptRef.current;
+        const dragActive = !!dragMoveRef.current || !!draftApptRef.current || !!breakDragRef.current;
         if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
           // Day view keeps the RTL convention: swipe right = earlier, left = later.
           navigateRef.current(dx > 0 ? -1 : 1);
@@ -3735,6 +3805,104 @@ export default function AdminCalendar() {
     };
   }, [dragMove !== null, computeDropTarget, finalizeMoveDrag]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Break-move drag: read/write the break inside the staff schedule ──────────
+  // Breaks live in the schedule (override or weekly) as a JSON array, not as
+  // Appointment rows — so moving one means rewriting that day's breaks list.
+  const getBreaksForDay = useCallback(async (sId: string, d: string): Promise<{ breaks: RawBreak[]; slots: { start: string; end: string }[]; isWorking: boolean }> => {
+    const override = await fetch(`/api/admin/staff/${sId}/schedule/override?date=${d}`).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (override?.staffId) {
+      return {
+        breaks: override.breaks ? JSON.parse(override.breaks) : [],
+        slots: override.slots ? JSON.parse(override.slots) : [],
+        isWorking: override.isWorking,
+      };
+    }
+    const s = allStaff.find(x => x.id === sId);
+    const dow = new Date(d + "T00:00:00").getDay();
+    const sched = s?.schedules?.find(sc => sc.dayOfWeek === dow);
+    if (!sched) return { breaks: [], slots: [{ start: "09:00", end: "20:00" }], isWorking: true };
+    return {
+      breaks: sched.breaks ? JSON.parse(sched.breaks) : [],
+      slots: JSON.parse(sched.slots || "[]"),
+      isWorking: sched.isWorking,
+    };
+  }, [allStaff]);
+
+  const persistBreakMove = useCallback(async (drag: BreakDragState, target: { staffId: string; date: string; startTime: string }) => {
+    const fmt = (b: RawBreak): RawBreak => (b.name && b.name !== "הפסקה" ? { start: b.start, end: b.end, name: b.name } : { start: b.start, end: b.end });
+    const newStart = target.startTime;
+    const newEnd = minToTime(toMin(newStart) + drag.durationMin);
+    const movedBreak: RawBreak = drag.name && drag.name !== "הפסקה"
+      ? { start: newStart, end: newEnd, name: drag.name }
+      : { start: newStart, end: newEnd };
+    const post = (sId: string, d: string, breaks: RawBreak[], ctx: { slots: { start: string; end: string }[]; isWorking: boolean }) =>
+      fetch(`/api/admin/staff/${sId}/schedule/override`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: d, isWorking: ctx.isWorking, slots: ctx.slots, breaks, notifyWaitlist: false }),
+      });
+    try {
+      const src = await getBreaksForDay(drag.staffId, drag.date);
+      if (!src.breaks[drag.breakIdx]) { loadAppointments(); return; }
+      if (drag.staffId === target.staffId && drag.date === target.date) {
+        const updated = src.breaks.map((b, i) => (i === drag.breakIdx ? movedBreak : fmt(b)));
+        await post(drag.staffId, drag.date, updated, src);
+      } else {
+        const srcUpdated = src.breaks.filter((_, i) => i !== drag.breakIdx).map(fmt);
+        await post(drag.staffId, drag.date, srcUpdated, src);
+        const tgt = await getBreaksForDay(target.staffId, target.date);
+        await post(target.staffId, target.date, [...tgt.breaks.map(fmt), movedBreak], tgt);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    loadAppointments();
+  }, [getBreaksForDay, loadAppointments]);
+
+  const finalizeBreakDrag = useCallback((target: { staffId: string; date: string; startTime: string } | null) => {
+    if (breakDragProcessed.current) return;
+    breakDragProcessed.current = true;
+    const drag = breakDragRef.current;
+    setBreakDrag(null);
+    suppressNextGridClick.current = true;
+    if (!drag || !target) return;
+    const newStartMin = toMin(target.startTime);
+    // No move (same column + same start time) → don't write
+    if (target.staffId === drag.staffId && target.date === drag.date && newStartMin === drag.origStartMin) return;
+    persistBreakMove(drag, target);
+  }, [persistBreakMove]);
+
+  function startBreakDrag(sId: string, d: string, breakIdx: number, br: RawBreak, startMin: number, endMin: number, x: number, y: number) {
+    breakDragProcessed.current = false;
+    setBreakDrag({
+      staffId: sId, date: d, breakIdx,
+      name: br.name || "הפסקה", durationMin: endMin - startMin, origStartMin: startMin,
+      pointerX: x, pointerY: y, dropTarget: null,
+    });
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(30);
+  }
+
+  // Global listeners while a break is being dragged.
+  useEffect(() => {
+    if (!breakDrag) return;
+    const onMove = (e: PointerEvent) => {
+      if (breakDragProcessed.current) return;
+      e.preventDefault();
+      const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
+    };
+    const onUp = (e: PointerEvent) => {
+      finalizeBreakDrag(computeDropTarget(e.clientX, e.clientY));
+    };
+    window.addEventListener("pointermove", onMove, { passive: false });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [breakDrag !== null, computeDropTarget, finalizeBreakDrag]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Drag to create (desktop/mouse only) ─────────────────────────────────────
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
     if (swapMode) return; // in swap mode, grid clicks are handled by handleGridClick (toggle move slot)
@@ -3946,7 +4114,25 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]}
                           beyondHorizon={daysBetween(todayISO(), date) >= staffHorizonDays(s, bizHorizon)}
                           staffId={s.id} date={date}
+                          movingBreak={breakDrag}
+                          onBreakLongPress={(idx, br, sMin, eMin, x, y) => startBreakDrag(s.id, date, idx, br, sMin, eMin, x, y)}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
+                        {/* Break drag drop-ghost */}
+                        {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === date && (() => {
+                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight);
+                          const ghostH = (breakDrag.durationMin / 60) * hourHeight;
+                          return (
+                            <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
+                              style={{ top: ghostTop, height: ghostH, borderColor: "#f59e0b", background: "rgba(245,158,11,0.18)" }}>
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-amber-500 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                                {breakDrag.dropTarget!.startTime}
+                              </div>
+                              <div className="flex items-center justify-center h-full">
+                                <p className="text-[10px] font-bold text-amber-800 leading-tight">☕ {breakDrag.name}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* Drag-to-create ghost rectangle */}
                         {colDrag && dragDist >= 6 && (
                           <div className="absolute left-0.5 right-0.5 bg-slate-300/40 border-2 border-dashed border-teal-600 rounded-lg pointer-events-none z-20 flex flex-col justify-start px-1.5 py-1"
@@ -4059,7 +4245,25 @@ export default function AdminCalendar() {
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]}
                           beyondHorizon={daysBetween(todayISO(), d) >= staffHorizonDays(s, bizHorizon)}
                           staffId={s.id} date={d}
+                          movingBreak={breakDrag}
+                          onBreakLongPress={(idx, br, sMin, eMin, x, y) => startBreakDrag(s.id, d, idx, br, sMin, eMin, x, y)}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
+                        {/* Break drag drop-ghost */}
+                        {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === d && (() => {
+                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight);
+                          const ghostH = (breakDrag.durationMin / 60) * hourHeight;
+                          return (
+                            <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
+                              style={{ top: ghostTop, height: ghostH, borderColor: "#f59e0b", background: "rgba(245,158,11,0.18)" }}>
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-amber-500 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                                {breakDrag.dropTarget!.startTime}
+                              </div>
+                              <div className="flex items-center justify-center h-full">
+                                <p className="text-[10px] font-bold text-amber-800 leading-tight">☕ {breakDrag.name}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
                         {/* Per-column now line — only today */}
                         {d === todayISO() && nowY >= 0 && nowY <= totalHeight && (
                           <div className="absolute left-0 right-0 z-20 pointer-events-none flex items-center" style={{ top: nowY }}>
