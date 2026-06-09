@@ -47,6 +47,12 @@ export default function MyAppointmentsPage() {
   const [name, setName]       = useState("");
   const [upcoming, setUpcoming] = useState<Appt[]>([]);
   const [past, setPast]         = useState<Appt[]>([]);
+  // Auth credentials kept for follow-up actions (e.g. cancelling a booking).
+  const [auth, setAuth]       = useState<{ phone: string; token: string } | null>(null);
+  // Cancellation flow state
+  const [confirmId, setConfirmId]   = useState<string | null>(null); // appointment pending confirmation
+  const [cancellingId, setCancellingId] = useState<string | null>(null); // request in flight
+  const [cancelError, setCancelError]   = useState("");
 
   useEffect(() => {
     (async () => {
@@ -60,6 +66,7 @@ export default function MyAppointmentsPage() {
         }
         const auth = await authRes.json();
         if (auth?.name) setName(String(auth.name).split(" ")[0]);
+        if (auth?.phone && auth?.token) setAuth({ phone: auth.phone, token: auth.token });
 
         // 2) Fetch this customer's appointments using phone + token.
         const url = `/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`;
@@ -79,6 +86,33 @@ export default function MyAppointmentsPage() {
       }
     })();
   }, []);
+
+  // Cancel an upcoming appointment (after the user confirms).
+  async function handleCancel(id: string) {
+    if (!auth) { setCancelError("פג תוקף הסשן — רענן את הדף"); return; }
+    setCancellingId(id);
+    setCancelError("");
+    try {
+      const res = await fetch("/api/my-appointments/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: id, phone: auth.phone, token: auth.token }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCancelError(data?.error || "הביטול נכשל, נסה שוב");
+        setCancellingId(null);
+        return;
+      }
+      // Remove from the upcoming list on success.
+      setUpcoming(prev => prev.filter(a => a.id !== id));
+      setConfirmId(null);
+      setCancellingId(null);
+    } catch {
+      setCancelError("הביטול נכשל, נסה שוב");
+      setCancellingId(null);
+    }
+  }
 
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
@@ -186,6 +220,43 @@ export default function MyAppointmentsPage() {
                         </span>
                       </div>
                     </div>
+
+                    {/* ── Cancel row ── */}
+                    {confirmId === a.id ? (
+                      <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--divider)" }}>
+                        <p className="text-[12px] font-semibold text-center mb-2" style={{ color: "var(--text-pri)" }}>
+                          לבטל את התור?
+                        </p>
+                        {cancelError && (
+                          <p className="text-[11px] text-center mb-2" style={{ color: "#dc2626" }}>{cancelError}</p>
+                        )}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleCancel(a.id)}
+                            disabled={cancellingId === a.id}
+                            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
+                            style={{ background: "#dc2626" }}>
+                            {cancellingId === a.id ? "מבטל…" : "כן, בטל תור"}
+                          </button>
+                          <button
+                            onClick={() => { setConfirmId(null); setCancelError(""); }}
+                            disabled={cancellingId === a.id}
+                            className="flex-1 py-2.5 rounded-xl text-[13px] font-bold active:scale-95 transition-transform disabled:opacity-60"
+                            style={{ background: "var(--bg-alt)", color: "var(--text-sec)", border: "1px solid var(--divider)" }}>
+                            השאר תור
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 pt-3 flex justify-end" style={{ borderTop: "1px solid var(--divider)" }}>
+                        <button
+                          onClick={() => { setConfirmId(a.id); setCancelError(""); }}
+                          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+                          style={{ color: "#dc2626" }}>
+                          ביטול תור
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

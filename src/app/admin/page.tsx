@@ -2607,8 +2607,12 @@ function DraftApptBlock({
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
   const isMobile = useIsMobile();
   const totalH = (calEnd - calStart) * hh;
-  // Generous invisible touch area for easy grabbing; the visible bar is slim.
-  const blockH = isMobile ? 40 : 36;
+  // The VISIBLE frame represents a single 10-minute window, so it grows/shrinks
+  // as the calendar is zoomed (hourHeight). Floored so it stays tappable.
+  const tenMinH = Math.max(7, Math.round((10 / 60) * hh));
+  // Touch HIT area — bigger than the thin frame on mobile so the frame is still
+  // easy to grab with a finger; on desktop the pill is its own size.
+  const blockH = isMobile ? Math.max(tenMinH, 44) : 36;
   // Magnetize the block to the 5-minute grid so it locks onto clean times.
   const clampedTop = snapYToGrid(Math.max(0, Math.min(totalH - blockH, startY)), hh);
   const time = yToTimeFn(clampedTop, hh, calStart, calEnd);
@@ -2663,27 +2667,23 @@ function DraftApptBlock({
       onClick={e => e.stopPropagation()}>
 
       {isMobile ? (
-        // ── Mobile: slim draggable bar pinned to the start time. The big touch
-        //    area (blockH) makes it easy to grab; the visible bar stays compact
-        //    so it doesn't look like it swallows a whole hour.
+        // ── Mobile: a transparent ~10-minute window — just an outline frame the
+        //    finger drags. The frame scales with zoom (tenMinH); a generous
+        //    invisible hit area (blockH) keeps it easy to grab. The time floats
+        //    above the frame with a gap so the finger never hides it.
         <div className="relative w-full h-full">
-          {/* Floating time bubble — always above the bar so the finger can't hide it */}
+          {/* Floating time bubble — above the frame (or below near the very top) */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-base font-extrabold px-4 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 44 ? "top-[44px]" : "-top-9"}`}
+            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-sm font-extrabold px-3.5 py-1 rounded-full shadow-lg ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 38 ? "top-full mt-1.5" : "-top-8"}`}
             dir="ltr">
             {time}
           </div>
-          {/* Slim visible bar, aligned to the top (the actual start line) */}
+          {/* Transparent 10-minute frame — outline only, anchored at the start line */}
           <div
-            className="absolute inset-x-0 top-0 h-7 rounded-lg bg-teal-600 flex items-center gap-2 px-2.5 shadow-lg ring-1 ring-teal-700/50"
-            style={{ borderRight: "4px solid rgba(13, 148, 136, 1)" }}>
-            {/* grip dots — signals "drag me" */}
-            <span className="flex flex-col gap-[3px] shrink-0 opacity-80">
-              <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
-              <span className="flex gap-[3px]"><i className="w-[3px] h-[3px] rounded-full bg-white block" /><i className="w-[3px] h-[3px] rounded-full bg-white block" /></span>
-            </span>
-            <span className="text-white text-[15px] font-extrabold tabular-nums" dir="ltr">{time}</span>
-            <span className="text-white/80 text-[10px] font-medium mr-auto">גרור</span>
+            className="absolute inset-x-0 top-0 rounded-md border-2 border-teal-500 bg-teal-400/15 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
+            style={{ height: tenMinH }}>
+            {/* Start-line accent so the exact time is unmistakable */}
+            <div className="absolute -top-px right-0 left-0 h-0.5 rounded-full bg-teal-600" />
           </div>
         </div>
       ) : (
@@ -2771,6 +2771,27 @@ export default function AdminCalendar() {
   }, [draftAppt, hourHeight, calStart, calEnd]);
   const draftTime = draftAppt ? yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) : null;
   const gridRef = useRef<HTMLDivElement>(null);
+  // The fixed mobile draft action bar (קבע תור / הפסקה) lives OUTSIDE the grid,
+  // so taps on it must NOT count as "outside" cancels.
+  const draftBarRef = useRef<HTMLDivElement>(null);
+
+  // Cancel an open draft when the user taps anywhere OUTSIDE the calendar grid
+  // — e.g. the hamburger menu, headers, toolbar. Taps INSIDE the grid reposition
+  // the draft (handled by the column onClick), and taps on the floating action
+  // bar are explicitly excluded so its buttons keep working.
+  useEffect(() => {
+    if (!draftAppt && !draftMoveSlot) return;
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (gridRef.current?.contains(t)) return;       // inside the calendar — reposition, don't cancel
+      if (draftBarRef.current?.contains(t)) return;    // the action bar — let its buttons run
+      setDraftAppt(null);
+      setDraftMoveSlot(null);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [draftAppt, draftMoveSlot]);
   // The week/3day grid wrapper — translated horizontally during swipe-to-page-weeks.
   const weekPagerRef = useRef<HTMLDivElement>(null);
   // Tracks a horizontal swipe over the barber-name picker (switches barbers).
@@ -2794,6 +2815,14 @@ export default function AdminCalendar() {
   // their onPointerDown fires before the global pointerup, so without this flag
   // finalizeMoveDrag would run twice and create a duplicate pendingMove.
   const isDragProcessed = useRef(false);
+
+  // ── Resume-drag support ("אדייק שוב") ──────────────────────────────────────
+  // When a move is RE-ENTERED from the pending card, no pointer is down yet, so
+  // a stray tap must not drop the ghost. We require real finger movement before
+  // a resumed drag can finalize. These refs track that.
+  const dragResumedRef = useRef(false);          // true while a drag was resumed via the pending card
+  const dragMovedRef = useRef(false);            // pointer actually moved during the resumed drag
+  const dragStartPt = useRef<{ x: number; y: number } | null>(null);
 
   // After a drop, we DON'T immediately PATCH the API. We hold the proposed
   // target in `pendingMove` and show a small confirmation card with three
@@ -3458,6 +3487,7 @@ export default function AdminCalendar() {
   // Long-press fired on an ApptBlock — enter drag-move mode.
   function startMoveDrag(appt: Appt, clientX: number, clientY: number) {
     isDragProcessed.current = false; // reset for a fresh drag
+    dragResumedRef.current = false;  // a fresh long-press drag, not a resume
     setDragMove({ appt, pointerX: clientX, pointerY: clientY, dropTarget: null });
     // Haptic feedback (iOS Safari + Android Chrome)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -3515,31 +3545,62 @@ export default function AdminCalendar() {
     }
   }, [pendingMove, allStaff, persistMove]);
 
-  // Dismiss the pending card without committing — the appointment stays at
-  // its original spot and the user can long-press again to redo the move.
-  // (Resuming an in-flight drag from a tap-released state isn't reliable
-  // across input devices, so we keep this affordance simple.)
+  // Re-enter drag mode from the pending card so the user can keep fine-tuning
+  // the position from exactly where they released — instead of starting over.
+  // The ghost reappears at the last drop target and the in-drag action bar
+  // shows again. A stray tap won't drop it (see dragResumedRef guard below):
+  // the user must actually slide their finger to reposition.
   const continuePendingMove = useCallback(() => {
+    const pending = pendingMove;
     setPendingMove(null);
-  }, []);
+    if (!pending) return;
+    isDragProcessed.current = false;
+    dragResumedRef.current = true;
+    dragMovedRef.current = false;
+    dragStartPt.current = null;
+    setDragMove({ appt: pending.appt, pointerX: 0, pointerY: 0, dropTarget: pending.target });
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(20);
+  }, [pendingMove]);
 
   // Global pointermove + pointerup listeners — only attached while dragging
   useEffect(() => {
     if (!dragMove) return;
+    // For a RESUMED drag the finger isn't down yet — record the touch-down
+    // point so we can tell a real slide from a stray tap.
+    const onDown = (e: PointerEvent) => {
+      dragStartPt.current = { x: e.clientX, y: e.clientY };
+      dragMovedRef.current = false;
+    };
     const onMove = (e: PointerEvent) => {
       if (isDragProcessed.current) return; // already handled via button tap
       e.preventDefault();
+      // Mark "moved" once the finger travels a meaningful distance from where
+      // it touched down (only relevant for resumed drags; normal long-press
+      // drags have no recorded start point and count as moved immediately).
+      if (dragStartPt.current) {
+        const dx = e.clientX - dragStartPt.current.x;
+        const dy = e.clientY - dragStartPt.current.y;
+        if (Math.hypot(dx, dy) > 8) dragMovedRef.current = true;
+      } else {
+        dragMovedRef.current = true;
+      }
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
+      // A resumed drag ignores a release that never moved — otherwise the
+      // ghost would drop the instant the user taps, defeating the "continue
+      // adjusting" purpose. Keep drag mode active until a real slide happens.
+      if (dragResumedRef.current && !dragMovedRef.current) return;
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
       finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
     };
+    window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
     return () => {
+      window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
@@ -3740,10 +3801,10 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair" style={colMinWidth ? { minWidth: colMinWidth } : {}}
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // While a draft is open, tapping anything else EXITS creation
-                          // mode (the draft is repositioned by dragging the block itself).
-                          if (draftAppt) { setDraftAppt(null); return; }
-                          if (draftMoveSlot) { setDraftMoveSlot(null); return; }
+                          // A tap anywhere inside the calendar REPOSITIONS the open
+                          // draft to the new time (handleGridClick overwrites it).
+                          // Cancelling only happens on taps OUTSIDE the grid — handled
+                          // by the outside-tap effect.
                           handleGridClick(e, s.id, date);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, date)}
@@ -3852,10 +3913,10 @@ export default function AdminCalendar() {
                         className="no-touch-select flex-1 relative border-r border-neutral-100 last:border-0 cursor-crosshair"
                         onClick={e => {
                           if (suppressNextGridClick.current) { suppressNextGridClick.current = false; return; }
-                          // While a draft is open, tapping anything else EXITS creation
-                          // mode (the draft is repositioned by dragging the block itself).
-                          if (draftAppt) { setDraftAppt(null); return; }
-                          if (draftMoveSlot) { setDraftMoveSlot(null); return; }
+                          // A tap anywhere inside the calendar REPOSITIONS the open
+                          // draft to the new time (handleGridClick overwrites it).
+                          // Cancelling only happens on taps OUTSIDE the grid — handled
+                          // by the outside-tap effect.
                           handleGridClick(e, s.id, d);
                         }}
                         onPointerDown={e => handlePointerDown(e, s.id, d)}
@@ -4363,7 +4424,7 @@ export default function AdminCalendar() {
 
       {/* ── Mobile floating draft action bar ── */}
       {isMobile && draftAppt && draftTime && (
-        <div className="fixed bottom-[60px] inset-x-0 z-50 px-4 pb-2 pointer-events-none">
+        <div ref={draftBarRef} className="fixed bottom-[60px] inset-x-0 z-50 px-4 pb-2 pointer-events-none">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden pointer-events-auto">
             <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100">
               <span className="text-xs text-slate-400">תור ב-</span>
