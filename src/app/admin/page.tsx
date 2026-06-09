@@ -141,7 +141,8 @@ type Appt = {
   note: string | null; staffNote: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
-  service: { name: string; durationMinutes: number };
+  service: { id: string; name: string; durationMinutes: number };
+  recurringId?: string | null;
 };
 type Customer = { id: string; name: string; phone: string };
 type ViewType = "day" | "3day" | "week" | "month";
@@ -1216,6 +1217,48 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [quickSent, setQuickSent] = useState(false);
   const [quickError, setQuickError] = useState("");
 
+  // Convert this single appointment into a recurring (fixed) appointment.
+  const [showRecurring, setShowRecurring] = useState(false);
+  const [recurFreq, setRecurFreq] = useState<1 | 2 | 4>(1);
+  const [recurSaving, setRecurSaving] = useState(false);
+  const [recurDone, setRecurDone] = useState<number | null>(null);
+  const [recurError, setRecurError] = useState<string | null>(null);
+
+  async function createRecurring() {
+    setRecurSaving(true);
+    setRecurError(null);
+    try {
+      const dayPart = dispDate.split("T")[0];
+      const dayOfWeek = new Date(dayPart + "T00:00:00.000Z").getUTCDay();
+      const r = await fetch("/api/admin/recurring", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: appt.customer.id,
+          staffId: appt.staff.id,
+          serviceId: appt.service.id,
+          dayOfWeek,
+          startTime: dispStart,
+          frequencyWeeks: recurFreq,
+          startDate: dayPart,
+          price: dispPrice,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setRecurError(j.error || "שגיאה ביצירת תור קבוע"); }
+      else {
+        setRecurDone(typeof j.created === "number" ? j.created : 0);
+        setShowRecurring(false);
+        onReload?.();
+        setTimeout(() => setRecurDone(null), 5000);
+      }
+    } catch {
+      setRecurError("שגיאת רשת — נסה שוב");
+    } finally {
+      setRecurSaving(false);
+    }
+  }
+
   async function sendQuickMessage() {
     if (!quickMsg.trim()) return;
     setQuickSending(true);
@@ -1385,7 +1428,15 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <h3 className="font-bold text-base text-neutral-900 truncate">{appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
           </div>
-          <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center shrink-0 hover:bg-neutral-200 transition text-sm">✕</button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {appt.recurringId ? (
+              <span title="תור קבוע" className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center text-sm">🔁</span>
+            ) : (
+              <button onClick={() => { setShowRecurring(v => !v); setRecurError(null); }} title="הפוך לתור קבוע"
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showRecurring ? "bg-violet-600 text-white" : "bg-neutral-100 hover:bg-violet-50"}`}>🔁</button>
+            )}
+            <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200 transition text-sm">✕</button>
+          </div>
         </div>
 
         {/* Customer — compact row with pencil to edit (name/phone only) */}
@@ -1546,6 +1597,40 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </div>
         )}
 
+        {/* Convert to recurring (תור קבוע) */}
+        {recurDone !== null && (
+          <div className="px-4 py-2 border-b border-neutral-100">
+            <p className="text-sm text-violet-700 font-medium text-center">
+              ✓ נוצר תור קבוע — {recurDone} תורים נקבעו קדימה
+            </p>
+          </div>
+        )}
+        {showRecurring && (
+          <div className="px-4 py-2.5 border-b border-neutral-100 bg-violet-50/50 space-y-2">
+            <p className="text-xs font-semibold text-violet-800">🔁 הפוך לתור קבוע</p>
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : "חודש"} באותו יום ושעה.
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([[1, "כל שבוע"], [2, "כל שבועיים"], [4, "כל חודש"]] as const).map(([f, label]) => (
+                <button key={f} onClick={() => setRecurFreq(f)}
+                  className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-violet-600 text-white border-violet-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-violet-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {recurError && <p className="text-xs text-red-600">{recurError}</p>}
+            <div className="flex gap-2 pt-0.5">
+              <button onClick={createRecurring} disabled={recurSaving}
+                className="flex-1 bg-violet-600 hover:bg-violet-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+                {recurSaving ? "יוצר..." : "צור תור קבוע"}
+              </button>
+              <button onClick={() => { setShowRecurring(false); setRecurError(null); }}
+                className="px-3 text-xs text-neutral-500">ביטול</button>
+            </div>
+          </div>
+        )}
+
         {/* Referral source — blinks while missing so it's caught on the next visit too */}
         <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
           <div className="flex items-center justify-between mb-1">
@@ -1638,9 +1723,9 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           ) : (
             <div className="grid grid-cols-2 gap-2">
               <button disabled={appt.status === "confirmed" || updating} onClick={() => setStatus("confirmed")}
-                className="py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-default bg-emerald-50 text-emerald-700 border border-emerald-200">✓ מאשר</button>
+                className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-emerald-50 text-emerald-700 border border-emerald-200">✓ מאשר</button>
               <button disabled={appt.status === "cancelled_by_staff" || updating} onClick={() => { setCancelNotifyCustomer(true); setCancelNotifyWaitlist(true); setConfirmingCancel(true); }}
-                className="py-2 rounded-xl text-sm font-medium transition disabled:opacity-40 disabled:cursor-default bg-red-50 text-red-600 border border-red-200">בטל תור</button>
+                className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-red-50 text-red-600 border border-red-200">בטל תור</button>
             </div>
           )}
         </div>
@@ -1753,8 +1838,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {proposalsAsPrimary.length === 0 && !proposalAsCandidate && (
             <button
               onClick={() => onEnterSwapMode(appt.id)}
-              className="w-full py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-900 text-sm font-bold transition flex items-center justify-center gap-2">
-              🔄 החלף / העבר תור (בחר מועמדים או שעה ריקה)
+              className="w-full py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-semibold transition flex items-center justify-center gap-2">
+              🔄 החלף / העבר תור
             </button>
           )}
         </div>
@@ -1796,7 +1881,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           ) : (
             <button
               onClick={() => setShowDelayInput(true)}
-              className="w-full py-2 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 text-sm font-medium transition flex items-center justify-center gap-2">
+              className="w-full py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-medium transition flex items-center justify-center gap-2">
               ⏱ עדכון עיכוב
             </button>
           )}
@@ -1846,12 +1931,12 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           ) : (
             <button
               onClick={() => setShowQuickMsg(true)}
-              className="block w-full py-2.5 rounded-xl bg-emerald-500 text-white text-sm font-medium text-center hover:bg-emerald-600 transition">
+              className="block w-full py-1.5 rounded-lg bg-emerald-500 text-white text-xs font-medium text-center hover:bg-emerald-600 transition">
               💬 שלח הודעה מהירה
             </button>
           )}
           <a href={`https://wa.me/${cleanPhone}`} target="_blank"
-            className="block w-full py-2 rounded-xl bg-white border border-neutral-200 text-neutral-600 text-xs font-medium text-center hover:bg-neutral-50 transition">
+            className="block w-full py-1.5 rounded-lg bg-white border border-neutral-200 text-neutral-600 text-xs font-medium text-center hover:bg-neutral-50 transition">
             פתח WhatsApp ישירות ↗
           </a>
         </div>
