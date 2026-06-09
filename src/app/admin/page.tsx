@@ -259,7 +259,7 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
   const dayStartMin = calStart * 60;
   const dayEndMin = calEnd * 60;
   if (working.length === 0) {
-    return <div className="absolute inset-0 bg-neutral-100/80 pointer-events-none" />;
+    return <div className="absolute inset-0 bg-neutral-200/70 pointer-events-none" />;
   }
   // Build non-working segments
   type Segment = { start: number; end: number; type: "closed" | "break"; rawIdx?: number };
@@ -280,7 +280,7 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
         const height = ((seg.end - seg.start) / 60) * hh;
         // Closed / non-working time → flat full-width grey band (background only).
         if (seg.type !== "break") {
-          return <div key={i} className="absolute left-0 right-0 pointer-events-none bg-neutral-100/70" style={{ top, height }} />;
+          return <div key={i} className="absolute left-0 right-0 pointer-events-none bg-neutral-200/70" style={{ top, height }} />;
         }
         // Break → render like a regular appointment card (inset, rounded) but
         // in the break (amber) palette, and draggable via long-press.
@@ -2596,7 +2596,7 @@ function TimeColumn() {
   return (
     <div className="w-14 shrink-0 relative select-none" style={{ height: totalHeight }}>
       {Array.from({ length: totalHours + 1 }, (_, i) => (
-        <div key={i} className="absolute right-2 text-[11px] text-neutral-400 font-mono" style={{ top: i * hh - 7 }}>
+        <div key={i} className="absolute right-2 text-[11px] text-neutral-600 font-mono font-semibold" style={{ top: i * hh - 7 }}>
           {String(calStart + i).padStart(2, "0")}:00
         </div>
       ))}
@@ -2618,7 +2618,7 @@ function GridLines() {
         return (
           <div key={i}
             className={`absolute left-0 right-0 border-t ${
-              isHour      ? "border-neutral-200" :
+              isHour      ? "border-neutral-300" :
               isHalfHour  ? "border-neutral-150 border-dashed opacity-60" :
                             "border-neutral-100 border-dashed opacity-30"
             }`}
