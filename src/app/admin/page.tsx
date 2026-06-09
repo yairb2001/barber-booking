@@ -43,6 +43,18 @@ const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h
 const minToTime = (m: number) => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
 const addDays = (iso: string, n: number) => { const d = new Date(iso); d.setDate(d.getDate()+n); return d.toISOString().split("T")[0]; };
 const dayOfWeek = (iso: string) => new Date(iso).getDay();
+// Whole days between two YYYY-MM-DD dates (UTC — DST-safe). Positive = `to` is later.
+const daysBetween = (fromIso: string, toIso: string) =>
+  Math.round((Date.parse(toIso + "T00:00:00Z") - Date.parse(fromIso + "T00:00:00Z")) / 86400000);
+// Resolve a staff member's booking horizon (days bookable from today, inclusive),
+// falling back to the business default. Matches the customer flow in /book/time.
+const staffHorizonDays = (s: Staff, bizHorizon: number): number => {
+  try {
+    const st = s.settings ? JSON.parse(s.settings) : null;
+    if (st && typeof st.bookingHorizonDays === "number") return st.bookingHorizonDays;
+  } catch { /* ignore malformed settings JSON */ }
+  return bizHorizon;
+};
 const HEB_DAY_LETTERS = ["א","ב","ג","ד","ה","ו","ש"];
 const hebDayLetter = (iso: string) => HEB_DAY_LETTERS[new Date(iso).getDay()];
 const fmtDateShort = (iso: string) => { const d = new Date(iso); return `${d.getDate()}/${d.getMonth()+1}`; };
@@ -122,7 +134,7 @@ const savePrefs = (patch: Partial<CalendarPrefs>) => {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
-type Staff = { id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[] };
+type Staff = { id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[]; settings?: string | null };
 type Service = { id: string; name: string; price: number; durationMinutes: number; ownerStaffId?: string | null };
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
@@ -191,16 +203,31 @@ function getBreakRanges(staff: Staff, dow: number): { start: number; end: number
 // ── Working Hours Overlay ─────────────────────────────────────────────────────
 type RawBreak = { start: string; end: string; name?: string; recurring?: boolean };
 
-function WorkingOverlay({ staff, dow, override, staffId, date, onBreakClick }: {
+function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, onBreakClick }: {
   staff: Staff;
   dow: number;
   override?: { isWorking: boolean; slots: string | null; breaks: string | null } | null;
+  /** True when this date is past the staff member's booking horizon AND no manual
+   *  override opens it. Renders the whole column as grayed "beyond booking range". */
+  beyondHorizon?: boolean;
   staffId?: string;
   date?: string;
   onBreakClick?: (breakIdx: number, br: RawBreak) => void;
 }) {
   const hh = React.useContext(HHCtx);
   const { start: calStart, end: calEnd } = React.useContext(HourRangeCtx);
+
+  // Beyond the booking horizon and not manually opened → whole day greyed/closed.
+  // A manual override (isWorking=true) always wins, so it's checked first below.
+  if (!override && beyondHorizon) {
+    return (
+      <div className="absolute inset-0 bg-neutral-200/70 pointer-events-none flex items-center justify-center">
+        <span className="text-neutral-400 text-[10px] font-semibold tracking-wide rotate-[-15deg] select-none text-center leading-tight">
+          מעבר לטווח<br />ההזמנות
+        </span>
+      </div>
+    );
+  }
 
   let working: { start: number; end: number }[];
   let rawBreaks: RawBreak[] = [];
@@ -2727,6 +2754,8 @@ export default function AdminCalendar() {
   // Calendar display hours — loaded from business settings
   const [calStart, setCalStart] = useState(DAY_START);
   const [calEnd, setCalEnd] = useState(DAY_END);
+  // Business-default booking horizon (days). Per-staff overrides live in staff.settings.
+  const [bizHorizon, setBizHorizon] = useState(30);
   // Barber permissions
   const [isOwner, setIsOwner] = useState(true); // optimistic
   const [barbersCanViewOthersCalendar, setBarbersCanViewOthersCalendar] = useState(false);
@@ -3189,6 +3218,7 @@ export default function AdminCalendar() {
       }
     }
     setServices(sv);
+    if (biz && typeof biz.bookingHorizonDays === "number") setBizHorizon(biz.bookingHorizonDays);
     if (isFirstLoad) {
       let serverStart = DAY_START;
       let serverEnd = DAY_END;
@@ -3747,18 +3777,22 @@ export default function AdminCalendar() {
                 const staffForDay = weekStaff;
                 const weekOverride = staffForDay ? overrideMap[`${staffForDay.id}|${d}`] : undefined;
                 const isDayClosed = weekOverride ? !weekOverride.isWorking : false;
+                // Beyond the booking horizon and not manually opened → greyed header.
+                const beyond = !weekOverride && !!staffForDay
+                  && daysBetween(todayISO(), d) >= staffHorizonDays(staffForDay, bizHorizon);
                 return (
-                  <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-1 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : ""}`}
+                  <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-1 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : beyond ? "bg-neutral-100/70" : ""}`}
                     onClick={() => staffForDay && setDayMenu({ date: d, staffId: staffForDay.id })}>
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                      isToday ? "bg-teal-600 text-white shadow-md ring-2 ring-teal-300" : isDayClosed ? "bg-red-100 text-red-400" : "bg-neutral-100 text-neutral-600"
+                      isToday ? "bg-teal-600 text-white shadow-md ring-2 ring-teal-300" : isDayClosed ? "bg-red-100 text-red-400" : beyond ? "bg-neutral-200 text-neutral-400" : "bg-neutral-100 text-neutral-600"
                     }`}>
                       {hebDayLetter(d)}
                     </div>
-                    <span className={`text-[10px] mt-0.5 font-medium leading-none ${isToday ? "text-teal-700 font-bold" : isDayClosed ? "text-red-400" : "text-neutral-400"}`}>
+                    <span className={`text-[10px] mt-0.5 font-medium leading-none ${isToday ? "text-teal-700 font-bold" : isDayClosed ? "text-red-400" : beyond ? "text-neutral-400" : "text-neutral-400"}`}>
                       {fmtDateShort(d)}
                     </span>
                     {isDayClosed && <span className="text-[8px] text-red-400 leading-none">🔒</span>}
+                    {beyond && !isDayClosed && <span className="text-[8px] text-neutral-400 leading-none">🔒</span>}
                     {waitlistCounts[d] > 0 && (
                       <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                         {waitlistCounts[d]}
@@ -3812,6 +3846,7 @@ export default function AdminCalendar() {
                         onPointerUp={e => handlePointerUp(e, s.id, date)}
                         onPointerCancel={() => setDrag(null)}>
                         <WorkingOverlay staff={s} dow={dayOfWeek(date)} override={overrideMap[`${s.id}|${date}`]}
+                          beyondHorizon={daysBetween(todayISO(), date) >= staffHorizonDays(s, bizHorizon)}
                           staffId={s.id} date={date}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
                         {/* Drag-to-create ghost rectangle */}
@@ -3924,6 +3959,7 @@ export default function AdminCalendar() {
                         onPointerUp={e => handlePointerUp(e, s.id, d)}
                         onPointerCancel={() => setDrag(null)}>
                         <WorkingOverlay staff={s} dow={dayOfWeek(d)} override={overrideMap[`${s.id}|${d}`]}
+                          beyondHorizon={daysBetween(todayISO(), d) >= staffHorizonDays(s, bizHorizon)}
                           staffId={s.id} date={d}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
                         {/* Per-column now line — only today */}

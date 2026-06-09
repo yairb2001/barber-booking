@@ -8,13 +8,14 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const business = await prisma.business.findFirst({
-    select: { id: true, settings: true },
+    select: { id: true, settings: true, bookingHorizonDays: true },
   });
   if (!business) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   return NextResponse.json({
     id: business.id,
     settings: business.settings ?? null,
+    bookingHorizonDays: business.bookingHorizonDays ?? 30,
   });
 }
 
