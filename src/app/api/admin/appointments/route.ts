@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
@@ -26,9 +26,15 @@ export async function GET(req: NextRequest) {
     const end   = new Date(date + "T23:59:59.999Z");
     where.date = { gte: start, lte: end };
   }
-  // All authenticated users (owners + barbers) see all appointments.
-  // Barbers work in a shared calendar — they need to see everyone's schedule.
-  if (staffIdParam) {
+
+  // Permission enforcement: a barber WITHOUT "view all calendars" is locked to
+  // their own column — they can never read other barbers' appointments, even if
+  // a staffId param for someone else is supplied. Owners and permitted barbers
+  // may filter freely by staffId.
+  const perms = await getEffectivePermissions(req);
+  if (!perms.isOwner && !perms.canViewAllCalendars && perms.staffId) {
+    where.staffId = perms.staffId;
+  } else if (staffIdParam) {
     where.staffId = staffIdParam;
   }
 

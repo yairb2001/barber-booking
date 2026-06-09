@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { getReferralConfig } from "@/lib/referral";
 
 export async function GET(req: NextRequest) {
@@ -21,9 +21,8 @@ export async function GET(req: NextRequest) {
     select: { chatsEnabled: true, settings: true },
   });
 
-  const bSettings = (() => {
-    try { return JSON.parse(business?.settings || "{}"); } catch { return {}; }
-  })();
+  // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
+  const perms = await getEffectivePermissions(req);
 
   return NextResponse.json({
     businessId: session.businessId,
@@ -32,8 +31,13 @@ export async function GET(req: NextRequest) {
     staffId: session.staffId || null,
     staff,
     chatsEnabled: business?.chatsEnabled ?? false,
-    barbersCanViewOthersCalendar: bSettings.barbersCanViewOthersCalendar ?? false,
-    barbersCanAccessChats: bSettings.barbersCanAccessChats ?? false,
+    // Effective per-user permissions (the values the UI should gate on).
+    canViewAllCalendars: perms.canViewAllCalendars,
+    canViewAllChats: perms.canViewAllChats,
+    // Backward-compatible field names — now reflect the EFFECTIVE permission
+    // (per-staff OR business-wide), so existing UI gating keeps working.
+    barbersCanViewOthersCalendar: perms.canViewAllCalendars,
+    barbersCanAccessChats: perms.canViewAllChats,
     referralProgramEnabled: getReferralConfig(business?.settings ?? null).enabled,
   });
 }

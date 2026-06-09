@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 
 // POST /api/admin/chats/[id]/toggle-agent
 // Body: { active: boolean }
@@ -18,18 +18,17 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!business?.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
   const { active } = await req.json();
-  const barberScope = scopedStaffId(req);
+
+  // Permission enforcement: barber needs "view all chats" to manage the inbox.
+  const perms = await getEffectivePermissions(req);
+  if (!perms.isOwner && !perms.canViewAllChats) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const conv = await prisma.conversation.findFirst({
     where: { id: params.id, businessId: business.id },
-    include: { customer: { select: { appointments: { select: { staffId: true } } } } },
   });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  if (barberScope) {
-    const isMine = conv.customer?.appointments?.some(a => a.staffId === barberScope);
-    if (!isMine) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
 
   const updated = await prisma.conversation.update({
     where: { id: conv.id },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -28,9 +28,13 @@ export async function GET(req: NextRequest) {
   if (!business) return NextResponse.json([]);
   if (!business.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
-  // All authenticated users (owners + barbers) see all conversations of the business.
-  // The canViewAllChats permission flag exists on Staff for future granular control
-  // but is not enforced here — chats are a shared inbox.
+  // Permission enforcement: a barber may only read the shared inbox when granted
+  // "view all chats" (per-staff flag OR business-wide flag). Otherwise no access.
+  const perms = await getEffectivePermissions(req);
+  if (!perms.isOwner && !perms.canViewAllChats) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
+
   const where: Record<string, unknown> = { businessId: business.id };
 
   const convs = await prisma.conversation.findMany({

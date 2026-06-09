@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -19,12 +19,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   });
   if (!business?.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
-  const barberScope = scopedStaffId(req);
+  // Permission enforcement: a barber may only open a conversation when granted
+  // "view all chats" (per-staff flag OR business-wide flag).
+  const perms = await getEffectivePermissions(req);
+  if (!perms.isOwner && !perms.canViewAllChats) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const conv = await prisma.conversation.findFirst({
     where: { id: params.id, businessId: business.id },
     include: {
-      customer: { select: { id: true, name: true, phone: true, appointments: { select: { staffId: true } } } },
+      customer: { select: { id: true, name: true, phone: true } },
       messages: {
         where: { role: { not: "tool" } },
         orderBy: { createdAt: "asc" },
@@ -33,12 +38,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     },
   });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  // Barber scoping — must be one of their customers
-  if (barberScope) {
-    const isMine = conv.customer?.appointments?.some(a => a.staffId === barberScope);
-    if (!isMine) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
 
   // Mark as read (best-effort, don't await)
   prisma.conversation.update({

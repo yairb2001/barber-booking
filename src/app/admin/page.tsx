@@ -3187,21 +3187,28 @@ export default function AdminCalendar() {
       fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).catch(() => null),
       fetch("/api/admin/me").then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
-    setAllStaff(st);
+    // Restrict the visible staff list for a barber who lacks "view all calendars".
+    // They only ever see their own column — the appointments API enforces the
+    // same scoping on the server, so other barbers' data never reaches them.
+    const myStaffId: string | null = me?.staffId ?? null;
+    const canViewAllCalendars = (me?.isOwner ?? true) || (me?.barbersCanViewOthersCalendar ?? false);
+    const effectiveStaff: Staff[] = (canViewAllCalendars || !myStaffId)
+      ? (st as Staff[])
+      : (st as Staff[]).filter((s: Staff) => s.id === myStaffId);
+    setAllStaff(effectiveStaff);
     if (isFirstLoad) {
-      setVisibleStaff(st.map((s: Staff) => s.id));
-      if (st.length) {
+      setVisibleStaff(effectiveStaff.map((s: Staff) => s.id));
+      if (effectiveStaff.length) {
         const saved = loadPrefs().weekBarber;
-        const myStaffId: string | null = me?.staffId ?? null;
         const iAmBarber = !!me && !me.isOwner;
-        let defaultBarber = st[0].id;
-        if (iAmBarber && myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
+        let defaultBarber = effectiveStaff[0].id;
+        if (iAmBarber && myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId)) {
           // A barber always lands on their OWN calendar — never a remembered
           // selection of someone else's. Switching to another barber is temporary.
           defaultBarber = myStaffId;
-        } else if (saved && st.some((s: Staff) => s.id === saved)) {
+        } else if (saved && effectiveStaff.some((s: Staff) => s.id === saved)) {
           defaultBarber = saved;
-        } else if (myStaffId && st.some((s: Staff) => s.id === myStaffId)) {
+        } else if (myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId)) {
           defaultBarber = myStaffId;
         }
         setWeekBarber(defaultBarber);

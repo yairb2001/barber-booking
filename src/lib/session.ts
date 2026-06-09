@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 export type RequestSession = {
   businessId: string;
@@ -65,4 +66,57 @@ export function requireOwnStaffOrOwner(
     return NextResponse.json({ error: "אין הרשאה למשאב זה" }, { status: 403 });
   }
   return null;
+}
+
+export type EffectivePermissions = {
+  isOwner: boolean;
+  staffId?: string;
+  /** Barber can see ALL barbers' calendars (else: only their own column). */
+  canViewAllCalendars: boolean;
+  /** Barber can access the chats inbox and see ALL conversations (else: no chat access). */
+  canViewAllChats: boolean;
+};
+
+/**
+ * Resolves the EFFECTIVE permissions for the current caller.
+ *
+ * Owner → everything true.
+ * Barber → granted when EITHER the per-staff flag (set per barber in
+ *          /admin/staff/[id]) OR the business-wide flag (set in business
+ *          settings) is on. This lets the owner grant access globally to all
+ *          barbers, or selectively to an individual barber.
+ *
+ * Hits the DB (Staff + Business), so call once per request and reuse.
+ */
+export async function getEffectivePermissions(req: NextRequest): Promise<EffectivePermissions> {
+  const session = getRequestSession(req);
+  if (!session) {
+    return { isOwner: false, canViewAllCalendars: false, canViewAllChats: false };
+  }
+  if (session.isOwner) {
+    return { isOwner: true, staffId: session.staffId, canViewAllCalendars: true, canViewAllChats: true };
+  }
+
+  const [staff, business] = await Promise.all([
+    session.staffId
+      ? prisma.staff.findUnique({
+          where: { id: session.staffId },
+          select: { canViewAllCalendars: true, canViewAllChats: true },
+        })
+      : Promise.resolve(null),
+    prisma.business.findFirst({
+      where: { id: session.businessId },
+      select: { settings: true },
+    }),
+  ]);
+
+  let bs: Record<string, unknown> = {};
+  try { bs = JSON.parse(business?.settings || "{}"); } catch { /* ignore malformed settings */ }
+
+  return {
+    isOwner: false,
+    staffId: session.staffId,
+    canViewAllCalendars: !!(staff?.canViewAllCalendars || bs.barbersCanViewOthersCalendar),
+    canViewAllChats: !!(staff?.canViewAllChats || bs.barbersCanAccessChats),
+  };
 }

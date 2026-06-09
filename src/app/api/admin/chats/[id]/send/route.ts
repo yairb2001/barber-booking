@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 
 // POST /api/admin/chats/[id]/send
@@ -23,19 +23,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const { message } = await req.json();
   if (!message?.trim()) return NextResponse.json({ error: "message required" }, { status: 400 });
 
-  const barberScope = scopedStaffId(req);
+  // Permission enforcement: barber needs "view all chats" to reply in the inbox.
+  const perms = await getEffectivePermissions(req);
+  if (!perms.isOwner && !perms.canViewAllChats) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
 
   const conv = await prisma.conversation.findFirst({
     where: { id: params.id, businessId: business.id },
-    include: { customer: { select: { appointments: { select: { staffId: true } } } } },
   });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
-
-  // Barber scoping
-  if (barberScope) {
-    const isMine = conv.customer?.appointments?.some(a => a.staffId === barberScope);
-    if (!isMine) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
 
   // Save the admin message + flip escalation
   const saved = await prisma.conversationMessage.create({
