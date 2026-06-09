@@ -2925,6 +2925,12 @@ export default function AdminCalendar() {
   const dragMoveRef = useRef<DragMoveState | null>(null);
   dragMoveRef.current = dragMove;
 
+  // Mirror the active draft (select-time) state into a ref so the imperative
+  // touch handler can read it. While a draft slot is active we lock week-paging
+  // / date-flicking so adjusting the slot left/right doesn't switch the week.
+  const draftApptRef = useRef<typeof draftAppt>(null);
+  draftApptRef.current = draftAppt;
+
   // Guard against double-finalize: when the user taps the in-drag ✓/✕ buttons
   // their onPointerDown fires before the global pointerup, so without this flag
   // finalizeMoveDrag would run twice and create a duplicate pendingMove.
@@ -3207,7 +3213,7 @@ export default function AdminCalendar() {
       }
       // Live week-paging: only in week/3day view, only when dragging horizontally,
       // and never while moving an appointment. The whole grid follows the finger.
-      if (axis === "x" && isWeekView() && !dragMoveRef.current) {
+      if (axis === "x" && isWeekView() && !dragMoveRef.current && !draftApptRef.current) {
         paging = true;
         e.preventDefault(); // stop vertical scroll from fighting the page drag
         const el = weekPagerRef.current;
@@ -3241,7 +3247,7 @@ export default function AdminCalendar() {
         }
       } else if (!isPinch && e.changedTouches.length === 1 && swipeStartX !== 0) {
         // Non-paging gesture (day view) — navigate dates on a strong horizontal flick.
-        const dragActive = !!dragMoveRef.current;
+        const dragActive = !!dragMoveRef.current || !!draftApptRef.current;
         if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
           // Day view keeps the RTL convention: swipe right = earlier, left = later.
           navigateRef.current(dx > 0 ? -1 : 1);
