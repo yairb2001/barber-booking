@@ -36,42 +36,6 @@ function slotDayDisplay(slot: QuickSlot): string {
   return slot.dayLabel; // "מחר" / "יום שלישי" etc.
 }
 
-// ── Step bar ───────────────────────────────────────────────────────────────────
-function StepBar({ step }: { step: number }) {
-  const steps = ["ספר", "שירות", "זמן"];
-  return (
-    <div className="flex items-center gap-0">
-      {steps.map((label, i) => {
-        const idx = i + 1;
-        const active = idx === step;
-        const done = idx < step;
-        return (
-          <div key={idx} className="flex items-center">
-            <div className="flex flex-col items-center">
-              <div
-                className="w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all"
-                style={{
-                  background: active ? "var(--brand)" : done ? "var(--brand)" : "var(--divider)",
-                  color: active || done ? "#000" : "var(--text-muted)",
-                }}>
-                {done ? "✓" : idx}
-              </div>
-              <span className="text-[9px] tracking-wide mt-0.5 font-medium"
-                style={{ color: active ? "var(--brand)" : "var(--text-muted)" }}>
-                {label}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className="w-8 h-px mx-1 mb-4 transition-all"
-                style={{ background: done ? "var(--brand)" : "var(--divider)" }} />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ── Back arrow ─────────────────────────────────────────────────────────────────
 function BackArrow({ href }: { href: string }) {
   return (
@@ -172,7 +136,8 @@ export default function ChooseBarberPage() {
           <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
             בחירת ספר
           </h1>
-          <StepBar step={1} />
+          {/* Step indicator intentionally omitted on the barber-selection screen — it's the entry step, no progress to show */}
+          <div className="w-9" />
         </div>
       </div>
 

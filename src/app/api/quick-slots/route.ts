@@ -38,12 +38,19 @@ export async function GET(request: Request) {
     ? { id: staffIdFilter, isAvailable: true, ...bizScope }
     : { inQuickPool: true, isAvailable: true, ...bizScope };
 
-  // Get the default service first (needed for filtering)
-  const defaultServiceForFilter = await prisma.service.findFirst({
+  // All visible services, ordered — used to pick a per-staff default service.
+  // We can't filter every barber against a single global "first service":
+  // barbers who don't offer that exact service would silently produce no slots.
+  // Instead each barber uses the first visible service THEY actually offer.
+  const visibleServices = await prisma.service.findMany({
     where: { isVisible: true, ...bizScope },
     orderBy: { sortOrder: "asc" },
-    select: { id: true },
+    select: { id: true, name: true, price: true, durationMinutes: true },
   });
+
+  if (visibleServices.length === 0) {
+    return NextResponse.json([]);
+  }
 
   const poolStaff = await prisma.staff.findMany({
     where: staffWhere,
@@ -54,27 +61,36 @@ export async function GET(request: Request) {
       avatarUrl: true,
       poolPriority: true,
       settings: true,
-      // Only include staff who have the default service assigned
-      staffServices: defaultServiceForFilter
-        ? { where: { serviceId: defaultServiceForFilter.id }, take: 1, select: { serviceId: true } }
-        : { take: 1, select: { serviceId: true } },
+      // All of the staff's service assignments (incl. per-barber price/duration overrides)
+      staffServices: { select: { serviceId: true, customPrice: true, customDuration: true } },
     },
   });
 
-  // Filter out pool staff who don't have the default service
-  const eligiblePoolStaff = poolStaff.filter(s => s.staffServices.length > 0);
+  // Resolve each barber's effective service: the first visible service (by sortOrder)
+  // they offer, with any per-barber price/duration overrides applied.
+  const eligiblePoolStaff = poolStaff
+    .map(s => {
+      const offered = new Set(s.staffServices.map(ss => ss.serviceId));
+      const svc = visibleServices.find(v => offered.has(v.id));
+      if (!svc) return null;
+      const ss = s.staffServices.find(x => x.serviceId === svc.id);
+      return {
+        id: s.id,
+        name: s.name,
+        avatarUrl: s.avatarUrl,
+        poolPriority: s.poolPriority,
+        settings: s.settings,
+        svc: {
+          id: svc.id,
+          name: svc.name,
+          price: ss?.customPrice || svc.price,
+          durationMinutes: ss?.customDuration || svc.durationMinutes,
+        },
+      };
+    })
+    .filter((s): s is NonNullable<typeof s> => s !== null);
 
   if (eligiblePoolStaff.length === 0) {
-    return NextResponse.json([]);
-  }
-
-  // Get the default service (first service) — full record for slot generation
-  const defaultService = await prisma.service.findFirst({
-    where: { isVisible: true, ...bizScope },
-    orderBy: { sortOrder: "asc" },
-  });
-
-  if (!defaultService) {
     return NextResponse.json([]);
   }
 
@@ -126,12 +142,8 @@ export async function GET(request: Request) {
         breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
       }
 
-      const staffService = await prisma.staffService.findUnique({
-        where: { staffId_serviceId: { staffId: staff.id, serviceId: defaultService.id } },
-      });
-
-      const duration = staffService?.customDuration || defaultService.durationMinutes;
-      const price = staffService?.customPrice || defaultService.price;
+      const duration = staff.svc.durationMinutes;
+      const price = staff.svc.price;
 
       const appointments = await prisma.appointment.findMany({
         where: { staffId: staff.id, date, status: { in: ["pending", "confirmed"] } },
@@ -177,8 +189,8 @@ export async function GET(request: Request) {
           dayLabel,
           time,
           timeMinutes: timeToMinutes(time) + dayOffset * 24 * 60,
-          serviceId: defaultService.id,
-          serviceName: defaultService.name,
+          serviceId: staff.svc.id,
+          serviceName: staff.svc.name,
           price: Number(price),
           duration,
         });
