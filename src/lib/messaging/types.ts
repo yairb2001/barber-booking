@@ -9,6 +9,7 @@ export type MessageKind =
   | "broadcast"
   | "manual"
   | "agent_reply"
+  | "agent_followup"   // nudge sent when a chat went quiet without a booking
   | "reengage"
   | "post_first_visit"
   | "post_every_visit"
