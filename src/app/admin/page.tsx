@@ -2993,6 +2993,11 @@ export default function AdminCalendar() {
   type BreakDragState = {
     staffId: string; date: string; breakIdx: number;
     name: string; durationMin: number; origStartMin: number;
+    // How far (in minutes) below the break's top the finger grabbed it. Used to
+    // keep the break rigid under the finger while dragging — otherwise the
+    // break's TOP snaps to the finger and you can never pin it to the hour you
+    // actually aimed for.
+    grabOffsetMin: number;
     pointerX: number; pointerY: number;
     dropTarget: { staffId: string; date: string; startTime: string } | null;
   };
@@ -3871,11 +3876,31 @@ export default function AdminCalendar() {
     persistBreakMove(drag, target);
   }, [persistBreakMove]);
 
+  // Re-anchor a raw drop target (whose startTime = the finger's time) so the
+  // break keeps the same offset relative to the finger as when it was grabbed.
+  // Without this the break's TOP jumps to the finger and precise placement is
+  // impossible. Snaps to the grid and clamps within the working day.
+  const adjustBreakDrop = useCallback((raw: { staffId: string; date: string; startTime: string } | null) => {
+    const drag = breakDragRef.current;
+    if (!raw || !drag) return raw;
+    let startMin = toMin(raw.startTime) - drag.grabOffsetMin;
+    startMin = Math.round(startMin / SNAP_MIN) * SNAP_MIN;
+    startMin = Math.max(calStart * 60, Math.min(calEnd * 60 - drag.durationMin, startMin));
+    return { ...raw, startTime: minToTime(startMin) };
+  }, [calStart, calEnd]);
+
   function startBreakDrag(sId: string, d: string, breakIdx: number, br: RawBreak, startMin: number, endMin: number, x: number, y: number) {
     breakDragProcessed.current = false;
+    // Capture where inside the break the finger grabbed it (clamped to the
+    // break's own span) so the drag stays anchored to that point.
+    const grab = computeDropTarget(x, y);
+    const grabOffsetMin = grab
+      ? Math.max(0, Math.min(endMin - startMin, toMin(grab.startTime) - startMin))
+      : 0;
     setBreakDrag({
       staffId: sId, date: d, breakIdx,
       name: br.name || "הפסקה", durationMin: endMin - startMin, origStartMin: startMin,
+      grabOffsetMin,
       pointerX: x, pointerY: y, dropTarget: null,
     });
     if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(30);
@@ -3887,11 +3912,11 @@ export default function AdminCalendar() {
     const onMove = (e: PointerEvent) => {
       if (breakDragProcessed.current) return;
       e.preventDefault();
-      const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY));
       setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
-      finalizeBreakDrag(computeDropTarget(e.clientX, e.clientY));
+      finalizeBreakDrag(adjustBreakDrop(computeDropTarget(e.clientX, e.clientY)));
     };
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
@@ -3901,7 +3926,7 @@ export default function AdminCalendar() {
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
     };
-  }, [breakDrag !== null, computeDropTarget, finalizeBreakDrag]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [breakDrag !== null, computeDropTarget, finalizeBreakDrag, adjustBreakDrop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drag to create (desktop/mouse only) ─────────────────────────────────────
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>, staffId: string, d: string) {
