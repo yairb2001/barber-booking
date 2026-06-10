@@ -229,9 +229,13 @@ async function execTool(
             breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
           }
 
-          // Existing appointments
+          // Existing appointments. `date` is stored as the full start datetime
+          // (date + startTime, see book_appointment), so an exact-midnight match
+          // would find nothing — query the whole UTC day instead.
+          const dayStart = dateObj;
+          const dayEnd   = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
           const booked = await prisma.appointment.findMany({
-            where: { staffId: staff.id, date: dateObj, status: { in: ["pending", "confirmed"] } },
+            where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
             select: { startTime: true, endTime: true },
           });
 
