@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, scopedStaffId } from "@/lib/session";
 
 // GET /api/admin/analytics/referral-stats
 // Query params:
@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   // Barbers are always scoped to themselves; owners can filter by staffId
   const staffId   = barberScope ?? (searchParams.get("staffId") || undefined);
 
-  const business = await prisma.business.findFirst({ select: { id: true } });
+  const business = await getSessionBusiness(req, { id: true });
   if (!business) return NextResponse.json([]);
 
   // ── Date range for customer creation filter ──────────────────────────────────

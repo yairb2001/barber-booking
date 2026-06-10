@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, applyTemplate, firstName } from "@/lib/messaging";
-import { getRequestSession, scopedStaffId } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, scopedStaffId } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
 async function fetchFilteredCustomers(business: { id: string }, qs: string) {
@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "message required" }, { status: 400 });
   }
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
 
   // Use new filterQuery if provided; fall back to legacy params
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
   const barberScopeId = scopedStaffId(req);
   if (barberScopeId === null) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json([]);
 
   // For barbers: only return broadcast history for their own customers

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
-async function getBizId(): Promise<string | null> {
-  const biz = await prisma.business.findFirst({ select: { id: true } });
+async function getBizId(req: NextRequest): Promise<string | null> {
+  const biz = await getSessionBusiness(req, { id: true });
   return biz?.id ?? null;
 }
 
@@ -13,7 +13,7 @@ async function getBizId(): Promise<string | null> {
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const bizId = await getBizId();
+  const bizId = await getBizId(req);
   if (!bizId) return NextResponse.json([]);
   const automations = await prisma.automation.findMany({
     where: { businessId: bizId },
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const bizId = await getBizId();
+  const bizId = await getBizId(req);
   if (!bizId) return NextResponse.json({ error: "No business" }, { status: 500 });
 
   const body = await req.json();

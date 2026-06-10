@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 type Appt = {
   id: string;
@@ -42,6 +43,7 @@ function dateLabel(iso: string): { weekday: string; full: string; rel: string } 
 }
 
 export default function MyAppointmentsPage() {
+  const slug = useSlug();
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
   const [name, setName]       = useState("");
@@ -58,7 +60,7 @@ export default function MyAppointmentsPage() {
     (async () => {
       try {
         // 1) Exchange the bk_session cookie for a fresh OTP token (no SMS).
-        const authRes = await fetch("/api/otp/auto-token", { method: "POST" });
+        const authRes = await fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" });
         if (!authRes.ok) {
           setError("not-signed-in");
           setLoading(false);
@@ -69,7 +71,7 @@ export default function MyAppointmentsPage() {
         if (auth?.phone && auth?.token) setAuth({ phone: auth.phone, token: auth.token });
 
         // 2) Fetch this customer's appointments using phone + token.
-        const url = `/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`;
+        const url = apiWithSlug(`/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`, slug);
         const res = await fetch(url);
         if (!res.ok) {
           setError("load-failed");
@@ -93,7 +95,7 @@ export default function MyAppointmentsPage() {
     setCancellingId(id);
     setCancelError("");
     try {
-      const res = await fetch("/api/my-appointments/cancel", {
+      const res = await fetch(apiWithSlug("/api/my-appointments/cancel", slug), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ appointmentId: id, phone: auth.phone, token: auth.token }),
@@ -121,7 +123,7 @@ export default function MyAppointmentsPage() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href="/book" />
+          <BackArrow href={publicHref(slug, "/book")} />
           <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
             התורים שלי
           </h1>
@@ -162,7 +164,7 @@ export default function MyAppointmentsPage() {
           <p className="text-[13px] mb-6" style={{ color: "var(--text-muted)" }}>
             אחרי שתקבע תור ראשון, תוכל לראות כאן את כל התורים שלך
           </p>
-          <Link href="/book"
+          <Link href={publicHref(slug, "/book")}
             className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
             style={{ background: "var(--brand)" }}>
             קבע תור עכשיו
@@ -270,7 +272,7 @@ export default function MyAppointmentsPage() {
               <p className="text-[13px] mb-6" style={{ color: "var(--text-muted)" }}>
                 בוא נקבע לך תור חדש
               </p>
-              <Link href="/book"
+              <Link href={publicHref(slug, "/book")}
                 className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
                 style={{ background: "var(--brand)" }}>
                 קבע תור

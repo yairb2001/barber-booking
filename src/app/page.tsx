@@ -5,6 +5,7 @@ import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -136,6 +137,7 @@ function StoriesCarousel({ stories }: { stories: Story[] }) {
 type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string | null; staffId: string | null };
 
 function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: string }) {
+  const slug = useSlug();
   const [active, setActive] = useState(0);
   const startX = useRef(0);
   const isDragging = useRef(false);
@@ -238,7 +240,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
                           )}
                           <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, textAlign: "center", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{work.staffName}</span>
                         </div>
-                        <Link href={work.staffId ? `/book/service?staffId=${work.staffId}` : "/book"} dir="rtl"
+                        <Link href={work.staffId ? publicHref(slug, `/book/service?staffId=${work.staffId}`) : publicHref(slug, "/book")} dir="rtl"
                           style={{ background: brand, borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0, marginBottom: 12 }}>
                           קבע תור
                         </Link>
@@ -322,6 +324,7 @@ function SecLabel({ label, sub, action }: { label: string; sub?: string; action?
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function HomePage() {
+  const slug = useSlug();
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -356,12 +359,12 @@ export default function HomePage() {
   useEffect(() => {
     (async () => {
       try {
-        const authRes = await fetch("/api/otp/auto-token", { method: "POST" });
+        const authRes = await fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" });
         if (!authRes.ok) return;
         const auth = await authRes.json();
         if (auth?.name) setWelcomeName(String(auth.name).split(" ")[0]);
         const res = await fetch(
-          `/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`
+          apiWithSlug(`/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`, slug)
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -372,7 +375,7 @@ export default function HomePage() {
 
   // Returning referrer — load their "friend brings friend" progress (cookie-based).
   useEffect(() => {
-    fetch("/api/customers/referral-status")
+    fetch(apiWithSlug("/api/customers/referral-status", slug))
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.ok && data.referralCount > 0) {
@@ -384,12 +387,12 @@ export default function HomePage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/quick-slots").then(r => r.json()),
-      fetch("/api/staff").then(r => r.json()),
-      fetch("/api/announcements").then(r => r.json()),
-      fetch("/api/products").then(r => r.json()),
-      fetch("/api/business").then(r => r.json()),
-      fetch("/api/stories").then(r => r.json()).catch(() => []),
+      fetch(apiWithSlug("/api/quick-slots", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/announcements", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/products", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/business", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/stories", slug)).then(r => r.json()).catch(() => []),
     ]).then(([slots, staffData, ann, prod, biz, storiesData]) => {
       setQuickSlots(slots);
       setStaff(staffData);
@@ -494,7 +497,7 @@ export default function HomePage() {
           <p className="flex-1 font-bold text-[15px] tracking-wide text-slate-900">
             {business?.name || "DOMINANT"}
           </p>
-          <Link href="/book"
+          <Link href={publicHref(slug, "/book")}
             className="flex-shrink-0 text-[12px] font-bold tracking-[0.1em] uppercase px-5 py-2 rounded-full text-white"
             style={{ background: brand }}>
             קבע תור
@@ -600,7 +603,7 @@ export default function HomePage() {
           </h1>
           <p className="text-white/40 tracking-[0.5em] text-[10px] mb-8 uppercase">barbershop</p>
 
-          <Link href="/book"
+          <Link href={publicHref(slug, "/book")}
             className="inline-flex items-center gap-2 font-bold text-[13px] tracking-[0.15em] uppercase px-10 py-4 rounded-full text-white active:scale-95 transition-transform"
             style={{
               background: brand,
@@ -623,14 +626,14 @@ export default function HomePage() {
                 תורים פנויים עכשיו
               </span>
               <div className="flex-1 h-px bg-white/10" />
-              <Link href="/book" className="text-white/50 text-[11px] hover:text-white/80 transition-colors">כל התורים ←</Link>
+              <Link href={publicHref(slug, "/book")} className="text-white/50 text-[11px] hover:text-white/80 transition-colors">כל התורים ←</Link>
             </div>
 
             {/* Swipe row — the customer scrolls through open slots with a finger. */}
             <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}>
               {quickSlots.map((slot, i) => (
                 <Link key={i}
-                  href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                  href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
                   className="flex-shrink-0 rounded-2xl p-3.5 active:scale-95 transition-transform"
                   style={{
                     background: "rgba(255,255,255,0.10)",
@@ -657,7 +660,7 @@ export default function HomePage() {
       {!loading && stories.length > 0 && (
         <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface)" }}>
           <SecLabel label="העבודות שלנו" sub="בחר סגנון"
-            action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
+            action={<Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
           />
           <PortfolioCarousel
             works={stories.map(s => ({
@@ -674,7 +677,7 @@ export default function HomePage() {
       {/* ── My next appointment — returning customer, below the stories ── */}
       {myUpcoming.length > 0 && (
         <section className="py-8 px-5 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
-          <Link href="/book/my-appointments" className="block active:scale-[0.99] transition-transform">
+          <Link href={publicHref(slug, "/book/my-appointments")} className="block active:scale-[0.99] transition-transform">
             <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 relative overflow-hidden">
               {/* Brand accent stripe */}
               <div className="absolute top-0 bottom-0 right-0 w-1.5" style={{ background: brand }} />
@@ -779,7 +782,7 @@ export default function HomePage() {
         <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
           <SecLabel label="הספרים שלנו" sub="The Team"
             action={
-              <Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>
+              <Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>
             }
           />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2 snap-x" style={{ scrollbarWidth: "none" }}>
@@ -787,7 +790,7 @@ export default function HomePage() {
               const slot = quickSlots.find(s => s.staffId === member.id);
               const hasToday = slot?.dayLabel === "היום";
               return (
-                <Link key={member.id} href={`/book/service?staffId=${member.id}`}
+                <Link key={member.id} href={publicHref(slug, `/book/service?staffId=${member.id}`)}
                   className="flex-shrink-0 snap-start active:scale-[0.97] transition-transform rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm"
                   style={{ width: 150 }}>
                   {/* Square avatar */}

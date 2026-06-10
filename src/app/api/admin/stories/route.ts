@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session?.businessId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst({ where: { id: session.businessId } });
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json([]);
 
   const stories = await prisma.story.findMany({
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (!session?.businessId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const business = await prisma.business.findFirst({ where: { id: session.businessId } });
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   // Barber → always their own staffId; owner → accepts staffId from body (or null)

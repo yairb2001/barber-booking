@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 function formatDate(date: Date): string {
   // Use local date components (not toISOString which converts to UTC and can shift the date in Israel UTC+3)
@@ -86,6 +87,7 @@ function WaitlistSheet({
   staffId: string; serviceId: string; date: string; dateLabel: string;
   onClose: () => void; onSuccess: () => void;
 }) {
+  const slug = useSlug();
   const [name, setName]     = useState("");
   const [phone, setPhone]   = useState("");
   const [pref, setPref]     = useState<"morning" | "afternoon" | "evening" | "any">("any");
@@ -103,7 +105,7 @@ function WaitlistSheet({
     if (!name.trim() || !phone.trim()) { setErr("שם וטלפון חובה"); return; }
     setErr(null);
     setSaving(true);
-    const r = await fetch("/api/waitlist", {
+    const r = await fetch(apiWithSlug("/api/waitlist", slug), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, phone, staffId, serviceId, date, preferredTimeOfDay: pref, isFlexible: pref === "any" }),
@@ -206,6 +208,7 @@ function WaitlistSuccess({ dateLabel, onClose }: { dateLabel: string; onClose: (
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 function ChooseTimePageContent() {
+  const slug = useSlug();
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId") || "";
   const serviceId = searchParams.get("serviceId") || "";
@@ -220,8 +223,8 @@ function ChooseTimePageContent() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/business").then(r => r.json()).catch(() => null),
-      staffId ? fetch("/api/staff").then(r => r.json()).catch(() => []) : Promise.resolve([]),
+      fetch(apiWithSlug("/api/business", slug)).then(r => r.json()).catch(() => null),
+      staffId ? fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()).catch(() => []) : Promise.resolve([]),
     ]).then(([biz, staffList]) => {
       const bizHorizon: number = biz?.bookingHorizonDays || 30;
       const staffRecord = Array.isArray(staffList) ? staffList.find((s: { id: string }) => s.id === staffId) : null;
@@ -253,7 +256,7 @@ function ChooseTimePageContent() {
     if (!staffId || !serviceId || !selectedDate) return;
     setLoading(true);
     setWaitlistSuccess(false);
-    fetch(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}`)
+    fetch(apiWithSlug(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}`, slug))
       .then(res => res.ok ? res.json() : { slots: [] })
       .then((data: { slots?: string[]; closed?: boolean } | string[]) => {
         // Support both old array format (backward compat) and new { slots, closed } format
@@ -284,7 +287,7 @@ function ChooseTimePageContent() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href={`/book/service?staffId=${staffId}`} />
+          <BackArrow href={publicHref(slug, `/book/service?staffId=${staffId}`)} />
           <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
             בחירת תאריך ושעה
           </h1>
@@ -344,7 +347,7 @@ function ChooseTimePageContent() {
           <div className="flex flex-col gap-2.5">
             {slots.map(time => (
               <Link key={time}
-                href={`/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}&time=${time}`}
+                href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${selectedDate}&time=${time}`)}
                 className="flex items-center justify-center rounded-2xl py-4 transition-all active:scale-[0.98]"
                 dir="ltr"
                 style={{

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getEffectivePermissions } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 
 // POST /api/admin/chats/[id]/send
@@ -14,10 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst({
-    where: { id: session.businessId },
-    select: { id: true, chatsEnabled: true },
-  });
+  const business = await getSessionBusiness(req, { id: true, chatsEnabled: true });
   if (!business?.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
   const { message } = await req.json();

@@ -1,19 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { resolveBusinessId } from "@/lib/tenant";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffId = searchParams.get("staffId");
-  const businessId = searchParams.get("businessId");
 
-  // Resolve businessId (backward-compat: no param → findFirst)
-  let resolvedBusinessId: string | undefined;
-  if (businessId) {
-    resolvedBusinessId = businessId;
-  } else {
-    const biz = await prisma.business.findFirst({ select: { id: true } });
-    resolvedBusinessId = biz?.id;
-  }
+  // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
+  const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
 
   if (staffId) {
     // Get services for a specific staff member

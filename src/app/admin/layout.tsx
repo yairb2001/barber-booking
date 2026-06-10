@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useNativeShell } from "@/lib/native/useNativeShell";
 
@@ -63,8 +63,9 @@ const bottomNavBarber: NavItem[] = [
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
@@ -73,12 +74,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const isNative = platform === "ios" || platform === "android";
 
   useEffect(() => {
-    if (pathname === "/admin/login") return;
+    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
     fetch("/api/admin/me")
       .then(r => r.ok ? r.json() : null)
       .then(setMe)
       .catch(() => setMe(null));
   }, [pathname]);
+
+  // Gate: a freshly-signed-up owner who hasn't finished onboarding is sent to
+  // the wizard. Barbers and onboarded owners are unaffected. The wizard itself
+  // and the login page are excluded to avoid a redirect loop.
+  useEffect(() => {
+    if (!me) return;
+    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
+    if (me.isOwner && !me.onboardingCompletedAt) {
+      router.replace("/admin/onboarding");
+    }
+  }, [me, pathname, router]);
 
   // Poll unread chats count when chats feature is on (only when tab visible).
   // 15s interval — light DB hit (single COUNT query per business).
@@ -128,6 +140,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (pathname === "/admin/login") {
     return <div className="min-h-screen bg-slate-50 text-slate-900 font-heebo" dir="rtl">{children}</div>;
+  }
+
+  // Onboarding wizard renders full-screen without the admin chrome.
+  if (pathname.startsWith("/admin/onboarding")) {
+    return <>{children}</>;
   }
 
   const handleLogout = async () => {

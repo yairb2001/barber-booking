@@ -162,6 +162,15 @@ export default function AdminLoginPage() {
         >
           {submitting ? (isSetupMode ? "יוצר..." : "נכנס...") : (isSetupMode ? "צור סיסמה והיכנס" : "כניסה")}
         </button>
+
+        {!isSetupMode && (
+          <p className="text-center text-[12px] text-neutral-500">
+            אין לכם עדיין עסק במערכת?{" "}
+            <a href="/signup" className="text-teal-400 hover:text-teal-300 font-medium">
+              פתחו עסק חדש
+            </a>
+          </p>
+        )}
       </form>
     </div>
   );

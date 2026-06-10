@@ -18,7 +18,14 @@ export async function GET(req: NextRequest) {
 
   const business = await prisma.business.findFirst({
     where: { id: session.businessId },
-    select: { chatsEnabled: true, settings: true },
+    select: {
+      chatsEnabled: true,
+      settings: true,
+      slug: true,
+      tier: true,
+      whatsappStatus: true,
+      onboardingCompletedAt: true,
+    },
   });
 
   // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
@@ -31,6 +38,10 @@ export async function GET(req: NextRequest) {
     staffId: session.staffId || null,
     staff,
     chatsEnabled: business?.chatsEnabled ?? false,
+    slug: business?.slug ?? null,
+    tier: business?.tier ?? "basic",
+    whatsappStatus: business?.whatsappStatus ?? "not_requested",
+    onboardingCompletedAt: business?.onboardingCompletedAt ?? null,
     // Effective per-user permissions (the values the UI should gate on).
     canViewAllCalendars: perms.canViewAllCalendars,
     canViewAllChats: perms.canViewAllChats,

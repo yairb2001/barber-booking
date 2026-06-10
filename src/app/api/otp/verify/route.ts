@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { SignJWT } from "jose";
+import { resolveBusiness } from "@/lib/tenant";
 
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
 
   const business = reqBusinessId
     ? await prisma.business.findUnique({ where: { id: reqBusinessId } })
-    : await prisma.business.findFirst();
+    : await resolveBusiness(req);
   if (!business) return NextResponse.json({ error: "business not found" }, { status: 400 });
 
   // Find a valid, unused OTP

@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, requireOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 
 // GET /api/admin/settings — readable by all authenticated admins/barbers
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst({
-    select: { id: true, settings: true, bookingHorizonDays: true },
-  });
+  const business = await getSessionBusiness(req, { id: true, settings: true, bookingHorizonDays: true });
   if (!business) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   return NextResponse.json({
@@ -25,7 +23,7 @@ export async function PATCH(req: NextRequest) {
   if (guard) return guard;
 
   const body = await req.json();
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const existing = (() => {

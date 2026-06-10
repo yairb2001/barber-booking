@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { pushToOwner } from "@/lib/native/push";
+import { resolveBusiness } from "@/lib/tenant";
 
 /**
  * Public endpoint — customers join the waitlist.
@@ -18,10 +19,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // Resolve business (backward-compat: no businessId → findFirst)
+  // Resolve business: explicit body businessId, else ?slug=/?businessId= from
+  // the URL (backward-compat: no param → findFirst for DOMINANT).
   const biz = businessId
     ? await prisma.business.findUnique({ where: { id: businessId } })
-    : await prisma.business.findFirst();
+    : await resolveBusiness(request);
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   // Find or create customer

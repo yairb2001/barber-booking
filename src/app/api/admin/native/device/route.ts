@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 /**
  * POST /api/admin/native/device
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   // Owner-only logins (without staffId) — store on the business settings.
   if (!session.staffId) {
-    const biz = await prisma.business.findFirst();
+    const biz = await getSessionBusiness(req);
     if (!biz) return NextResponse.json({ error: "no business" }, { status: 400 });
     const existing = (() => {
       try { return biz.settings ? JSON.parse(biz.settings) : {}; } catch { return {}; }

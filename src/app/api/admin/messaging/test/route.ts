@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing phone" }, { status: 400 });
   }
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) {
     return NextResponse.json({ error: "no business" }, { status: 400 });
   }

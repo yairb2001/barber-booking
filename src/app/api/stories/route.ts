@@ -1,16 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveBusinessId } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const business = await prisma.business.findFirst();
-  if (!business) return NextResponse.json([]);
+export async function GET(req: NextRequest) {
+  const businessId = await resolveBusinessId(req);
+  if (!businessId) return NextResponse.json([]);
 
   const now = new Date();
   const stories = await prisma.story.findMany({
     where: {
-      businessId: business.id,
+      businessId,
       isActive: true,
       OR: [
         { expiresAt: null },

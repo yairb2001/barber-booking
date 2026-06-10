@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 // POST — create a customer manually (independent of booking flow)
 export async function POST(req: NextRequest) {
@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "name and phone required" }, { status: 400 });
   }
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
 
   // Upsert by (businessId, phone) — don't create duplicates
@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
     staffId = session.staffId;
   }
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json([]);
 
   // ── Upcoming appointments filter: find customer IDs with appointments in date range ──

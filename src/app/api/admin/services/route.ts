@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, requireOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 
 export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
   const body = await req.json();
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   const service = await prisma.service.create({

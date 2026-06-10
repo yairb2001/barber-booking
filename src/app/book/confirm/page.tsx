@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
@@ -17,6 +18,7 @@ type ProductInfo = {
 function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   phone: string; name: string; staffId: string; serviceId: string; date: string;
 }) {
+  const slug = useSlug();
   const [timeOfDay, setTimeOfDay]   = useState<"morning" | "afternoon" | "any">("morning");
   const [isFlexible, setIsFlexible] = useState(true);
   const [joining, setJoining]       = useState(false);
@@ -26,7 +28,7 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   async function join() {
     setJoining(true); setError("");
     try {
-      const res = await fetch("/api/waitlist", {
+      const res = await fetch(apiWithSlug("/api/waitlist", slug), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, name, staffId, serviceId, date, isFlexible, preferredTimeOfDay: timeOfDay }),
@@ -246,6 +248,7 @@ function ReferralThankYou({ status }: { status: { name: string; referralCount: n
 
 // ── Main page content ──────────────────────────────────────────────────────────
 function ConfirmPageContent() {
+  const slug = useSlug();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -299,7 +302,7 @@ function ConfirmPageContent() {
   useEffect(() => {
     if (referrerQuery.length < 2) { setReferrerSuggestions([]); return; }
     const timer = setTimeout(() => {
-      fetch(`/api/customers/lookup?q=${encodeURIComponent(referrerQuery)}`)
+      fetch(apiWithSlug(`/api/customers/lookup?q=${encodeURIComponent(referrerQuery)}`, slug))
         .then(r => r.json())
         .then(setReferrerSuggestions)
         .catch(() => setReferrerSuggestions([]));
@@ -308,8 +311,8 @@ function ConfirmPageContent() {
   }, [referrerQuery]);
 
   useEffect(() => {
-    fetch("/api/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
-    fetch("/api/business").then(r => r.json()).then(biz => {
+    fetch(apiWithSlug("/api/referral-sources", slug)).then(r => r.json()).then(setReferralOptions).catch(() => {});
+    fetch(apiWithSlug("/api/business", slug)).then(r => r.json()).then(biz => {
       if (biz?.id) setBusinessId(biz.id);
       if (biz?.name) setBusinessName(biz.name);
       if (biz?.address) setBusinessAddress(biz.address);
@@ -332,7 +335,7 @@ function ConfirmPageContent() {
     }).catch(() => {});
 
     // Returning referrer — show a thank-you + progress meter (identity via cookie)
-    fetch("/api/customers/referral-status")
+    fetch(apiWithSlug("/api/customers/referral-status", slug))
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.ok && data.referralCount > 0) {
@@ -349,7 +352,7 @@ function ConfirmPageContent() {
     } catch { /* ignore parse errors */ }
 
     // Try to exchange the session cookie for a fresh OTP token (no SMS needed)
-    fetch("/api/otp/auto-token", { method: "POST" })
+    fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.ok && data.token) {
@@ -375,12 +378,12 @@ function ConfirmPageContent() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/staff").then(r => r.json()).then((data: StaffInfo[]) => {
+    fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()).then((data: StaffInfo[]) => {
       const found = data.find(s => s.id === staffId);
       if (found) setStaffInfo(found);
     });
     if (staffId) {
-      fetch(`/api/services?staffId=${staffId}`).then(r => r.json()).then((data: ServiceInfo[]) => {
+      fetch(apiWithSlug(`/api/services?staffId=${staffId}`, slug)).then(r => r.json()).then((data: ServiceInfo[]) => {
         const found = data.find(s => s.id === serviceId);
         if (found) setServiceInfo(found);
       });
@@ -389,7 +392,7 @@ function ConfirmPageContent() {
 
   // Optional product upsell on the summary — only shows if the shop has products.
   useEffect(() => {
-    fetch("/api/products")
+    fetch(apiWithSlug("/api/products", slug))
       .then(r => r.json())
       .then((data: ProductInfo[]) => setProducts(Array.isArray(data) ? data : []))
       .catch(() => {});
@@ -424,7 +427,7 @@ function ConfirmPageContent() {
     if (!nameValid) { setOtpError("נא להזין שם פרטי ושם משפחה"); return; }
     setOtpSending(true); setOtpError("");
     try {
-      const res = await fetch("/api/otp/send", {
+      const res = await fetch(apiWithSlug("/api/otp/send", slug), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, businessId: businessId || undefined }),
       });
@@ -439,7 +442,7 @@ function ConfirmPageContent() {
     if (!otpCode) { setOtpError("הזן את הקוד שקיבלת"); return; }
     setOtpVerifying(true); setOtpError("");
     try {
-      const res = await fetch("/api/otp/verify", {
+      const res = await fetch(apiWithSlug("/api/otp/verify", slug), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone, code: otpCode, businessId: businessId || undefined }),
       });
@@ -475,7 +478,7 @@ function ConfirmPageContent() {
       : "";
     const combinedNote = [note.trim(), productsNote].filter(Boolean).join("\n");
     try {
-      const res = await fetch("/api/appointments", {
+      const res = await fetch(apiWithSlug("/api/appointments", slug), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           staffId, serviceId, date, startTime: time,
@@ -497,12 +500,12 @@ function ConfirmPageContent() {
       // Persist customer details for future bookings
       try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
       router.push(
-        `/book/confirm?success=true&appointmentId=${appointment.id}` +
+        publicHref(slug, `/book/confirm?success=true&appointmentId=${appointment.id}` +
         `&staffId=${staffId}&serviceId=${serviceId}` +
         `&staffName=${encodeURIComponent(appointment.staff.name)}` +
         `&serviceName=${encodeURIComponent(appointment.service.name)}` +
         `&date=${date}&time=${time}&price=${price}&duration=${duration}` +
-        `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`
+        `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`)
       );
     } catch {
       setError("שגיאה בחיבור לשרת");
@@ -570,7 +573,7 @@ function ConfirmPageContent() {
               staffId={successStaffId} serviceId={successSvcId} date={successDate} />
           )}
 
-          <Link href="/"
+          <Link href={publicHref(slug, "/")}
             className="block text-center text-[13px] font-bold tracking-[0.15em] uppercase py-4 rounded-full text-white shadow-md"
             style={{ background: "var(--brand)" }}>
             חזרה לדף הבית
@@ -609,7 +612,7 @@ function ConfirmPageContent() {
       <div className="sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"
         style={{ background: "rgba(255,255,255,0.97)" }}>
         <div className="flex items-center gap-3">
-          <Link href={`/book/time?staffId=${staffId}&serviceId=${serviceId}`}
+          <Link href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`)}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-100 border border-slate-200 flex-shrink-0">
             <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
@@ -738,7 +741,7 @@ function ConfirmPageContent() {
                       setPhone(""); setName(""); setOtpSent(false); setOtpCode("");
                       try { localStorage.removeItem("bk_customer"); } catch { /* ignore */ }
                       // Clear session cookie
-                      fetch("/api/otp/clear-session", { method: "POST" }).catch(() => {});
+                      fetch(apiWithSlug("/api/otp/clear-session", slug), { method: "POST" }).catch(() => {});
                     }}
                     className="text-[11px] text-slate-400 hover:text-slate-600 underline transition">
                     לא אתה?

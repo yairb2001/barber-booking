@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 type Service = {
   id: string;
@@ -82,6 +83,7 @@ function BackArrow({ href }: { href: string }) {
 }
 
 function ChooseServicePageContent() {
+  const slug = useSlug();
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId");
   const [services, setServices] = useState<Service[]>([]);
@@ -92,9 +94,9 @@ function ChooseServicePageContent() {
   useEffect(() => {
     if (!staffId) return;
     Promise.all([
-      fetch(`/api/services?staffId=${staffId}`).then(r => r.json()),
-      fetch(`/api/quick-slots?staffId=${staffId}`).then(r => r.json()),
-      fetch("/api/staff").then(r => r.json()),
+      fetch(apiWithSlug(`/api/services?staffId=${staffId}`, slug)).then(r => r.json()),
+      fetch(apiWithSlug(`/api/quick-slots?staffId=${staffId}`, slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()),
     ]).then(([svc, slots, allStaff]) => {
       setServices(svc);
       setQuickSlots(slots);
@@ -111,7 +113,7 @@ function ChooseServicePageContent() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href="/book" />
+          <BackArrow href={publicHref(slug, "/book")} />
 
           {/* Title + barber */}
           <div className="flex flex-col items-center gap-0.5">
@@ -147,7 +149,7 @@ function ChooseServicePageContent() {
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
-                href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
                 className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
                 style={{
                   background: "var(--card)",
@@ -191,7 +193,7 @@ function ChooseServicePageContent() {
 
             return (
               <Link key={service.id}
-                href={`/book/time?staffId=${staffId}&serviceId=${service.id}`}
+                href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${service.id}`)}
                 className="flex items-center rounded-2xl overflow-hidden active:scale-[0.99] transition-all"
                 style={{
                   background: "var(--card)",

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 export type RequestSession = {
   businessId: string;
@@ -15,6 +16,27 @@ export function getRequestSession(req: NextRequest): RequestSession | null {
   if (!businessId || !role) return null;
   const staffId = req.headers.get("x-session-staff-id") || undefined;
   return { businessId, role, staffId, isOwner: role === "owner" };
+}
+
+/**
+ * Resolve the Business for the CURRENT admin session (scoped to session.businessId).
+ *
+ * Use this in admin routes INSTEAD of `prisma.business.findFirst()`. With more
+ * than one tenant, findFirst() reads/writes the wrong business — this guarantees
+ * every admin query is bound to the logged-in owner/barber's own business.
+ *
+ * Returns null if there is no session (caller should bail with 401).
+ */
+export async function getSessionBusiness<T extends Prisma.BusinessSelect>(
+  req: NextRequest,
+  select?: T,
+): Promise<Prisma.BusinessGetPayload<{ select: T }> | null> {
+  const session = getRequestSession(req);
+  if (!session) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const args: any = { where: { id: session.businessId } };
+  if (select) args.select = select;
+  return prisma.business.findUnique(args) as never;
 }
 
 /**

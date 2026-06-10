@@ -53,6 +53,10 @@ export default function AdminAgentPage() {
   const [convsLoading, setConvsLoading] = useState(false);
   const [clearingConvs, setClearingConvs] = useState(false);
 
+  // GreenAPI one-click webhook wiring
+  const [connecting, setConnecting] = useState(false);
+  const [connectMsg, setConnectMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
   useEffect(() => {
     fetch("/api/admin/agent")
       .then(r => r.json())
@@ -108,6 +112,24 @@ export default function AdminAgentPage() {
     setConvs([]);
     setSelectedConv(null);
     setClearingConvs(false);
+  }
+
+  async function connectWebhook() {
+    setConnecting(true);
+    setConnectMsg(null);
+    try {
+      const res = await fetch("/api/admin/agent/connect-webhook", { method: "POST" });
+      const data = await res.json();
+      setConnectMsg(
+        data.ok
+          ? { ok: true, text: "✓ חובר! ייתכן ש-GreenAPI יקח דקה-שתיים להחיל. שלח הודעת בדיקה לוואטסאפ." }
+          : { ok: false, text: `שגיאה: ${data.error}` }
+      );
+    } catch {
+      setConnectMsg({ ok: false, text: "שגיאה בחיבור לשרת" });
+    } finally {
+      setConnecting(false);
+    }
   }
 
   function addFAQ() {
@@ -328,17 +350,45 @@ export default function AdminAgentPage() {
           </div>
 
           {/* Webhook info */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-2">
-            <h2 className="font-semibold text-neutral-800">🔗 כתובת Webhook ל-Green API</h2>
-            <div
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
-              dir="ltr"
-              onClick={() => navigator.clipboard?.writeText(WEBHOOK_URL)}
-              title="לחץ להעתקה"
+          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
+            <h2 className="font-semibold text-neutral-800">🔗 חיבור ל-Green API</h2>
+
+            {/* One-click connect — sets the webhook in GreenAPI automatically */}
+            <button
+              onClick={connectWebhook}
+              disabled={connecting}
+              className="w-full bg-teal-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
             >
-              {WEBHOOK_URL}
+              {connecting ? "מחבר..." : "⚡ חבר אוטומטית ל-Green API"}
+            </button>
+            <p className="text-xs text-neutral-500">
+              לחיצה אחת תגדיר את ה-Webhook ב-Green API לבד — אין צורך להעתיק כלום.
+            </p>
+
+            {connectMsg && (
+              <div
+                className={`text-xs rounded-lg px-3 py-2 ${
+                  connectMsg.ok
+                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                    : "bg-red-50 border border-red-200 text-red-600"
+                }`}
+              >
+                {connectMsg.text}
+              </div>
+            )}
+
+            {/* Manual fallback — the raw URL, still copyable for advanced users */}
+            <div className="pt-2 border-t border-slate-200 space-y-1">
+              <p className="text-[11px] text-neutral-400">או ידנית — הכתובת להדבקה ב-Green API:</p>
+              <div
+                className="bg-white border border-slate-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
+                dir="ltr"
+                onClick={() => navigator.clipboard?.writeText(WEBHOOK_URL)}
+                title="לחץ להעתקה"
+              >
+                {WEBHOOK_URL}
+              </div>
             </div>
-            <p className="text-xs text-neutral-500">לחץ על הכתובת להעתקה → הדבק בשדה Webhook URL בהגדרות האינסטנס ב-Green API</p>
           </div>
 
           {/* Save */}

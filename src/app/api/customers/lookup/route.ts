@@ -11,6 +11,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { resolveBusinessId } from "@/lib/tenant";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,13 +21,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
-  // Get the first (and currently only) business
-  const business = await prisma.business.findFirst({ select: { id: true } });
-  if (!business) return NextResponse.json([]);
+  const businessId = await resolveBusinessId(req);
+  if (!businessId) return NextResponse.json([]);
 
   const customers = await prisma.customer.findMany({
     where: {
-      businessId: business.id,
+      businessId,
       name: { contains: q, mode: "insensitive" },
       isBlocked: false,
     },

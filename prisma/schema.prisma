@@ -61,6 +61,11 @@ model Business {
   // When true, each barber manages their own services (create/edit/delete) in
   // their own interface. When false (default), the owner controls all services.
   staffManageOwnServices Boolean @default(false) @map("staff_manage_own_services")
+  // ── SaaS / multi-tenant subscription ──
+  tier                  String    @default("basic")        @map("tier")            // basic | pro | premium
+  trialEndsAt           DateTime?                           @map("trial_ends_at")
+  onboardingCompletedAt DateTime?                           @map("onboarding_completed_at")
+  whatsappStatus        String    @default("not_requested") @map("whatsapp_status") // not_requested | requested | connected
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

@@ -5,14 +5,14 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await prisma.business.findFirst({ select: { id: true } });
+  const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
   const config = await prisma.agentConfig.findUnique({
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await prisma.business.findFirst({ select: { id: true } });
+  const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
   const body = await req.json();

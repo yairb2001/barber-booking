@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getEffectivePermissions } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -21,10 +21,7 @@ export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst({
-    where: { id: session.businessId },
-    select: { id: true, chatsEnabled: true },
-  });
+  const business = await getSessionBusiness(req, { id: true, chatsEnabled: true });
   if (!business) return NextResponse.json([]);
   if (!business.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 

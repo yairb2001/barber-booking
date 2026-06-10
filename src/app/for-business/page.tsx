@@ -140,11 +140,17 @@ export default function ForBusinessPage() {
           DOMINANT
         </p>
         <p className="text-zinc-600 text-[11px] tracking-[0.18em]">מערכת לספרים</p>
-        <a href="#cta"
-          className="text-[12px] font-bold px-4 py-2 rounded-full text-black transition-opacity hover:opacity-85"
-          style={{ background: GOLD }}>
-          קבע הדגמה
-        </a>
+        <div className="flex items-center gap-3">
+          <a href="/signup"
+            className="text-[12px] font-bold text-zinc-300 hover:text-white transition-colors">
+            פתחו עסק
+          </a>
+          <a href="#cta"
+            className="text-[12px] font-bold px-4 py-2 rounded-full text-black transition-opacity hover:opacity-85"
+            style={{ background: GOLD }}>
+            קבע הדגמה
+          </a>
+        </div>
       </nav>
 
       {/* ── HERO ────────────────────────────────────────────────────── */}

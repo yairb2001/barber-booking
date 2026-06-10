@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+import { resolveBusiness } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
@@ -8,8 +8,8 @@ const DEFAULT_SOURCES = [
 ];
 
 // Public — no auth required (used on customer booking confirm page)
-export async function GET() {
-  const biz = await prisma.business.findFirst({ select: { settings: true } });
+export async function GET(req: NextRequest) {
+  const biz = await resolveBusiness(req, { settings: true });
   try {
     const parsed = biz?.settings ? JSON.parse(biz.settings) : {};
     if (Array.isArray(parsed.referralSources) && parsed.referralSources.length > 0) {

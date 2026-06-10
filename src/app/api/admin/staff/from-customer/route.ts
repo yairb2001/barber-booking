@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 const DEFAULT_PASSWORD = "12345678";
 
@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   const customer = await prisma.customer.findUnique({ where: { id: customerId } });
   if (!customer) return NextResponse.json({ error: "לקוח לא נמצא" }, { status: 404 });
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   // Check if phone already used by a staff member

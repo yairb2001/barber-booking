@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
@@ -14,10 +14,7 @@ export async function POST(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await prisma.business.findFirst({
-    where: { id: session.businessId },
-    select: { id: true },
-  });
+  const business = await getSessionBusiness(req, { id: true });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
 
   const { phone, customerName, message } = await req.json();

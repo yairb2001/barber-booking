@@ -23,7 +23,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const biz = await prisma.business.findFirst({ select: { id: true } });
+  const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const bizId = biz.id;
 

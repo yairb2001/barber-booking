@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { resolveBusinessId } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,9 @@ export async function GET(request: Request) {
   const staffId = searchParams.get("staffId");
   const serviceId = searchParams.get("serviceId");
   const dateStr = searchParams.get("date");
-  const businessId = searchParams.get("businessId");
+  // Resolve businessId from ?slug= / ?businessId= (used only for business-wide
+  // lead-time defaults; the actual schedule derives from the tenant-safe staffId).
+  const businessId = await resolveBusinessId(request);
 
   if (!staffId || !serviceId || !dateStr) {
     return NextResponse.json(

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, requireOwnStaffOrOwner } from "@/lib/session";
 
 // GET /api/admin/staff/[id]/services — all services with whether this staff offers them
 // Returns: shared (owner-managed) services + this barber's own services.
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       orderBy: { sortOrder: "asc" },
     }),
     prisma.staffService.findMany({ where: { staffId: params.id } }),
-    prisma.business.findFirst({ select: { staffManageOwnServices: true } }),
+    getSessionBusiness(req, { staffManageOwnServices: true }),
   ]);
 
   const staffMap = Object.fromEntries(staffServices.map(ss => [ss.serviceId, ss]));
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (action === "create-own" || action === "update-own" || action === "delete-own") {
     // A barber may only manage their own services when the owner enabled it.
     if (session && !session.isOwner) {
-      const biz = await prisma.business.findFirst({ select: { staffManageOwnServices: true } });
+      const biz = await getSessionBusiness(req, { staffManageOwnServices: true });
       if (!biz?.staffManageOwnServices) {
         return NextResponse.json(
           { error: "ניהול שירותים אישי מושבת. פנה למנהל." },

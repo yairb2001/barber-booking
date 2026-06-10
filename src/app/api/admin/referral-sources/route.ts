@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 const DEFAULT_SOURCES = [
   "אינסטגרם", "פייסבוק", "טיקטוק", "גוגל", "חבר הביא חבר", "הגעתי מהרחוב", "אחר",
@@ -18,7 +18,7 @@ function getSources(settings: string | null): string[] {
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await prisma.business.findFirst({ select: { settings: true } });
+  const biz = await getSessionBusiness(req, { settings: true });
   return NextResponse.json(getSources(biz?.settings ?? null));
 }
 
@@ -34,7 +34,7 @@ export async function PUT(req: NextRequest) {
     .map((s: unknown) => String(s).trim())
     .filter(Boolean);
 
-  const biz = await prisma.business.findFirst({ select: { id: true, settings: true } });
+  const biz = await getSessionBusiness(req, { id: true, settings: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 400 });
 
   let current: Record<string, unknown> = {};

@@ -4,15 +4,17 @@ import { useEffect, useState } from "react";
 import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
+import { useSlug, apiWithSlug } from "@/lib/public-nav";
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
   // Start from the server-resolved theme so the first paint is correct
   // (no flash of the default gold theme before the client fetch resolves).
+  const slug = useSlug();
   const serverTheme = useServerTheme();
   const [theme, setTheme] = useState<Theme>(serverTheme);
 
   useEffect(() => {
-    fetch("/api/business")
+    fetch(apiWithSlug("/api/business", slug))
       .then(r => r.json())
       .then(biz => { if (biz?.theme) setTheme(biz.theme); })
       .catch(() => {});

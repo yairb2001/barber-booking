@@ -21,7 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { computeOccupancy } from "@/lib/analytics/occupancy";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export const dynamic = "force-dynamic";
 const CANCELLED = new Set(["cancelled_by_customer", "cancelled_by_staff"]);
 
 export async function GET(req: NextRequest) {
-  const biz = await prisma.business.findFirst({ select: { id: true } });
+  const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const bizId = biz.id;
 

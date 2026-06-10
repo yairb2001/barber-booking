@@ -2,7 +2,8 @@
  * DOMINANT WhatsApp Customer Agent
  * ──────────────────────────────────
  * Handles booking, cancellation, info queries via WhatsApp.
- * Uses Claude Haiku 4.5 (fast + cheap, ~₪0.01 per conversation).
+ * Model router: Haiku 4.5 for simple turns, Sonnet 4.6 for booking/cancel/
+ * complex reasoning — keeps the common case ~5-10x cheaper.
  *
  * Flow per incoming message:
  *  1. Load/create Conversation + load last N messages
@@ -29,8 +30,27 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
 });
 
-const MODEL = "claude-sonnet-4-6";
+// ── Model router ────────────────────────────────────────────────────────────
+// Cheap model handles greetings + simple info queries; strong model handles
+// booking / cancellation / multi-step reasoning. Saves ~5-10x on the common case.
+const MODEL_FAST  = "claude-haiku-4-5";
+const MODEL_SMART = "claude-sonnet-4-6";
 const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
+
+// Hebrew intent signals that justify the strong model from the very first turn.
+const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
+
+// Tools whose use means we're mid high-stakes flow → escalate to the strong model.
+const SMART_TOOLS = new Set(["get_available_slots", "book_appointment", "cancel_appointment"]);
+
+function pickInitialModel(
+  incomingText: string,
+  recentToolNames: (string | null)[]
+): string {
+  if (SMART_INTENT.test(incomingText)) return MODEL_SMART;
+  if (recentToolNames.some(t => t && SMART_TOOLS.has(t))) return MODEL_SMART;
+  return MODEL_FAST;
+}
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -387,54 +407,90 @@ async function execTool(
 
 // ─── Default system prompt ─────────────────────────────────────────────────────
 
+/** The editable personality/rules body. Date, customer memory and FAQs are
+ *  always appended around this by buildSystemPrompt — keep them out of here. */
+export function defaultAgentBody(agentName: string, businessName: string): string {
+  return `אתה ${agentName}, נציג השירות של ${businessName} — מספרה. אתה מתכתב עם לקוחות בוואטסאפ ועוזר להם לקבוע, לבטל ולשנות תורים, ולענות על שאלות.
+
+דבר כמו בנאדם אמיתי שמתכתב בוואטסאפ. כתוב תשובה אחת קצרה ורציפה במשפט פשוט, בלי לפצל לשורות, בלי רשימות ובלי כותרות. אל תשים אימוג'י בכל הודעה — כמעט אף פעם, רק אם זה ממש מתבקש. אל תהיה רשמי, ואל תפתח כל הודעה ב"היי, בשמחה". פשוט תענה כמו חבר שעובד במספרה ויודע את העניינים.
+
+הכי חשוב שלא תרגיש מטומטם או מנותק: קרא את כל השיחה לפני שאתה עונה, ותבין מה הלקוח באמת מבקש ממך. אם הוא כבר אמר משהו — שם, ספר, שירות, תאריך או שעה — אל תשאל על זה שוב בשום אופן. אסור לך לחזור על אותה שאלה או אותה הודעה פעמיים, זה הדבר שהכי מעצבן לקוחות. אם אתה מרגיש שאתה הולך במעגלים או לא מתקדם, עצור רגע, תסכם לעצמך מה כבר ברור, ותשאל בדיוק את הדבר האחד שחסר. אם באמת אי אפשר לעזור, או שהלקוח מבקש לדבר עם בנאדם, תשתמש ב-escalate_to_human במקום להמשיך להיתקע.
+
+כדי לקבוע תור אתה צריך חמישה דברים: ספר, שירות, תאריך, שעה ושם הלקוח. שאל רק על מה שחסר, דבר אחד בכל פעם, ולפני שאתה סוגר תוודא בקצרה ובאופן טבעי שהבנת נכון. תאריכים תבין לבד ממה שהלקוח כותב, כמו "מחר", "יום ראשון" או "ה-15", והמר אותם בעצמך לפורמט YYYY-MM-DD — אל תבקש ממנו לכתוב בפורמט מסוים.
+
+יש לך כלים: get_staff_list, get_services, get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+}
+
 function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
   faqs: Array<{ question: string; answer: string }>;
   today: string;
+  customerContext?: string;
 }): string {
-  if (params.customSystemPrompt) return params.customSystemPrompt;
+  const body =
+    params.customSystemPrompt?.trim() ||
+    defaultAgentBody(params.agentName, params.businessName);
 
-  const faqText = params.faqs.length
-    ? "\n\nשאלות נפוצות:\n" + params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n")
-    : "";
+  const parts = [body, `\nהתאריך היום: ${params.today}.`];
 
-  return `אתה ${params.agentName}, הסוכן של ${params.businessName} — מספרה.
-אתה עוזר ללקוחות לקבוע תורים, לבטל, לבדוק מידע — הכל דרך WhatsApp.
+  if (params.customerContext) parts.push(`\n${params.customerContext}`);
 
-📅 היום: ${params.today}
+  if (params.faqs.length) {
+    parts.push(
+      "\nמידע שיעזור לך לענות:\n" +
+        params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n")
+    );
+  }
 
-━━━━━━━━━━━━━━━━
-🗣️ סגנון
-━━━━━━━━━━━━━━━━
-- קצר וחברותי כמו WhatsApp אמיתי
-- שאל שאלה אחת בכל פעם
-- אל תפתח כל הודעה עם "היי! בשמחה!" — זה מרגיש מכני
-- אל תזכיר IDs — השתמש בשמות בלבד
-- עקוב אחרי ההיסטוריה — אם כבר שאלת שאלה, אל תחזור עליה!
+  return parts.join("\n");
+}
 
-━━━━━━━━━━━━━━━━
-🛠️ כלים — השתמש לפי הצורך בלבד
-━━━━━━━━━━━━━━━━
-get_staff_list    → לדעת אילו ספרים יש (קרא רק כשצריך את הרשימה)
-get_services      → לדעת אילו שירותים יש ומחיריהם (קרא רק כשצריך)
-get_available_slots → לתורים פנויים (חובה: המר תאריך טבעי ל-YYYY-MM-DD בעצמך)
-book_appointment  → קביעת תור (רק אחרי אישור מהלקוח)
-check_appointment → לבדיקת תורים קיימים
-cancel_appointment → לביטול תור
-get_business_info → כתובת, שעות, טלפון
-escalate_to_human → כשאי אפשר לעזור
+// ─── Customer recognition ───────────────────────────────────────────────────────
 
-━━━━━━━━━━━━━━━━
-📋 קביעת תור — מה צריך לאסוף
-━━━━━━━━━━━━━━━━
-ספר + שירות + תאריך + שעה + שם הלקוח
-- שאל רק מה שחסר, לא מה שכבר ידוע מההיסטוריה
-- לפני קביעה — אשר: "[ספר], [שירות], [יום ושעה] — נכון?"
-- המר תאריכים בעצמך לפורמט YYYY-MM-DD:
-  "מחר" → מחר, "יום ראשון" → יום ראשון הקרוב, "15 למאי" → 2026-05-15 וכו'
-- אל תבקש מהלקוח לכתוב תאריך בפורמט מסוים — הבן מה שהוא כותב${faqText}`;
+/** Builds a short "who am I talking to" note from the customer's record + recent
+ *  visits, so the agent recognizes a returning customer by phone — knows their
+ *  name without asking, and can reference past visits. Returns "" for new numbers. */
+async function loadCustomerContext(businessId: string, phone: string): Promise<string> {
+  // Customer.phone may be stored as 0... or 972... — try both.
+  const localPhone = phone.replace(/^972/, "0");
+  const customer = await prisma.customer.findFirst({
+    where: { businessId, OR: [{ phone }, { phone: localPhone }] },
+    select: { id: true, name: true },
+  });
+  if (!customer) {
+    return "זו הפעם הראשונה שהמספר הזה כותב — לקוח חדש שעדיין לא רשום אצלנו. קבל אותו בחום, ובמהלך קביעת התור שאל אותו איך קוראים לו.";
+  }
+
+  const recent = await prisma.appointment.findMany({
+    where: { customerId: customer.id, businessId },
+    orderBy: { date: "desc" },
+    take: 3,
+    select: {
+      date: true,
+      status: true,
+      staff:   { select: { name: true } },
+      service: { select: { name: true } },
+    },
+  });
+
+  const parts = [
+    `מי שמתכתב איתך עכשיו הוא ${customer.name}, לקוח שכבר רשום אצלנו. פנה אליו בשמו ואל תשאל אותו איך קוראים לו.`,
+  ];
+
+  const past = recent.filter(a => !a.status.startsWith("cancelled"));
+  if (past.length) {
+    const visits = past
+      .map(a => {
+        const d = new Date(a.date).toLocaleDateString("he-IL", { day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+        return `${a.service.name} אצל ${a.staff.name} ב-${d}`;
+      })
+      .join(", ");
+    parts.push(`ביקורים אחרונים שלו: ${visits}. אם זה רלוונטי אפשר להציע את אותו ספר או שירות, אבל אל תניח — תמיד תוודא איתו.`);
+  }
+
+  return parts.join(" ");
 }
 
 // ─── Main agent function ────────────────────────────────────────────────────────
@@ -482,23 +538,41 @@ export async function runCustomerAgent(opts: {
     });
   }
 
-  // ── Load conversation history ─────────────────────────────────────────────────
+  // ── Load recent dialogue ───────────────────────────────────────────────────────
+  // Load the MOST RECENT user/assistant turns (not the oldest!) — tool rows are
+  // internal and would otherwise crowd out real turns. Reverse to chronological.
   const history = await prisma.conversationMessage.findMany({
-    where: { conversationId: conversation.id },
-    orderBy: { createdAt: "asc" },
+    where: { conversationId: conversation.id, role: { in: ["user", "assistant"] } },
+    orderBy: { createdAt: "desc" },
     take: MAX_HISTORY,
+    select: { role: true, content: true },
   });
+  history.reverse();
 
-  // Build Anthropic messages from history (skip the message we just saved — it's the last one)
+  // Build Anthropic messages: merge consecutive same-role turns and make sure the
+  // list starts with a user message (the API requires alternating roles).
   const messages: Anthropic.MessageParam[] = [];
   for (const msg of history) {
-    if (msg.role === "user") {
-      messages.push({ role: "user", content: msg.content });
-    } else if (msg.role === "assistant") {
-      messages.push({ role: "assistant", content: msg.content });
+    const role: "user" | "assistant" = msg.role === "user" ? "user" : "assistant";
+    const last = messages[messages.length - 1];
+    if (last && last.role === role && typeof last.content === "string") {
+      last.content += "\n" + msg.content;
+    } else {
+      messages.push({ role, content: msg.content });
     }
-    // tool messages are embedded in assistant content via tool_result blocks
   }
+  while (messages.length && messages[0].role !== "user") messages.shift();
+
+  // Recent tool activity → lets the router detect a booking already in progress.
+  const recentToolRows = await prisma.conversationMessage.findMany({
+    where: { conversationId: conversation.id, role: "tool" },
+    orderBy: { createdAt: "desc" },
+    take: 4,
+    select: { toolName: true },
+  });
+
+  // Recognize the customer by phone (name + recent visits, or "new customer").
+  const customerContext = await loadCustomerContext(businessId, phone);
 
   const systemPrompt = buildSystemPrompt({
     agentName:         agentConfig?.agentName ?? "הסוכן",
@@ -506,20 +580,24 @@ export async function runCustomerAgent(opts: {
     customSystemPrompt: agentConfig?.systemPrompt,
     faqs:              agentConfig?.faqs ?? [],
     today:             new Date().toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Jerusalem" }),
+    customerContext,
   });
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
   let assistantText = "";
+  let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName));
   const MAX_ITERATIONS = 5;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await anthropic.messages.create({
-      model:      MODEL,
+      model,
       max_tokens: 1024,
       system:     systemPrompt,
       tools:      AGENT_TOOLS,
       messages,
     });
+
+    console.log(`[agent] model=${model} in=${response.usage.input_tokens} out=${response.usage.output_tokens}`);
 
     // Append assistant response to messages
     messages.push({ role: "assistant", content: response.content });
@@ -537,6 +615,7 @@ export async function runCustomerAgent(opts: {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
+        if (SMART_TOOLS.has(block.name)) model = MODEL_SMART; // escalate next iteration
         const result = await execTool(
           block.name,
           block.input as Record<string, string>,

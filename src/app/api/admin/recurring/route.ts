@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { timeToMinutes } from "@/lib/utils";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 // ── GET — list recurring rules (optionally for a customer) ────────────────────
 export async function GET(req: NextRequest) {
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     body.staffId = session.staffId;
   }
 
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
 
   if (!body.customerId || !body.staffId || !body.serviceId ||

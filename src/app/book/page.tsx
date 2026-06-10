@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 
 type QuickSlot = {
   staffId: string;
@@ -51,6 +52,7 @@ function BackArrow({ href }: { href: string }) {
 }
 
 export default function ChooseBarberPage() {
+  const slug = useSlug();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   // Nearest available slot per barber (covers ALL barbers, not just the quick pool)
@@ -63,8 +65,8 @@ export default function ChooseBarberPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/staff").then(r => r.json()),
-      fetch("/api/quick-slots").then(r => r.json()),
+      fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()),
+      fetch(apiWithSlug("/api/quick-slots", slug)).then(r => r.json()),
     ])
       .then(([staffData, slots]: [Staff[], QuickSlot[]]) => {
         setStaff(staffData);
@@ -75,7 +77,7 @@ export default function ChooseBarberPage() {
         // so even barbers outside the quick pool show their next opening.
         if (Array.isArray(staffData)) {
           staffData.forEach((member) => {
-            fetch(`/api/quick-slots?staffId=${member.id}`)
+            fetch(apiWithSlug(`/api/quick-slots?staffId=${member.id}`, slug))
               .then(r => r.ok ? r.json() : [])
               .then((arr: QuickSlot[]) => {
                 if (Array.isArray(arr) && arr.length > 0) {
@@ -96,7 +98,7 @@ export default function ChooseBarberPage() {
 
     // Returning referrer — thank them + show their progress toward the gift.
     // Identity comes from the httpOnly bk_session cookie (sent automatically).
-    fetch("/api/customers/referral-status")
+    fetch(apiWithSlug("/api/customers/referral-status", slug))
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data?.ok || data.referralCount <= 0) return;
@@ -132,7 +134,7 @@ export default function ChooseBarberPage() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href="/" />
+          <BackArrow href={publicHref(slug, "/")} />
           <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
             בחירת ספר
           </h1>
@@ -157,7 +159,7 @@ export default function ChooseBarberPage() {
               </div>
             </div>
             {/* My Appointments — returning customer shortcut */}
-            <Link href="/book/my-appointments"
+            <Link href={publicHref(slug, "/book/my-appointments")}
               className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-full active:scale-95 transition-transform"
               style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
@@ -246,7 +248,7 @@ export default function ChooseBarberPage() {
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
-                href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
                 className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
                 style={{
                   background: "var(--card)",
@@ -295,7 +297,7 @@ export default function ChooseBarberPage() {
                 style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--bg-alt)", boxShadow: "0 3px 12px rgba(0,0,0,0.1)" }}>
 
                 {/* Photo */}
-                <Link href={`/book/service?staffId=${member.id}`} className="absolute inset-0">
+                <Link href={publicHref(slug, `/book/service?staffId=${member.id}`)} className="absolute inset-0">
                   {member.avatarUrl ? (
                     <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
                   ) : (
@@ -317,7 +319,7 @@ export default function ChooseBarberPage() {
                 )}
 
                 {/* Name */}
-                <Link href={`/book/service?staffId=${member.id}`}
+                <Link href={publicHref(slug, `/book/service?staffId=${member.id}`)}
                   className="absolute inset-x-0 z-10 px-2"
                   style={{ bottom: slot ? 38 : 10 }}>
                   <p className="font-bold text-[11px] text-white leading-tight truncate">{member.name}</p>
@@ -326,7 +328,7 @@ export default function ChooseBarberPage() {
                 {/* Slot / CTA */}
                 {slot ? (
                   <Link
-                    href={`/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`}
+                    href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
                     className="absolute bottom-1.5 inset-x-2 z-10 flex flex-col items-center justify-center py-0.5 active:opacity-80 transition-opacity"
                     style={{ background: "var(--brand)", borderRadius: 10 }}>
                     <span className="text-[7px] font-medium text-white/75 leading-none mb-0.5">
@@ -336,7 +338,7 @@ export default function ChooseBarberPage() {
                   </Link>
                 ) : (
                   <Link
-                    href={`/book/service?staffId=${member.id}`}
+                    href={publicHref(slug, `/book/service?staffId=${member.id}`)}
                     className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-center py-1.5 active:opacity-80"
                     style={{ background: "rgba(255,255,255,0.14)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 14 }}>
                     <span className="text-[10px] font-semibold text-white">קבע תור</span>

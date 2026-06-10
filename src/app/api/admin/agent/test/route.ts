@@ -45,5 +45,46 @@ export async function GET(req: NextRequest) {
     results.anthropic_api = `ERROR: ${e instanceof Error ? e.message : e}`;
   }
 
+  // 4. Check GreenAPI: is the WhatsApp instance connected, and is the webhook
+  //    pointed at us with incoming messages enabled? This is the #1 cause of
+  //    "agent enabled but not responding" — incoming messages never reach us.
+  try {
+    const biz = await prisma.business.findFirst({
+      select: { greenApiInstanceId: true, greenApiToken: true },
+    });
+    const id = biz?.greenApiInstanceId;
+    const token = biz?.greenApiToken;
+    if (!id || !token) {
+      results.greenapi = "NOT CONFIGURED (missing Instance ID / Token in settings)";
+    } else {
+      const base = `https://api.green-api.com/waInstance${id}`;
+      const expectedWebhook = `${req.nextUrl.origin}/api/webhook/whatsapp`;
+
+      // 4a. Instance state — must be "authorized" (WhatsApp linked)
+      try {
+        const state = await fetch(`${base}/getStateInstance/${token}`).then(r => r.json());
+        results.greenapi_state = state?.stateInstance === "authorized"
+          ? "ok (authorized)"
+          : `NOT AUTHORIZED: stateInstance="${state?.stateInstance}" — scan the QR in GreenAPI`;
+      } catch (e) {
+        results.greenapi_state = `ERROR: ${e instanceof Error ? e.message : e}`;
+      }
+
+      // 4b. Webhook settings — webhookUrl must point at us + incomingWebhook "yes"
+      try {
+        const s = await fetch(`${base}/getSettings/${token}`).then(r => r.json());
+        const urlOk = s?.webhookUrl === expectedWebhook;
+        const incomingOk = s?.incomingWebhook === "yes";
+        results.greenapi_webhook = urlOk && incomingOk
+          ? "ok (webhook points here + incoming enabled)"
+          : `MISCONFIGURED: webhookUrl="${s?.webhookUrl || "(empty)"}" incomingWebhook="${s?.incomingWebhook}" — should be "${expectedWebhook}" + "yes"`;
+      } catch (e) {
+        results.greenapi_webhook = `ERROR: ${e instanceof Error ? e.message : e}`;
+      }
+    }
+  } catch (e) {
+    results.greenapi = `ERROR: ${e instanceof Error ? e.message : e}`;
+  }
+
   return NextResponse.json(results);
 }

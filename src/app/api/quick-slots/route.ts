@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { resolveBusinessId } from "@/lib/tenant";
 import {
   generateSlots,
   timeToMinutes,
@@ -14,16 +15,9 @@ export const revalidate = 0;
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffIdFilter = searchParams.get("staffId"); // optional: for specific barber
-  const businessId = searchParams.get("businessId");
 
-  // Resolve businessId (backward-compat: no param → findFirst)
-  let resolvedBusinessId: string | undefined;
-  if (businessId) {
-    resolvedBusinessId = businessId;
-  } else {
-    const b = await prisma.business.findFirst({ select: { id: true } });
-    resolvedBusinessId = b?.id;
-  }
+  // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
+  const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
 
   // Get business-wide min lead time for bookings
   const biz = resolvedBusinessId

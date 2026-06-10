@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
+import { resolveBusiness } from "@/lib/tenant";
 
 const OTP_TTL_MINUTES = 10;
 
@@ -18,9 +19,11 @@ export async function POST(req: NextRequest) {
   // Normalize phone — strip non-digits, handle leading 0 → Israeli 972 prefix
   const normalized = phone.replace(/\D/g, "").replace(/^0/, "972");
 
+  // Prefer explicit businessId from the body; otherwise resolve from the
+  // request URL (?slug= / ?businessId=, falling back to findFirst for DOMINANT).
   const business = reqBusinessId
     ? await prisma.business.findUnique({ where: { id: reqBusinessId } })
-    : await prisma.business.findFirst();
+    : await resolveBusiness(req);
   if (!business) return NextResponse.json({ error: "business not found" }, { status: 400 });
 
   // Rate-limit: no more than 3 OTPs per phone per 10 minutes

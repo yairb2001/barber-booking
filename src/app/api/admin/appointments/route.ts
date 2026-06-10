@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getEffectivePermissions } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = getRequestSession(req);
   const body = await req.json();
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   // If barber → can only create appointments for themselves

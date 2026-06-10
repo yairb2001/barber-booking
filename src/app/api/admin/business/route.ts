@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getSessionBusiness, requireOwner } from "@/lib/session";
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json(null);
   return NextResponse.json({
     ...business,
@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
   const body = await req.json();
-  const business = await prisma.business.findFirst();
+  const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
   const updated = await prisma.business.update({
