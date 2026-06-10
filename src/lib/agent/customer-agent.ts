@@ -482,14 +482,31 @@ function buildSystemPrompt(params: {
  *  visits, so the agent recognizes a returning customer by phone — knows their
  *  name without asking, and can reference past visits. Returns "" for new numbers. */
 async function loadCustomerContext(businessId: string, phone: string): Promise<string> {
-  // Customer.phone may be stored as 0... or 972... — try both.
+  // Customer.phone may be stored as 0... or 972... — try both. The same number
+  // can sadly exist under BOTH formats as two separate records (with different
+  // names), so fetch every match and pick deterministically: the one with the
+  // most appointments (the real, active customer), then the most recent.
   const localPhone = phone.replace(/^972/, "0");
-  const customer = await prisma.customer.findFirst({
+  const candidates = await prisma.customer.findMany({
     where: { businessId, OR: [{ phone }, { phone: localPhone }] },
-    select: { id: true, name: true },
+    select: { id: true, name: true, createdAt: true },
   });
-  if (!customer) {
+  if (!candidates.length) {
     return "זו הפעם הראשונה שהמספר הזה כותב — לקוח חדש שעדיין לא רשום אצלנו. קבל אותו בחום, ובמהלך קביעת התור שאל אותו איך קוראים לו.";
+  }
+
+  let customer = candidates[0];
+  if (candidates.length > 1) {
+    const counts = await prisma.appointment.groupBy({
+      by: ["customerId"],
+      where: { businessId, customerId: { in: candidates.map(c => c.id) } },
+      _count: { _all: true },
+    });
+    const load = new Map(counts.map(c => [c.customerId, c._count._all]));
+    customer = [...candidates].sort((a, b) =>
+      (load.get(b.id) ?? 0) - (load.get(a.id) ?? 0) ||
+      b.createdAt.getTime() - a.createdAt.getTime()
+    )[0];
   }
 
   const recent = await prisma.appointment.findMany({
