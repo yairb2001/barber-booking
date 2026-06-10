@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
+import { tierHas } from "@/lib/tier";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -266,6 +267,10 @@ export default function AdminSettingsPage() {
   const [staffLoading, setStaffLoading] = useState(true);
   const [form, setForm] = useState<Business>(emptyBusiness);
   const [bizLoading, setBizLoading] = useState(true);
+  // Tier + WhatsApp provisioning status (from /api/admin/me) — drives the
+  // premium gating and the "Connect WhatsApp" request CTA in the WhatsApp tab.
+  const [tier, setTier] = useState<string>("basic");
+  const [whatsappStatus, setWhatsappStatus] = useState<string>("not_requested");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -513,6 +518,10 @@ export default function AdminSettingsPage() {
     });
     fetch("/api/admin/staff").then(r => r.json()).then(data => { setStaffList(data); setStaffLoading(false); });
     fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralSources);
+    fetch("/api/admin/me").then(r => r.json()).then(me => {
+      if (me?.tier) setTier(me.tier);
+      if (me?.whatsappStatus) setWhatsappStatus(me.whatsappStatus);
+    }).catch(() => {});
   }, []);
 
   async function saveReferralSources() {
@@ -1255,7 +1264,7 @@ export default function AdminSettingsPage() {
       {/* ── WhatsApp tab ── */}
       {tab === "whatsapp" && (
         bizLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
-          <WhatsAppTab form={form} setField={setField} onSaved={saveBiz} saving={saving} saved={saved} />
+          <WhatsAppTab form={form} setField={setField} onSaved={saveBiz} saving={saving} saved={saved} tier={tier} whatsappStatus={whatsappStatus} onWhatsappStatusChange={setWhatsappStatus} />
         )
       )}
 
@@ -1464,14 +1473,31 @@ function ReengageEditor({
 
 // ── WhatsApp Tab ───────────────────────────────────────────────────────────────
 function WhatsAppTab({
-  form, setField, onSaved, saving, saved,
+  form, setField, onSaved, saving, saved, tier, whatsappStatus, onWhatsappStatusChange,
 }: {
   form: Business;
   setField: <K extends keyof Business>(key: K, value: Business[K]) => void;
   onSaved: () => void;
   saving: boolean;
   saved: boolean;
+  tier: string;
+  whatsappStatus: string;
+  onWhatsappStatusChange: (status: string) => void;
 }) {
+  // Owning a dedicated WhatsApp number (GreenAPI per-business) is a premium
+  // feature provisioned manually by the platform admin. Lower tiers see a
+  // request CTA instead of the raw credential fields.
+  const canOwnWhatsapp = tierHas(tier, "ownWhatsapp");
+  const [requesting, setRequesting] = useState(false);
+  async function requestWhatsapp() {
+    setRequesting(true);
+    try {
+      const res = await fetch("/api/admin/request-whatsapp", { method: "POST" });
+      const data = await res.json();
+      if (data?.whatsappStatus) onWhatsappStatusChange(data.whatsappStatus);
+    } catch { /* ignore — best effort */ }
+    setRequesting(false);
+  }
   const [testPhone, setTestPhone] = useState(form.phone || "");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; error?: string } | null>(null);
@@ -1497,7 +1523,32 @@ function WhatsAppTab({
 
   return (
     <div className="space-y-5 max-w-xl">
-      {/* Credentials */}
+      {/* Connect-WhatsApp request CTA (shown until the number is connected) */}
+      {whatsappStatus !== "connected" && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">📲</span>
+            <h2 className="font-semibold text-neutral-800">חיבור WhatsApp למספר העסק</h2>
+          </div>
+          <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
+            שליחת תזכורות ואישורים אוטומטיים מהמספר של העסק היא חלק ממסלול הפרימיום.
+            לאחר אישור הבקשה נחבר עבורך את המספר — עד אז המערכת ממשיכה לקבל תורים כרגיל.
+          </p>
+          {whatsappStatus === "requested" ? (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 font-medium">
+              ⏳ בקשתך נשלחה — נחבר את ה-WhatsApp בקרוב.
+            </div>
+          ) : (
+            <button onClick={requestWhatsapp} disabled={requesting}
+              className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition disabled:opacity-50">
+              {requesting ? "שולח..." : "חבר/י WhatsApp"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Credentials — premium only (own-number GreenAPI, provisioned manually) */}
+      {canOwnWhatsapp && (
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
@@ -1538,6 +1589,7 @@ function WhatsAppTab({
           </div>
         </div>
       </div>
+      )}
 
       {/* Customer messages — all editing + on/off now lives in the unified hub */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">

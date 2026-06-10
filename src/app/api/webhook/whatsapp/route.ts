@@ -24,6 +24,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
 import { pushToOwner } from "@/lib/native/push";
+import { tierHas } from "@/lib/tier";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -110,12 +111,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const instanceId = body.instanceData?.idInstance;
   const instanceIdStr = instanceId != null ? String(instanceId) : null;
   let biz = instanceIdStr
-    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true } })
+    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true } })
     : null;
 
   // Fallback: use the first business
   if (!biz) {
-    biz = await prisma.business.findFirst({ select: { id: true } });
+    biz = await prisma.business.findFirst({ select: { id: true, tier: true } });
   }
   if (!biz) {
     console.error("[webhook] no business found");
@@ -159,14 +160,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     select: { isEnabled: true },
   });
 
-  if (!agentConfig?.isEnabled) {
-    // Agent is off → a human must reply. Ping the owner's device.
+  // The AI agent is a PREMIUM-tier feature. Lower tiers always route to a human,
+  // even if AgentConfig.isEnabled is left on (e.g. after a downgrade).
+  const agentAllowedByTier = tierHas(biz.tier, "aiAgent");
+
+  if (!agentConfig?.isEnabled || !agentAllowedByTier) {
+    // Agent is off (or not included in the tier) → a human must reply. Ping the owner.
     pushToOwner(biz.id, {
       title: `הודעה חדשה מ${senderName || phone}`,
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
-    return NextResponse.json({ ok: true, skipped: "agent_disabled", saved: true });
+    return NextResponse.json({
+      ok: true,
+      skipped: agentAllowedByTier ? "agent_disabled" : "agent_not_in_tier",
+      saved: true,
+    });
   }
 
   // 24h escalation expiry — lazy check; clear flag if expired
