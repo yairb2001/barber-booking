@@ -263,7 +263,7 @@ async function execTool(
           prisma.service.findUnique({ where: { id: serviceId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
           prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } }),
         ]);
-        if (!staff || !service || !biz) return "שגיאה: ספר, שירות, או עסק לא נמצאו.";
+        if (!staff || !service || !biz) return "שגיאה: לא נמצא הספר או השירות לפי המזהה. קרא שוב ל-get_staff_list ו-get_services כדי לקבל מזהים מעודכנים, ואז נסה לקבוע שוב — אל תעביר לאדם בגלל זה.";
 
         // Upsert customer — match either 0... or 972... so we don't duplicate.
         const localPhone = phone.replace(/^972/, "0");
@@ -432,49 +432,13 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 כדי להזיז או לשנות תור: קודם מצא את התור הקיים עם check_appointment, ספר ללקוח מה קבוע לו, ואחרי שהוא מאשר — בטל את הישן עם cancel_appointment וקבע את החדש עם book_appointment. אל תבקש ממנו פרטים שכבר יש לך מהתור הקיים.
 
-רשימת הספרים והשירותים (כולל המזהים) כבר מופיעה לך למעלה — השתמש בה ישירות ואל תקרא ל-get_staff_list או get_services. יש לך כלים: get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
-}
-
-/**
- * Static business catalog (services + barbers) rendered once and inlined into
- * the cached system prompt, so the agent doesn't burn tool round-trips fetching
- * data that never changes mid-conversation. Same format as the get_services /
- * get_staff_list tools so the model can use the [id: ...] values directly.
- */
-async function loadBusinessCatalog(businessId: string): Promise<string> {
-  const [services, staff] = await Promise.all([
-    prisma.service.findMany({
-      where: { businessId, isVisible: true },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true, price: true, durationMinutes: true, note: true },
-    }),
-    prisma.staff.findMany({
-      where: { businessId, isAvailable: true },
-      orderBy: { sortOrder: "asc" },
-      select: { id: true, name: true, nickname: true },
-    }),
-  ]);
-
-  const servicesText = services.length
-    ? services
-        .map(s => `• ${s.name} — ${s.price}₪, ${s.durationMinutes} דקות${s.note ? ` (${s.note})` : ""} [id: ${s.id}]`)
-        .join("\n")
-    : "אין שירותים פעילים.";
-  const staffText = staff.length
-    ? staff.map(s => `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]`).join("\n")
-    : "אין ספרים פעילים כרגע.";
-
-  return (
-    "הספרים והשירותים הזמינים — השתמש במזהים (id) האלה ישירות, ואל תקרא ל-get_staff_list או ל-get_services, המידע כבר כאן:\n\n" +
-    `שירותים:\n${servicesText}\n\nספרים:\n${staffText}`
-  );
+יש לך כלים: get_staff_list, get_services, get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
 }
 
 function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
-  catalog: string;
   faqs: Array<{ question: string; answer: string }>;
   now: string;
   customerContext?: string;
@@ -486,7 +450,7 @@ function buildSystemPrompt(params: {
   // Stable, business-level chunk (personality + FAQs). Identical across every
   // iteration of the tool loop AND across turns/customers, so we cache it — the
   // 2nd..Nth call reads it at ~10% of the token cost (5-min cache TTL).
-  let stable = body + "\n\n" + params.catalog;
+  let stable = body;
   if (params.faqs.length) {
     stable +=
       "\n\nמידע שיעזור לך לענות:\n" +
@@ -630,18 +594,12 @@ export async function runCustomerAgent(opts: {
   });
 
   // Recognize the customer by phone (name + recent visits, or "new customer").
-  // Catalog is business-static → loads into the cached prefix and saves the
-  // agent two tool round-trips per booking.
-  const [customerContext, catalog] = await Promise.all([
-    loadCustomerContext(businessId, phone),
-    loadBusinessCatalog(businessId),
-  ]);
+  const customerContext = await loadCustomerContext(businessId, phone);
 
   const systemPrompt = buildSystemPrompt({
     agentName:         agentConfig?.agentName ?? "הסוכן",
     businessName:      biz.name,
     customSystemPrompt: agentConfig?.systemPrompt,
-    catalog,
     faqs:              agentConfig?.faqs ?? [],
     now:               new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }),
     customerContext,
