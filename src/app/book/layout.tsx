@@ -31,7 +31,9 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
-      font-family: ${theme.fontBody}, system-ui, -apple-system, sans-serif;
+      /* Use the same font as the customer home page on every booking screen
+         so the whole flow feels consistent (home is hardcoded to Heebo). */
+      font-family: var(--font-heebo), system-ui, -apple-system, sans-serif;
       background: ${theme.bg};
       color: ${theme.textPri};
       -webkit-font-smoothing: antialiased;

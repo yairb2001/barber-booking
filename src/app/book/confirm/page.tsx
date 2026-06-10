@@ -575,6 +575,25 @@ function ConfirmPageContent() {
             style={{ background: "var(--brand)" }}>
             חזרה לדף הבית
           </Link>
+
+          {/* Returning referrer — compact thank-you, tucked at the very bottom */}
+          {referralStatus && (() => {
+            const first = referralStatus.name.split(" ")[0];
+            const reached = referralStatus.referralCount >= referralStatus.goal;
+            const remaining = Math.max(0, referralStatus.goal - referralStatus.referralCount);
+            return (
+              <div className="rounded-xl border px-4 py-2.5 text-center" style={{ borderColor: "var(--brand)" }}>
+                <p className="text-[12px] font-bold" style={{ color: "var(--brand)" }}>
+                  🙌 תודה {first}! כבר הבאת {referralStatus.referralCount} {referralStatus.referralCount === 1 ? "חבר" : "חברים"}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {reached
+                    ? `מגיעה לך ${referralStatus.giftLabel}! 🎁`
+                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${referralStatus.giftLabel}`}
+                </p>
+              </div>
+            );
+          })()}
         </div>
       </div>
     );
@@ -613,9 +632,6 @@ function ConfirmPageContent() {
 
       <div className="px-4 pt-5 space-y-3">
 
-        {/* Returning referrer — thank-you + progress meter */}
-        {referralStatus && <ReferralThankYou status={referralStatus} />}
-
         {/* Summary card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-5 pt-4 pb-2">
@@ -630,65 +646,6 @@ function ConfirmPageContent() {
           )}
           <SummaryRow label="מחיר" value={`₪${price}`} large />
         </div>
-
-        {/* Optional product upsell — subtle, only when the shop has products */}
-        {products.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-            <div className="flex items-center gap-2 mb-0.5">
-              <span className="text-lg">🛍️</span>
-              <p className="text-[13px] font-bold text-slate-900">להוסיף מוצר?</p>
-              <span className="text-[10px] text-slate-300 font-medium">(אופציונלי)</span>
-            </div>
-            <p className="text-[11px] text-slate-400 mb-4">תשלום במקום, בזמן התור</p>
-
-            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
-              {products.map(p => {
-                const qty = productQty[p.id] || 0;
-                const active = qty > 0;
-                return (
-                  <div key={p.id}
-                    className="flex-shrink-0 w-[120px] rounded-2xl border bg-white overflow-hidden snap-start transition-all"
-                    style={{ borderColor: active ? "var(--brand)" : "#E2E8F0", boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}>
-                    <div className="h-[88px] bg-slate-50 flex items-center justify-center overflow-hidden">
-                      {p.imageUrl
-                        ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                        : <span className="text-3xl">🧴</span>}
-                    </div>
-                    <div className="p-2.5">
-                      <p className="text-[12px] font-semibold text-slate-800 leading-tight line-clamp-2 min-h-[2.2em]">{p.name}</p>
-                      <p className="text-[13px] font-bold mt-1" style={{ color: "var(--brand)" }}>₪{p.price}</p>
-                      {active ? (
-                        <div className="flex items-center justify-between mt-2 rounded-full border border-slate-200 px-1 py-0.5">
-                          <button type="button" onClick={() => changeQty(p.id, -1)}
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-slate-500 active:bg-slate-100 text-lg leading-none">−</button>
-                          <span className="text-[13px] font-bold text-slate-800">{qty}</span>
-                          <button type="button" onClick={() => changeQty(p.id, +1)}
-                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-lg leading-none"
-                            style={{ background: "var(--brand)" }}>+</button>
-                        </div>
-                      ) : (
-                        <button type="button" onClick={() => changeQty(p.id, +1)}
-                          className="w-full mt-2 text-[11px] font-bold py-1.5 rounded-full border transition-colors"
-                          style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>
-                          + הוסף
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {selectedProductCount > 0 && (
-              <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
-                <span className="text-[12px] text-slate-500">
-                  {selectedProductCount} {selectedProductCount === 1 ? "מוצר" : "מוצרים"} נבחרו
-                </span>
-                <span className="text-[14px] font-bold" style={{ color: "var(--brand)" }}>₪{productsTotal}</span>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Customer details */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
@@ -875,6 +832,64 @@ function ConfirmPageContent() {
             </div>
           )}
         </div>
+        )}
+
+        {/* Optional product upsell — compact, only when the shop has products */}
+        {products.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <span className="text-base">🛍️</span>
+              <p className="text-[12px] font-bold text-slate-900">להוסיף מוצר?</p>
+              <span className="text-[10px] text-slate-300 font-medium">תשלום במקום · אופציונלי</span>
+            </div>
+
+            <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+              {products.map(p => {
+                const qty = productQty[p.id] || 0;
+                const active = qty > 0;
+                return (
+                  <div key={p.id}
+                    className="flex-shrink-0 w-[96px] rounded-xl border bg-white overflow-hidden snap-start transition-all"
+                    style={{ borderColor: active ? "var(--brand)" : "#E2E8F0", boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}>
+                    <div className="h-[60px] bg-slate-50 flex items-center justify-center overflow-hidden">
+                      {p.imageUrl
+                        ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                        : <span className="text-2xl">🧴</span>}
+                    </div>
+                    <div className="p-2">
+                      <p className="text-[11px] font-semibold text-slate-800 leading-tight line-clamp-1">{p.name}</p>
+                      <p className="text-[12px] font-bold mt-0.5" style={{ color: "var(--brand)" }}>₪{p.price}</p>
+                      {active ? (
+                        <div className="flex items-center justify-between mt-1.5 rounded-full border border-slate-200 px-0.5 py-0.5">
+                          <button type="button" onClick={() => changeQty(p.id, -1)}
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-slate-500 active:bg-slate-100 text-base leading-none">−</button>
+                          <span className="text-[12px] font-bold text-slate-800">{qty}</span>
+                          <button type="button" onClick={() => changeQty(p.id, +1)}
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-white text-base leading-none"
+                            style={{ background: "var(--brand)" }}>+</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => changeQty(p.id, +1)}
+                          className="w-full mt-1.5 text-[10px] font-bold py-1 rounded-full border transition-colors"
+                          style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>
+                          + הוסף
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {selectedProductCount > 0 && (
+              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100">
+                <span className="text-[11px] text-slate-500">
+                  {selectedProductCount} {selectedProductCount === 1 ? "מוצר" : "מוצרים"} נבחרו
+                </span>
+                <span className="text-[13px] font-bold" style={{ color: "var(--brand)" }}>₪{productsTotal}</span>
+              </div>
+            )}
+          </div>
         )}
 
         {error && (
