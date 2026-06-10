@@ -428,17 +428,53 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 חשוב מאוד: אתה כבר יודע את מספר הטלפון של מי שמתכתב איתך, והכלים משתמשים בו אוטומטית. לעולם אל תבקש מהלקוח מספר טלפון — לא כדי לקבוע, לא כדי לאתר תור ולא כדי לבטל. אם אתה צריך לראות אם יש לו תור קיים, פשוט תשתמש ב-check_appointment והמערכת תמצא לפי המספר שלו.
 
-אם הלקוח לא ביקש ספר מסוים, בדוק זמינות אצל כל הספרים והצע את כל השעות הפנויות — אל תצמצם לספר אחד בלי שביקש. אסור לך להגיד שאין שעה מסוימת לפני שבדקת אצל כל הספרים; אם אצל ספר אחד אין אבל אצל אחר יש, תגיד שיש ואצל מי.
+לפני שאתה בכלל מחפש שעות, תוודא שהבנת עד הסוף מה הלקוח רוצה — איזה יום, ובוקר/צהריים/ערב או שעה מסוימת, ואם ביקש ספר מסוים. רק כשזה ברור, קרא פעם אחת ל-get_available_slots — אל תחפש שוב ושוב באמצע. אם הלקוח לא ביקש ספר מסוים, בדוק אצל כל הספרים; אסור להגיד שאין שעה לפני שבדקת אצל כולם, ואם אצל אחד אין אבל אצל אחר יש — תגיד שיש ואצל מי. הצג ללקוח רק את השעות שמתאימות למה שביקש (למשל רק שעות ערב אם ביקש ערב), לא רשימה ענקית. אם הוא מבקש "מה עוד יש" או אפשרויות נוספות — תן לו עוד מתוך אותן שעות שכבר קיבלת, בלי לחפש מחדש.
 
 כדי להזיז או לשנות תור: קודם מצא את התור הקיים עם check_appointment, ספר ללקוח מה קבוע לו, ואחרי שהוא מאשר — בטל את הישן עם cancel_appointment וקבע את החדש עם book_appointment. אל תבקש ממנו פרטים שכבר יש לך מהתור הקיים.
 
-יש לך כלים: get_staff_list, get_services, get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+רשימת הספרים והשירותים (כולל המזהים) כבר מופיעה לך למעלה — השתמש בה ישירות ואל תקרא ל-get_staff_list או get_services. יש לך כלים: get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+}
+
+/**
+ * Static business catalog (services + barbers) rendered once and inlined into
+ * the cached system prompt, so the agent doesn't burn tool round-trips fetching
+ * data that never changes mid-conversation. Same format as the get_services /
+ * get_staff_list tools so the model can use the [id: ...] values directly.
+ */
+async function loadBusinessCatalog(businessId: string): Promise<string> {
+  const [services, staff] = await Promise.all([
+    prisma.service.findMany({
+      where: { businessId, isVisible: true },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true, price: true, durationMinutes: true, note: true },
+    }),
+    prisma.staff.findMany({
+      where: { businessId, isAvailable: true },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, name: true, nickname: true },
+    }),
+  ]);
+
+  const servicesText = services.length
+    ? services
+        .map(s => `• ${s.name} — ${s.price}₪, ${s.durationMinutes} דקות${s.note ? ` (${s.note})` : ""} [id: ${s.id}]`)
+        .join("\n")
+    : "אין שירותים פעילים.";
+  const staffText = staff.length
+    ? staff.map(s => `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]`).join("\n")
+    : "אין ספרים פעילים כרגע.";
+
+  return (
+    "הספרים והשירותים הזמינים — השתמש במזהים (id) האלה ישירות, ואל תקרא ל-get_staff_list או ל-get_services, המידע כבר כאן:\n\n" +
+    `שירותים:\n${servicesText}\n\nספרים:\n${staffText}`
+  );
 }
 
 function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
+  catalog: string;
   faqs: Array<{ question: string; answer: string }>;
   now: string;
   customerContext?: string;
@@ -450,7 +486,7 @@ function buildSystemPrompt(params: {
   // Stable, business-level chunk (personality + FAQs). Identical across every
   // iteration of the tool loop AND across turns/customers, so we cache it — the
   // 2nd..Nth call reads it at ~10% of the token cost (5-min cache TTL).
-  let stable = body;
+  let stable = body + "\n\n" + params.catalog;
   if (params.faqs.length) {
     stable +=
       "\n\nמידע שיעזור לך לענות:\n" +
@@ -594,12 +630,18 @@ export async function runCustomerAgent(opts: {
   });
 
   // Recognize the customer by phone (name + recent visits, or "new customer").
-  const customerContext = await loadCustomerContext(businessId, phone);
+  // Catalog is business-static → loads into the cached prefix and saves the
+  // agent two tool round-trips per booking.
+  const [customerContext, catalog] = await Promise.all([
+    loadCustomerContext(businessId, phone),
+    loadBusinessCatalog(businessId),
+  ]);
 
   const systemPrompt = buildSystemPrompt({
     agentName:         agentConfig?.agentName ?? "הסוכן",
     businessName:      biz.name,
     customSystemPrompt: agentConfig?.systemPrompt,
+    catalog,
     faqs:              agentConfig?.faqs ?? [],
     now:               new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }),
     customerContext,
