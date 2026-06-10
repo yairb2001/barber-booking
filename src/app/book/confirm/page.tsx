@@ -9,6 +9,9 @@ type ServiceInfo = {
   id: string; name: string; price: number; durationMinutes: number;
   showDuration: boolean; customPrice: number | null; customDuration: number | null;
 };
+type ProductInfo = {
+  id: string; name: string; description: string | null; price: number; imageUrl: string | null;
+};
 
 // ── Waitlist card ──────────────────────────────────────────────────────────────
 function WaitlistCard({ phone, name, staffId, serviceId, date }: {
@@ -253,6 +256,8 @@ function ConfirmPageContent() {
 
   const [staffInfo, setStaffInfo]     = useState<StaffInfo | null>(null);
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
+  const [products, setProducts]       = useState<ProductInfo[]>([]);
+  const [productQty, setProductQty]   = useState<Record<string, number>>({});
   const [phone, setPhone]             = useState("");
   const [name, setName]               = useState("");
   const [note, setNote]               = useState("");
@@ -382,6 +387,25 @@ function ConfirmPageContent() {
     }
   }, [staffId, serviceId]);
 
+  // Optional product upsell on the summary — only shows if the shop has products.
+  useEffect(() => {
+    fetch("/api/products")
+      .then(r => r.json())
+      .then((data: ProductInfo[]) => setProducts(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
+  const productsTotal = products.reduce((sum, p) => sum + p.price * (productQty[p.id] || 0), 0);
+  const selectedProductCount = products.reduce((c, p) => c + (productQty[p.id] || 0), 0);
+  function changeQty(id: string, delta: number) {
+    setProductQty(prev => {
+      const next = Math.max(0, (prev[id] || 0) + delta);
+      const copy = { ...prev };
+      if (next === 0) delete copy[id]; else copy[id] = next;
+      return copy;
+    });
+  }
+
   useEffect(() => {
     setOtpSent(false); setOtpCode(""); setOtpVerified(false); setOtpToken(""); setOtpError("");
   }, [phone]);
@@ -441,6 +465,15 @@ function ConfirmPageContent() {
     if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
     if (!otpVerified) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
     setSubmitting(true); setError("");
+    // Fold any selected products into the appointment note so the barber sees
+    // the customer wants to buy them at the visit (paid in-shop).
+    const productLines = products
+      .filter(p => (productQty[p.id] || 0) > 0)
+      .map(p => `${p.name} ×${productQty[p.id]} (₪${p.price * productQty[p.id]})`);
+    const productsNote = productLines.length
+      ? `🛍️ מוצרים להוספה: ${productLines.join(", ")} — סה"כ ₪${productsTotal}`
+      : "";
+    const combinedNote = [note.trim(), productsNote].filter(Boolean).join("\n");
     try {
       const res = await fetch("/api/appointments", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -450,7 +483,7 @@ function ConfirmPageContent() {
           referralSource: referralSource || undefined,
           referrerId:    (!!friendSource && referralSource === friendSource && referrerId)    ? referrerId    : undefined,
           referrerPhone: (!!friendSource && referralSource === friendSource && !referrerId && referrerPhone) ? referrerPhone : undefined,
-          note: note.trim() || undefined,
+          note: combinedNote || undefined,
           otpToken,
         }),
       });
@@ -597,6 +630,65 @@ function ConfirmPageContent() {
           )}
           <SummaryRow label="מחיר" value={`₪${price}`} large />
         </div>
+
+        {/* Optional product upsell — subtle, only when the shop has products */}
+        {products.length > 0 && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-lg">🛍️</span>
+              <p className="text-[13px] font-bold text-slate-900">להוסיף מוצר?</p>
+              <span className="text-[10px] text-slate-300 font-medium">(אופציונלי)</span>
+            </div>
+            <p className="text-[11px] text-slate-400 mb-4">תשלום במקום, בזמן התור</p>
+
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+              {products.map(p => {
+                const qty = productQty[p.id] || 0;
+                const active = qty > 0;
+                return (
+                  <div key={p.id}
+                    className="flex-shrink-0 w-[120px] rounded-2xl border bg-white overflow-hidden snap-start transition-all"
+                    style={{ borderColor: active ? "var(--brand)" : "#E2E8F0", boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}>
+                    <div className="h-[88px] bg-slate-50 flex items-center justify-center overflow-hidden">
+                      {p.imageUrl
+                        ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
+                        : <span className="text-3xl">🧴</span>}
+                    </div>
+                    <div className="p-2.5">
+                      <p className="text-[12px] font-semibold text-slate-800 leading-tight line-clamp-2 min-h-[2.2em]">{p.name}</p>
+                      <p className="text-[13px] font-bold mt-1" style={{ color: "var(--brand)" }}>₪{p.price}</p>
+                      {active ? (
+                        <div className="flex items-center justify-between mt-2 rounded-full border border-slate-200 px-1 py-0.5">
+                          <button type="button" onClick={() => changeQty(p.id, -1)}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-slate-500 active:bg-slate-100 text-lg leading-none">−</button>
+                          <span className="text-[13px] font-bold text-slate-800">{qty}</span>
+                          <button type="button" onClick={() => changeQty(p.id, +1)}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-white text-lg leading-none"
+                            style={{ background: "var(--brand)" }}>+</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => changeQty(p.id, +1)}
+                          className="w-full mt-2 text-[11px] font-bold py-1.5 rounded-full border transition-colors"
+                          style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>
+                          + הוסף
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {selectedProductCount > 0 && (
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-100">
+                <span className="text-[12px] text-slate-500">
+                  {selectedProductCount} {selectedProductCount === 1 ? "מוצר" : "מוצרים"} נבחרו
+                </span>
+                <span className="text-[14px] font-bold" style={{ color: "var(--brand)" }}>₪{productsTotal}</span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Customer details */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
