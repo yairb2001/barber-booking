@@ -1,8 +1,20 @@
 // ─── Curated theme presets ──────────────────────────────────────────────────
-// Four hand-tuned color + font palettes. Admin picks one — every color is
-// already harmonized. No individual color pickers anywhere in the UI.
+// Hand-tuned color + font palettes. Admin picks one — every color is already
+// harmonized. No individual color pickers anywhere in the UI.
+//
+// DESIGN LANGUAGE (why they look good):
+//  • Every brand color is contrast-safe for WHITE text on a filled button
+//    (the customer pages render on light surfaces, so a pale "champagne" brand
+//    would read as washed-out — all brands here are deep enough to pop).
+//  • Each preset carries its own light SURFACE TINT (bg + bgAlt) so the whole
+//    page background shifts with the theme, not just the buttons. Cards stay
+//    pure white to float cleanly above the tint.
+//  • Text colors are hue-matched to the brand (warm themes get warm-grey text,
+//    cool themes get cool-grey) so nothing feels "stuck on".
 
-export type ThemeId = "onyx" | "velvet" | "vintage" | "mono" | "teal";
+export type ThemeId =
+  | "onyx" | "velvet" | "vintage" | "mono" | "teal"
+  | "forest" | "azure" | "ember" | "royal";
 
 export type Theme = {
   id: ThemeId;
@@ -11,13 +23,13 @@ export type Theme = {
   isDark: boolean;
 
   // ── Surface colors ──
-  bg: string;          // main page background
-  bgAlt: string;       // alternating section background
+  bg: string;          // main page background (soft brand tint)
+  bgAlt: string;       // alternating section background (stronger tint)
   card: string;        // card / panel background
   headerBg: string;    // sticky header rgba (with alpha for blur)
 
   // ── Brand & text ──
-  brand: string;       // primary accent (CTAs, headlines, dots)
+  brand: string;       // primary accent (CTAs, headlines, dots) — white-text safe
   brandSoft: string;   // softer variant for gradients/rings
   textPri: string;     // headlines / primary text
   textSec: string;     // body / secondary text
@@ -39,104 +51,184 @@ export function hexToRgb(hex: string): string {
 }
 
 export const THEMES: Record<ThemeId, Theme> = {
-  // ─── 1. Onyx — Black & Gold (refined version of current dark) ──
+  // ─── 1. Onyx — warm gold on cream (premium classic) ──
   onyx: {
     id: "onyx",
-    name: "Onyx",
-    description: "שחור פרימיום · זהב חם",
-    isDark: true,
-    bg:        "#0A0A0A",
-    bgAlt:     "#141414",
-    card:      "#1A1A1A",
-    headerBg:  "rgba(10,10,10,0.85)",
-    brand:     "#D4AF37",
-    brandSoft: "#A87C2A",
-    textPri:   "#F5F0E1",
-    textSec:   "#A8A099",
-    textMuted: "#6B6359",
-    divider:   "rgba(212,175,55,0.18)",
+    name: "אוניקס",
+    description: "זהב חם · קרם פרימיום",
+    isDark: false,
+    bg:        "#FBF8F1",
+    bgAlt:     "#F2E8D2",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(251,248,241,0.95)",
+    brand:     "#8A6A1E",
+    brandSoft: "#B89233",
+    textPri:   "#1C1812",
+    textSec:   "#5A5043",
+    textMuted: "#9A8D78",
+    divider:   "rgba(138,106,30,0.14)",
     fontDisplay: "var(--font-frank)",
     fontBody:    "var(--font-heebo)",
   },
 
-  // ─── 2. Velvet — Deep wine + champagne (luxury evening) ──
+  // ─── 2. Velvet — deep wine + soft rose (luxury evening) ──
   velvet: {
     id: "velvet",
-    name: "Velvet",
-    description: "יין עמוק · שמפניה",
-    isDark: true,
-    bg:        "#1A0E12",
-    bgAlt:     "#2A1820",
-    card:      "#38242B",
-    headerBg:  "rgba(26,14,18,0.85)",
-    brand:     "#D4A574",
-    brandSoft: "#9C7449",
-    textPri:   "#F5E8D8",
-    textSec:   "#B8A89A",
-    textMuted: "#7A6A5C",
-    divider:   "rgba(212,165,116,0.20)",
+    name: "ולווט",
+    description: "יין עמוק · רוז' רך",
+    isDark: false,
+    bg:        "#FCF6F7",
+    bgAlt:     "#F5E1E7",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(252,246,247,0.95)",
+    brand:     "#8E2C44",
+    brandSoft: "#B85B72",
+    textPri:   "#2A1118",
+    textSec:   "#6B4A52",
+    textMuted: "#A98B92",
+    divider:   "rgba(142,44,68,0.13)",
     fontDisplay: "var(--font-bellefair)",
     fontBody:    "var(--font-frank)",
   },
 
-  // ─── 3. Vintage — Cream + brick (classic old-school barber, light) ──
+  // ─── 3. Vintage — brick + cream (classic old-school barber) ──
   vintage: {
     id: "vintage",
-    name: "Vintage",
-    description: "ספר ויניטג' · קרם וקלאסי",
+    name: "וינטג'",
+    description: "לבנה חמה · קרם קלאסי",
     isDark: false,
-    bg:        "#F4EDDF",
-    bgAlt:     "#EAE0CC",
+    bg:        "#F7F1E6",
+    bgAlt:     "#ECDFC8",
     card:      "#FFFFFF",
-    headerBg:  "rgba(244,237,223,0.92)",
+    headerBg:  "rgba(247,241,230,0.95)",
     brand:     "#8B2E1F",
     brandSoft: "#C46857",
-    textPri:   "#1F1A14",
+    textPri:   "#221C14",
     textSec:   "#5C4F40",
-    textMuted: "#8A7E6C",
-    divider:   "rgba(139,46,31,0.18)",
+    textMuted: "#93876F",
+    divider:   "rgba(139,46,31,0.14)",
     fontDisplay: "var(--font-suez)",
     fontBody:    "var(--font-heebo)",
   },
 
-  // ─── 4. Teal — Modern teal + mint (fresh, clean) ──
+  // ─── 4. Teal — modern teal + mint (fresh, clean) ──
   teal: {
     id: "teal",
-    name: "Teal",
+    name: "טורקיז",
     description: "טורקיז מודרני · מינט",
     isDark: false,
-    bg:        "#F3FBFB",
-    bgAlt:     "#CBF0EC",
+    bg:        "#F2FBFA",
+    bgAlt:     "#D3EFEB",
     card:      "#FFFFFF",
-    headerBg:  "rgba(243,251,251,0.95)",
-    brand:     "#1A7B8C",
-    brandSoft: "#2A97A8",
-    textPri:   "#0C3540",
-    textSec:   "#2E6570",
-    textMuted: "#72A8B2",
-    divider:   "rgba(26,123,140,0.15)",
+    headerBg:  "rgba(242,251,250,0.95)",
+    brand:     "#0F766E",
+    brandSoft: "#2A9D90",
+    textPri:   "#0C3A36",
+    textSec:   "#2E6660",
+    textMuted: "#6FA8A2",
+    divider:   "rgba(15,118,110,0.13)",
     fontDisplay: "var(--font-heebo)",
     fontBody:    "var(--font-heebo)",
   },
 
-  // ─── 5. Mono — Modern minimalist (off-white + deep navy) ──
+  // ─── 5. Mono — deep navy on cool off-white (minimalist) ──
   mono: {
     id: "mono",
-    name: "Mono",
-    description: "מודרני נקי · מינימליסטי",
+    name: "מונו",
+    description: "נייבי נקי · מינימליסטי",
     isDark: false,
-    bg:        "#FAFAFA",
-    bgAlt:     "#F0EFEC",
+    bg:        "#FAFAFB",
+    bgAlt:     "#EBEEF4",
     card:      "#FFFFFF",
-    headerBg:  "rgba(250,250,250,0.92)",
+    headerBg:  "rgba(250,250,251,0.95)",
     brand:     "#1E3A8A",
     brandSoft: "#3B5BAF",
-    textPri:   "#0A0A0A",
-    textSec:   "#525252",
-    textMuted: "#A3A3A3",
-    divider:   "rgba(30,58,138,0.18)",
+    textPri:   "#0B1220",
+    textSec:   "#4B5563",
+    textMuted: "#9AA1AD",
+    divider:   "rgba(30,58,138,0.13)",
     fontDisplay: "var(--font-rubik)",
     fontBody:    "var(--font-assistant)",
+  },
+
+  // ─── 6. Forest — deep green + sage (earthy, calm) ──
+  forest: {
+    id: "forest",
+    name: "פורסט",
+    description: "ירוק עמוק · מרווה",
+    isDark: false,
+    bg:        "#F4F9F3",
+    bgAlt:     "#DCEDDB",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(244,249,243,0.95)",
+    brand:     "#166534",
+    brandSoft: "#3F9C63",
+    textPri:   "#14241A",
+    textSec:   "#46604E",
+    textMuted: "#8AA890",
+    divider:   "rgba(22,101,52,0.13)",
+    fontDisplay: "var(--font-frank)",
+    fontBody:    "var(--font-heebo)",
+  },
+
+  // ─── 7. Azure — royal blue + sky (crisp, energetic) ──
+  azure: {
+    id: "azure",
+    name: "אזור",
+    description: "כחול מלכותי · שמיים",
+    isDark: false,
+    bg:        "#F4F8FF",
+    bgAlt:     "#DBE8FB",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(244,248,255,0.95)",
+    brand:     "#1D4ED8",
+    brandSoft: "#4E7DE8",
+    textPri:   "#0C1A33",
+    textSec:   "#41527A",
+    textMuted: "#8C9BC0",
+    divider:   "rgba(29,78,216,0.13)",
+    fontDisplay: "var(--font-rubik)",
+    fontBody:    "var(--font-assistant)",
+  },
+
+  // ─── 8. Ember — burnt orange + peach (warm, bold) ──
+  ember: {
+    id: "ember",
+    name: "אמבר",
+    description: "כתום שרוף · אפרסק",
+    isDark: false,
+    bg:        "#FFF7F2",
+    bgAlt:     "#FBE4D5",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(255,247,242,0.95)",
+    brand:     "#C2410C",
+    brandSoft: "#E26A35",
+    textPri:   "#2A150B",
+    textSec:   "#6B4636",
+    textMuted: "#B08B79",
+    divider:   "rgba(194,65,12,0.13)",
+    fontDisplay: "var(--font-suez)",
+    fontBody:    "var(--font-heebo)",
+  },
+
+  // ─── 9. Royal — deep purple + lilac (creative, premium) ──
+  royal: {
+    id: "royal",
+    name: "רויאל",
+    description: "סגול עמוק · לילך",
+    isDark: false,
+    bg:        "#F8F5FD",
+    bgAlt:     "#E9DEF8",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(248,245,253,0.95)",
+    brand:     "#6D28D9",
+    brandSoft: "#9259E8",
+    textPri:   "#1C1330",
+    textSec:   "#52447A",
+    textMuted: "#9A8BC0",
+    divider:   "rgba(109,40,217,0.13)",
+    fontDisplay: "var(--font-bellefair)",
+    fontBody:    "var(--font-heebo)",
   },
 };
 

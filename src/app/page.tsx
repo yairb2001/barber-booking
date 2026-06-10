@@ -437,11 +437,17 @@ export default function HomePage() {
     .filter(s => s.portfolio.length > 0)
     .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl, staffId: s.id })));
 
-  // Global CSS — only the brand color comes from the theme.
-  // All backgrounds, text and fonts are forced to match the admin's clean slate palette.
+  // Global CSS — brand + surface tints come from the theme so the whole page
+  // background shifts per preset (not just the buttons). Tints are light, so
+  // dark text stays readable; cards stay pure white to float above the tint.
   const cssVars = `
     :root {
       --brand: ${brand};
+      --bg-page:     ${T.bg};
+      --surface:     ${T.bg};
+      --surface-alt: ${T.bgAlt};
+      --card:        ${T.card};
+      --line:        ${T.divider};
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -458,7 +464,7 @@ export default function HomePage() {
   `;
 
   return (
-    <div className="min-h-screen flex flex-col bg-white text-slate-900" dir="rtl">
+    <div className="min-h-screen flex flex-col text-slate-900" dir="rtl" style={{ background: "var(--bg-page)" }}>
       <style>{cssVars}</style>
 
       {/* ══ STICKY HEADER (appears on scroll) ══════════════════════════════════ */}
@@ -642,7 +648,7 @@ export default function HomePage() {
 
       {/* ── Stories as focus carousel — "העבודות שלנו" ── */}
       {!loading && stories.length > 0 && (
-        <section className="bg-white py-10 border-b border-slate-100">
+        <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface)" }}>
           <SecLabel label="העבודות שלנו" sub="בחר סגנון"
             action={<Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
           />
@@ -660,7 +666,7 @@ export default function HomePage() {
 
       {/* ── My next appointment — returning customer, below the stories ── */}
       {myUpcoming.length > 0 && (
-        <section className="bg-slate-50 py-8 px-5 border-b border-slate-100">
+        <section className="py-8 px-5 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
           <Link href="/book/my-appointments" className="block active:scale-[0.99] transition-transform">
             <div className="rounded-2xl bg-white border border-slate-200 shadow-sm p-4 relative overflow-hidden">
               {/* Brand accent stripe */}
@@ -732,7 +738,7 @@ export default function HomePage() {
         const pct = Math.min(100, Math.round((referral.referralCount / Math.max(1, referral.goal)) * 100));
         const remaining = Math.max(0, referral.goal - referral.referralCount);
         return (
-          <div className="px-5 py-3 flex justify-center bg-slate-50 border-b border-slate-100">
+          <div className="px-5 py-3 flex justify-center border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
             <button onClick={inviteFriend}
               className="w-full max-w-[280px] rounded-2xl px-3.5 py-2.5 shadow-sm text-white text-right active:scale-[0.97] transition-transform"
               style={{ background: brand }}>
@@ -763,7 +769,7 @@ export default function HomePage() {
 
       {/* ── Staff — choose your barber ── */}
       {staff.length > 0 && (
-        <section className="bg-slate-50 py-10 border-b border-slate-100">
+        <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
           <SecLabel label="הספרים שלנו" sub="The Team"
             action={
               <Link href="/book" className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>
@@ -825,7 +831,7 @@ export default function HomePage() {
 
       {/* ── Announcements ── */}
       {announcements.length > 0 && (
-        <section className="bg-slate-50 py-10 px-5 border-b border-slate-100">
+        <section className="py-10 px-5 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
           <SecLabel label="עדכונים" sub="Updates" />
           <div className="space-y-3">
             {announcements.map(ann => (
@@ -843,7 +849,7 @@ export default function HomePage() {
 
       {/* ── Products ── */}
       {products.length > 0 && (
-        <section className="bg-white py-10 border-b border-slate-100">
+        <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface)" }}>
           <SecLabel label="מוצרים" sub="Shop" />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2" style={{ scrollbarWidth: "none" }}>
             {products.map(product => (
@@ -868,7 +874,7 @@ export default function HomePage() {
 
       {/* ── About ── */}
       {business?.about && (
-        <section className="bg-slate-50 py-10 px-5 border-b border-slate-100">
+        <section className="py-10 px-5 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
           <SecLabel label="אודות" sub="About" />
           <p className="text-[14px] text-slate-600 leading-loose">{business.about}</p>
         </section>
@@ -876,7 +882,7 @@ export default function HomePage() {
 
       {/* ── Footer ── */}
       <FooterCTA />
-      <div className="py-6 text-center bg-white border-t border-slate-100">
+      <div className="py-6 text-center border-t border-slate-100" style={{ background: "var(--surface)" }}>
         <p className="text-[10px] tracking-[0.3em] uppercase text-slate-400">
           {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
         </p>
