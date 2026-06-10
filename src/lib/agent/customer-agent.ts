@@ -15,7 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { sendMessage } from "@/lib/messaging";
+import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
@@ -497,8 +497,9 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
     },
   });
 
+  const fname = firstName(customer.name);
   const parts = [
-    `מי שמתכתב איתך עכשיו הוא ${customer.name}, לקוח שכבר רשום אצלנו. פנה אליו בשמו ואל תשאל אותו איך קוראים לו. אם זו ההודעה הראשונה שאתה שולח לו בשיחה הזו, פתח בהודעה אישית קצרה ונפרדת בשם שלו (למשל "היי ${customer.name}, מה נשמע?"), ואז שורה ריקה ואחריה הודעה נוספת שממשיכה למה שהוא ביקש. בהמשך השיחה אל תחזור על הברכה בכל הודעה.`,
+    `מי שמתכתב איתך עכשיו הוא ${fname}, לקוח שכבר רשום אצלנו. פנה אליו בשם הפרטי בלבד (${fname}) — לעולם לא בשם המלא או בשם משפחה — ואל תשאל אותו איך קוראים לו. רק אם זו ההודעה הראשונה ממש בשיחה הזו והלקוח עוד לא ביקש כלום, פתח בברכה אישית קצרה בשמו (למשל "היי ${fname}, מה נשמע?"). אם הלקוח כבר באמצע משהו (שאל שאלה, מבקש לקבוע, באמצע קביעת תור) — אל תפתח בברכה כללית ואל תכתוב "מה נוכל לעזור לך היום", פשוט תמשיך ענייני בדיוק מאיפה שהשיחה נמצאת. בהמשך השיחה אל תחזור על הברכה בכל הודעה.`,
   ];
 
   const past = recent.filter(a => !a.status.startsWith("cancelled"));
