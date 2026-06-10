@@ -89,20 +89,17 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
         date:          { type: "string", description: "תאריך YYYY-MM-DD" },
         startTime:     { type: "string", description: "שעת התחלה HH:MM" },
         customerName:  { type: "string", description: "שם הלקוח" },
-        customerPhone: { type: "string", description: "טלפון הלקוח (E.164)" },
       },
-      required: ["staffId", "serviceId", "date", "startTime", "customerName", "customerPhone"],
+      required: ["staffId", "serviceId", "date", "startTime", "customerName"],
     },
   },
   {
     name: "check_appointment",
-    description: "בודק אם ללקוח יש תורים קרובים קיימים.",
+    description: "בודק אם ללקוח (זה שמתכתב איתך עכשיו) יש תורים קרובים קיימים. אין צורך במספר טלפון — המערכת יודעת מי הלקוח.",
     input_schema: {
       type: "object" as const,
-      properties: {
-        customerPhone: { type: "string", description: "טלפון הלקוח" },
-      },
-      required: ["customerPhone"],
+      properties: {},
+      required: [],
     },
   },
   {
@@ -140,7 +137,8 @@ async function execTool(
   name: string,
   input: Record<string, string>,
   bizId: string,
-  conversationId: string
+  conversationId: string,
+  callerPhone: string
 ): Promise<string> {
   try {
     switch (name) {
@@ -252,8 +250,10 @@ async function execTool(
 
       // ── book_appointment ─────────────────────────────────────────────────────
       case "book_appointment": {
-        const { staffId, serviceId, date, startTime, customerName, customerPhone } = input;
-        const phone = normalizeIsraeliPhone(customerPhone);
+        const { staffId, serviceId, date, startTime, customerName } = input;
+        // The caller IS the customer — always use their WhatsApp number, never
+        // a number the model invented or asked for.
+        const phone = normalizeIsraeliPhone(callerPhone);
 
         const [staff, service, biz] = await Promise.all([
           prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, name: true } }),
@@ -262,8 +262,9 @@ async function execTool(
         ]);
         if (!staff || !service || !biz) return "שגיאה: ספר, שירות, או עסק לא נמצאו.";
 
-        // Upsert customer
-        let customer = await prisma.customer.findUnique({ where: { businessId_phone: { businessId: bizId, phone } } });
+        // Upsert customer — match either 0... or 972... so we don't duplicate.
+        const localPhone = phone.replace(/^972/, "0");
+        let customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] } });
         if (!customer) {
           customer = await prisma.customer.create({
             data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" },
@@ -304,9 +305,11 @@ async function execTool(
 
       // ── check_appointment ────────────────────────────────────────────────────
       case "check_appointment": {
-        const phone = normalizeIsraeliPhone(input.customerPhone || "");
-        const customer = await prisma.customer.findUnique({
-          where: { businessId_phone: { businessId: bizId, phone } },
+        // Customer.phone may be stored as 0... or 972... — match either.
+        const phone = normalizeIsraeliPhone(callerPhone);
+        const localPhone = phone.replace(/^972/, "0");
+        const customer = await prisma.customer.findFirst({
+          where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
         });
         if (!customer) return "לא נמצא לקוח עם מספר זה במערכת.";
 
@@ -417,6 +420,12 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 הכי חשוב שלא תרגיש מטומטם או מנותק: קרא את כל השיחה לפני שאתה עונה, ותבין מה הלקוח באמת מבקש ממך. אם הוא כבר אמר משהו — שם, ספר, שירות, תאריך או שעה — אל תשאל על זה שוב בשום אופן. אסור לך לחזור על אותה שאלה או אותה הודעה פעמיים, זה הדבר שהכי מעצבן לקוחות. אם אתה מרגיש שאתה הולך במעגלים או לא מתקדם, עצור רגע, תסכם לעצמך מה כבר ברור, ותשאל בדיוק את הדבר האחד שחסר. אם באמת אי אפשר לעזור, או שהלקוח מבקש לדבר עם בנאדם, תשתמש ב-escalate_to_human במקום להמשיך להיתקע.
 
 כדי לקבוע תור אתה צריך חמישה דברים: ספר, שירות, תאריך, שעה ושם הלקוח. שאל רק על מה שחסר, דבר אחד בכל פעם, ולפני שאתה סוגר תוודא בקצרה ובאופן טבעי שהבנת נכון. תאריכים תבין לבד ממה שהלקוח כותב, כמו "מחר", "יום ראשון" או "ה-15", והמר אותם בעצמך לפורמט YYYY-MM-DD — אל תבקש ממנו לכתוב בפורמט מסוים.
+
+חשוב מאוד: אתה כבר יודע את מספר הטלפון של מי שמתכתב איתך, והכלים משתמשים בו אוטומטית. לעולם אל תבקש מהלקוח מספר טלפון — לא כדי לקבוע, לא כדי לאתר תור ולא כדי לבטל. אם אתה צריך לראות אם יש לו תור קיים, פשוט תשתמש ב-check_appointment והמערכת תמצא לפי המספר שלו.
+
+אם הלקוח לא ביקש ספר מסוים, בדוק זמינות אצל כל הספרים והצע את כל השעות הפנויות — אל תצמצם לספר אחד בלי שביקש. אסור לך להגיד שאין שעה מסוימת לפני שבדקת אצל כל הספרים; אם אצל ספר אחד אין אבל אצל אחר יש, תגיד שיש ואצל מי.
+
+כדי להזיז או לשנות תור: קודם מצא את התור הקיים עם check_appointment, ספר ללקוח מה קבוע לו, ואחרי שהוא מאשר — בטל את הישן עם cancel_appointment וקבע את החדש עם book_appointment. אל תבקש ממנו פרטים שכבר יש לך מהתור הקיים.
 
 יש לך כלים: get_staff_list, get_services, get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
 }
@@ -620,7 +629,8 @@ export async function runCustomerAgent(opts: {
           block.name,
           block.input as Record<string, string>,
           businessId,
-          conversation.id
+          conversation.id,
+          phone
         );
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 
