@@ -435,14 +435,17 @@ function buildSystemPrompt(params: {
   businessName: string;
   customSystemPrompt?: string | null;
   faqs: Array<{ question: string; answer: string }>;
-  today: string;
+  now: string;
   customerContext?: string;
 }): string {
   const body =
     params.customSystemPrompt?.trim() ||
     defaultAgentBody(params.agentName, params.businessName);
 
-  const parts = [body, `\nהתאריך היום: ${params.today}.`];
+  const parts = [
+    body,
+    `\nהתאריך והשעה כרגע: ${params.now}. התחשב בשעה הנוכחית — אם כבר מאוחר אל תציע תור להיום, והצע אפשרויות טבעיות לפי היום בשבוע (למשל "מחר או בהמשך השבוע", ובסוף שבוע "ראשון הקרוב").`,
+  ];
 
   if (params.customerContext) parts.push(`\n${params.customerContext}`);
 
@@ -588,7 +591,7 @@ export async function runCustomerAgent(opts: {
     businessName:      biz.name,
     customSystemPrompt: agentConfig?.systemPrompt,
     faqs:              agentConfig?.faqs ?? [],
-    today:             new Date().toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "Asia/Jerusalem" }),
+    now:               new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }),
     customerContext,
   });
 
