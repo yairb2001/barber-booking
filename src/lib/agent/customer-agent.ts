@@ -186,7 +186,7 @@ async function execTool(
 
         if (!staffList.length) return "אין ספרים פעילים.";
 
-        const byStaff = new Map<string, string[]>();
+        const byStaff: { name: string; slots: string[]; load: number }[] = [];
 
         for (const staff of staffList) {
           // Get service duration
@@ -246,12 +246,15 @@ async function execTool(
             slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + 15);
           }
 
-          if (slots.length) byStaff.set(staff.name, slots);
+          if (slots.length) byStaff.push({ name: staff.name, slots, load: booked.length });
         }
 
-        if (!byStaff.size) return `אין תורים פנויים בתאריך ${date}.`;
-        return Array.from(byStaff.entries())
-          .map(([name, times]) => `${name}: ${times.join(", ")}`)
+        if (!byStaff.length) return `אין תורים פנויים בתאריך ${date}.`;
+        // When no specific barber was requested, surface the least-busy one
+        // first so the agent spreads load instead of always picking the same.
+        if (!inputStaffId) byStaff.sort((a, b) => a.load - b.load);
+        return byStaff
+          .map(s => `${s.name}: ${s.slots.join(", ")}`)
           .join("\n");
       }
 
