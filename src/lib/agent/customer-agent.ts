@@ -488,7 +488,7 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
   });
 
   const parts = [
-    `מי שמתכתב איתך עכשיו הוא ${customer.name}, לקוח שכבר רשום אצלנו. פנה אליו בשמו ואל תשאל אותו איך קוראים לו.`,
+    `מי שמתכתב איתך עכשיו הוא ${customer.name}, לקוח שכבר רשום אצלנו. פנה אליו בשמו ואל תשאל אותו איך קוראים לו. אם זו ההודעה הראשונה שאתה שולח לו בשיחה הזו, פתח בהודעה אישית קצרה ונפרדת בשם שלו (למשל "היי ${customer.name}, מה נשמע?"), ואז שורה ריקה ואחריה הודעה נוספת שממשיכה למה שהוא ביקש. בהמשך השיחה אל תחזור על הברכה בכל הודעה.`,
   ];
 
   const past = recent.filter(a => !a.status.startsWith("cancelled"));
@@ -680,14 +680,22 @@ export async function runCustomerAgent(opts: {
   if (!assistantText.trim()) return;
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
-  await prisma.conversationMessage.create({
-    data: { conversationId: conversation.id, role: "assistant", content: assistantText },
-  });
+  // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
+  // with a personal greeting ("היי יאיר, מה נשמע?") and then follow up, the way a
+  // human texts. Within each bubble there are no line breaks.
+  const bubbles = assistantText.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
 
-  await sendMessage({
-    businessId,
-    customerPhone: phone,
-    kind:          "agent_reply",
-    body:          assistantText,
-  });
+  for (let i = 0; i < bubbles.length; i++) {
+    await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, role: "assistant", content: bubbles[i] },
+    });
+    await sendMessage({
+      businessId,
+      customerPhone: phone,
+      kind:          "agent_reply",
+      body:          bubbles[i],
+    });
+    // Small human-like pause between bubbles so they arrive in order, not at once.
+    if (i < bubbles.length - 1) await new Promise(r => setTimeout(r, 700));
+  }
 }
