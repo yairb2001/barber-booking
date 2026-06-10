@@ -128,6 +128,9 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
       },
       required: ["reason"],
     },
+    // Cache breakpoint: the whole (static) tool block is read from cache on every
+    // iteration of the loop and on follow-up turns, at ~10% of the token cost.
+    cache_control: { type: "ephemeral" },
   },
 ];
 
@@ -439,26 +442,31 @@ function buildSystemPrompt(params: {
   faqs: Array<{ question: string; answer: string }>;
   now: string;
   customerContext?: string;
-}): string {
+}): Anthropic.TextBlockParam[] {
   const body =
     params.customSystemPrompt?.trim() ||
     defaultAgentBody(params.agentName, params.businessName);
 
-  const parts = [
-    body,
-    `\nהתאריך והשעה כרגע: ${params.now}. התחשב בשעה הנוכחית — אם כבר מאוחר אל תציע תור להיום, והצע אפשרויות טבעיות לפי היום בשבוע (למשל "מחר או בהמשך השבוע", ובסוף שבוע "ראשון הקרוב").`,
-  ];
-
-  if (params.customerContext) parts.push(`\n${params.customerContext}`);
-
+  // Stable, business-level chunk (personality + FAQs). Identical across every
+  // iteration of the tool loop AND across turns/customers, so we cache it — the
+  // 2nd..Nth call reads it at ~10% of the token cost (5-min cache TTL).
+  let stable = body;
   if (params.faqs.length) {
-    parts.push(
-      "\nמידע שיעזור לך לענות:\n" +
-        params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n")
-    );
+    stable +=
+      "\n\nמידע שיעזור לך לענות:\n" +
+      params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n");
   }
 
-  return parts.join("\n");
+  // Per-turn chunk (current time + who's chatting). Changes every minute and
+  // per customer, so it must stay OUTSIDE the cached prefix.
+  let dynamic =
+    `התאריך והשעה כרגע: ${params.now}. התחשב בשעה הנוכחית — אם כבר מאוחר אל תציע תור להיום, והצע אפשרויות טבעיות לפי היום בשבוע (למשל "מחר או בהמשך השבוע", ובסוף שבוע "ראשון הקרוב").`;
+  if (params.customerContext) dynamic += `\n${params.customerContext}`;
+
+  return [
+    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+    { type: "text", text: dynamic },
+  ];
 }
 
 // ─── Customer recognition ───────────────────────────────────────────────────────
@@ -613,7 +621,11 @@ export async function runCustomerAgent(opts: {
       messages,
     });
 
-    console.log(`[agent] model=${model} in=${response.usage.input_tokens} out=${response.usage.output_tokens}`);
+    const u = response.usage;
+    console.log(
+      `[agent] model=${model} in=${u.input_tokens} out=${u.output_tokens} ` +
+      `cacheWrite=${u.cache_creation_input_tokens ?? 0} cacheRead=${u.cache_read_input_tokens ?? 0}`
+    );
 
     // Append assistant response to messages
     messages.push({ role: "assistant", content: response.content });
