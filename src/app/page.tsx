@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
-import { THEMES, type Theme } from "@/lib/themes";
+import { type Theme } from "@/lib/themes";
+import { useServerTheme } from "@/components/ThemeProvider";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -326,6 +327,9 @@ export default function HomePage() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [business, setBusiness] = useState<BusinessInfo | null>(null);
+  // Server-resolved theme — used as the initial palette so the first paint is
+  // correct (no flash of the default gold theme before /api/business resolves).
+  const serverTheme = useServerTheme();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
   const [scrolled, setScrolled] = useState(false);
@@ -397,7 +401,7 @@ export default function HomePage() {
     }).catch(() => setLoading(false));
   }, []);
 
-  const T: Theme = business?.theme || THEMES.onyx;
+  const T: Theme = business?.theme || serverTheme;
   const brand = T.brand;
 
   // Tapping the referral pill → invite another friend (share sheet / WhatsApp).

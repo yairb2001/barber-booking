@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from "react";
 import FooterCTA from "@/components/FooterCTA";
-import { THEMES, type Theme } from "@/lib/themes";
+import { type Theme } from "@/lib/themes";
+import { useServerTheme } from "@/components/ThemeProvider";
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>(THEMES.onyx);
+  // Start from the server-resolved theme so the first paint is correct
+  // (no flash of the default gold theme before the client fetch resolves).
+  const serverTheme = useServerTheme();
+  const [theme, setTheme] = useState<Theme>(serverTheme);
 
   useEffect(() => {
     fetch("/api/business")

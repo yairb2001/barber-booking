@@ -836,41 +836,41 @@ function ConfirmPageContent() {
 
         {/* Optional product upsell — compact, only when the shop has products */}
         {products.length > 0 && (
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-            <div className="flex items-center gap-1.5 mb-2.5">
-              <span className="text-base">🛍️</span>
-              <p className="text-[12px] font-bold text-slate-900">להוסיף מוצר?</p>
-              <span className="text-[10px] text-slate-300 font-medium">תשלום במקום · אופציונלי</span>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="text-[13px]">🛍️</span>
+              <p className="text-[11px] font-bold text-slate-900">להוסיף מוצר?</p>
+              <span className="text-[9px] text-slate-300 font-medium">תשלום במקום · אופציונלי</span>
             </div>
 
-            <div className="flex gap-2.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
               {products.map(p => {
                 const qty = productQty[p.id] || 0;
                 const active = qty > 0;
                 return (
                   <div key={p.id}
-                    className="flex-shrink-0 w-[96px] rounded-xl border bg-white overflow-hidden snap-start transition-all"
+                    className="flex-shrink-0 w-[74px] rounded-lg border bg-white overflow-hidden snap-start transition-all"
                     style={{ borderColor: active ? "var(--brand)" : "#E2E8F0", boxShadow: active ? "0 0 0 1px var(--brand)" : "none" }}>
-                    <div className="h-[60px] bg-slate-50 flex items-center justify-center overflow-hidden">
+                    <div className="h-[44px] bg-slate-50 flex items-center justify-center overflow-hidden">
                       {p.imageUrl
                         ? <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                        : <span className="text-2xl">🧴</span>}
+                        : <span className="text-lg">🧴</span>}
                     </div>
-                    <div className="p-2">
-                      <p className="text-[11px] font-semibold text-slate-800 leading-tight line-clamp-1">{p.name}</p>
-                      <p className="text-[12px] font-bold mt-0.5" style={{ color: "var(--brand)" }}>₪{p.price}</p>
+                    <div className="p-1.5">
+                      <p className="text-[9.5px] font-semibold text-slate-800 leading-tight line-clamp-1">{p.name}</p>
+                      <p className="text-[10px] font-bold mt-0.5" style={{ color: "var(--brand)" }}>₪{p.price}</p>
                       {active ? (
-                        <div className="flex items-center justify-between mt-1.5 rounded-full border border-slate-200 px-0.5 py-0.5">
+                        <div className="flex items-center justify-between mt-1 rounded-full border border-slate-200 px-0.5">
                           <button type="button" onClick={() => changeQty(p.id, -1)}
-                            className="w-5 h-5 rounded-full flex items-center justify-center text-slate-500 active:bg-slate-100 text-base leading-none">−</button>
-                          <span className="text-[12px] font-bold text-slate-800">{qty}</span>
+                            className="w-4 h-4 rounded-full flex items-center justify-center text-slate-500 active:bg-slate-100 text-sm leading-none">−</button>
+                          <span className="text-[10px] font-bold text-slate-800">{qty}</span>
                           <button type="button" onClick={() => changeQty(p.id, +1)}
-                            className="w-5 h-5 rounded-full flex items-center justify-center text-white text-base leading-none"
+                            className="w-4 h-4 rounded-full flex items-center justify-center text-white text-sm leading-none"
                             style={{ background: "var(--brand)" }}>+</button>
                         </div>
                       ) : (
                         <button type="button" onClick={() => changeQty(p.id, +1)}
-                          className="w-full mt-1.5 text-[10px] font-bold py-1 rounded-full border transition-colors"
+                          className="w-full mt-1 text-[9px] font-bold py-0.5 rounded-full border transition-colors"
                           style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>
                           + הוסף
                         </button>
@@ -882,11 +882,11 @@ function ConfirmPageContent() {
             </div>
 
             {selectedProductCount > 0 && (
-              <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100">
-                <span className="text-[11px] text-slate-500">
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+                <span className="text-[10px] text-slate-500">
                   {selectedProductCount} {selectedProductCount === 1 ? "מוצר" : "מוצרים"} נבחרו
                 </span>
-                <span className="text-[13px] font-bold" style={{ color: "var(--brand)" }}>₪{productsTotal}</span>
+                <span className="text-[12px] font-bold" style={{ color: "var(--brand)" }}>₪{productsTotal}</span>
               </div>
             )}
           </div>

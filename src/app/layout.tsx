@@ -8,6 +8,8 @@ import {
   Assistant,
 } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/ThemeProvider";
+import { getServerTheme } from "@/lib/server-theme";
 
 // ─── Theme fonts (each theme picks one for display + one for body) ──
 const frank = Frank_Ruhl_Libre({
@@ -71,15 +73,20 @@ export const viewport: Viewport = {
   themeColor: "#0d9488",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   // All font CSS variables are exposed on <body>; themes.ts picks one via --font-display / --font-body
   const fontVars = `${frank.variable} ${bellefair.variable} ${suez.variable} ${rubik.variable} ${heebo.variable} ${assistant.variable}`;
+  // Resolve the theme on the server so the first paint is already correct
+  // (prevents the flash of the default gold theme before the client fetch).
+  const theme = await getServerTheme();
   return (
     <html lang="he" dir="rtl">
       <body className={`antialiased min-h-screen ${fontVars}`}>
-        {children}
+        <ThemeProvider theme={theme}>
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );
