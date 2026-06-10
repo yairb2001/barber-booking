@@ -595,7 +595,9 @@ export async function runCustomerAgent(opts: {
   // ── Agentic loop ──────────────────────────────────────────────────────────────
   let assistantText = "";
   let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName));
-  const MAX_ITERATIONS = 5;
+  // A reschedule legitimately chains many tools (check + slots + cancel +
+  // services + staff + book), so keep enough headroom to also compose a reply.
+  const MAX_ITERATIONS = 8;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await anthropic.messages.create({
@@ -655,6 +657,21 @@ export async function runCustomerAgent(opts: {
       if (block.type === "text") assistantText += block.text;
     }
     break;
+  }
+
+  // Safety net: if the model burned through its tool budget without ever
+  // composing a reply (e.g. a reschedule that ran check+cancel+book), the action
+  // already happened — so force one final text-only turn instead of going silent.
+  if (!assistantText.trim()) {
+    const closing = await anthropic.messages.create({
+      model:    MODEL_SMART,
+      max_tokens: 1024,
+      system:   systemPrompt,
+      messages, // includes every tool result so far
+    });
+    for (const block of closing.content) {
+      if (block.type === "text") assistantText += block.text;
+    }
   }
 
   if (!assistantText.trim()) return;
