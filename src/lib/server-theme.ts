@@ -1,3 +1,4 @@
+import { unstable_noStore as noStore } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { resolveTheme, type Theme } from "@/lib/themes";
 
@@ -9,8 +10,14 @@ import { resolveTheme, type Theme } from "@/lib/themes";
  *
  * Mirrors exactly what /api/business does (`resolveTheme(settings)`), so the
  * later client fetch returns an identical theme and nothing visibly swaps.
+ *
+ * `noStore()` opts this read out of Next's Full Route / Data cache so the
+ * server always reflects the CURRENT theme. Without it, after the owner
+ * switches themes the server keeps serving the previously cached palette for
+ * the first paint (stale) while the client fetch shows the new one → flash.
  */
 export async function getServerTheme(): Promise<Theme> {
+  noStore();
   try {
     const business = await prisma.business.findFirst({ select: { settings: true } });
     return resolveTheme(business?.settings ?? null);
