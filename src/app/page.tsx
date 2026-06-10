@@ -445,7 +445,10 @@ export default function HomePage() {
       --brand: ${brand};
       --bg-page:     ${T.bg};
       --surface:     ${T.bg};
-      --surface-alt: ${T.bgAlt};
+      --surface-alt-solid: ${T.bgAlt};
+      /* Feather the tinted bands: ease from the light surface into the tint
+         over 32px at top & bottom, so sections blend instead of hard-edging. */
+      --surface-alt: linear-gradient(180deg, var(--surface) 0, var(--surface-alt-solid) 32px, var(--surface-alt-solid) calc(100% - 32px), var(--surface) 100%);
       --card:        ${T.card};
       --line:        ${T.divider};
     }
