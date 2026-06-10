@@ -81,12 +81,16 @@ export type EffectivePermissions = {
  * Resolves the EFFECTIVE permissions for the current caller.
  *
  * Owner → everything true.
- * Barber → granted when EITHER the per-staff flag (set per barber in
- *          /admin/staff/[id]) OR the business-wide flag (set in business
- *          settings) is on. This lets the owner grant access globally to all
- *          barbers, or selectively to an individual barber.
+ * Barber → controlled SOLELY by the per-staff flags (set per barber in
+ *          /admin/staff/[id] → "הרשאות"). This makes the per-barber toggle
+ *          authoritative: turning it OFF actually denies access.
  *
- * Hits the DB (Staff + Business), so call once per request and reuse.
+ *          The business-wide switches in /admin/settings are a convenience
+ *          that BULK-WRITE these per-staff flags when toggled (see the settings
+ *          PATCH route) — they are NOT OR-ed in at runtime, otherwise a global
+ *          "on" could never be overridden/denied for an individual barber.
+ *
+ * Hits the DB (Staff), so call once per request and reuse.
  */
 export async function getEffectivePermissions(req: NextRequest): Promise<EffectivePermissions> {
   const session = getRequestSession(req);
@@ -97,26 +101,17 @@ export async function getEffectivePermissions(req: NextRequest): Promise<Effecti
     return { isOwner: true, staffId: session.staffId, canViewAllCalendars: true, canViewAllChats: true };
   }
 
-  const [staff, business] = await Promise.all([
-    session.staffId
-      ? prisma.staff.findUnique({
-          where: { id: session.staffId },
-          select: { canViewAllCalendars: true, canViewAllChats: true },
-        })
-      : Promise.resolve(null),
-    prisma.business.findFirst({
-      where: { id: session.businessId },
-      select: { settings: true },
-    }),
-  ]);
-
-  let bs: Record<string, unknown> = {};
-  try { bs = JSON.parse(business?.settings || "{}"); } catch { /* ignore malformed settings */ }
+  const staff = session.staffId
+    ? await prisma.staff.findUnique({
+        where: { id: session.staffId },
+        select: { canViewAllCalendars: true, canViewAllChats: true },
+      })
+    : null;
 
   return {
     isOwner: false,
     staffId: session.staffId,
-    canViewAllCalendars: !!(staff?.canViewAllCalendars || bs.barbersCanViewOthersCalendar),
-    canViewAllChats: !!(staff?.canViewAllChats || bs.barbersCanAccessChats),
+    canViewAllCalendars: !!staff?.canViewAllCalendars,
+    canViewAllChats: !!staff?.canViewAllChats,
   };
 }

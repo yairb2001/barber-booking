@@ -22,6 +22,7 @@ export default function AdminProductsPage() {
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
     const data = await fetch("/api/admin/products").then((r) => r.json());
@@ -65,8 +66,33 @@ export default function AdminProductsPage() {
 
   async function del(id: string) {
     if (!confirm("למחוק מוצר זה?")) return;
-    await fetch(`/api/admin/products/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/admin/products/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      alert("מחיקת המוצר נכשלה. נסה שוב.");
+      return;
+    }
+    // Optimistic remove so it disappears immediately, then re-sync.
+    setProducts((prev) => prev.filter((p) => p.id !== id));
     load();
+  }
+
+  async function uploadImage(file: File) {
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setForm((p) => ({ ...p, imageUrl: data.url }));
+      } else {
+        alert(data.error || "העלאת התמונה נכשלה");
+      }
+    } catch {
+      alert("העלאת התמונה נכשלה");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function openEdit(p: Product) {
@@ -133,8 +159,8 @@ export default function AdminProductsPage() {
                   {p.isVisible ? "גלוי" : "מוסתר"}
                 </button>
                 <div className="flex-1" />
-                <button onClick={() => openEdit(p)} className="text-xs text-slate-800 hover:underline">ערוך</button>
-                <button onClick={() => del(p.id)} className="text-xs text-red-400 hover:underline">מחק</button>
+                <button onClick={() => openEdit(p)} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-neutral-100 text-slate-800 hover:bg-neutral-200">ערוך</button>
+                <button onClick={() => del(p.id)} className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100">מחק</button>
               </div>
             </div>
           ))}
@@ -175,14 +201,35 @@ export default function AdminProductsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs text-neutral-500 block mb-1">קישור לתמונה (URL)</label>
-                <input
-                  value={form.imageUrl}
-                  onChange={(e) => setForm((p) => ({ ...p, imageUrl: e.target.value }))}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  dir="ltr"
-                  placeholder="https://..."
-                />
+                <label className="text-xs text-neutral-500 block mb-1">תמונת מוצר</label>
+                <div className="flex items-center gap-3">
+                  {form.imageUrl ? (
+                    <img src={form.imageUrl} alt="" className="w-16 h-16 rounded-xl object-cover shrink-0 border border-neutral-200" />
+                  ) : (
+                    <div className="w-16 h-16 rounded-xl bg-neutral-100 flex items-center justify-center text-2xl shrink-0">🛍️</div>
+                  )}
+                  <div className="flex-1">
+                    <label className={`block text-center text-sm font-medium px-3 py-2 rounded-lg cursor-pointer ${uploading ? "bg-neutral-100 text-neutral-400" : "bg-teal-50 text-teal-700 hover:bg-teal-100"}`}>
+                      {uploading ? "מעלה..." : form.imageUrl ? "החלף תמונה" : "העלאת תמונה"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploading}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f); e.target.value = ""; }}
+                      />
+                    </label>
+                    {form.imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setForm((p) => ({ ...p, imageUrl: "" }))}
+                        className="block w-full text-center text-xs text-red-400 hover:underline mt-1"
+                      >
+                        הסר תמונה
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
