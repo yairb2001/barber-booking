@@ -24,12 +24,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const phone = (rawPhone || business.phone || "").trim();
   if (!phone) return NextResponse.json({ error: "phone required" }, { status: 400 });
 
+  // Public booking link for {{booking_url}} / {{booking_link}} placeholders
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const bookingLink = `${baseUrl}/book`;
+
   // Sample variables
   const sample = {
-    name:     "ישראל ישראלי",
-    business: business.name,
-    staff:    "הספר",
-    service:  "תספורת",
+    name:         "ישראל ישראלי",
+    business:     business.name,
+    staff:        "הספר",
+    service:      "תספורת",
+    booking_url:  bookingLink,
+    booking_link: bookingLink,
   };
 
   let settings: Record<string, unknown>;
@@ -42,18 +48,20 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     reengage:         `שלום {{name}} 👋\n\nמתגעגעים אליך! עבר זמן מאז הביקור האחרון ב*{{business}}*.\nנשמח לראות אותך שוב 💈`,
   };
 
-  let body = (automation.template || defaults[automation.type] || "").replace(/\{\{(\w+)\}\}/g, (_, k) => (sample as Record<string, string>)[k] ?? "");
-
-  // CTA for post_first_visit
-  if (automation.type === "post_first_visit") {
+  // CTA line — applies to both post_first_visit and post_every_visit
+  let ctaLine = "";
+  if (automation.type === "post_first_visit" || automation.type === "post_every_visit") {
     const ctaType = (settings.ctaType as string) ?? "google_review";
     const ctaUrl  = (settings.ctaUrl  as string) ?? "";
-    let ctaLine = "";
     if (ctaType === "google_review" && ctaUrl) ctaLine = `\n\n⭐ נשמח לביקורת קצרה בגוגל — זה עוזר לנו המון:\n${ctaUrl}`;
     else if (ctaType === "instagram"  && ctaUrl) ctaLine = `\n\n📸 עקוב אחרינו באינסטגרם:\n${ctaUrl}`;
     else if (ctaType === "custom"     && ctaUrl) ctaLine = `\n\n${ctaUrl}`;
-    body = body.replace(/\{\{cta\}\}/g, ctaLine);
   }
+
+  const vars: Record<string, string> = { ...sample, cta: ctaLine };
+  // Replace known vars; strip any remaining unknown {{...}} so nothing leaks.
+  let body = (automation.template || defaults[automation.type] || "")
+    .replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? "");
   body = "🧪 [בדיקה] " + body;
 
   const result = await sendMessage({

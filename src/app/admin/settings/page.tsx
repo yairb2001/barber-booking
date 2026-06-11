@@ -1808,6 +1808,7 @@ function PostEveryPanelSettings({
 }) {
   const [segment,      setSegment]      = useState((settings.segment      as string) ?? "regular_only");
   const [minVisits,    setMinVisits]    = useState((settings.minVisits    as number) ?? 2);
+  const [exactVisit,   setExactVisit]   = useState((settings.exactVisit   as number) ?? 2);
   const [delayMinutes, setDelayMinutes] = useState((settings.delayMinutes as number) ?? 60);
   const [ctaType,      setCtaType]      = useState((settings.ctaType      as string) ?? "google_review");
   const [ctaUrl,       setCtaUrl]       = useState((settings.ctaUrl       as string) ?? "");
@@ -1832,7 +1833,7 @@ function PostEveryPanelSettings({
       <div>
         <label className="text-xs text-neutral-500 block mb-1.5">למי לשלח</label>
         <div className="flex gap-2">
-          {([["all","כולם"],["regular_only","חוזרים בלבד"],["new_only","חדשים בלבד"]] as [string,string][]).map(([v,l]) => (
+          {([["all","כולם"],["regular_only","חוזרים בלבד"],["exact_visit","ביקור מסוים"],["new_only","חדשים בלבד"]] as [string,string][]).map(([v,l]) => (
             <button key={v} onClick={() => { setSegment(v); setDirty(true); }}
               className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition ${segment === v ? "border-teal-600 bg-slate-50 text-slate-700" : "border-neutral-200 text-neutral-500 hover:border-slate-300"}`}>
               {l}
@@ -1849,6 +1850,18 @@ function PostEveryPanelSettings({
               className="flex-1 accent-slate-900" />
             <span className="text-slate-800 font-bold text-sm w-12 text-center">{minVisits}+</span>
           </div>
+        </div>
+      )}
+      {segment === "exact_visit" && (
+        <div>
+          <label className="text-xs text-neutral-500 block mb-1">תישלח רק אחרי ביקור מספר</label>
+          <div className="flex items-center gap-3">
+            <input type="range" min={2} max={10} value={exactVisit}
+              onChange={e => { setExactVisit(Number(e.target.value)); setDirty(true); }}
+              className="flex-1 accent-slate-900" />
+            <span className="text-slate-800 font-bold text-sm w-12 text-center">#{exactVisit}</span>
+          </div>
+          <p className="text-[10px] text-neutral-400 mt-1">ההודעה תישלח פעם אחת בלבד — אחרי הביקור ה-{exactVisit} של הלקוח.</p>
         </div>
       )}
       <div>
@@ -1870,7 +1883,7 @@ function PostEveryPanelSettings({
           className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
       </div>
       {dirty && (
-        <button onClick={() => { onSave({ segment, minVisits, delayMinutes, ctaType, ctaUrl }); setDirty(false); }}
+        <button onClick={() => { onSave({ segment, minVisits, exactVisit, delayMinutes, ctaType, ctaUrl }); setDirty(false); }}
           disabled={saving}
           className="text-xs bg-teal-600 text-white px-4 py-1.5 rounded-lg font-semibold hover:bg-teal-700 disabled:opacity-50">
           {saving ? "שומר..." : "שמור הגדרות"}

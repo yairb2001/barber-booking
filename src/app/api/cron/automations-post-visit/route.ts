@@ -152,6 +152,25 @@ export async function GET() {
 
         if (segment === "regular_only" && completedCount < minVisits) { skipped++; continue; }
         if (segment === "new_only"     && completedCount !== 1)        { skipped++; continue; }
+        // "exact_visit" — fire ONLY after the customer's Nth visit (e.g. their
+        // 2nd). Use this appointment's chronological position (not the live
+        // total) so it fires exactly once for the right appointment, even when
+        // the cron reprocesses earlier appointments still inside the 7-day window.
+        if (segment === "exact_visit") {
+          const exactVisit = Math.max(2, Number(settings.exactVisit ?? 2));
+          const visitIndex = await prisma.appointment.count({
+            where: {
+              customerId: appt.customerId,
+              businessId: auto.businessId,
+              status: { in: ["confirmed", "completed"] },
+              OR: [
+                { date: { lt: appt.date } },
+                { AND: [{ date: appt.date }, { startTime: { lte: appt.startTime } }] },
+              ],
+            },
+          });
+          if (visitIndex !== exactVisit) { skipped++; continue; }
+        }
 
         // CTA — same logic as post_first_visit
         const ctaType = (settings.ctaType as string) ?? "";
