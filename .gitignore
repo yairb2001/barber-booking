@@ -47,3 +47,7 @@ ios/App/App.xcodeproj/xcuserdata/
 ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
 ios/DerivedData/
 *.xcuserstate
+
+# Local AI-agent prompt scratch files
+prompt_backup*.txt
+prompt_new*.txt
