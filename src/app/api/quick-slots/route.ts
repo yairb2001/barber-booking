@@ -12,6 +12,27 @@ import {
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+// How far ahead we are willing to scan when a barber is fully booked in the near
+// term. Bounded so a pathological "booked solid" barber can't make us scan
+// forever; the per-barber booking horizon caps it further per barber.
+const MAX_SCAN_DAYS = 120;
+// Once a barber has this many of their EARLIEST raw slots collected we stop
+// scanning further days for them — plenty to pick a few well-spaced options,
+// while keeping the in-memory slot generation cheap even at a long horizon.
+const RAW_PER_STAFF = 40;
+
+// Friendly Hebrew label for a slot's date. For anything a week or more out we
+// include the actual date (weekday names alone repeat and would read as "soon").
+function dayLabelFor(dateStr: string, dayOffset: number): string {
+  if (dayOffset === 0) return "היום";
+  if (dayOffset === 1) return "מחר";
+  const date = new Date(dateStr + "T00:00:00.000Z");
+  if (dayOffset < 7) {
+    return date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
+  }
+  return date.toLocaleDateString("he-IL", { day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffIdFilter = searchParams.get("staffId"); // optional: for specific barber
@@ -19,12 +40,13 @@ export async function GET(request: Request) {
   // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
   const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
 
-  // Get business-wide min lead time for bookings
+  // Business-wide booking defaults: min lead time + how far ahead bookings open.
   const biz = resolvedBusinessId
-    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
-    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } });
+    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
+    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
+  const bizHorizon = biz?.bookingHorizonDays ?? 30;
 
   // Get staff members in the quick pool
   const bizScope = resolvedBusinessId ? { businessId: resolvedBusinessId } : {};
@@ -61,19 +83,46 @@ export async function GET(request: Request) {
   });
 
   // Resolve each barber's effective service: the first visible service (by sortOrder)
-  // they offer, with any per-barber price/duration overrides applied.
+  // they offer, with any per-barber price/duration overrides applied. Also resolve
+  // their lead-time + booking-horizon overrides up front (parse settings once).
   const eligiblePoolStaff = poolStaff
     .map(s => {
       const offered = new Set(s.staffServices.map(ss => ss.serviceId));
       const svc = visibleServices.find(v => offered.has(v.id));
       if (!svc) return null;
       const ss = s.staffServices.find(x => x.serviceId === svc.id);
+
+      // Per-barber overrides (fall back to business defaults).
+      let staffLead = leadMinutes;
+      let staffFirstLead = bizFirstLead;
+      let horizon = bizHorizon;
+      try {
+        if (s.settings) {
+          const cfg = JSON.parse(s.settings) as Record<string, unknown>;
+          if (cfg.minBookingLeadMinutes !== undefined) {
+            const p = Number(cfg.minBookingLeadMinutes);
+            if (!isNaN(p)) staffLead = p;
+          }
+          if (cfg.firstApptLeadMinutes !== undefined) {
+            const p = Number(cfg.firstApptLeadMinutes);
+            if (!isNaN(p)) staffFirstLead = p;
+          }
+          if (cfg.bookingHorizonDays !== undefined) {
+            const p = Number(cfg.bookingHorizonDays);
+            if (!isNaN(p) && p > 0) horizon = p;
+          }
+        }
+      } catch { /* malformed settings — keep business defaults */ }
+
       return {
         id: s.id,
         name: s.name,
         avatarUrl: s.avatarUrl,
         poolPriority: s.poolPriority,
-        settings: s.settings,
+        staffLead,
+        staffFirstLead,
+        // Cap the per-barber horizon so we never scan more than MAX_SCAN_DAYS.
+        horizon: Math.min(horizon, MAX_SCAN_DAYS),
         svc: {
           id: svc.id,
           name: svc.name,
@@ -92,8 +141,49 @@ export async function GET(request: Request) {
   const nowBiz = getBusinessNow();
   const todayStr = nowBiz.date;
 
-  // Collect ALL available slots across all pool staff for next 7 days
-  const allCandidates: {
+  // The furthest day any eligible barber lets us scan to.
+  const maxHorizon = Math.max(...eligiblePoolStaff.map(s => s.horizon));
+  const staffIds = eligiblePoolStaff.map(s => s.id);
+  const firstDate = new Date(todayStr + "T00:00:00.000Z");
+  const lastDate = new Date(addDaysISO(todayStr, Math.max(0, maxHorizon - 1)) + "T00:00:00.000Z");
+
+  // ── Bulk-fetch everything we need for the whole window in 3 queries ──────────
+  // (The old version issued an override + schedule + appointments query PER day
+  //  PER barber; extending the window to weeks made that explode. Fetch once.)
+  const [schedules, overrides, appts] = await Promise.all([
+    prisma.staffSchedule.findMany({
+      where: { staffId: { in: staffIds } },
+      select: { staffId: true, dayOfWeek: true, isWorking: true, slots: true, breaks: true },
+    }),
+    prisma.staffScheduleOverride.findMany({
+      where: { staffId: { in: staffIds }, date: { gte: firstDate, lte: lastDate } },
+      select: { staffId: true, date: true, isWorking: true, slots: true, breaks: true },
+    }),
+    prisma.appointment.findMany({
+      where: { staffId: { in: staffIds }, date: { gte: firstDate, lte: lastDate }, status: { in: ["pending", "confirmed"] } },
+      select: { staffId: true, date: true, startTime: true, endTime: true },
+    }),
+  ]);
+
+  const schedByKey = new Map<string, { isWorking: boolean; slots: string; breaks: string | null }>();
+  for (const sc of schedules) schedByKey.set(`${sc.staffId}|${sc.dayOfWeek}`, sc);
+
+  const overrideByKey = new Map<string, { isWorking: boolean; slots: string | null; breaks: string | null }>();
+  for (const ov of overrides) overrideByKey.set(`${ov.staffId}|${ov.date.toISOString().slice(0, 10)}`, ov);
+
+  const apptsByKey = new Map<string, { startTime: string; endTime: string }[]>();
+  for (const a of appts) {
+    const key = `${a.staffId}|${a.date.toISOString().slice(0, 10)}`;
+    const list = apptsByKey.get(key) || [];
+    list.push({ startTime: a.startTime, endTime: a.endTime });
+    apptsByKey.set(key, list);
+  }
+
+  // Collect each barber's EARLIEST available slots, scanning day-by-day until they
+  // have enough (RAW_PER_STAFF) or we reach their horizon. A barber free tomorrow
+  // stops almost immediately; one booked solid for 3 weeks keeps scanning so we
+  // still surface their first real opening instead of showing nothing.
+  type Candidate = {
     staffId: string;
     staffName: string;
     staffAvatar: string | null;
@@ -105,20 +195,23 @@ export async function GET(request: Request) {
     serviceName: string;
     price: number;
     duration: number;
-  }[] = [];
+  };
+  const allCandidates: Candidate[] = [];
+  const countByStaff = new Map<string, number>();
+  const doneStaff = new Set<string>();
 
-  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-    const dateStr   = addDaysISO(todayStr, dayOffset);
-    const date      = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
+  for (let dayOffset = 0; dayOffset < maxHorizon; dayOffset++) {
+    if (doneStaff.size === eligiblePoolStaff.length) break; // everyone has enough
+
+    const dateStr = addDaysISO(todayStr, dayOffset);
     const dayOfWeek = getDayOfWeekISO(dateStr);
-    const dayLabel =
-      dayOffset === 0 ? "היום" : dayOffset === 1 ? "מחר"
-        : date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
+    const dayLabel = dayLabelFor(dateStr, dayOffset);
 
     for (const staff of eligiblePoolStaff) {
-      const override = await prisma.staffScheduleOverride.findUnique({
-        where: { staffId_date: { staffId: staff.id, date } },
-      });
+      if (doneStaff.has(staff.id)) continue;
+      if (dayOffset >= staff.horizon) { doneStaff.add(staff.id); continue; }
+
+      const override = overrideByKey.get(`${staff.id}|${dateStr}`);
       if (override && !override.isWorking) continue;
 
       let scheduleSlots: { start: string; end: string }[] = [];
@@ -128,9 +221,7 @@ export async function GET(request: Request) {
         scheduleSlots = JSON.parse(override.slots);
         breaks = override.breaks ? JSON.parse(override.breaks) : null;
       } else {
-        const schedule = await prisma.staffSchedule.findUnique({
-          where: { staffId_dayOfWeek: { staffId: staff.id, dayOfWeek } },
-        });
+        const schedule = schedByKey.get(`${staff.id}|${dayOfWeek}`);
         if (!schedule || !schedule.isWorking) continue;
         scheduleSlots = JSON.parse(schedule.slots);
         breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
@@ -138,35 +229,14 @@ export async function GET(request: Request) {
 
       const duration = staff.svc.durationMinutes;
       const price = staff.svc.price;
-
-      const appointments = await prisma.appointment.findMany({
-        where: { staffId: staff.id, date, status: { in: ["pending", "confirmed"] } },
-        select: { startTime: true, endTime: true },
-      });
+      const appointments = apptsByKey.get(`${staff.id}|${dateStr}`) || [];
 
       const slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 
-      // Resolve per-staff lead-time overrides (fall back to business defaults).
-      let staffLead = leadMinutes;
-      let staffFirstLead = bizFirstLead;
-      try {
-        if (staff.settings) {
-          const ss = JSON.parse(staff.settings) as Record<string, unknown>;
-          if (ss.minBookingLeadMinutes !== undefined) {
-            const p = Number(ss.minBookingLeadMinutes);
-            if (!isNaN(p)) staffLead = p;
-          }
-          if (ss.firstApptLeadMinutes !== undefined) {
-            const p = Number(ss.firstApptLeadMinutes);
-            if (!isNaN(p)) staffFirstLead = p;
-          }
-        }
-      } catch { /* malformed settings — keep business defaults */ }
-
       // When no appointments yet today, the next slot is the first of the day.
       const effectiveLead = appointments.length === 0
-        ? Math.max(staffFirstLead, staffLead)
-        : staffLead;
+        ? Math.max(staff.staffFirstLead, staff.staffLead)
+        : staff.staffLead;
 
       // Filter out slots whose time has already passed (for today) OR
       // slots that fall within the configured minimum lead time from now.
@@ -189,6 +259,10 @@ export async function GET(request: Request) {
           duration,
         });
       }
+
+      const c = (countByStaff.get(staff.id) || 0) + available.length;
+      countByStaff.set(staff.id, c);
+      if (c >= RAW_PER_STAFF) doneStaff.add(staff.id);
     }
   }
 

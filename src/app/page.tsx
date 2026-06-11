@@ -468,8 +468,13 @@ export default function HomePage() {
       0%, 100% { opacity: 1; text-shadow: 0 0 10px rgba(${brandRgb},0.9), 0 0 2px rgba(255,255,255,0.6); }
       50%      { opacity: 0.45; text-shadow: 0 0 2px rgba(${brandRgb},0.3); }
     }
+    /* Gently bobbing scroll cue — signals the page continues below the hero. */
+    @keyframes scroll-cue {
+      0%, 100% { transform: translateY(0);   opacity: 0.7; }
+      50%      { transform: translateY(5px); opacity: 1;   }
+    }
     @media (prefers-reduced-motion: reduce) {
-      .available-now-blink { animation: none !important; }
+      .available-now-blink, .scroll-cue-arrow { animation: none !important; }
     }
   `;
 
@@ -650,6 +655,30 @@ export default function HomePage() {
             </div>
           </div>
         )}
+
+        {/* ── Scroll cue — makes it clear the page continues (works, barbers,
+            prices…) instead of looking like a single-fold site. Tapping it
+            glides down to the first section. Fades out once the user scrolls. ── */}
+        <button
+          type="button"
+          onClick={() => window.scrollTo({ top: Math.round(window.innerHeight * 0.88), behavior: "smooth" })}
+          className="relative z-10 mx-auto mb-4 mt-1 flex flex-col items-center gap-1.5 active:scale-95"
+          style={{ opacity: scrolled ? 0 : 1, transition: "opacity .35s ease", pointerEvents: scrolled ? "none" : "auto" }}
+          aria-label="גלול לראות את העבודות שלנו">
+          <span className="text-white/55 text-[10px] tracking-[0.3em] uppercase font-semibold">
+            העבודות שלנו
+          </span>
+          <span className="scroll-cue-arrow flex h-7 w-7 items-center justify-center rounded-full"
+            style={{
+              background: "rgba(255,255,255,0.10)",
+              border: "1px solid rgba(255,255,255,0.18)",
+              animation: "scroll-cue 1.6s ease-in-out infinite",
+            }}>
+            <svg className="w-4 h-4 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </button>
       </section>
 
       {/* ══════════════════════════════════════════════════════════════════════════
