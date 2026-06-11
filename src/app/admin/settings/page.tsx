@@ -1342,6 +1342,7 @@ function ReminderTemplateEditor({
               ["{{date}}", "תאריך"],
               ["{{time}}", "שעה"],
               ["{{address_line}}", "כתובת"],
+              ["{{booking_link}}", "קישור לקביעת תור"],
             ].map(([placeholder, label]) => (
               <button
                 key={placeholder}

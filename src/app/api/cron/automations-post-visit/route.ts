@@ -37,6 +37,11 @@ export async function GET() {
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+  // Public booking link — replaces {{booking_url}} / {{booking_link}}
+  // placeholders that owners put in their automation templates.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const bookingLink = `${baseUrl}/book`;
+
   // Pull all active post-visit automations (across all businesses)
   const automations = await prisma.automation.findMany({
     where: {
@@ -124,7 +129,11 @@ export async function GET() {
           .replace(/\{\{business\}\}/g, business.name)
           .replace(/\{\{staff\}\}/g, appt.staff?.name ?? "")
           .replace(/\{\{service\}\}/g, appt.service?.name ?? "")
-          .replace(/\{\{cta\}\}/g, ctaLine);
+          .replace(/\{\{cta\}\}/g, ctaLine)
+          .replace(/\{\{booking_url\}\}/g, bookingLink)
+          .replace(/\{\{booking_link\}\}/g, bookingLink)
+          // Strip any remaining unknown placeholders so they never leak literally
+          .replace(/\{\{\w+\}\}/g, "");
 
         await sendMessage({
           businessId: auto.businessId,
@@ -160,7 +169,11 @@ export async function GET() {
           .replace(/\{\{business\}\}/g, business.name)
           .replace(/\{\{staff\}\}/g, appt.staff?.name ?? "")
           .replace(/\{\{service\}\}/g, appt.service?.name ?? "")
-          .replace(/\{\{cta\}\}/g, ctaLine);
+          .replace(/\{\{cta\}\}/g, ctaLine)
+          .replace(/\{\{booking_url\}\}/g, bookingLink)
+          .replace(/\{\{booking_link\}\}/g, bookingLink)
+          // Strip any remaining unknown placeholders so they never leak literally
+          .replace(/\{\{\w+\}\}/g, "");
 
         await sendMessage({
           businessId: auto.businessId,
