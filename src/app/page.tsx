@@ -657,32 +657,14 @@ export default function HomePage() {
         )}
 
         {/* ── Scroll cue — makes it clear the page continues (works, barbers,
-            prices…) instead of looking like a single-fold site. Now shows a
-            peek of the real works (stories) so the gallery is visible already
-            in the first fold. Tapping glides down to the full stories section.
-            Fades out once the user scrolls. ── */}
+            prices…) instead of looking like a single-fold site. Tapping it
+            glides down to the first section. Fades out once the user scrolls. ── */}
         <button
           type="button"
           onClick={() => window.scrollTo({ top: Math.round(window.innerHeight * 0.88), behavior: "smooth" })}
-          className="relative z-10 mx-auto mb-4 mt-1 flex flex-col items-center gap-2 active:scale-95"
+          className="relative z-10 mx-auto mb-4 mt-1 flex flex-col items-center gap-1.5 active:scale-95"
           style={{ opacity: scrolled ? 0 : 1, transition: "opacity .35s ease", pointerEvents: scrolled ? "none" : "auto" }}
           aria-label="גלול לראות את העבודות שלנו">
-          {!loading && stories.length > 0 && (
-            <div className="flex items-center">
-              {stories.slice(0, 5).map((s, i) => (
-                <span key={s.id}
-                  className="h-11 w-11 rounded-full overflow-hidden flex-shrink-0"
-                  style={{
-                    marginInlineStart: i === 0 ? 0 : -12,
-                    border: "2px solid rgba(255,255,255,0.85)",
-                    boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
-                    zIndex: 5 - i,
-                  }}>
-                  <img src={s.mediaUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
-                </span>
-              ))}
-            </div>
-          )}
           <span className="text-white/55 text-[10px] tracking-[0.3em] uppercase font-semibold">
             העבודות שלנו
           </span>
