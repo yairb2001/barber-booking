@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionBusiness, requireOwner } from "@/lib/session";
+import { getSessionBusiness, getRequestSession, requireOwner } from "@/lib/session";
 
 const DEFAULT_SOURCES = [
   "אינסטגרם", "פייסבוק", "טיקטוק", "גוגל", "חבר הביא חבר", "הגעתי מהרחוב", "אחר",
@@ -14,10 +14,13 @@ function getSources(settings: string | null): string[] {
   return DEFAULT_SOURCES;
 }
 
-// GET — return current list
+// GET — return current list.
+// Open to any authenticated user (owner + barbers): barbers need the source
+// list to edit a customer's "מקור הגעה" from the appointment card. The labels
+// are non-sensitive. Only PUT (rewriting the list) stays owner-only.
 export async function GET(req: NextRequest) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const biz = await getSessionBusiness(req, { settings: true });
   return NextResponse.json(getSources(biz?.settings ?? null));
 }

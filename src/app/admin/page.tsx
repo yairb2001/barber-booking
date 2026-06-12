@@ -1340,7 +1340,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   ];
 
   useEffect(() => {
-    fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralOptions).catch(() => {});
+    fetch("/api/admin/referral-sources")
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setReferralOptions(Array.isArray(data) ? data : []))
+      .catch(() => {});
   }, []);
 
   // Load swap proposals involving this appointment.
@@ -3031,6 +3034,16 @@ export default function AdminCalendar() {
   };
   const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
 
+  // Same idea for BREAK drags: after releasing, hold the proposed target and
+  // show a confirm card (✓/✕) instead of writing the schedule immediately —
+  // mirrors the appointment move flow so a sloppy release can't silently move
+  // a break to the wrong time.
+  type PendingBreakMove = {
+    drag: BreakDragState;
+    target: { staffId: string; date: string; startTime: string };
+  };
+  const [pendingBreakMove, setPendingBreakMove] = useState<PendingBreakMove | null>(null);
+
   // Column refs — keyed by `${staffId}|${date}` so we can identify which column
   // the pointer is over during a drag-move. Rebuilt on each render based on
   // current view (day = many staff, week = many days).
@@ -3873,8 +3886,10 @@ export default function AdminCalendar() {
     const newStartMin = toMin(target.startTime);
     // No move (same column + same start time) → don't write
     if (target.staffId === drag.staffId && target.date === drag.date && newStartMin === drag.origStartMin) return;
-    persistBreakMove(drag, target);
-  }, [persistBreakMove]);
+    // Don't write yet — hand off to a confirm card so the user approves the
+    // dragged time (mirrors the appointment drag flow).
+    setPendingBreakMove({ drag, target });
+  }, []);
 
   // Re-anchor a raw drop target (whose startTime = the finger's time) so the
   // break keeps the same offset relative to the finger as when it was grabbed.
@@ -4701,6 +4716,43 @@ export default function AdminCalendar() {
                 </button>
                 <button
                   onClick={commitPendingMove}
+                  className="py-2 rounded-lg bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 transition">
+                  ✓ אישור
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Pending BREAK-move confirmation card (drag-to-MOVE a break) ── */}
+      {pendingBreakMove && (() => {
+        const targetStaff = allStaff.find(s => s.id === pendingBreakMove.target.staffId);
+        const dateLabel = new Date(pendingBreakMove.target.date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+        const endTime = minToTime(toMin(pendingBreakMove.target.startTime) + pendingBreakMove.drag.durationMin);
+        return (
+          <div className="fixed inset-x-0 bottom-0 sm:inset-0 z-[55] flex items-end sm:items-center justify-center p-3 sm:p-4 pointer-events-none">
+            <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl border border-slate-200 p-4 space-y-3 pointer-events-auto safe-bottom">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 text-lg shrink-0">☕</div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-slate-900 text-sm">להזיז את ההפסקה?</p>
+                  <p className="text-xs text-slate-600 mt-0.5">
+                    {pendingBreakMove.drag.name} → <span className="font-semibold text-slate-800">{targetStaff?.name || "אותו ספר"}</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5" dir="rtl">
+                    {dateLabel} · <span dir="ltr">{pendingBreakMove.target.startTime}–{endTime}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPendingBreakMove(null)}
+                  className="py-2 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition">
+                  ✕ ביטול
+                </button>
+                <button
+                  onClick={() => { const p = pendingBreakMove; setPendingBreakMove(null); if (p) persistBreakMove(p.drag, p.target); }}
                   className="py-2 rounded-lg bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 transition">
                   ✓ אישור
                 </button>

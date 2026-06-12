@@ -21,14 +21,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
   if (!before) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Staff scoping: barbers can only modify their own appointments
+  // Staff scoping: barbers can only modify appointments that are currently
+  // theirs. They MAY reassign one of their own appointments to another barber
+  // (drag-to-move across columns), but cannot touch another barber's bookings.
   const session = getRequestSession(req);
   if (session && !session.isOwner && session.staffId && before.staffId !== session.staffId) {
     return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
-  }
-  // And cannot reassign to another barber
-  if (session && !session.isOwner && session.staffId && body.staffId && body.staffId !== session.staffId) {
-    return NextResponse.json({ error: "ספר יכול לעדכן רק תורים של עצמו" }, { status: 403 });
   }
 
   // Build update data
