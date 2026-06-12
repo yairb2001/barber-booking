@@ -30,7 +30,7 @@
     },
     {
       "path": "/api/cron/conversation-followup",
-      "schedule": "0 * * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }
