@@ -54,6 +54,7 @@ function UpcomingPageContent() {
 
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
   const [upcoming, setUpcoming] = useState<{ date: string; time: string }[]>([]);
+  const [serviceName, setServiceName] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -66,6 +67,18 @@ function UpcomingPageContent() {
         setLoading(false);
       })
       .catch(() => { setUpcoming([]); setLoading(false); });
+  }, [staffId, serviceId, slug]);
+
+  // Service name for the brief "service" mention in the header
+  useEffect(() => {
+    if (!staffId || !serviceId) return;
+    fetch(apiWithSlug(`/api/services?staffId=${staffId}`, slug))
+      .then(r => r.ok ? r.json() : [])
+      .then((svc: { id: string; name: string }[]) => {
+        const found = Array.isArray(svc) ? svc.find(s => s.id === serviceId) : null;
+        if (found) setServiceName(found.name);
+      })
+      .catch(() => { /* ignore */ });
   }, [staffId, serviceId, slug]);
 
   // Group consecutive slots by day for a clean, scannable list
@@ -85,9 +98,14 @@ function UpcomingPageContent() {
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
           <BackArrow href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`)} />
-          <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
-            כל התורים הקרובים
-          </h1>
+          <div className="flex flex-col items-center gap-0.5">
+            <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
+              כל התורים הקרובים
+            </h1>
+            {serviceName && (
+              <span className="text-[10px] font-medium" style={{ color: "var(--brand)" }}>{serviceName}</span>
+            )}
+          </div>
           <div className="w-9" />
         </div>
       </div>
