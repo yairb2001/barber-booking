@@ -134,66 +134,11 @@ function ChooseServicePageContent() {
         </div>
       </div>
 
-      {/* ── Quick slots for this barber ── */}
-      {!loading && quickSlots.length > 0 && (
-        <div className="px-4 pt-5 pb-2">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-              </span>
-              <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-                התורים הקרובים
-              </p>
-            </div>
-            <Link
-              href={publicHref(slug, "/book/team-upcoming")}
-              className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
-              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
-              <span className="text-[11px] font-semibold" style={{ color: "var(--text-sec)" }}>כל התורים</span>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}
-                style={{ color: "var(--text-sec)" }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
-            </Link>
-          </div>
-          <p className="text-[10px] mb-3 -mt-1.5 leading-relaxed" style={{ color: "var(--text-muted)" }}>
-            אלו רק הזמנים הקרובים ביותר — לבחירת שירות ותאריך אחר גלול/י למטה
-          </p>
-          <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-            {quickSlots.map((slot, i) => (
-              <Link key={i}
-                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
-                className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
-                style={{
-                  background: "var(--card)",
-                  border: `1.5px solid var(--brand)`,
-                  minWidth: 96,
-                }}>
-                <p className="text-[16px] font-bold tracking-widest leading-none" dir="ltr"
-                  style={{ color: "var(--brand)" }}>{slot.time}</p>
-                <p className="text-[10px] mt-1" style={{ color: "var(--text-sec)" }}>{slot.dayLabel}</p>
-                <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{slot.duration} דק׳</p>
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-4 mb-1 flex items-center gap-3">
-            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: "var(--text-muted)" }}>בחר שירות ותאריך ספציפי</span>
-            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-          </div>
-        </div>
-      )}
-
       {/* ── Page subtitle ── */}
-      {!loading && quickSlots.length === 0 && (
-        <div className="px-4 pt-6 pb-3">
-          <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>שירותים</p>
-          <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>מה תרצה לעשות?</h2>
-        </div>
-      )}
+      <div className="px-4 pt-6 pb-3">
+        <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>שירותים</p>
+        <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>בחר שירות</h2>
+      </div>
 
       {/* ── Services list ── */}
       <div className="px-4 pt-3 space-y-2.5">
@@ -256,6 +201,60 @@ function ChooseServicePageContent() {
           })
         )}
       </div>
+
+      {/* ── Quick jump — fastest open slots (skips choosing a date) ── */}
+      {!loading && quickSlots.length > 0 && (
+        <div className="px-4 pt-9">
+          <div className="mb-3 flex items-center gap-3">
+            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
+            <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: "var(--text-muted)" }}>או בקיצור</span>
+            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
+          </div>
+
+          <div className="flex items-center justify-between gap-2 mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+              </span>
+              <p className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>
+                ⚡ קפיצה מהירה לתור
+              </p>
+            </div>
+            <Link
+              href={publicHref(slug, "/book/team-upcoming")}
+              className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
+              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
+              <span className="text-[11px] font-semibold" style={{ color: "var(--text-sec)" }}>כל התורים</span>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}
+                style={{ color: "var(--text-sec)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
+          </div>
+          <p className="text-[11px] mb-3 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            הזמנים הפנויים הקרובים ביותר — הקש/י על שעה כדי לקפוץ ישר לאישור התור, בלי לבחור תאריך
+          </p>
+
+          <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+            {quickSlots.map((slot, i) => (
+              <Link key={i}
+                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
+                className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
+                style={{
+                  background: "var(--card)",
+                  border: `1.5px solid var(--brand)`,
+                  minWidth: 96,
+                }}>
+                <p className="text-[16px] font-bold tracking-widest leading-none" dir="ltr"
+                  style={{ color: "var(--brand)" }}>{slot.time}</p>
+                <p className="text-[10px] mt-1" style={{ color: "var(--text-sec)" }}>{slot.dayLabel}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: "var(--text-muted)" }}>{slot.duration} דק׳</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
