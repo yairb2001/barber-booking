@@ -92,13 +92,16 @@ export async function POST(req: NextRequest) {
   const endTime = `${String(Math.floor(endTotalMins / 60)).padStart(2, "0")}:${String(endTotalMins % 60).padStart(2, "0")}`;
 
   const dateObj = new Date(body.date.split("T")[0] + "T00:00:00.000Z");
+  // Match the whole UTC day as a RANGE so legacy rows that stored the start time
+  // inside `date` are still caught by the conflict check (avoids double-booking).
+  const dayEnd = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
 
   // Conflict check (unless explicitly bypassed with override: true)
   if (!body.override) {
     const existing = await prisma.appointment.findMany({
       where: {
         staffId,
-        date: dateObj,
+        date: { gte: dateObj, lt: dayEnd },
         status: { in: ["pending", "confirmed"] },
       },
       select: { id: true, startTime: true, endTime: true, customer: { select: { name: true } } },

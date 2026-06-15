@@ -130,19 +130,16 @@ export async function POST(request: NextRequest) {
 
   // Always use UTC midnight so dates are consistent on all servers/timezones
   const dateObj = new Date(date + "T00:00:00.000Z");
-  const conflicting = await prisma.appointment.findFirst({
-    where: {
-      staffId,
-      date: dateObj,
-      status: { in: ["pending", "confirmed"] },
-    },
-  });
+  // Match the whole UTC day as a RANGE — some legacy rows stored the start time
+  // inside `date` (e.g. T10:30:00Z); an exact-midnight match would miss them and
+  // allow a double-booking onto an already-taken slot.
+  const dayEnd = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
 
-  // More precise check: see if the specific time overlaps
+  // Get existing appointments for the day and check for a time overlap
   const existingAppointments = await prisma.appointment.findMany({
     where: {
       staffId,
-      date: dateObj,
+      date: { gte: dateObj, lt: dayEnd },
       status: { in: ["pending", "confirmed"] },
     },
   });

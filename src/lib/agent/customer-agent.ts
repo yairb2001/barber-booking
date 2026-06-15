@@ -289,9 +289,14 @@ async function execTool(
           data: { customerId: customer.id },
         });
 
-        // Calculate times
-        const apptDate = new Date(`${date}T${startTime}:00.000Z`);
-        const endDate  = new Date(apptDate.getTime() + service.durationMinutes * 60_000);
+        // Calculate times.
+        // ⚠️ The `date` column MUST be stored at UTC midnight (00:00:00Z) — the
+        // public availability queries match the day by exact UTC-midnight value,
+        // so baking the start time into `date` makes the appointment invisible to
+        // them and causes double-booking. Keep the start time only in `startTime`.
+        const apptDate = new Date(`${date}T00:00:00.000Z`);
+        const startDateTime = new Date(`${date}T${startTime}:00.000Z`);
+        const endDate  = new Date(startDateTime.getTime() + service.durationMinutes * 60_000);
         const endTime  = endDate.toISOString().slice(11, 16);
 
         // Create appointment

@@ -70,11 +70,17 @@ export async function GET(request: Request) {
     breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
   }
 
-  // Get existing appointments for the day
+  // Get existing appointments for the day.
+  // ⚠️ Query the whole UTC day as a RANGE (not an exact-midnight equality):
+  // historically some appointments were stored with the start time baked into
+  // `date` (e.g. 2026-07-01T10:30:00Z). An exact `date: midnight` match would
+  // miss those rows and present a taken slot as free → double-booking.
+  const dayStart = date;
+  const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
   const appointments = await prisma.appointment.findMany({
     where: {
       staffId,
-      date,
+      date: { gte: dayStart, lt: dayEnd },
       status: { in: ["pending", "confirmed"] },
     },
     select: { startTime: true, endTime: true },
