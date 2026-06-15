@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { pickFriendSource } from "@/lib/referral";
+import NotificationsBell from "./NotificationsBell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_HOUR_HEIGHT = 64;
@@ -4524,6 +4525,9 @@ export default function AdminCalendar() {
             className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
             + תור
           </button>
+
+          {/* Notifications bell — own bookings/cancellations (barber) or all (owner) */}
+          <NotificationsBell />
         </div>
 
         {/* Row 2: view switcher + barber picker + zoom */}
