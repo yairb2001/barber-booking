@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
@@ -275,7 +275,10 @@ function ChooseTimePageContent() {
   }, []);
 
   // ── Calendar window (2 weeks, Sun→Sat) + availability dots ──
-  const maxDate = addDaysLocal(today, horizonDays - 1);
+  // Bookable up to the barber's horizon, but always allow browsing ≥6 months
+  // forward so the customer can page/swipe ahead to find a specific date.
+  const BROWSE_CAP_DAYS = 182;
+  const maxDate = addDaysLocal(today, Math.max(horizonDays, BROWSE_CAP_DAYS) - 1);
   const windowStart = addDaysLocal(startOfWeekSunday(today), page * 14);
   const windowDays = Array.from({ length: 14 }, (_, i) => addDaysLocal(windowStart, i));
   const windowEnd = windowDays[13];
@@ -284,6 +287,25 @@ function ChooseTimePageContent() {
   const calLabel = windowStart.getMonth() === windowEnd.getMonth()
     ? monthYear(windowStart)
     : `${HE_MONTHS[windowStart.getMonth()]} – ${HE_MONTHS[windowEnd.getMonth()]}`;
+
+  // ── Swipe between weeks (RTL: swipe left = forward, swipe right = back) ──
+  const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - (touchStartY.current ?? 0);
+    touchStartX.current = null;
+    touchStartY.current = null;
+    // Ignore mostly-vertical swipes (scroll) and tiny moves
+    if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
+    if (dx < 0) { if (canNext) setPage(p => p + 1); }      // finger moved left → forward
+    else        { if (canPrev) setPage(p => Math.max(0, p - 1)); } // finger moved right → back
+  };
 
   // Fetch which days in the visible window have free slots (green dots)
   useEffect(() => {
@@ -325,8 +347,11 @@ function ChooseTimePageContent() {
       .catch(() => { setLoading(false); });
   }, [staffId, serviceId, selectedDate, dates]);
 
-  const currentDateObj = dates.find(d => d.date === selectedDate);
-  const dateLabel = currentDateObj ? `${currentDateObj.label} ${currentDateObj.dayNum}` : selectedDate;
+  // Label for the selected date — derived directly so it works for any date in
+  // the browse range, not just the (shorter) horizon list.
+  const selDateObj = selectedDate ? new Date(selectedDate + "T00:00:00") : null;
+  const currentLabel = selDateObj ? getDateLabel(selDateObj, today) : "";
+  const dateLabel = selDateObj ? `${currentLabel} ${selDateObj.getDate()}` : selectedDate;
 
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
@@ -368,6 +393,8 @@ function ChooseTimePageContent() {
           </div>
         </div>
 
+        {/* Swipeable calendar body — swipe left = forward weeks, right = back */}
+        <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ touchAction: "pan-y" }}>
         {/* Day-of-week header (Sunday rightmost in RTL) */}
         <div className="grid grid-cols-7 gap-1.5 mb-1.5">
           {["א", "ב", "ג", "ד", "ה", "ו", "ש"].map((d, i) => (
@@ -404,6 +431,7 @@ function ChooseTimePageContent() {
             );
           })}
         </div>
+        </div>
 
         {/* Legend */}
         <div className="flex items-center gap-1.5 mt-2.5">
@@ -417,7 +445,7 @@ function ChooseTimePageContent() {
         {/* Section header */}
         <div className="flex items-center gap-2 mb-4">
           <p className="text-[10px] tracking-[0.3em] uppercase font-semibold" style={{ color: "var(--brand)" }}>
-            {currentDateObj?.label || ""}
+            {currentLabel}
           </p>
         </div>
 
