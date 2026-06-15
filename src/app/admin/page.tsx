@@ -1265,9 +1265,15 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   // Convert this single appointment into a recurring (fixed) appointment.
   const [showRecurring, setShowRecurring] = useState(false);
   const [recurFreq, setRecurFreq] = useState<1 | 2 | 4>(1);
+  // How far ahead to schedule: "12" (3 חודשים) | "26" (חצי שנה) | "52" (שנה) | "forever" (לתמיד)
+  const [recurHorizon, setRecurHorizon] = useState<"12" | "26" | "52" | "forever">("forever");
   const [recurSaving, setRecurSaving] = useState(false);
   const [recurDone, setRecurDone] = useState<number | null>(null);
   const [recurError, setRecurError] = useState<string | null>(null);
+
+  // Cancel an existing recurring series (or all of them).
+  const [showCancelRecurring, setShowCancelRecurring] = useState(false);
+  const [cancelRecurBusy, setCancelRecurBusy] = useState(false);
 
   async function createRecurring() {
     setRecurSaving(true);
@@ -1287,6 +1293,9 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           frequencyWeeks: recurFreq,
           startDate: dayPart,
           price: dispPrice,
+          ...(recurHorizon === "forever"
+            ? { forever: true }
+            : { horizonWeeks: Number(recurHorizon) }),
         }),
       });
       const j = await r.json().catch(() => ({}));
@@ -1301,6 +1310,39 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       setRecurError("שגיאת רשת — נסה שוב");
     } finally {
       setRecurSaving(false);
+    }
+  }
+
+  // Cancel THIS recurring series (future occurrences) — appt.recurringId must be set.
+  async function cancelThisSeries() {
+    if (!appt.recurringId) return;
+    if (!window.confirm("לבטל את כל התורים העתידיים בסדרה הקבועה הזו?")) return;
+    setCancelRecurBusy(true);
+    try {
+      await fetch(`/api/admin/recurring/${appt.recurringId}?future=true`, { method: "DELETE" });
+      setShowCancelRecurring(false);
+      onReload?.();
+      onClose();
+    } catch {
+      /* network — leave panel open so the user can retry */
+    } finally {
+      setCancelRecurBusy(false);
+    }
+  }
+
+  // Cancel EVERY recurring series at once (owner → all, barber → own).
+  async function cancelAllRecurring() {
+    if (!window.confirm("לבטל את כל התורים הקבועים? כל הסדרות הקבועות יבוטלו (תורים עתידיים בלבד).")) return;
+    setCancelRecurBusy(true);
+    try {
+      await fetch(`/api/admin/recurring?future=true`, { method: "DELETE" });
+      setShowCancelRecurring(false);
+      onReload?.();
+      onClose();
+    } catch {
+      /* network — leave panel open so the user can retry */
+    } finally {
+      setCancelRecurBusy(false);
     }
   }
 
@@ -1478,10 +1520,11 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {appt.recurringId ? (
-              <span title="תור קבוע" className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center text-sm">🔁</span>
+              <button onClick={() => setShowCancelRecurring(v => !v)} title="תור קבוע — ניהול"
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showCancelRecurring ? "bg-blue-600 text-white" : "bg-blue-100 hover:bg-blue-200"}`}>🔁</button>
             ) : (
               <button onClick={() => { setShowRecurring(v => !v); setRecurError(null); }} title="הפוך לתור קבוע"
-                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showRecurring ? "bg-violet-600 text-white" : "bg-neutral-100 hover:bg-violet-50"}`}>🔁</button>
+                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showRecurring ? "bg-blue-600 text-white" : "bg-neutral-100 hover:bg-blue-50"}`}>🔁</button>
             )}
             <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200 transition text-sm">✕</button>
           </div>
@@ -1648,34 +1691,67 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         {/* Convert to recurring (תור קבוע) */}
         {recurDone !== null && (
           <div className="px-4 py-2 border-b border-neutral-100">
-            <p className="text-sm text-violet-700 font-medium text-center">
+            <p className="text-sm text-blue-700 font-medium text-center">
               ✓ נוצר תור קבוע — {recurDone} תורים נקבעו קדימה
             </p>
           </div>
         )}
         {showRecurring && (
-          <div className="px-4 py-2.5 border-b border-neutral-100 bg-violet-50/50 space-y-2">
-            <p className="text-xs font-semibold text-violet-800">🔁 הפוך לתור קבוע</p>
+          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">🔁 הפוך לתור קבוע</p>
             <p className="text-[11px] text-neutral-500 leading-snug">
               ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : "חודש"} באותו יום ושעה.
             </p>
             <div className="grid grid-cols-3 gap-1.5">
               {([[1, "כל שבוע"], [2, "כל שבועיים"], [4, "כל חודש"]] as const).map(([f, label]) => (
                 <button key={f} onClick={() => setRecurFreq(f)}
-                  className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-violet-600 text-white border-violet-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-violet-300"}`}>
+                  className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
                   {label}
                 </button>
               ))}
             </div>
+            <p className="text-[11px] text-neutral-500 leading-snug pt-0.5">למשך כמה זמן?</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([["12", "3 חודשים"], ["26", "חצי שנה"], ["52", "שנה"], ["forever", "לתמיד"]] as const).map(([h, label]) => (
+                <button key={h} onClick={() => setRecurHorizon(h)}
+                  className={`py-1.5 rounded-lg text-[11px] font-medium transition border ${recurHorizon === h ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {recurHorizon === "forever" && (
+              <p className="text-[10px] text-neutral-400 leading-snug">
+                התורים ימשיכו להיקבע אוטומטית קדימה ללא הגבלת זמן.
+              </p>
+            )}
             {recurError && <p className="text-xs text-red-600">{recurError}</p>}
             <div className="flex gap-2 pt-0.5">
               <button onClick={createRecurring} disabled={recurSaving}
-                className="flex-1 bg-violet-600 hover:bg-violet-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
                 {recurSaving ? "יוצר..." : "צור תור קבוע"}
               </button>
               <button onClick={() => { setShowRecurring(false); setRecurError(null); }}
                 className="px-3 text-xs text-neutral-500">ביטול</button>
             </div>
+          </div>
+        )}
+        {/* Manage / cancel an existing recurring series */}
+        {showCancelRecurring && appt.recurringId && (
+          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">🔁 תור קבוע</p>
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              התור הזה חלק מסדרה קבועה. ניתן לבטל את כל התורים העתידיים בלחיצה אחת.
+            </p>
+            <button onClick={cancelThisSeries} disabled={cancelRecurBusy}
+              className="w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+              {cancelRecurBusy ? "מבטל..." : "בטל את הסדרה הזו"}
+            </button>
+            <button onClick={cancelAllRecurring} disabled={cancelRecurBusy}
+              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+              בטל את כל התורים הקבועים
+            </button>
+            <button onClick={() => setShowCancelRecurring(false)}
+              className="w-full px-3 py-1 text-xs text-neutral-500">סגור</button>
           </div>
         )}
 

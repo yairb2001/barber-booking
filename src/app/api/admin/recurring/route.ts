@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { timeToMinutes } from "@/lib/utils";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
+import { generateOccurrences, FOREVER_HORIZON_WEEKS } from "@/lib/recurring";
 
 // ── GET — list recurring rules (optionally for a customer) ────────────────────
 export async function GET(req: NextRequest) {
@@ -60,9 +60,25 @@ export async function POST(req: NextRequest) {
 
   const freq = [1, 2, 4].includes(Number(body.frequencyWeeks)) ? Number(body.frequencyWeeks) : 1;
   const startDate = new Date(String(body.startDate).split("T")[0] + "T00:00:00.000Z");
-  const endDate = body.endDate
+
+  // Duration / horizon resolution.
+  //  - forever:true  → standing series with NO endDate; we materialise the next
+  //    FOREVER_HORIZON_WEEKS and a weekly cron tops it up (see /api/cron/recurring-topup).
+  //  - otherwise     → finite series; horizonWeeks (or an explicit endDate) caps it.
+  const forever = body.forever === true;
+  const horizonWeeks = forever
+    ? FOREVER_HORIZON_WEEKS
+    : Math.min(Math.max(Number(body.horizonWeeks) || 12, 1), 52);
+
+  const horizonEnd = new Date(startDate);
+  horizonEnd.setUTCDate(horizonEnd.getUTCDate() + horizonWeeks * 7);
+
+  // endDate stored on the rule: null for "forever" (so the cron keeps extending it),
+  // otherwise the explicit endDate or the computed finite horizon.
+  const explicitEnd = body.endDate
     ? new Date(String(body.endDate).split("T")[0] + "T00:00:00.000Z")
     : null;
+  const endDate = forever ? null : (explicitEnd ?? horizonEnd);
 
   // Create the rule
   const rule = await prisma.recurringAppointment.create({
@@ -81,68 +97,56 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Generate occurrences forward
-  const horizonWeeks = Math.min(Math.max(Number(body.horizonWeeks) || 12, 1), 52);
-  const duration = service.durationMinutes;
-  const [sh, sm] = String(body.startTime).split(":").map(Number);
-  const startMins = sh * 60 + sm;
-  const endMins = startMins + duration;
-  const endTime = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+  // Materialise the first batch of occurrences (helper caps at rule.endDate when set).
+  const { created, skipped } = await generateOccurrences(rule.id, startDate, horizonEnd);
 
-  // First occurrence: find the first date on/after startDate matching dayOfWeek
-  const cursor = new Date(startDate);
-  while (cursor.getUTCDay() !== Number(body.dayOfWeek)) {
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  return NextResponse.json({ rule, created, skipped, forever }, { status: 201 });
+}
+
+// ── DELETE — cancel ALL recurring rules at once ───────────────────────────────
+// Owner → every rule in the business; barber → only their own rules.
+// Query:
+//   ?future=true (default) → cancel future occurrences (from today forward)
+//   ?future=all            → cancel every pending/confirmed occurrence
+export async function DELETE(req: NextRequest) {
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const mode = searchParams.get("future") || "future";
+
+  const ruleWhere: Record<string, unknown> = {
+    businessId: session.businessId,
+    active: true,
+  };
+  // Barbers can only wipe their own standing appointments.
+  if (!session.isOwner && session.staffId) ruleWhere.staffId = session.staffId;
+
+  const rules = await prisma.recurringAppointment.findMany({
+    where: ruleWhere,
+    select: { id: true },
+  });
+  const ruleIds = rules.map((r) => r.id);
+  if (ruleIds.length === 0) {
+    return NextResponse.json({ ok: true, rules: 0, cancelled: 0 });
   }
 
-  const horizonEnd = new Date(startDate);
-  horizonEnd.setUTCDate(horizonEnd.getUTCDate() + horizonWeeks * 7);
-  const finalEnd = endDate && endDate < horizonEnd ? endDate : horizonEnd;
+  const todayUTC = new Date(new Date().toISOString().split("T")[0] + "T00:00:00.000Z");
+  const apptWhere: Record<string, unknown> = {
+    recurringId: { in: ruleIds },
+    status: { in: ["pending", "confirmed"] },
+  };
+  if (mode === "future") apptWhere.date = { gte: todayUTC };
 
-  let created = 0;
-  let skipped = 0;
-  while (cursor <= finalEnd) {
-    // Conflict check per occurrence
-    const dayISO = cursor.toISOString().split("T")[0];
-    const dayUTC = new Date(dayISO + "T00:00:00.000Z");
-    const existing = await prisma.appointment.findMany({
-      where: {
-        staffId: body.staffId,
-        date: dayUTC,
-        status: { in: ["pending", "confirmed"] },
-      },
-      select: { startTime: true, endTime: true },
-    });
-    const conflict = existing.some(apt => {
-      const aStart = timeToMinutes(apt.startTime);
-      const aEnd   = timeToMinutes(apt.endTime);
-      return startMins < aEnd && endMins > aStart;
-    });
+  const { count } = await prisma.appointment.updateMany({
+    where: apptWhere,
+    data: { status: "cancelled_by_staff", cancelledAt: new Date() },
+  });
 
-    if (!conflict) {
-      await prisma.appointment.create({
-        data: {
-          businessId: business.id,
-          customerId: body.customerId,
-          staffId:    body.staffId,
-          serviceId:  body.serviceId,
-          date: dayUTC,
-          startTime: String(body.startTime),
-          endTime,
-          status: "confirmed",
-          price: body.price !== undefined ? Number(body.price) : service.price,
-          note: body.note || null,
-          recurringId: rule.id,
-          source: "recurring", // standing appt set by staff — don't notify
-        },
-      });
-      created++;
-    } else {
-      skipped++;
-    }
+  await prisma.recurringAppointment.updateMany({
+    where: { id: { in: ruleIds } },
+    data: { active: false },
+  });
 
-    cursor.setUTCDate(cursor.getUTCDate() + 7 * freq);
-  }
-
-  return NextResponse.json({ rule, created, skipped }, { status: 201 });
+  return NextResponse.json({ ok: true, rules: ruleIds.length, cancelled: count });
 }
