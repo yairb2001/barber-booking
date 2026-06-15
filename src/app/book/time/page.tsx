@@ -30,6 +30,23 @@ function getDateLabel(date: Date, today: Date): string {
   return `יום ${getDayName(date)}`;
 }
 
+// ── Calendar helpers ─────────────────────────────────────────────────────────
+function addDaysLocal(date: Date, n: number): Date {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function startOfWeekSunday(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay()); // getDay 0=Sunday → step back to Sunday
+  return d;
+}
+const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+function monthYear(date: Date): string {
+  return `${HE_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
   const steps = ["ספר", "שירות", "זמן"];
@@ -215,11 +232,15 @@ function ChooseTimePageContent() {
 
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [slots, setSlots] = useState<string[]>([]);
-  const [dayClosed, setDayClosed] = useState(false); // true = barber not working that day
   const [loading, setLoading] = useState(false);
   const [dates, setDates] = useState<{ date: string; label: string; dayName: string; dayShort: string; dayNum: number }[]>([]);
   const [waitlistOpen, setWaitlistOpen]     = useState(false);
   const [waitlistSuccess, setWaitlistSuccess] = useState(false);
+  // Calendar state
+  const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
+  const [horizonDays, setHorizonDays] = useState(30);
+  const [page, setPage] = useState(0); // window paged forward in 2-week steps
+  const [availability, setAvailability] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     Promise.all([
@@ -228,29 +249,55 @@ function ChooseTimePageContent() {
     ]).then(([biz, staffList]) => {
       const bizHorizon: number = biz?.bookingHorizonDays || 30;
       const staffRecord = Array.isArray(staffList) ? staffList.find((s: { id: string }) => s.id === staffId) : null;
-      const horizonDays: number = staffRecord?.bookingHorizonDays ?? bizHorizon;
-      buildDates(horizonDays);
+      const days: number = staffRecord?.bookingHorizonDays ?? bizHorizon;
+      buildDates(days);
     }).catch(() => buildDates(30));
 
-    function buildDates(horizonDays: number) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    function buildDates(days: number) {
+      setHorizonDays(days);
+      const t0 = new Date();
+      t0.setHours(0, 0, 0, 0);
       const nextDates = [];
-      for (let i = 0; i < horizonDays; i++) {
-        const d = new Date(today);
+      for (let i = 0; i < days; i++) {
+        const d = new Date(t0);
         d.setDate(d.getDate() + i);
         nextDates.push({
           date: formatDate(d),
-          label: getDateLabel(d, today),
+          label: getDateLabel(d, t0),
           dayName: getDayName(d),
           dayShort: getDayShort(d),
           dayNum: d.getDate(),
         });
       }
       setDates(nextDates);
-      setSelectedDate(formatDate(today));
+      setSelectedDate(formatDate(t0));
     }
   }, []);
+
+  // ── Calendar window (2 weeks, Sun→Sat) + availability dots ──
+  const maxDate = addDaysLocal(today, horizonDays - 1);
+  const windowStart = addDaysLocal(startOfWeekSunday(today), page * 14);
+  const windowDays = Array.from({ length: 14 }, (_, i) => addDaysLocal(windowStart, i));
+  const windowEnd = windowDays[13];
+  const canPrev = page > 0;
+  const canNext = addDaysLocal(windowStart, 14).getTime() <= maxDate.getTime();
+  const calLabel = windowStart.getMonth() === windowEnd.getMonth()
+    ? monthYear(windowStart)
+    : `${HE_MONTHS[windowStart.getMonth()]} – ${HE_MONTHS[windowEnd.getMonth()]}`;
+
+  // Fetch which days in the visible window have free slots (green dots)
+  useEffect(() => {
+    if (!staffId || !serviceId) return;
+    const from = formatDate(windowStart);
+    const to = formatDate(windowEnd);
+    fetch(apiWithSlug(`/api/slots/availability?staffId=${staffId}&serviceId=${serviceId}&from=${from}&to=${to}`, slug))
+      .then(r => r.ok ? r.json() : { days: {} })
+      .then((data: { days?: Record<string, boolean> }) => {
+        setAvailability(prev => ({ ...prev, ...(data.days || {}) }));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staffId, serviceId, page, slug, horizonDays]);
 
   useEffect(() => {
     if (!staffId || !serviceId || !selectedDate) return;
@@ -263,7 +310,8 @@ function ChooseTimePageContent() {
         const slotList: string[] = Array.isArray(data) ? data : (data.slots ?? []);
         const closed: boolean = Array.isArray(data) ? false : (data.closed ?? false);
         setSlots(slotList);
-        setDayClosed(closed);
+        // Keep the calendar dot in sync with the actual day view
+        setAvailability(prev => ({ ...prev, [selectedDate]: slotList.length > 0 && !closed }));
         setLoading(false);
         // If today has no more available slots (all past), auto-advance to the next date
         if (slotList.length === 0 && !closed && dates.length > 1) {
@@ -274,7 +322,7 @@ function ChooseTimePageContent() {
           }
         }
       })
-      .catch(() => { setDayClosed(false); setLoading(false); });
+      .catch(() => { setLoading(false); });
   }, [staffId, serviceId, selectedDate, dates]);
 
   const currentDateObj = dates.find(d => d.date === selectedDate);
@@ -295,36 +343,72 @@ function ChooseTimePageContent() {
         </div>
       </div>
 
-      {/* ── Date selector ── */}
+      {/* ── Date selector — weekly calendar (Sun→Sat), 2 weeks, pageable forward ── */}
       <div className="px-4 pt-5">
-        <p className="text-[10px] tracking-[0.3em] uppercase font-semibold mb-3" style={{ color: "var(--brand)" }}>תאריך</p>
-        <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: "none" }}>
-          {dates.map(d => {
-            const isActive = selectedDate === d.date;
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-[10px] tracking-[0.3em] uppercase font-semibold" style={{ color: "var(--brand)" }}>תאריך</p>
+          <div className="flex items-center gap-3">
+            {/* Earlier (toward today) — right-pointing chevron in RTL */}
+            <button onClick={() => canPrev && setPage(p => Math.max(0, p - 1))} disabled={!canPrev}
+              className="w-8 h-8 flex items-center justify-center rounded-full transition-all active:scale-90 disabled:opacity-30"
+              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }} aria-label="שבועיים אחורה">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} style={{ color: "var(--text-sec)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            <span className="text-xs font-semibold min-w-[88px] text-center" style={{ color: "var(--text-pri)" }}>{calLabel}</span>
+            {/* Later — left-pointing chevron in RTL */}
+            <button onClick={() => canNext && setPage(p => p + 1)} disabled={!canNext}
+              className="w-8 h-8 flex items-center justify-center rounded-full transition-all active:scale-90 disabled:opacity-30"
+              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }} aria-label="שבועיים קדימה">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} style={{ color: "var(--text-sec)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Day-of-week header (Sunday rightmost in RTL) */}
+        <div className="grid grid-cols-7 gap-1.5 mb-1.5">
+          {["א", "ב", "ג", "ד", "ה", "ו", "ש"].map((d, i) => (
+            <div key={i} className="text-center text-[10px] font-semibold py-0.5" style={{ color: "var(--text-muted)" }}>{d}</div>
+          ))}
+        </div>
+
+        {/* 2-week grid */}
+        <div className="grid grid-cols-7 gap-1.5">
+          {windowDays.map(d => {
+            const ds = formatDate(d);
+            const inRange = d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime();
+            const isActive = selectedDate === ds;
+            const isToday = ds === formatDate(today);
+            const open = availability[ds] === true;
             return (
-              <button key={d.date} onClick={() => setSelectedDate(d.date)}
-                className="flex-shrink-0 flex flex-col items-center justify-center rounded-2xl transition-all active:scale-95"
+              <button key={ds} disabled={!inRange} onClick={() => setSelectedDate(ds)}
+                className="relative aspect-square flex items-center justify-center rounded-xl transition-all active:scale-95 disabled:cursor-default"
                 style={{
-                  minWidth: 56,
-                  paddingTop: 10,
-                  paddingBottom: 10,
-                  background: isActive ? "var(--brand)" : "var(--card)",
-                  border: `1.5px solid ${isActive ? "var(--brand)" : "var(--divider)"}`,
-                  boxShadow: isActive ? `0 4px 16px rgba(0,0,0,0.15)` : "none",
+                  background: isActive ? "var(--brand)" : inRange ? "var(--card)" : "transparent",
+                  border: `1.5px solid ${isActive ? "var(--brand)" : isToday ? "var(--brand)" : inRange ? "var(--divider)" : "transparent"}`,
+                  opacity: inRange ? 1 : 0.3,
                 }}>
-                {/* Day label (היום / מחר / א׳) */}
-                <span className="text-[9px] tracking-wider font-medium mb-1"
-                  style={{ color: isActive ? "rgba(255,255,255,0.75)" : "var(--text-muted)" }}>
-                  {d.label === "היום" ? "היום" : d.label === "מחר" ? "מחר" : d.dayShort}
-                </span>
-                {/* Day number */}
-                <span className="text-[18px] font-bold leading-none"
+                <span className="text-[15px] font-bold leading-none"
                   style={{ color: isActive ? "#fff" : "var(--text-pri)" }}>
-                  {d.dayNum}
+                  {d.getDate()}
                 </span>
+                {/* Green dot = day has free slots */}
+                {inRange && open && (
+                  <span className="absolute bottom-[5px] w-1.5 h-1.5 rounded-full"
+                    style={{ background: isActive ? "rgba(255,255,255,0.9)" : "#22c55e" }} />
+                )}
               </button>
             );
           })}
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-1.5 mt-2.5">
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
+          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>יש תורים פנויים</span>
         </div>
       </div>
 
@@ -366,28 +450,28 @@ function ChooseTimePageContent() {
           <div className="py-16 flex flex-col items-center gap-4">
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
               style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
-              {dayClosed ? "🚫" : "📅"}
+              📅
             </div>
             <div className="text-center">
               <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>
-                {dayClosed ? "הספר לא עובד ביום זה" : "אין שעות פנויות"}
+                אין תורים פנויים ביום זה
               </p>
               <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-                {dayClosed ? "בחר תאריך אחר" : "כל התורים מלאים — נסה תאריך אחר"}
+                אפשר להצטרף לרשימת ההמתנה ליום זה או לבחור תאריך אחר
               </p>
             </div>
           </div>
         )}
 
-        {/* ── Waitlist CTA — only when barber is scheduled to work but day is full/limited ── */}
-        {!loading && selectedDate && !dayClosed && (
+        {/* ── Waitlist CTA — available on both full and closed days ── */}
+        {!loading && selectedDate && (
           <div className="mt-8 rounded-2xl p-4"
             style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
             <div className="flex items-start gap-3">
               <span className="text-xl mt-0.5">🔔</span>
               <div className="flex-1">
                 <p className="text-[13px] font-semibold" style={{ color: "var(--text-pri)" }}>
-                  אין את השעה שחיפשת?
+                  {slots.length > 0 ? "אין את השעה שחיפשת?" : "רוצה תור ביום זה?"}
                 </p>
                 <p className="text-[11px] mt-1 mb-3 leading-relaxed" style={{ color: "var(--text-muted)" }}>
                   הצטרף לרשימת ההמתנה — נשלח לך הודעה ב-WhatsApp ברגע שיתפנה תור
