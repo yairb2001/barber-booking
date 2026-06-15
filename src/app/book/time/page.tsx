@@ -46,6 +46,24 @@ const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי
 function monthYear(date: Date): string {
   return `${HE_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
+// Number of Sunday-anchored weeks between today and a date (0 = this week, 1 = next week…)
+function weekIndexSunday(date: Date, today: Date): number {
+  const a = startOfWeekSunday(today).getTime();
+  const b = startOfWeekSunday(date).getTime();
+  return Math.round((b - a) / (7 * 24 * 60 * 60 * 1000));
+}
+// Friendly Hebrew label: היום / מחר (שני) / שני / שני שבוע הבא / שני · 7.7
+function smartDateLabel(dateStr: string, today: Date): string {
+  const d = new Date(dateStr + "T00:00:00");
+  const diff = Math.round((d.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+  const name = getDayName(d); // ראשון…שבת
+  if (diff === 0) return "היום";
+  if (diff === 1) return `מחר (${name})`;
+  const wk = weekIndexSunday(d, today);
+  if (wk <= 0) return name;                 // later this week
+  if (wk === 1) return `${name} שבוע הבא`;  // next week
+  return `${name} · ${d.getDate()}.${d.getMonth() + 1}`; // 2+ weeks ahead
+}
 
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
@@ -241,6 +259,10 @@ function ChooseTimePageContent() {
   const [horizonDays, setHorizonDays] = useState(30);
   const [page, setPage] = useState(0); // window paged forward in 2-week steps
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
+  // "All upcoming appointments" quick list
+  const [showUpcoming, setShowUpcoming] = useState(false);
+  const [upcoming, setUpcoming] = useState<{ date: string; time: string }[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -320,6 +342,20 @@ function ChooseTimePageContent() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [staffId, serviceId, page, slug, horizonDays]);
+
+  // Fetch the next ~20 bookable slots when the upcoming list is opened
+  useEffect(() => {
+    if (!showUpcoming || !staffId || !serviceId) return;
+    setUpcomingLoading(true);
+    fetch(apiWithSlug(`/api/slots/upcoming?staffId=${staffId}&serviceId=${serviceId}&limit=20`, slug))
+      .then(r => r.ok ? r.json() : { slots: [] })
+      .then((data: { slots?: { date: string; time: string }[] }) => {
+        setUpcoming(data.slots || []);
+        setUpcomingLoading(false);
+      })
+      .catch(() => { setUpcoming([]); setUpcomingLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showUpcoming, staffId, serviceId, slug]);
 
   useEffect(() => {
     if (!staffId || !serviceId || !selectedDate) return;
@@ -440,8 +476,66 @@ function ChooseTimePageContent() {
         </div>
       </div>
 
-      {/* ── Time slots ── */}
+      {/* ── Quick-expand: all upcoming appointments ── */}
+      <div className="px-4 pt-4">
+        <button onClick={() => setShowUpcoming(v => !v)}
+          className="w-full flex items-center justify-between rounded-2xl px-4 py-3.5 transition-all active:scale-[0.99]"
+          style={{
+            background: showUpcoming ? "var(--brand)" : "var(--card)",
+            border: `1.5px solid ${showUpcoming ? "var(--brand)" : "var(--divider)"}`,
+          }}>
+          <span className="flex items-center gap-2">
+            <span className="text-base">⚡</span>
+            <span className="text-[13px] font-bold" style={{ color: showUpcoming ? "#fff" : "var(--text-pri)" }}>
+              {showUpcoming ? "חזרה לבחירה לפי יום" : "הצג את כל התורים הקרובים"}
+            </span>
+          </span>
+          <svg className="w-4 h-4 transition-transform"
+            style={{ color: showUpcoming ? "#fff" : "var(--text-muted)", transform: showUpcoming ? "rotate(180deg)" : "none" }}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+
+      {/* ── Time slots / upcoming list ── */}
       <div className="px-4 pt-5">
+        {showUpcoming ? (
+          /* All upcoming appointments, chronological */
+          upcomingLoading ? (
+            <div className="flex flex-col gap-2.5">
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="h-14 rounded-2xl animate-pulse" style={{ background: "var(--card)" }} />
+              ))}
+            </div>
+          ) : upcoming.length > 0 ? (
+            <div className="flex flex-col gap-2.5">
+              <p className="text-[10px] tracking-[0.3em] uppercase font-semibold mb-1" style={{ color: "var(--brand)" }}>
+                התורים הקרובים ביותר
+              </p>
+              {upcoming.map(u => (
+                <Link key={`${u.date}-${u.time}`}
+                  href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${u.date}&time=${u.time}`)}
+                  className="flex items-center justify-between rounded-2xl py-3.5 px-4 transition-all active:scale-[0.98]"
+                  style={{ background: "var(--card)", border: "1.5px solid var(--divider)" }}>
+                  <span className="text-[13px] font-semibold" style={{ color: "var(--text-pri)" }}>
+                    {smartDateLabel(u.date, today)}
+                  </span>
+                  <span className="text-[16px] font-bold" dir="ltr" style={{ color: "var(--brand)", letterSpacing: "0.1em" }}>
+                    {u.time}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="py-16 flex flex-col items-center gap-4">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl"
+                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>📅</div>
+              <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>אין תורים פנויים בקרוב</p>
+            </div>
+          )
+        ) : (
+        <>
         {/* Section header */}
         <div className="flex items-center gap-2 mb-4">
           <p className="text-[10px] tracking-[0.3em] uppercase font-semibold" style={{ color: "var(--brand)" }}>
@@ -512,6 +606,8 @@ function ChooseTimePageContent() {
               </div>
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 
