@@ -126,6 +126,20 @@ function TeamUpcomingContent() {
             </div>
           </div>
         )}
+
+        {/* ── Pick a specific date instead — opens the team calendar (any barber) ── */}
+        {!loading && (
+          <Link
+            href={publicHref(slug, "/book/team-date")}
+            className="mt-8 flex items-center justify-center gap-2 rounded-2xl py-4 active:scale-[0.98] transition-transform"
+            style={{ background: "var(--bg-alt)", border: "1.5px solid var(--divider)" }}>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+              style={{ color: "var(--text-sec)" }}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>בחר תאריך ספציפי</span>
+          </Link>
+        )}
       </div>
     </div>
   );

@@ -66,8 +66,11 @@ export async function GET(request: Request) {
   });
   if (visibleServices.length === 0) return NextResponse.json({ slots: [] });
 
+  // Only barbers enabled for quick appointments (inQuickPool) appear in the
+  // team-wide feed — same gate as the home-page quick slots, so a barber the
+  // owner excluded from quick booking never shows up here.
   const poolStaff = await prisma.staff.findMany({
-    where: { isAvailable: true, ...bizScope },
+    where: { inQuickPool: true, isAvailable: true, ...bizScope },
     orderBy: { poolPriority: "asc" },
     select: {
       id: true,
