@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId } from "@/lib/tenant";
-import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow } from "@/lib/utils";
+import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,34 @@ export async function GET(request: Request) {
   }
 
   const duration = staffService.customDuration || staffService.service.durationMinutes;
+
+  // ── Booking horizon gate ─────────────────────────────────────────────────
+  // Days beyond the barber's booking horizon are not open for booking yet. The
+  // customer can still browse/waitlist them, but we must not offer slots — so
+  // the calendar shows no green dot and no bookable times there.
+  {
+    const [staffForHorizon, bizForHorizon] = await Promise.all([
+      prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } }),
+      businessId
+        ? prisma.business.findUnique({ where: { id: businessId }, select: { bookingHorizonDays: true } })
+        : prisma.business.findFirst({ select: { bookingHorizonDays: true } }),
+    ]);
+    let horizonDays = bizForHorizon?.bookingHorizonDays ?? 30;
+    try {
+      if (staffForHorizon?.settings) {
+        const cfg = JSON.parse(staffForHorizon.settings) as Record<string, unknown>;
+        if (cfg.bookingHorizonDays !== undefined) {
+          const h = Number(cfg.bookingHorizonDays);
+          if (!isNaN(h) && h > 0) horizonDays = h;
+        }
+      }
+    } catch { /* malformed settings — keep business default */ }
+    const nowBiz = getBusinessNow();
+    const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
+    if (dateStr > lastBookableDate) {
+      return NextResponse.json({ slots: [], beyondHorizon: true });
+    }
+  }
 
   // Check for override first
   const override = await prisma.staffScheduleOverride.findUnique({

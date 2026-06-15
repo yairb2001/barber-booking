@@ -71,13 +71,11 @@ export async function GET(request: Request) {
   let staffSettings: Record<string, unknown> = {};
   try { if (staffRecord?.settings) staffSettings = JSON.parse(staffRecord.settings); } catch { /* ignore */ }
   let leadMinutes = 0, firstLeadMinutes = 0;
-  const needBizDefaults =
-    staffSettings.minBookingLeadMinutes === undefined || staffSettings.firstApptLeadMinutes === undefined;
-  const biz = needBizDefaults
-    ? (businessId
-        ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
-        : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }))
-    : null;
+  // Always fetch the business: we need bookingHorizonDays regardless of whether
+  // the staff overrides lead times, so the green dots respect the booking window.
+  const biz = businessId
+    ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
+    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);
@@ -85,11 +83,23 @@ export async function GET(request: Request) {
     ? (isNaN(Number(staffSettings.firstApptLeadMinutes)) ? 0 : Number(staffSettings.firstApptLeadMinutes))
     : (biz?.firstApptLeadMinutes ?? 0);
 
+  // Booking horizon (per-barber override → business default → 30). Days beyond
+  // the horizon are NOT yet open for booking — they must show no availability
+  // (no green dot), even though the customer can still browse/waitlist them.
+  let horizonDays = biz?.bookingHorizonDays ?? 30;
+  if (staffSettings.bookingHorizonDays !== undefined) {
+    const h = Number(staffSettings.bookingHorizonDays);
+    if (!isNaN(h) && h > 0) horizonDays = h;
+  }
+  const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
+
   const days: Record<string, boolean> = {};
 
   for (const dateStr of dates) {
     // Past days are never open
     if (dateStr < nowBiz.date) { days[dateStr] = false; continue; }
+    // Beyond the booking horizon → not open yet (no green dot)
+    if (dateStr > lastBookableDate) { days[dateStr] = false; continue; }
 
     const override = overrideByDate.get(dateStr);
     let scheduleSlots: { start: string; end: string }[] = [];
