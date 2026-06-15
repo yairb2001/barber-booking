@@ -222,7 +222,7 @@ function ChooseServicePageContent() {
               </p>
             </div>
             <Link
-              href={publicHref(slug, "/book/team-upcoming")}
+              href={publicHref(slug, `/book/upcoming?staffId=${staffId}&serviceId=${quickSlots[0].serviceId}`)}
               className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
               style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
               <span className="text-[11px] font-semibold" style={{ color: "var(--text-sec)" }}>כל התורים</span>
