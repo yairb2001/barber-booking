@@ -285,13 +285,13 @@ export async function GET(request: Request) {
     return NextResponse.json(selected);
   }
 
-  // For the home carousel: up to 3 slots per barber (spaced ≥60 min apart), sorted by time
+  // For the home carousel: up to 5 slots per barber (spaced ≥60 min apart), sorted by time
   const perBarberSlots = new Map<string, number[]>(); // staffId → list of picked timeMinutes
   const selected: typeof allCandidates = [];
 
   for (const c of allCandidates) {
     const picked = perBarberSlots.get(c.staffId) || [];
-    if (picked.length >= 3) continue;
+    if (picked.length >= 5) continue;
     const tooClose = picked.some((t) => Math.abs(c.timeMinutes - t) < 60);
     if (tooClose) continue;
     picked.push(c.timeMinutes);
