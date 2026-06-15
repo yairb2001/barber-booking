@@ -325,8 +325,8 @@ function ChooseTimePageContent() {
     touchStartY.current = null;
     // Ignore mostly-vertical swipes (scroll) and tiny moves
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx < 0) { if (canNext) setPage(p => p + 1); }      // finger moved left → forward
-    else        { if (canPrev) setPage(p => Math.max(0, p - 1)); } // finger moved right → back
+    if (dx > 0) { if (canNext) setPage(p => p + 1); }      // finger moved left→right → forward a week
+    else        { if (canPrev) setPage(p => Math.max(0, p - 1)); } // finger moved right→left → back
   };
 
   // Fetch which days in the visible window have free slots (green dots)
