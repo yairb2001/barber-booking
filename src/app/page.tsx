@@ -631,7 +631,14 @@ export default function HomePage() {
                 התורים הקרובים
               </span>
               <div className="flex-1 h-px bg-white/10" />
-              <Link href={publicHref(slug, "/book")} className="text-white/50 text-[11px] hover:text-white/80 transition-colors">כל התורים ←</Link>
+              <Link href={publicHref(slug, "/book/team-upcoming")}
+                className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
+                style={{ background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.22)" }}>
+                <span className="text-white/90 text-[12px] font-semibold">כל התורים</span>
+                <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
+              </Link>
             </div>
 
             {/* Swipe row — the customer scrolls through open slots with a finger. */}

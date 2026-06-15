@@ -147,18 +147,16 @@ function ChooseServicePageContent() {
                 התורים הקרובים
               </p>
             </div>
-            {quickSlots[0]?.serviceId && (
-              <Link
-                href={publicHref(slug, `/book/upcoming?staffId=${staffId}&serviceId=${quickSlots[0].serviceId}`)}
-                className="flex items-center gap-1 rounded-full px-2.5 py-1 active:scale-95 transition-transform"
-                style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
-                <span className="text-[10px] font-medium" style={{ color: "var(--text-sec)" }}>הכל</span>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  style={{ color: "var(--text-sec)" }}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-              </Link>
-            )}
+            <Link
+              href={publicHref(slug, "/book/team-upcoming")}
+              className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
+              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
+              <span className="text-[11px] font-semibold" style={{ color: "var(--text-sec)" }}>כל התורים</span>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}
+                style={{ color: "var(--text-sec)" }}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+              </svg>
+            </Link>
           </div>
           <p className="text-[10px] mb-3 -mt-1.5 leading-relaxed" style={{ color: "var(--text-muted)" }}>
             אלו רק הזמנים הקרובים ביותר — לבחירת שירות ותאריך אחר גלול/י למטה
