@@ -51,6 +51,7 @@ export async function GET(request: Request) {
     : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
+  const bizHorizon = biz?.bookingHorizonDays ?? 30;
 
   const bizScope = resolvedBusinessId ? { businessId: resolvedBusinessId } : {};
 
@@ -83,6 +84,7 @@ export async function GET(request: Request) {
 
       let staffLead = leadMinutes;
       let staffFirstLead = bizFirstLead;
+      let horizon = bizHorizon;
       try {
         if (s.settings) {
           const cfg = JSON.parse(s.settings) as Record<string, unknown>;
@@ -94,6 +96,10 @@ export async function GET(request: Request) {
             const p = Number(cfg.firstApptLeadMinutes);
             if (!isNaN(p)) staffFirstLead = p;
           }
+          if (cfg.bookingHorizonDays !== undefined) {
+            const p = Number(cfg.bookingHorizonDays);
+            if (!isNaN(p) && p > 0) horizon = p;
+          }
         }
       } catch { /* keep business defaults */ }
 
@@ -103,6 +109,7 @@ export async function GET(request: Request) {
         avatarUrl: s.avatarUrl,
         staffLead,
         staffFirstLead,
+        horizon,
         svc: {
           id: svc.id,
           name: svc.name,
@@ -155,6 +162,7 @@ export async function GET(request: Request) {
     let lastTime = -999;
 
     for (let dayOffset = 0; dayOffset < SCAN_DAYS; dayOffset++) {
+      if (dayOffset >= staff.horizon) break; // past this barber's booking horizon
       const dateStr = addDaysISO(todayStr, dayOffset);
       const override = overrideByKey.get(`${staff.id}|${dateStr}`);
       if (override && !override.isWorking) continue;

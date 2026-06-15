@@ -60,7 +60,7 @@ function UpcomingPageContent() {
   useEffect(() => {
     if (!staffId || !serviceId) { setLoading(false); return; }
     setLoading(true);
-    fetch(apiWithSlug(`/api/slots/upcoming?staffId=${staffId}&serviceId=${serviceId}&limit=40`, slug))
+    fetch(apiWithSlug(`/api/slots/upcoming?staffId=${staffId}&serviceId=${serviceId}&limit=20`, slug))
       .then(r => r.ok ? r.json() : { slots: [] })
       .then((data: { slots?: { date: string; time: string }[] }) => {
         setUpcoming(data.slots || []);
@@ -124,21 +124,19 @@ function UpcomingPageContent() {
                 <p className="text-[11px] tracking-[0.2em] uppercase font-bold mb-2.5" style={{ color: "var(--brand)" }}>
                   {smartDateLabel(date, today)}
                 </p>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-2">
                   {times.map(time => (
                     <Link key={time}
                       href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${date}&time=${time}`)}
-                      className="flex items-center justify-center rounded-xl py-3.5 transition-all active:scale-[0.97]"
-                      dir="ltr"
-                      style={{
-                        background: "var(--card)",
-                        border: "1.5px solid var(--divider)",
-                        fontSize: "15px",
-                        fontWeight: 700,
-                        letterSpacing: "0.08em",
-                        color: "var(--text-pri)",
-                      }}>
-                      {time}
+                      className="flex items-center justify-between rounded-2xl px-4 py-3.5 transition-all active:scale-[0.98]"
+                      style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
+                      <span dir="ltr" className="text-[17px] font-bold tracking-widest" style={{ color: "var(--brand)" }}>
+                        {time}
+                      </span>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                        style={{ color: "var(--text-muted)" }}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
                     </Link>
                   ))}
                 </div>

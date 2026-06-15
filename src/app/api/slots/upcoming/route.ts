@@ -59,13 +59,12 @@ export async function GET(request: Request) {
   // Lead time (per-barber override → business default)
   let staffSettings: Record<string, unknown> = {};
   try { if (staffRecord?.settings) staffSettings = JSON.parse(staffRecord.settings); } catch { /* ignore */ }
-  const needBizDefaults =
-    staffSettings.minBookingLeadMinutes === undefined || staffSettings.firstApptLeadMinutes === undefined;
-  const biz = needBizDefaults
-    ? (businessId
-        ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
-        : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }))
-    : null;
+  // Always fetch the business: we need bookingHorizonDays regardless of whether
+  // the staff overrides lead times, so this list respects the booking window
+  // exactly like the calendar's green dots (no slots past the horizon).
+  const biz = businessId
+    ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
+    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);
@@ -73,9 +72,19 @@ export async function GET(request: Request) {
     ? (isNaN(Number(staffSettings.firstApptLeadMinutes)) ? 0 : Number(staffSettings.firstApptLeadMinutes))
     : (biz?.firstApptLeadMinutes ?? 0);
 
+  // Booking horizon (per-barber override → business default → 30). Days beyond
+  // it are NOT yet open for booking, so they must not appear in this list.
+  let horizonDays = biz?.bookingHorizonDays ?? 30;
+  if (staffSettings.bookingHorizonDays !== undefined) {
+    const h = Number(staffSettings.bookingHorizonDays);
+    if (!isNaN(h) && h > 0) horizonDays = h;
+  }
+  const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
+
   const result: { date: string; time: string }[] = [];
   let dateStr = startStr;
   for (let i = 0; i < SCAN_DAYS && result.length < limit; i++, dateStr = addDaysISO(dateStr, 1)) {
+    if (dateStr > lastBookableDate) break; // past the booking horizon — stop
     const override = overrideByDate.get(dateStr);
     let scheduleSlots: { start: string; end: string }[] = [];
     let breaks: { start: string; end: string }[] | null = null;
