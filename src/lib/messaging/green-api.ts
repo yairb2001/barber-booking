@@ -45,4 +45,52 @@ export class GreenApiProvider implements MessagingProvider {
       return { ok: false, error: e instanceof Error ? e.message : "Network error" };
     }
   }
+
+  /**
+   * Read the instance authorization state.
+   * Returns one of: authorized | notAuthorized | starting | yellowCard | blocked.
+   * Docs: https://green-api.com/en/docs/api/account/GetStateInstance/
+   */
+  async getState(): Promise<{ ok: boolean; state?: string; error?: string }> {
+    if (!this.isConfigured()) return { ok: false, error: "not_configured" };
+    const url = `https://api.green-api.com/waInstance${this.instanceId}/getStateInstance/${this.token}`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      }
+      const data = (await res.json()) as { stateInstance?: string };
+      return { ok: true, state: data.stateInstance };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  }
+
+  /**
+   * Fetch the WhatsApp linking QR for re-authorizing the instance.
+   * The QR rotates every ~20s, so the caller should poll.
+   *   type "qrCode"       → `qr` is a data-URI PNG ready for an <img src>.
+   *   type "alreadyLogged"→ already authorized, no QR needed.
+   *   type "error"        → message holds the reason.
+   * Docs: https://green-api.com/en/docs/api/account/QR/
+   */
+  async getQr(): Promise<{ ok: boolean; type?: string; qr?: string; message?: string; error?: string }> {
+    if (!this.isConfigured()) return { ok: false, error: "not_configured" };
+    const url = `https://api.green-api.com/waInstance${this.instanceId}/qr/${this.token}`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      }
+      const data = (await res.json()) as { type?: string; message?: string };
+      const qr = data.type === "qrCode" && data.message
+        ? `data:image/png;base64,${data.message}`
+        : undefined;
+      return { ok: true, type: data.type, qr, message: data.message };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  }
 }
