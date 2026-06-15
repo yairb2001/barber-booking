@@ -240,6 +240,7 @@ function ChooseTimePageContent() {
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
   const [horizonDays, setHorizonDays] = useState(30);
   const [page, setPage] = useState(0); // window paged forward in 2-week steps
+  const [animDir, setAnimDir] = useState<"next" | "prev" | null>(null);
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -288,7 +289,11 @@ function ChooseTimePageContent() {
     ? monthYear(windowStart)
     : `${HE_MONTHS[windowStart.getMonth()]} – ${HE_MONTHS[windowEnd.getMonth()]}`;
 
-  // ── Swipe between weeks (RTL: swipe left = forward, swipe right = back) ──
+  // Paging with a slide animation. Direction drives which way the grid slides in.
+  const goNext = () => { if (!canNext) return; setAnimDir("next"); setPage(p => p + 1); };
+  const goPrev = () => { if (!canPrev) return; setAnimDir("prev"); setPage(p => Math.max(0, p - 1)); };
+
+  // ── Swipe between weeks (RTL: swipe left→right = forward, right→left = back) ──
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => {
@@ -303,8 +308,8 @@ function ChooseTimePageContent() {
     touchStartY.current = null;
     // Ignore mostly-vertical swipes (scroll) and tiny moves
     if (Math.abs(dx) < 45 || Math.abs(dx) < Math.abs(dy)) return;
-    if (dx > 0) { if (canNext) setPage(p => p + 1); }      // finger moved left→right → forward a week
-    else        { if (canPrev) setPage(p => Math.max(0, p - 1)); } // finger moved right→left → back
+    if (dx > 0) goNext();  // finger moved left→right → forward two weeks
+    else        goPrev();  // finger moved right→left → back
   };
 
   // Fetch which days in the visible window have free slots (green dots)
@@ -355,6 +360,13 @@ function ChooseTimePageContent() {
 
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
+      <style>{`
+        @keyframes calSlideNext { from { transform: translateX(-40px); opacity: 0.25; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes calSlidePrev { from { transform: translateX(40px);  opacity: 0.25; } to { transform: translateX(0); opacity: 1; } }
+        .cal-anim-next { animation: calSlideNext .28s cubic-bezier(0.22,0.61,0.36,1); }
+        .cal-anim-prev { animation: calSlidePrev .28s cubic-bezier(0.22,0.61,0.36,1); }
+        @media (prefers-reduced-motion: reduce) { .cal-anim-next, .cal-anim-prev { animation: none; } }
+      `}</style>
 
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 px-4 py-3"
@@ -374,7 +386,7 @@ function ChooseTimePageContent() {
           <p className="text-[10px] tracking-[0.3em] uppercase font-semibold" style={{ color: "var(--brand)" }}>תאריך</p>
           <div className="flex items-center gap-3">
             {/* Earlier (toward today) — right-pointing chevron in RTL */}
-            <button onClick={() => canPrev && setPage(p => Math.max(0, p - 1))} disabled={!canPrev}
+            <button onClick={goPrev} disabled={!canPrev}
               className="w-8 h-8 flex items-center justify-center rounded-full transition-all active:scale-90 disabled:opacity-30"
               style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }} aria-label="שבועיים אחורה">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} style={{ color: "var(--text-sec)" }}>
@@ -383,7 +395,7 @@ function ChooseTimePageContent() {
             </button>
             <span className="text-xs font-semibold min-w-[88px] text-center" style={{ color: "var(--text-pri)" }}>{calLabel}</span>
             {/* Later — left-pointing chevron in RTL */}
-            <button onClick={() => canNext && setPage(p => p + 1)} disabled={!canNext}
+            <button onClick={goNext} disabled={!canNext}
               className="w-8 h-8 flex items-center justify-center rounded-full transition-all active:scale-90 disabled:opacity-30"
               style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }} aria-label="שבועיים קדימה">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2} style={{ color: "var(--text-sec)" }}>
@@ -402,8 +414,8 @@ function ChooseTimePageContent() {
           ))}
         </div>
 
-        {/* 2-week grid */}
-        <div className="grid grid-cols-7 gap-1.5">
+        {/* 2-week grid — key={page} re-triggers the slide animation on paging */}
+        <div key={page} className={`grid grid-cols-7 gap-1.5 ${animDir === "next" ? "cal-anim-next" : animDir === "prev" ? "cal-anim-prev" : ""}`}>
           {windowDays.map(d => {
             const ds = formatDate(d);
             const inRange = d.getTime() >= today.getTime() && d.getTime() <= maxDate.getTime();
