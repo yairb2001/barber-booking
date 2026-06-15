@@ -24,9 +24,12 @@ export const revalidate = 0;
 //   • avoids repeating the same clock time too many times so the times look varied.
 // Each slot: { staffId, staffName, staffAvatar, serviceId, serviceName, date, time, duration, price }.
 
-const SCAN_DAYS = 3;          // up to 3 days ahead
-const MAX_RESULTS = 30;       // no more than 30 slots total
-const PER_BARBER_CAP = 6;     // keep variety — no barber floods the list
+// No fixed day cap — we walk forward only as far as the booking horizon lets us
+// (each barber's own horizon, bounded so a pathological case can't scan forever),
+// and simply stop once we've collected MAX_RESULTS slots.
+const MAX_SCAN_DAYS = 120;    // hard bound on how far ahead we ever scan
+const MAX_RESULTS = 25;       // no more than 25 slots total
+const PER_BARBER_CAP = 8;     // keep variety — no barber floods the list
 const MIN_GAP_MIN = 60;       // space a single barber's picks ≥60 min apart
 const MAX_SAME_TIME = 2;      // the same HH:MM appears at most twice across the feed
 
@@ -125,8 +128,10 @@ export async function GET(request: Request) {
   const nowBiz = getBusinessNow();
   const todayStr = nowBiz.date;
   const staffIds = eligibleStaff.map(s => s.id);
+  // Scan only as far as the furthest open horizon, bounded by MAX_SCAN_DAYS.
+  const scanDays = Math.min(MAX_SCAN_DAYS, Math.max(1, ...eligibleStaff.map(s => s.horizon)));
   const firstDate = new Date(todayStr + "T00:00:00.000Z");
-  const lastDate = new Date(addDaysISO(todayStr, SCAN_DAYS - 1) + "T00:00:00.000Z");
+  const lastDate = new Date(addDaysISO(todayStr, scanDays - 1) + "T00:00:00.000Z");
 
   const [schedules, overrides, appts] = await Promise.all([
     prisma.staffSchedule.findMany({
@@ -161,7 +166,7 @@ export async function GET(request: Request) {
     const picked: Candidate[] = [];
     let lastTime = -999;
 
-    for (let dayOffset = 0; dayOffset < SCAN_DAYS; dayOffset++) {
+    for (let dayOffset = 0; dayOffset < scanDays; dayOffset++) {
       if (dayOffset >= staff.horizon) break; // past this barber's booking horizon
       const dateStr = addDaysISO(todayStr, dayOffset);
       const override = overrideByKey.get(`${staff.id}|${dateStr}`);
