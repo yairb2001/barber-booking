@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
@@ -81,16 +81,6 @@ function UpcomingPageContent() {
       .catch(() => { /* ignore */ });
   }, [staffId, serviceId, slug]);
 
-  // Group consecutive slots by day for a clean, scannable list
-  const grouped = useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const u of upcoming) {
-      if (!map.has(u.date)) map.set(u.date, []);
-      map.get(u.date)!.push(u.time);
-    }
-    return Array.from(map.entries());
-  }, [upcoming]);
-
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
       {/* ── Sticky header ── */}
@@ -117,30 +107,26 @@ function UpcomingPageContent() {
               <div key={i} className="h-14 rounded-2xl animate-pulse" style={{ background: "var(--card)" }} />
             ))}
           </div>
-        ) : grouped.length > 0 ? (
-          <div className="flex flex-col gap-6">
-            {grouped.map(([date, times]) => (
-              <div key={date}>
-                <p className="text-[11px] tracking-[0.2em] uppercase font-bold mb-2.5" style={{ color: "var(--brand)" }}>
-                  {smartDateLabel(date, today)}
-                </p>
-                <div className="flex flex-col gap-2">
-                  {times.map(time => (
-                    <Link key={time}
-                      href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${date}&time=${time}`)}
-                      className="flex items-center justify-between rounded-2xl px-4 py-3.5 transition-all active:scale-[0.98]"
-                      style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
-                      <span dir="ltr" className="text-[17px] font-bold tracking-widest" style={{ color: "var(--brand)" }}>
-                        {time}
-                      </span>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                        style={{ color: "var(--text-muted)" }}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  ))}
+        ) : upcoming.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {upcoming.map((u, i) => (
+              <Link key={`${u.date}-${u.time}-${i}`}
+                href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${u.date}&time=${u.time}`)}
+                className="flex items-center justify-between rounded-2xl px-4 py-3.5 transition-all active:scale-[0.98]"
+                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  style={{ color: "var(--text-muted)" }}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <div className="flex items-baseline gap-2.5">
+                  <span className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
+                    {smartDateLabel(u.date, today)}
+                  </span>
+                  <span dir="ltr" className="text-[17px] font-bold tracking-widest" style={{ color: "var(--brand)" }}>
+                    {u.time}
+                  </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         ) : (
