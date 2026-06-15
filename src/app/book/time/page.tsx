@@ -46,24 +46,6 @@ const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי
 function monthYear(date: Date): string {
   return `${HE_MONTHS[date.getMonth()]} ${date.getFullYear()}`;
 }
-// Number of Sunday-anchored weeks between today and a date (0 = this week, 1 = next week…)
-function weekIndexSunday(date: Date, today: Date): number {
-  const a = startOfWeekSunday(today).getTime();
-  const b = startOfWeekSunday(date).getTime();
-  return Math.round((b - a) / (7 * 24 * 60 * 60 * 1000));
-}
-// Friendly Hebrew label: היום / מחר (שני) / שני / שני שבוע הבא / שני · 7.7
-function smartDateLabel(dateStr: string, today: Date): string {
-  const d = new Date(dateStr + "T00:00:00");
-  const diff = Math.round((d.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
-  const name = getDayName(d); // ראשון…שבת
-  if (diff === 0) return "היום";
-  if (diff === 1) return `מחר (${name})`;
-  const wk = weekIndexSunday(d, today);
-  if (wk <= 0) return name;                 // later this week
-  if (wk === 1) return `${name} שבוע הבא`;  // next week
-  return `${name} · ${d.getDate()}.${d.getMonth() + 1}`; // 2+ weeks ahead
-}
 
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
