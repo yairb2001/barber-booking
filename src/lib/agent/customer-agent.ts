@@ -312,6 +312,7 @@ async function execTool(
             status:    "confirmed",
             price:     service.price,
             referralSource: "whatsapp_agent",
+            source:    "agent",
           },
         });
 

@@ -259,6 +259,11 @@ model Appointment {
   referralSource String?  @map("referral_source")
   referredById   String?  @map("referred_by_id")
   walkIn         Boolean  @default(false) @map("walk_in")
+  // Who created this appointment: "customer" (public booking) | "agent" (WhatsApp
+  // AI) | "admin" (staff added it in the calendar) | "recurring" (standing appt).
+  // Notifications only surface customer/agent bookings — staff's own entries are
+  // not notified back to them.
+  source         String   @default("customer") @map("source")
   cancelledAt    DateTime? @map("cancelled_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

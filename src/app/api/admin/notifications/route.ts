@@ -74,6 +74,7 @@ export async function GET(req: NextRequest) {
       startTime: true,
       status: true,
       walkIn: true,
+      source: true,
       createdAt: true,
       cancelledAt: true,
       customer: { select: { name: true } },
@@ -103,8 +104,12 @@ export async function GET(req: NextRequest) {
       dateLabel: apptDateLabel(a.date),
       startTime: a.startTime,
     };
-    // New booking — skip walk-ins (those are added in person by staff, not a notification).
-    if (!a.walkIn && a.createdAt >= since) {
+    // New booking — only surface customer-initiated bookings (public site or
+    // WhatsApp agent). Appointments the staff set themselves in the calendar
+    // ("admin") and standing/recurring entries ("recurring") are NOT notified
+    // back to them. Walk-ins are likewise staff-entered, so skipped.
+    const customerInitiated = a.source === "customer" || a.source === "agent";
+    if (customerInitiated && !a.walkIn && a.createdAt >= since) {
       events.push({
         id: `${a.id}:b`,
         type: "booking",

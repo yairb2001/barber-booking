@@ -173,6 +173,7 @@ export async function POST(request: NextRequest) {
       status: "confirmed",
       referralSource,
       note: (typeof note === "string" && note.trim()) ? note.trim() : null,
+      source: "customer", // customer booked via the public site
     },
     include: {
       staff: { select: { name: true } },

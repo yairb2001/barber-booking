@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
           price: body.price !== undefined ? Number(body.price) : service.price,
           note: body.note || null,
           recurringId: rule.id,
+          source: "recurring", // standing appt set by staff — don't notify
         },
       });
       created++;

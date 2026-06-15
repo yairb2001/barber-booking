@@ -135,6 +135,7 @@ export async function POST(req: NextRequest) {
       price: body.price ?? service.price,
       note: body.note || null,
       walkIn: !!body.walkIn,
+      source: "admin", // staff added it in the calendar — don't notify
     },
     include: { customer: true, staff: true, service: true },
   });
