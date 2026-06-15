@@ -146,6 +146,9 @@ function ChooseServicePageContent() {
               התורים הקרובים
             </p>
           </div>
+          <p className="text-[10px] mb-3 -mt-1.5 leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            אלו רק הזמנים הקרובים ביותר — לבחירת שירות ותאריך אחר גלול/י למטה
+          </p>
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
@@ -166,7 +169,7 @@ function ChooseServicePageContent() {
 
           <div className="mt-4 mb-1 flex items-center gap-3">
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: "var(--text-muted)" }}>כל השירותים</span>
+            <span className="text-[10px] tracking-[0.25em] uppercase" style={{ color: "var(--text-muted)" }}>בחר שירות ותאריך ספציפי</span>
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
           </div>
         </div>
