@@ -88,7 +88,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
         serviceId:     { type: "string", description: "מזהה השירות" },
         date:          { type: "string", description: "תאריך YYYY-MM-DD" },
         startTime:     { type: "string", description: "שעת התחלה HH:MM" },
-        customerName:  { type: "string", description: "שם הלקוח" },
+        customerName:  { type: "string", description: "שם מלא של הלקוח (שם פרטי + שם משפחה אם נמסר). אם זה לקוח חדש שאינו מזוהה במערכת, ודא שיש לך גם שם פרטי וגם שם משפחה." },
       },
       required: ["staffId", "serviceId", "date", "startTime", "customerName"],
     },

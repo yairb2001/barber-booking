@@ -66,6 +66,10 @@ model Business {
   trialEndsAt           DateTime?                           @map("trial_ends_at")
   onboardingCompletedAt DateTime?                           @map("onboarding_completed_at")
   whatsappStatus        String    @default("not_requested") @map("whatsapp_status") // not_requested | requested | connected
+  // ── Live WhatsApp connection monitor (whatsapp-health cron, every 30m) ──
+  waLiveState           String?                             @map("wa_live_state")   // authorized | notAuthorized | blocked | yellowCard | sleepMode | starting | error
+  waCheckedAt           DateTime?                           @map("wa_checked_at")   // last health check
+  waDownSince           DateTime?                           @map("wa_down_since")   // when it first went down (cleared on recovery)
   settings       String?  // JSON string
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")

@@ -65,7 +65,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
@@ -275,6 +275,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* ── Content area ── */}
       <div className="flex flex-col flex-1 min-w-0 h-[100dvh] md:mr-52">
+
+        {/* WhatsApp disconnected banner — visible on every admin page.
+            Barbers see the warning; owners also get a link to reconnect (QR). */}
+        {me?.whatsappDown && (
+          <div className="shrink-0 bg-red-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium leading-tight">
+              🔴 הוואטסאפ מנותק — הלקוחות לא מקבלים מענה אוטומטי
+            </span>
+            {isOwner && (
+              <Link
+                href="/admin/settings?tab=whatsapp"
+                className="shrink-0 bg-white text-red-700 font-semibold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
+              >
+                חבר מחדש ←
+              </Link>
+            )}
+          </div>
+        )}
 
         {/* Mobile top header */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white text-slate-900 shrink-0 border-b border-slate-200">

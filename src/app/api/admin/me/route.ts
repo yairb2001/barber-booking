@@ -24,9 +24,15 @@ export async function GET(req: NextRequest) {
       slug: true,
       tier: true,
       whatsappStatus: true,
+      waLiveState: true,
       onboardingCompletedAt: true,
     },
   });
+
+  // Live WhatsApp connection: the watchdog cron records waLiveState every 30m.
+  // "down" states mean the bot can't receive/send → the UI shows a red banner.
+  const waState = business?.waLiveState ?? null;
+  const whatsappDown = waState === "notAuthorized" || waState === "blocked" || waState === "yellowCard";
 
   // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
   const perms = await getEffectivePermissions(req);
@@ -41,6 +47,8 @@ export async function GET(req: NextRequest) {
     slug: business?.slug ?? null,
     tier: business?.tier ?? "basic",
     whatsappStatus: business?.whatsappStatus ?? "not_requested",
+    waLiveState: waState,
+    whatsappDown,
     onboardingCompletedAt: business?.onboardingCompletedAt ?? null,
     // Effective per-user permissions (the values the UI should gate on).
     canViewAllCalendars: perms.canViewAllCalendars,

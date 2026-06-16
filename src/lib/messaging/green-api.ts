@@ -68,6 +68,27 @@ export class GreenApiProvider implements MessagingProvider {
   }
 
   /**
+   * Reboot the instance. Helps recover an instance stuck in a transient bad
+   * state (e.g. "starting"). Does NOT re-authorize a logged-out session — that
+   * still requires scanning a fresh QR from the phone.
+   * Docs: https://green-api.com/en/docs/api/account/Reboot/
+   */
+  async reboot(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isConfigured()) return { ok: false, error: "not_configured" };
+    const url = `https://api.green-api.com/waInstance${this.instanceId}/reboot/${this.token}`;
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      }
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  }
+
+  /**
    * Fetch the WhatsApp linking QR for re-authorizing the instance.
    * The QR rotates every ~20s, so the caller should poll.
    *   type "qrCode"       → `qr` is a data-URI PNG ready for an <img src>.

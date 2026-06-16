@@ -263,6 +263,14 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminSettingsPage() {
   const [tab, setTab] = useState<"business" | "hours" | "whatsapp" | "automations">("business");
+  // Honor ?tab=whatsapp deep-links (e.g. the WhatsApp-disconnect banner's
+  // "חבר מחדש" CTA points here). Read from the URL once on mount.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "business" || t === "hours" || t === "whatsapp" || t === "automations") {
+      setTab(t);
+    }
+  }, []);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
   const [form, setForm] = useState<Business>(emptyBusiness);
