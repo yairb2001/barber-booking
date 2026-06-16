@@ -3099,6 +3099,19 @@ export default function AdminCalendar() {
   const dragMovedRef = useRef(false);            // pointer actually moved during the resumed drag
   const dragStartPt = useRef<{ x: number; y: number } | null>(null);
 
+  // Same resume guards for BREAK drags (mirrors the appointment flow above).
+  const breakDragResumedRef = useRef(false);
+  const breakDragMovedRef = useRef(false);
+  const breakDragStartPt = useRef<{ x: number; y: number } | null>(null);
+
+  // Last VALID drop target seen during a drag. On release the pointer is often
+  // over a gap (between columns / outside the grid) where computeDropTarget
+  // returns null — which would throw the drag away and force the user to start
+  // over. We fall back to this last-known-good target so a sloppy release keeps
+  // the move instead of losing it. Tracked separately for appts and breaks.
+  const lastMoveTargetRef = useRef<{ staffId: string; date: string; startTime: string } | null>(null);
+  const lastBreakTargetRef = useRef<{ staffId: string; date: string; startTime: string } | null>(null);
+
   // After a drop, we DON'T immediately PATCH the API. We hold the proposed
   // target in `pendingMove` and show a small confirmation card with three
   // actions: confirm (commits the move), continue (re-enters drag mode for
@@ -3781,6 +3794,7 @@ export default function AdminCalendar() {
   function startMoveDrag(appt: Appt, clientX: number, clientY: number) {
     isDragProcessed.current = false; // reset for a fresh drag
     dragResumedRef.current = false;  // a fresh long-press drag, not a resume
+    lastMoveTargetRef.current = null;
     setDragMove({ appt, pointerX: clientX, pointerY: clientY, dropTarget: null });
     // Haptic feedback (iOS Safari + Android Chrome)
     if (typeof navigator !== "undefined" && "vibrate" in navigator) {
@@ -3851,6 +3865,7 @@ export default function AdminCalendar() {
     dragResumedRef.current = true;
     dragMovedRef.current = false;
     dragStartPt.current = null;
+    lastMoveTargetRef.current = pending.target;
     setDragMove({ appt: pending.appt, pointerX: 0, pointerY: 0, dropTarget: pending.target });
     if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(20);
   }, [pendingMove]);
@@ -3878,6 +3893,7 @@ export default function AdminCalendar() {
         dragMovedRef.current = true;
       }
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      if (dropTarget) lastMoveTargetRef.current = dropTarget; // remember last good spot
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
@@ -3885,7 +3901,9 @@ export default function AdminCalendar() {
       // ghost would drop the instant the user taps, defeating the "continue
       // adjusting" purpose. Keep drag mode active until a real slide happens.
       if (dragResumedRef.current && !dragMovedRef.current) return;
-      const dropTarget = computeDropTarget(e.clientX, e.clientY);
+      // Release is forgiving: if the finger ends over a gap (null target),
+      // fall back to the last valid spot we tracked so the drag isn't lost.
+      const dropTarget = computeDropTarget(e.clientX, e.clientY) ?? lastMoveTargetRef.current;
       finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
     };
     window.addEventListener("pointerdown", onDown);
@@ -3968,6 +3986,22 @@ export default function AdminCalendar() {
     setPendingBreakMove({ drag, target });
   }, []);
 
+  // Re-enter break drag from the pending card (mirror of continuePendingMove):
+  // the amber ghost reappears at the last target and the in-drag bar shows
+  // again. A stray tap won't drop it — the user must slide their finger.
+  const continuePendingBreakMove = useCallback(() => {
+    const pending = pendingBreakMove;
+    setPendingBreakMove(null);
+    if (!pending) return;
+    breakDragProcessed.current = false;
+    breakDragResumedRef.current = true;
+    breakDragMovedRef.current = false;
+    breakDragStartPt.current = null;
+    lastBreakTargetRef.current = pending.target;
+    setBreakDrag({ ...pending.drag, pointerX: 0, pointerY: 0, dropTarget: pending.target });
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate?.(20);
+  }, [pendingBreakMove]);
+
   // Re-anchor a raw drop target (whose startTime = the finger's time) so the
   // break keeps the same offset relative to the finger as when it was grabbed.
   // Without this the break's TOP jumps to the finger and precise placement is
@@ -3983,6 +4017,8 @@ export default function AdminCalendar() {
 
   function startBreakDrag(sId: string, d: string, breakIdx: number, br: RawBreak, startMin: number, endMin: number, x: number, y: number) {
     breakDragProcessed.current = false;
+    breakDragResumedRef.current = false; // a fresh long-press drag, not a resume
+    lastBreakTargetRef.current = null;
     // Capture where inside the break the finger grabbed it (clamped to the
     // break's own span) so the drag stays anchored to that point.
     const grab = computeDropTarget(x, y);
@@ -4001,19 +4037,43 @@ export default function AdminCalendar() {
   // Global listeners while a break is being dragged.
   useEffect(() => {
     if (!breakDrag) return;
+    // For a RESUMED break drag the finger isn't down yet — record the
+    // touch-down point so we can tell a real slide from a stray tap.
+    const onDown = (e: PointerEvent) => {
+      breakDragStartPt.current = { x: e.clientX, y: e.clientY };
+      breakDragMovedRef.current = false;
+    };
     const onMove = (e: PointerEvent) => {
       if (breakDragProcessed.current) return;
       e.preventDefault();
+      // Mark "moved" once the finger travels a meaningful distance (only
+      // relevant for resumed drags; fresh long-press drags count as moved).
+      if (breakDragStartPt.current) {
+        const dx = e.clientX - breakDragStartPt.current.x;
+        const dy = e.clientY - breakDragStartPt.current.y;
+        if (Math.hypot(dx, dy) > 8) breakDragMovedRef.current = true;
+      } else {
+        breakDragMovedRef.current = true;
+      }
       const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY));
+      if (dropTarget) lastBreakTargetRef.current = dropTarget; // remember last good spot
       setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
-      finalizeBreakDrag(adjustBreakDrop(computeDropTarget(e.clientX, e.clientY)));
+      // A resumed drag ignores a release that never moved — keep drag mode
+      // active until a real slide happens (mirrors the appointment flow).
+      if (breakDragResumedRef.current && !breakDragMovedRef.current) return;
+      // Forgiving release: fall back to the last valid spot if the finger
+      // ends over a gap, so a sloppy release doesn't throw the break away.
+      const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY)) ?? lastBreakTargetRef.current;
+      finalizeBreakDrag(dropTarget);
     };
+    window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
     return () => {
+      window.removeEventListener("pointerdown", onDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
@@ -4761,6 +4821,39 @@ export default function AdminCalendar() {
         </div>
       )}
 
+      {/* ── In-drag action bar for BREAKS ── */}
+      {/* Mirrors the appointment bar above (amber instead of teal) so dragging */}
+      {/* a break gives the same confirm/cancel control while moving.           */}
+      {breakDrag?.dropTarget && (
+        <div className="fixed inset-x-0 bottom-0 z-[45] pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-2 px-3 py-3 sm:py-2"
+            style={{ background: "linear-gradient(to top, rgba(255,255,255,0.92) 70%, transparent)" }}>
+            {/* Cancel drag — releases without setting pendingBreakMove */}
+            <button
+              className="w-12 h-12 sm:w-9 sm:h-9 shrink-0 bg-white border border-red-300 rounded-xl text-red-500 text-lg sm:text-sm font-bold shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+              onPointerDown={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                finalizeBreakDrag(null);
+              }}>
+              ✕
+            </button>
+            {/* Confirm drop — leads to pendingBreakMove card for final approval */}
+            <button
+              className="flex-1 h-12 sm:h-9 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-bold shadow-lg flex items-center justify-center gap-1.5 active:scale-[0.98] transition-transform"
+              onPointerDown={e => {
+                e.preventDefault();
+                e.stopPropagation();
+                const target = breakDragRef.current?.dropTarget ?? null;
+                finalizeBreakDrag(target);
+              }}>
+              <span>✓</span>
+              <span>הזז ל‑{breakDrag.dropTarget.startTime}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Pending-move confirmation card (drag-to-MOVE) ── */}
       {/* Renders as a centered floating sheet so it works equally on phone */}
       {/* (where a "release here" affordance is critical) and desktop. */}
@@ -4825,15 +4918,21 @@ export default function AdminCalendar() {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => setPendingBreakMove(null)}
                   className="py-2 rounded-lg bg-white border border-slate-300 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition">
                   ✕ ביטול
                 </button>
                 <button
+                  onClick={continuePendingBreakMove}
+                  className="py-2 rounded-lg bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition"
+                  title="סגור ואחזור לדייק במיקום">
+                  ↻ אדייק שוב
+                </button>
+                <button
                   onClick={() => { const p = pendingBreakMove; setPendingBreakMove(null); if (p) persistBreakMove(p.drag, p.target); }}
-                  className="py-2 rounded-lg bg-teal-600 text-white text-xs font-bold hover:bg-teal-700 transition">
+                  className="py-2 rounded-lg bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition">
                   ✓ אישור
                 </button>
               </div>
