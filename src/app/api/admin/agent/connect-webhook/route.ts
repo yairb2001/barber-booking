@@ -7,8 +7,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { requireOwner, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +15,8 @@ export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
 
-  const biz = await prisma.business.findFirst({
-    select: { greenApiInstanceId: true, greenApiToken: true },
+  const biz = await getSessionBusiness(req, {
+    greenApiInstanceId: true, greenApiToken: true,
   });
   const id = biz?.greenApiInstanceId;
   const token = biz?.greenApiToken;

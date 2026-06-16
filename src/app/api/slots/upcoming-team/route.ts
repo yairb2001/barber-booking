@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { resolveBusinessId } from "@/lib/tenant";
+import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import {
   generateSlots,
   timeToMinutes,
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 
   const biz = resolvedBusinessId
     ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
-    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
   const bizHorizon = biz?.bookingHorizonDays ?? 30;

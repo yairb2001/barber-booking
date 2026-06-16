@@ -30,77 +30,84 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const business = await prisma.business.findFirst();
-  if (!business) return NextResponse.json({ ok: true, sent: 0 });
-
-  if (!business.reengageEnabled) {
+  // MULTI-TENANT: process EVERY business with re-engagement enabled, each fully
+  // scoped to its own customers/messages. Never operate on a single arbitrary
+  // business (that would mix tenants).
+  const businesses = await prisma.business.findMany({
+    where: { reengageEnabled: true },
+  });
+  if (businesses.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "disabled" });
   }
 
-  const weeksThreshold = business.reengageWeeks;
-  const template       = business.reengageTemplate || DEFAULT_REENGAGE_TEMPLATE;
-  const bookingLink    = process.env.NEXT_PUBLIC_BASE_URL
-    ? `${process.env.NEXT_PUBLIC_BASE_URL}/book`
-    : "https://your-domain.vercel.app/book";
-
-  const now        = new Date();
-  const targetDate = new Date(now.getTime() - weeksThreshold * 7 * 24 * 60 * 60 * 1000);
-  const windowStart = new Date(targetDate.getTime() - 3  * 24 * 60 * 60 * 1000);
-  const windowEnd   = new Date(targetDate.getTime() + 3  * 24 * 60 * 60 * 1000);
-
-  // Customers whose lastVisitAt falls inside the re-engagement window
-  const candidates = await prisma.customer.findMany({
-    where: {
-      businessId: business.id,
-      isBlocked:  false,
-      lastVisitAt: { gte: windowStart, lte: windowEnd },
-    },
-    select: { id: true, name: true, phone: true },
-  });
-
-  // De-duplicate: skip customers who already got a re-engage message in last 2 weeks
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "https://your-domain.vercel.app";
+  const now = new Date();
   const recentCutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-  let sent = 0;
-  let skipped = 0;
+  let totalSent = 0;
+  let totalSkipped = 0;
+  let totalChecked = 0;
 
-  for (const customer of candidates) {
-    const recentMsg = await prisma.messageLog.findFirst({
+  for (const business of businesses) {
+    const weeksThreshold = business.reengageWeeks;
+    const template       = business.reengageTemplate || DEFAULT_REENGAGE_TEMPLATE;
+    // Each tenant has its own storefront under /<slug>; link straight to it.
+    const bookingLink    = `${baseUrl}/${business.slug}/book`;
+
+    const targetDate = new Date(now.getTime() - weeksThreshold * 7 * 24 * 60 * 60 * 1000);
+    const windowStart = new Date(targetDate.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const windowEnd   = new Date(targetDate.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+    // Customers whose lastVisitAt falls inside this business's re-engagement window
+    const candidates = await prisma.customer.findMany({
       where: {
-        businessId:    business.id,
-        customerPhone: customer.phone,
-        kind:          "broadcast",
-        createdAt:     { gte: recentCutoff },
+        businessId: business.id,
+        isBlocked:  false,
+        lastVisitAt: { gte: windowStart, lte: windowEnd },
       },
-      select: { id: true },
+      select: { id: true, name: true, phone: true },
     });
+    totalChecked += candidates.length;
 
-    if (recentMsg) { skipped++; continue; }
-
-    const msgBody = applyTemplate(template, {
-      name:         firstName(customer.name),
-      business:     business.name,
-      booking_link: bookingLink,
-    });
-
-    try {
-      await sendMessage({
-        businessId:    business.id,
-        customerPhone: customer.phone,
-        kind:          "broadcast",
-        body:          msgBody,
+    for (const customer of candidates) {
+      const recentMsg = await prisma.messageLog.findFirst({
+        where: {
+          businessId:    business.id,
+          customerPhone: customer.phone,
+          kind:          "broadcast",
+          createdAt:     { gte: recentCutoff },
+        },
+        select: { id: true },
       });
-      sent++;
-    } catch (e) {
-      console.error("[reengage] send failed", customer.phone, e);
-      skipped++;
+
+      if (recentMsg) { totalSkipped++; continue; }
+
+      const msgBody = applyTemplate(template, {
+        name:         firstName(customer.name),
+        business:     business.name,
+        booking_link: bookingLink,
+      });
+
+      try {
+        await sendMessage({
+          businessId:    business.id,
+          customerPhone: customer.phone,
+          kind:          "broadcast",
+          body:          msgBody,
+        });
+        totalSent++;
+      } catch (e) {
+        console.error("[reengage] send failed", customer.phone, e);
+        totalSkipped++;
+      }
     }
   }
 
   return NextResponse.json({
     ok: true,
-    checked: candidates.length,
-    sent,
-    skipped,
+    businesses: businesses.length,
+    checked: totalChecked,
+    sent: totalSent,
+    skipped: totalSkipped,
   });
 }

@@ -25,6 +25,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
+import { fallbackBusiness } from "@/lib/tenant";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -114,9 +115,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true } })
     : null;
 
-  // Fallback: use the first business
-  if (!biz) {
-    biz = await prisma.business.findFirst({ select: { id: true, tier: true } });
+  // Fallback ONLY when no instance id was provided (legacy single-tenant webhook).
+  // If an instance id WAS given but matched no business, do NOT guess — attaching
+  // the message to an arbitrary tenant would mix data between businesses.
+  if (!biz && !instanceIdStr) {
+    biz = await fallbackBusiness({ select: { id: true, tier: true } });
   }
   if (!biz) {
     console.error("[webhook] no business found");

@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
+import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
@@ -256,6 +256,11 @@ function ConfirmPageContent() {
   const serviceId = searchParams.get("serviceId") || "";
   const date      = searchParams.get("date")      || "";
   const time      = searchParams.get("time")      || "";
+
+  // "Back" returns to the screen the user actually came from (home quick-slot,
+  // team-upcoming, the time grid, …). Falls back to the canonical time step for
+  // cold deep-links with no in-app history.
+  const onBack = useSmartBack(publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`));
 
   const [staffInfo, setStaffInfo]     = useState<StaffInfo | null>(null);
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
@@ -612,7 +617,7 @@ function ConfirmPageContent() {
       <div className="sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"
         style={{ background: "rgba(255,255,255,0.97)" }}>
         <div className="flex items-center gap-3">
-          <Link href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`)}
+          <Link href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`)} onClick={onBack}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-100 border border-slate-200 flex-shrink-0">
             <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

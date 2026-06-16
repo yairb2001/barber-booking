@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { resolveBusinessId } from "@/lib/tenant";
+import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
   // exactly like the calendar's green dots (no slots past the horizon).
   const biz = businessId
     ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
-    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);

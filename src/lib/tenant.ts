@@ -25,6 +25,28 @@ function readParams(req: Request): { slug: string | null; businessId: string | n
   };
 }
 
+/**
+ * The legacy/root business — the backward-compat fallback when a public request
+ * carries NO ?slug= and NO ?businessId= (i.e. the bare root storefront `/`).
+ *
+ * ⚠️ A plain findFirst() is NON-DETERMINISTIC: Postgres returns rows in arbitrary
+ * order, so with 2+ tenants the root URL would randomly serve a different shop.
+ * This caused DOMINANT's root storefront to show another business's data.
+ *
+ * Resolution order (deterministic):
+ *   1. ROOT_BUSINESS_SLUG env, if set and found  (explicit pin)
+ *   2. the OLDEST business (createdAt asc)        (the original DOMINANT install)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fallbackBusiness(sel: any = {}): Promise<any> {
+  const rootSlug = process.env.ROOT_BUSINESS_SLUG;
+  if (rootSlug) {
+    const b = await prisma.business.findUnique({ where: { slug: rootSlug }, ...sel });
+    if (b) return b;
+  }
+  return prisma.business.findFirst({ orderBy: { createdAt: "asc" }, ...sel });
+}
+
 /** Resolve only the business id (cheapest — selects id). Returns null if not found. */
 export async function resolveBusinessId(req: Request): Promise<string | null> {
   const { slug, businessId } = readParams(req);
@@ -36,7 +58,7 @@ export async function resolveBusinessId(req: Request): Promise<string | null> {
     const b = await prisma.business.findUnique({ where: { id: businessId }, select: { id: true } });
     return b?.id ?? null;
   }
-  const b = await prisma.business.findFirst({ select: { id: true } });
+  const b = await fallbackBusiness({ select: { id: true } });
   return b?.id ?? null;
 }
 
@@ -57,7 +79,7 @@ export async function resolveBusiness<T extends Prisma.BusinessSelect>(
   if (businessId) {
     return prisma.business.findUnique({ where: { id: businessId }, ...sel }) as never;
   }
-  return prisma.business.findFirst(sel) as never;
+  return fallbackBusiness(sel) as never;
 }
 
 /**

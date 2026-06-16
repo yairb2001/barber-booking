@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveTheme } from "@/lib/themes";
+import { fallbackBusiness } from "@/lib/tenant";
 import { getReferralConfig, getReferralFriendSource, getReferralSources } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
           phone: true, address: true, about: true, socialLinks: true,
           settings: true, bookingHorizonDays: true,
         } })
-      : await prisma.business.findFirst({
+      : await fallbackBusiness({
     select: {
       id: true,
       name: true,

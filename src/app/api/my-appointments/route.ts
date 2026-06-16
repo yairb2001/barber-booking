@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
+import { fallbackBusiness } from "@/lib/tenant";
 
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
   const resolvedBusinessId = (businessId ?? tokenPayload.businessId) as string | undefined;
   const biz = resolvedBusinessId
     ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { id: true } })
-    : await prisma.business.findFirst({ select: { id: true } });
+    : await fallbackBusiness({ select: { id: true } });
 
   if (!biz) return NextResponse.json({ error: "business not found" }, { status: 404 });
 

@@ -49,31 +49,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "הסיסמאות לא תואמות" }, { status: 400 });
     }
 
-    const business = await prisma.business.findFirst();
-    if (!business) {
-      return NextResponse.json({ error: "לא נמצא עסק" }, { status: 500 });
-    }
-
-    // Already set — refuse (the owner should use /change-password instead)
-    if (business.passwordHash) {
+    // MULTI-TENANT: there may be many businesses. First-run setup only applies to
+    // businesses that have NO password yet. Find the one whose owner phone matches
+    // the caller — never assume the "first" business.
+    const candidates = await prisma.business.findMany({
+      where: { passwordHash: null },
+      select: { id: true, phone: true, settings: true },
+    });
+    if (candidates.length === 0) {
+      // Either no business at all, or all already have a password set.
       return NextResponse.json(
         { error: "הסיסמה כבר הוגדרה. להחלפה — היכנס לחשבון והשתמש בהגדרות." },
         { status: 400 }
       );
     }
 
-    // Verify the phone matches the business — prevents random visitors from
+    // Verify the phone matches a business — prevents random visitors from
     // claiming the password even if they happen to find this URL.
-    let ownerLoginPhone: string | null = null;
-    if (business.settings) {
-      try {
-        const s = JSON.parse(business.settings);
-        if (typeof s.ownerLoginPhone === "string") ownerLoginPhone = s.ownerLoginPhone;
-      } catch { /* ignore */ }
-    }
-    const matchesPhone =
-      phoneMatches(phone, business.phone) || phoneMatches(phone, ownerLoginPhone);
-    if (!matchesPhone) {
+    const business = candidates.find((biz) => {
+      let ownerLoginPhone: string | null = null;
+      if (biz.settings) {
+        try {
+          const s = JSON.parse(biz.settings);
+          if (typeof s.ownerLoginPhone === "string") ownerLoginPhone = s.ownerLoginPhone;
+        } catch { /* ignore */ }
+      }
+      return phoneMatches(phone, biz.phone) || phoneMatches(phone, ownerLoginPhone);
+    });
+    if (!business) {
       return NextResponse.json(
         { error: "הטלפון לא מתאים לעסק. נסה שוב או פנה לתמיכה." },
         { status: 401 }

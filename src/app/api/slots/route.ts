@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { resolveBusinessId } from "@/lib/tenant";
+import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
       prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } }),
       businessId
         ? prisma.business.findUnique({ where: { id: businessId }, select: { bookingHorizonDays: true } })
-        : prisma.business.findFirst({ select: { bookingHorizonDays: true } }),
+        : fallbackBusiness({ select: { bookingHorizonDays: true } }),
     ]);
     let horizonDays = bizForHorizon?.bookingHorizonDays ?? 30;
     try {
@@ -144,7 +144,7 @@ export async function GET(request: Request) {
       const biz = needBizDefaults
         ? (businessId
             ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } })
-            : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }))
+            : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }))
         : null;
 
       if (staffSettings.minBookingLeadMinutes !== undefined) {

@@ -1,6 +1,6 @@
 import { unstable_noStore as noStore } from "next/cache";
-import { prisma } from "@/lib/prisma";
 import { resolveTheme, type Theme } from "@/lib/themes";
+import { fallbackBusiness } from "@/lib/tenant";
 
 /**
  * Resolve the active business theme on the SERVER so the very first paint
@@ -19,7 +19,7 @@ import { resolveTheme, type Theme } from "@/lib/themes";
 export async function getServerTheme(): Promise<Theme> {
   noStore();
   try {
-    const business = await prisma.business.findFirst({ select: { settings: true } });
+    const business = await fallbackBusiness({ select: { settings: true } });
     return resolveTheme(business?.settings ?? null);
   } catch {
     return resolveTheme(null);

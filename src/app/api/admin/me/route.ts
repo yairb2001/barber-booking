@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     if (s) staff = s;
   }
 
-  const business = await prisma.business.findFirst({
+  const business = await prisma.business.findUnique({
     where: { id: session.businessId },
     select: {
       chatsEnabled: true,

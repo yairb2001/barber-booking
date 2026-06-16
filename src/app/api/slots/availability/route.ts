@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { resolveBusinessId } from "@/lib/tenant";
+import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
   // the staff overrides lead times, so the green dots respect the booking window.
   const biz = businessId
     ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
-    : await prisma.business.findFirst({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);

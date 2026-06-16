@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
+import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 
 function getDayName(date: Date): string {
   const days = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -34,8 +34,9 @@ function smartDateLabel(dateStr: string, today: Date): string {
 }
 
 function BackArrow({ href }: { href: string }) {
+  const onBack = useSmartBack(href);
   return (
-    <Link href={href}
+    <Link href={href} onClick={onBack}
       className="w-9 h-9 flex items-center justify-center rounded-full transition-colors"
       style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}

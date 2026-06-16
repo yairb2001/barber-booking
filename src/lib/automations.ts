@@ -30,7 +30,7 @@ export async function triggerPostVisitAutomations(appt: ApptRef): Promise<void> 
   // Resolve relations
   const [customer, business, staff, service] = await Promise.all([
     prisma.customer.findUnique({ where: { id: appt.customerId } }),
-    prisma.business.findFirst({ where: { id: appt.businessId } }),
+    prisma.business.findUnique({ where: { id: appt.businessId } }),
     prisma.staff.findUnique({ where: { id: appt.staffId } }),
     prisma.service.findUnique({ where: { id: appt.serviceId } }),
   ]);

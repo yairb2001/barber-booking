@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import Anthropic from "@anthropic-ai/sdk";
-import { requireOwner } from "@/lib/session";
+import { requireOwner, getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
+  const session = getRequestSession(req);
   const results: Record<string, string> = {};
 
   // 1. Check API key
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const cfg = await prisma.agentConfig.findFirst();
+    const cfg = await prisma.agentConfig.findFirst({ where: { businessId: session?.businessId } });
     results.agent_config = cfg
       ? `found: enabled=${cfg.isEnabled}, name="${cfg.agentName}"`
       : "not found (agent not configured)";
@@ -49,8 +50,8 @@ export async function GET(req: NextRequest) {
   //    pointed at us with incoming messages enabled? This is the #1 cause of
   //    "agent enabled but not responding" — incoming messages never reach us.
   try {
-    const biz = await prisma.business.findFirst({
-      select: { greenApiInstanceId: true, greenApiToken: true },
+    const biz = await getSessionBusiness(req, {
+      greenApiInstanceId: true, greenApiToken: true,
     });
     const id = biz?.greenApiInstanceId;
     const token = biz?.greenApiToken;

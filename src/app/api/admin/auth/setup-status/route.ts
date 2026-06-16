@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { fallbackBusiness } from "@/lib/tenant";
 
 /**
  * Public endpoint — returns whether the owner password is set.
@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const business = await prisma.business.findFirst({
+  const business = await fallbackBusiness({
     select: { id: true, name: true, phone: true, passwordHash: true, settings: true },
   });
 
