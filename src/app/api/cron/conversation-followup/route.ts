@@ -24,7 +24,24 @@ export const dynamic = "force-dynamic";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const MIN_QUIET_MS = 60 * 60 * 1000;        // wait at least 1h after the last message
-const MAX_AGE_MS   = 30 * 60 * 60 * 1000;   // don't chase chats older than ~30h
+// Look back far enough to carry an evening/overnight abandon into the next
+// morning: if quiet hours blocked the nudge last night, the morning run still
+// finds the chat (no follow-up was logged, so it's still a candidate). 36h
+// comfortably spans the ~12h quiet window plus a full day.
+const MAX_AGE_MS   = 36 * 60 * 60 * 1000;
+
+// Quiet hours: only nudge between 09:00–21:00 Israel time. This endpoint is
+// driven every couple of hours (cron-job.org), so without this guard a
+// follow-up could fire at 3am. Intl handles Israel DST automatically.
+const SEND_FROM_HOUR = 9;
+const SEND_TO_HOUR   = 21;
+function israelHour(d: Date): number {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false,
+  }).formatToParts(d);
+  const h = Number(parts.find(p => p.type === "hour")?.value ?? "0");
+  return h === 24 ? 0 : h; // some engines render midnight as "24"
+}
 
 function fallbackFollowup(name: string | null): string {
   const hi = name ? `היי ${name}, ` : "היי, ";
@@ -58,14 +75,27 @@ async function generateFollowup(transcript: string, name: string | null): Promis
 }
 
 export async function GET(req: NextRequest) {
+  // Accept Vercel Cron's `Authorization: Bearer <CRON_SECRET>` header (this is
+  // what the daily schedule actually sends) as well as a manual ?secret= /
+  // x-cron-secret trigger. Without the Bearer branch the daily run 401'd and
+  // NO follow-up was ever sent.
   const { searchParams } = new URL(req.url);
-  const secret =
-    searchParams.get("secret") || req.headers.get("x-cron-secret") || "";
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+  const provided =
+    searchParams.get("secret") ||
+    req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
+  if (process.env.CRON_SECRET && provided !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const now          = new Date();
+  const now = new Date();
+  // Respect quiet hours regardless of how often the cron fires.
+  const hour = israelHour(now);
+  if (hour < SEND_FROM_HOUR || hour >= SEND_TO_HOUR) {
+    return NextResponse.json({ ok: true, skipped: "quiet_hours", israelHour: hour });
+  }
+
   const quietBefore  = new Date(now.getTime() - MIN_QUIET_MS);
   const notOlderThan = new Date(now.getTime() - MAX_AGE_MS);
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
