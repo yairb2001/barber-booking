@@ -111,5 +111,20 @@ export async function GET(req: NextRequest) {
   // upcoming: soonest first; past: most-recent first (already desc from DB)
   upcoming.reverse();
 
-  return NextResponse.json({ upcoming, past, customer });
+  // Active waitlist registrations for today onward — surfaced so the customer
+  // can see (and leave) the days they're waiting on.
+  const waitlist = await prisma.waitlist.findMany({
+    where: {
+      customerId: customer.id,
+      status: { in: ["waiting", "notified"] },
+      date: { gte: todayDate },
+    },
+    include: {
+      staff:   { select: { id: true, name: true } },
+      service: { select: { id: true, name: true } },
+    },
+    orderBy: { date: "asc" },
+  });
+
+  return NextResponse.json({ upcoming, past, customer, waitlist });
 }

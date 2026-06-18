@@ -112,6 +112,26 @@ function WaitlistSheet({
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState<string | null>(null);
 
+  // Returning customer: pre-fill name + phone so they don't retype details
+  // (mirrors the booking confirm flow). localStorage first for instant fill,
+  // then the session cookie for the canonical, verified name/phone.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("bk_customer") || "null");
+      if (saved?.name)  setName(saved.name);
+      if (saved?.phone) setPhone(saved.phone);
+    } catch { /* ignore */ }
+    fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.ok) {
+          if (data.name)  setName(data.name);
+          if (data.phone) setPhone(prev => prev || data.phone);
+        }
+      })
+      .catch(() => { /* no session — manual entry */ });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const prefs = [
     { v: "morning",   l: "בוקר",    s: "09:00–12:00" },
     { v: "afternoon", l: "צהריים",  s: "12:00–17:00" },

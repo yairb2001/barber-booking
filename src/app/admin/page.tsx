@@ -388,7 +388,10 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
     return { breaks, slots, isWorking: sched.isWorking };
   }
 
-  async function postBreaks(newBreaks: RawBreak[], notifyWaitlist = true) {
+  // notifyWaitlist: true → send now (manager confirmed), false → silent.
+  // Default is silent: we never message the waitlist without an explicit
+  // manager decision (the remove flow passes the toggle value explicitly).
+  async function postBreaks(newBreaks: RawBreak[], notifyWaitlist = false) {
     const { slots, isWorking } = await getCurrentBreaks();
     const res = await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2376,6 +2379,10 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   const [saved, setSaved] = useState(false);
   const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
+  // When a save EXPANDS availability and people are waiting that day, we always
+  // ask the manager before messaging the waitlist (instead of auto-sending).
+  const [notifyPrompt, setNotifyPrompt] = useState<{ count: number } | null>(null);
+  const [notifying, setNotifying] = useState(false);
 
   useEffect(() => {
     // First check for a date-specific override, then fall back to weekly schedule
@@ -2408,6 +2415,40 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
     fetch("/api/admin/services").then(r => r.json()).then(setServices).catch(() => {});
   }, [date, staffId]);
 
+  // Post-save handling shared by both save flows. Reads the override response:
+  // if availability grew and someone is waiting that day, surface the "notify
+  // the waitlist?" prompt; otherwise just confirm + auto-close.
+  async function afterSave(res: Response) {
+    const data = await res.json().catch(() => ({} as { availabilityExpanded?: boolean; waitlistCount?: number }));
+    setSaved(true);
+    onRefresh();
+    if (data?.availabilityExpanded && (data?.waitlistCount ?? 0) > 0) {
+      setNotifyPrompt({ count: data.waitlistCount as number });
+    } else {
+      setTimeout(() => { setSaved(false); onClose(); }, 800);
+    }
+  }
+
+  async function confirmNotifyWaitlist() {
+    setNotifying(true);
+    try {
+      await fetch(`/api/admin/staff/${staffId}/schedule/notify-waitlist`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date }),
+      });
+    } catch { /* graceful — provider may be unconfigured */ }
+    setNotifying(false);
+    setNotifyPrompt(null);
+    setSaved(false);
+    onClose();
+  }
+
+  function dismissNotifyPrompt() {
+    setNotifyPrompt(null);
+    setSaved(false);
+    onClose();
+  }
+
   async function doSave(body: object) {
     setSaving(true);
     setSaveError(null);
@@ -2421,9 +2462,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         const errText = await res.text().catch(() => "");
         throw new Error(errText || `HTTP ${res.status}`);
       }
-      setSaved(true);
-      onRefresh();
-      setTimeout(() => { setSaved(false); onClose(); }, 800);
+      await afterSave(res);
     } catch (e) {
       setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
     } finally {
@@ -2477,9 +2516,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         if (!r2.ok) throw new Error(`HTTP ${r2.status}`);
       }
 
-      setSaved(true);
-      onRefresh();
-      setTimeout(() => { setSaved(false); onClose(); }, 800);
+      await afterSave(r1);
     } catch (e) {
       setSaveError(`שגיאה בשמירה${e instanceof Error ? `: ${e.message}` : ""} — נסה שוב`);
     } finally {
@@ -2508,8 +2545,34 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   const dateLabel = new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={notifyPrompt ? undefined : onClose}>
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+        {notifyPrompt && (
+          <div className="px-5 py-6 space-y-4">
+            <div className="text-center space-y-1.5">
+              <div className="text-3xl">⏳</div>
+              <h3 className="font-bold text-neutral-900 text-base">התפנה זמן ביום זה</h3>
+              <p className="text-sm text-neutral-500">
+                {notifyPrompt.count === 1
+                  ? "לקוח אחד ממתין ברשימת ההמתנה ליום הזה."
+                  : `${notifyPrompt.count} לקוחות ממתינים ברשימת ההמתנה ליום הזה.`}
+                <br />
+                להודיע להם שהתפנה תור?
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={confirmNotifyWaitlist} disabled={notifying}
+                className="flex-1 bg-teal-600 text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+                {notifying ? "שולח..." : "כן, הודע להם"}
+              </button>
+              <button onClick={dismissNotifyPrompt} disabled={notifying}
+                className="px-4 bg-white border border-neutral-300 text-neutral-700 py-2.5 rounded-xl text-sm disabled:opacity-50">
+                לא, תודה
+              </button>
+            </div>
+          </div>
+        )}
+        {!notifyPrompt && <>
         {/* Header */}
         <div className="px-5 pt-5 pb-3 border-b border-neutral-100 flex items-center justify-between">
           <div>
@@ -2662,6 +2725,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
             </div>
           )}
         </div>
+        </>}
       </div>
     </div>
   );

@@ -89,6 +89,88 @@ function WaitlistCard({ phone, name, staffId, serviceId, date }: {
   );
 }
 
+// ── Leave-waitlist prompt (shown on the success screen) ──────────────────────
+// Now that the customer just booked a slot, ask whether they want to step out
+// of any waitlist days they're still registered for. Loads the active entries
+// via the session cookie (auto-token → my-appointments) and lets them leave
+// each one — or dismiss and stay on the list.
+function LeaveWaitlistPrompt() {
+  const slug = useSlug();
+  type Entry = { id: string; date: string; service: { name: string }; staff: { name: string } | null };
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [auth, setAuth] = useState<{ phone: string; token: string } | null>(null);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" })
+          .then(r => (r.ok ? r.json() : null));
+        if (!a?.ok || !a.token || !a.phone) return;
+        setAuth({ phone: a.phone, token: a.token });
+        const res = await fetch(apiWithSlug(
+          `/api/my-appointments?phone=${encodeURIComponent(a.phone)}&token=${encodeURIComponent(a.token)}`, slug));
+        if (!res.ok) return;
+        const data = await res.json();
+        setEntries(Array.isArray(data.waitlist) ? data.waitlist : []);
+      } catch { /* no session — nothing to show */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function leave(id: string) {
+    if (!auth) return;
+    setLeaving(id);
+    try {
+      await fetch(apiWithSlug(
+        `/api/waitlist?id=${id}&phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`, slug),
+        { method: "DELETE" });
+      setEntries(prev => prev.filter(e => e.id !== id));
+    } catch { /* ignore */ }
+    setLeaving(null);
+  }
+
+  if (dismissed || entries.length === 0) return null;
+
+  return (
+    <div className="bg-amber-50 rounded-2xl border border-amber-200 p-5">
+      <div className="flex items-start gap-3 mb-3">
+        <span className="text-xl flex-shrink-0">⏳</span>
+        <div>
+          <p className="text-[13px] font-semibold text-amber-900">להישאר ברשימת ההמתנה?</p>
+          <p className="text-[12px] text-amber-700 mt-1 leading-relaxed">
+            עכשיו שקבעת תור — אפשר לצאת מימי ההמתנה שאתה רשום אליהם, או להישאר ולקבל הודעה אם יתפנה מקום מוקדם יותר.
+          </p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {entries.map(e => {
+          const dl = new Date(String(e.date).slice(0, 10) + "T00:00:00")
+            .toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+          return (
+            <div key={e.id} className="flex items-center justify-between gap-2 bg-white rounded-xl border border-amber-200 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-slate-800 truncate">{dl}</p>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {e.service.name}{e.staff ? ` · ${e.staff.name}` : ""}
+                </p>
+              </div>
+              <button onClick={() => leave(e.id)} disabled={leaving === e.id}
+                className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-amber-300 text-amber-700 active:scale-95 transition-transform disabled:opacity-50 flex-shrink-0">
+                {leaving === e.id ? "מסיר…" : "הסר אותי"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <button onClick={() => setDismissed(true)}
+        className="w-full mt-3 text-[12px] font-semibold text-amber-700 py-2">
+        השאר אותי ברשימה
+      </button>
+    </div>
+  );
+}
+
 // ── Add to calendar (Google + Apple/.ics) ─────────────────────────────────────
 function AddToCalendar({
   title, staffName, serviceName, date, time, durationMin, location,
@@ -572,6 +654,10 @@ function ConfirmPageContent() {
           {(appStoreUrl || playStoreUrl) && (
             <AppTeaser appStoreUrl={appStoreUrl} playStoreUrl={playStoreUrl} />
           )}
+
+          {/* If the customer is already on a waitlist, offer to step out now
+              that they've secured a slot. */}
+          <LeaveWaitlistPrompt />
 
           {successPhone && successStaffId && successSvcId && successDate && (
             <WaitlistCard phone={successPhone} name={successName}

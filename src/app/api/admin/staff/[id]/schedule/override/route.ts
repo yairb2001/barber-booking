@@ -84,22 +84,48 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     },
   });
 
-  // If availability expanded (day opened / break removed / hours added) → notify waitlist,
-  // unless the caller explicitly opted out (notifyWaitlist: false).
-  if (afterAvail > beforeAvail && body.notifyWaitlist !== false) {
-    // Look up businessId from staff record
+  // ── Availability expanded? (day opened / break removed / hours added) ───────
+  // Policy: we ALWAYS ask the manager before messaging the waitlist. So by
+  // default this route does NOT auto-send — it only reports that availability
+  // grew (and how many people are waiting that day) so the client can prompt.
+  // Two exceptions:
+  //   • body.notifyWaitlist === true  → caller already got the manager's "yes"
+  //     and wants us to send now.
+  //   • body.notifyWaitlist === false → silent (e.g. drag-move of a break);
+  //     never prompt, never send.
+  const expanded = afterAvail > beforeAvail;
+  let waitlistCount = 0;
+
+  if (expanded && body.notifyWaitlist !== false) {
     const staff = await prisma.staff.findUnique({
       where: { id: params.id },
       select: { businessId: true },
     });
     if (staff) {
-      notifyWaitlistForDayOpen({
-        businessId: staff.businessId,
-        staffId:    params.id,
-        date,
-      }).catch(console.error);
+      if (body.notifyWaitlist === true) {
+        // Manager already confirmed → send now.
+        notifyWaitlistForDayOpen({
+          businessId: staff.businessId,
+          staffId:    params.id,
+          date,
+        }).catch(console.error);
+      } else {
+        // Default path → report how many are waiting so the client can ask.
+        waitlistCount = await prisma.waitlist.count({
+          where: {
+            businessId: staff.businessId,
+            date,
+            status: "waiting",
+            OR: [{ staffId: params.id }, { staffId: null }],
+          },
+        });
+      }
     }
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    availabilityExpanded: expanded,
+    waitlistCount,
+  });
 }

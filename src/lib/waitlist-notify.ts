@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sendMessage, hasFeature } from "@/lib/messaging";
+import { sendMessage } from "@/lib/messaging";
 
 // ── Time preference helpers ───────────────────────────────────────────────────
 
@@ -71,16 +71,20 @@ async function triggerWaitlist(opts: {
 }) {
   const { businessId, staffId, date, triggerType, startTime } = opts;
 
+  // NOTE: waitlist notifications are NOT gated behind the "reminders" feature.
+  // A freed-up slot is time-sensitive and a core part of the waitlist promise.
+  // sendMessage() already no-ops gracefully when no provider is configured.
   const business = await prisma.business.findUnique({ where: { id: businessId } });
-  if (!business || !hasFeature(business.features, "reminders")) return;
+  if (!business) return;
 
-  // Find all "waiting" entries for this staff + date (or any staff for this business + date)
+  // Find all "waiting" entries for this date that match either this specific
+  // staff member OR an "any barber" registration (staffId === null).
   const entries = await prisma.waitlist.findMany({
     where: {
       businessId,
-      staffId,
       date,
       status: "waiting",
+      OR: [{ staffId }, { staffId: null }],
     },
     include: {
       customer: true,
@@ -91,12 +95,6 @@ async function triggerWaitlist(opts: {
 
   if (entries.length === 0) return;
 
-  const dateLabel = date.toLocaleDateString("he-IL", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-
   for (const entry of entries) {
     const pref = entry.preferredTimeOfDay || "any";
 
@@ -105,34 +103,63 @@ async function triggerWaitlist(opts: {
       if (!matchesTimePreference(startTime, pref)) continue;
     }
 
-    const prefLabel = TIME_PREF_LABELS[pref] ?? "";
-    const staffName = entry.staff?.name ?? "";
-
-    const lines = [
-      `שלום ${entry.customer.name} 👋`,
-      ``,
-      `בשורות טובות! ${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"} ${prefLabel}ב*${business.name}* ✂️`,
-      `📅 ${dateLabel}`,
-      staffName ? `💈 אצל ${staffName}` : null,
-      `🔖 שירות: ${entry.service.name}`,
-      ``,
-      `מהרו לקבוע תור לפני שיתפס 🏃`,
-    ].filter(Boolean).join("\n");
-
-    // Fire-and-forget — don't block the caller
-    sendMessage({
-      businessId,
-      customerPhone: entry.customer.phone,
-      kind: "waitlist_notify",
-      body: lines,
-    })
-      .then(() =>
-        // Mark as notified so we don't spam them
-        prisma.waitlist.update({
-          where: { id: entry.id },
-          data: { status: "notified" },
-        }).catch(console.error)
-      )
-      .catch(console.error);
+    void sendWaitlistEntryNotification(business.name, entry, triggerType);
   }
+}
+
+/** A waitlist row joined with the relations the message template needs. */
+export type WaitlistEntryForNotify = {
+  id: string;
+  businessId: string;
+  date: Date;
+  preferredTimeOfDay: string | null;
+  customer: { name: string; phone: string };
+  service: { name: string };
+  staff: { name: string } | null;
+};
+
+/**
+ * Sends ONE waitlist member a "slot freed up" message and marks them "notified".
+ * Fire-and-forget (does not block the caller). Reused by both the live triggers
+ * above and the daily booking-horizon cron.
+ */
+export function sendWaitlistEntryNotification(
+  businessName: string,
+  entry: WaitlistEntryForNotify,
+  triggerType: "cancellation" | "day_open",
+) {
+  const pref = entry.preferredTimeOfDay || "any";
+  const prefLabel = TIME_PREF_LABELS[pref] ?? "";
+  const staffName = entry.staff?.name ?? "";
+  const dateLabel = entry.date.toLocaleDateString("he-IL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  const lines = [
+    `שלום ${entry.customer.name} 👋`,
+    ``,
+    `בשורות טובות! ${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"} ${prefLabel}ב*${businessName}* ✂️`,
+    `📅 ${dateLabel}`,
+    staffName ? `💈 אצל ${staffName}` : null,
+    `🔖 שירות: ${entry.service.name}`,
+    ``,
+    `מהרו לקבוע תור לפני שיתפס 🏃`,
+  ].filter(Boolean).join("\n");
+
+  return sendMessage({
+    businessId: entry.businessId,
+    customerPhone: entry.customer.phone,
+    kind: "waitlist_notify",
+    body: lines,
+  })
+    .then(() =>
+      // Mark as notified so we don't spam them
+      prisma.waitlist.update({
+        where: { id: entry.id },
+        data: { status: "notified" },
+      }).catch(console.error)
+    )
+    .catch(console.error);
 }

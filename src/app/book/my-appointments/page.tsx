@@ -15,6 +15,15 @@ type Appt = {
   service: { id: string; name: string; durationMinutes: number };
 };
 
+type WaitlistEntry = {
+  id: string;
+  date: string;        // ISO date
+  preferredTimeOfDay: string | null;
+  isFlexible: boolean;
+  staff:   { id: string; name: string } | null;
+  service: { id: string; name: string };
+};
+
 // ── Back arrow (matches the booking flow style) ──────────────────────────────
 function BackArrow({ href }: { href: string }) {
   const onBack = useSmartBack(href);
@@ -50,12 +59,15 @@ export default function MyAppointmentsPage() {
   const [name, setName]       = useState("");
   const [upcoming, setUpcoming] = useState<Appt[]>([]);
   const [past, setPast]         = useState<Appt[]>([]);
+  const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
   // Auth credentials kept for follow-up actions (e.g. cancelling a booking).
   const [auth, setAuth]       = useState<{ phone: string; token: string } | null>(null);
   // Cancellation flow state
   const [confirmId, setConfirmId]   = useState<string | null>(null); // appointment pending confirmation
   const [cancellingId, setCancellingId] = useState<string | null>(null); // request in flight
   const [cancelError, setCancelError]   = useState("");
+  // Leave-waitlist flow state
+  const [leavingWaitlistId, setLeavingWaitlistId] = useState<string | null>(null); // request in flight
 
   useEffect(() => {
     (async () => {
@@ -82,6 +94,7 @@ export default function MyAppointmentsPage() {
         const data = await res.json();
         setUpcoming(Array.isArray(data.upcoming) ? data.upcoming : []);
         setPast(Array.isArray(data.past) ? data.past : []);
+        setWaitlist(Array.isArray(data.waitlist) ? data.waitlist : []);
         setLoading(false);
       } catch {
         setError("load-failed");
@@ -115,6 +128,19 @@ export default function MyAppointmentsPage() {
       setCancelError("הביטול נכשל, נסה שוב");
       setCancellingId(null);
     }
+  }
+
+  // Leave a waitlist day.
+  async function handleLeaveWaitlist(id: string) {
+    if (!auth) return;
+    setLeavingWaitlistId(id);
+    try {
+      const res = await fetch(apiWithSlug(
+        `/api/waitlist?id=${id}&phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`, slug),
+        { method: "DELETE" });
+      if (res.ok) setWaitlist(prev => prev.filter(w => w.id !== id));
+    } catch { /* ignore */ }
+    setLeavingWaitlistId(null);
   }
 
   return (
@@ -278,6 +304,51 @@ export default function MyAppointmentsPage() {
                 style={{ background: "var(--brand)" }}>
                 קבע תור
               </Link>
+            </div>
+          )}
+
+          {/* ── Waitlist days ── */}
+          {waitlist.length > 0 && (
+            <div className="mt-8">
+              <p className="text-[10px] tracking-[0.3em] uppercase font-medium mb-3 px-1" style={{ color: "var(--text-muted)" }}>
+                רשימת המתנה
+              </p>
+              <div className="space-y-2">
+                {waitlist.map(w => {
+                  const dl = dateLabel(w.date);
+                  return (
+                    <div key={w.id} className="rounded-2xl p-4 relative overflow-hidden"
+                      style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
+                      <div className="absolute top-0 bottom-0 right-0 w-1" style={{ background: "#f59e0b" }} />
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[14px]">⏳</span>
+                            <p className="text-[14px] font-bold truncate" style={{ color: "var(--text-pri)" }}>
+                              {dl.weekday}, {dl.full}
+                            </p>
+                          </div>
+                          <p className="text-[12px] mt-1.5 truncate" style={{ color: "var(--text-sec)" }}>
+                            {w.service.name}{w.staff ? ` · אצל ${w.staff.name}` : ""}
+                          </p>
+                          <p className="text-[11px] mt-1" style={{ color: "var(--text-muted)" }}>
+                            נעדכן אותך ב-WhatsApp ברגע שיתפנה תור
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-3 flex justify-end" style={{ borderTop: "1px solid var(--divider)" }}>
+                        <button
+                          onClick={() => handleLeaveWaitlist(w.id)}
+                          disabled={leavingWaitlistId === w.id}
+                          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform disabled:opacity-60"
+                          style={{ color: "#dc2626" }}>
+                          {leavingWaitlistId === w.id ? "מסיר…" : "יציאה מרשימת ההמתנה"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 

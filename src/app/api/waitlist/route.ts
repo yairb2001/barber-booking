@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { jwtVerify } from "jose";
 import { pushToOwner } from "@/lib/native/push";
 import { resolveBusiness } from "@/lib/tenant";
+
+const SECRET = new TextEncoder().encode(
+  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
+);
 
 /**
  * Public endpoint — customers join the waitlist.
@@ -83,4 +88,52 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(entry, { status: 201 });
+}
+
+/**
+ * DELETE /api/waitlist?id=...&phone=...&token=...
+ *
+ * Customer-initiated removal from the waitlist. Requires the OTP JWT (type
+ * "otp", same one used by /api/my-appointments) and verifies the entry belongs
+ * to the customer whose phone matches the token before deleting it.
+ */
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  const phone = searchParams.get("phone");
+  const token = searchParams.get("token");
+
+  if (!id || !phone || !token) {
+    return NextResponse.json({ error: "id, phone and token required" }, { status: 400 });
+  }
+
+  // Normalize phone to E.164 (same as OTP flow)
+  const normalized = phone.replace(/\D/g, "").replace(/^0/, "972");
+
+  // Verify OTP token
+  let tokenPayload: { phone?: unknown; type?: unknown } = {};
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    tokenPayload = payload as typeof tokenPayload;
+  } catch {
+    return NextResponse.json({ error: "פג תוקף הסשן — יש להתחבר מחדש" }, { status: 401 });
+  }
+  if (tokenPayload.type !== "otp" || tokenPayload.phone !== normalized) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  // Ownership check — the entry's customer phone must match the verified phone
+  const entry = await prisma.waitlist.findUnique({
+    where: { id },
+    select: { id: true, customer: { select: { phone: true } } },
+  });
+  if (!entry) return NextResponse.json({ ok: true, alreadyGone: true });
+
+  const custNorm = (entry.customer?.phone ?? "").replace(/\D/g, "").replace(/^0/, "972");
+  if (custNorm !== normalized) {
+    return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+  }
+
+  await prisma.waitlist.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }
