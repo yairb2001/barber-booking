@@ -41,7 +41,7 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
 // Tools whose use means we're mid high-stakes flow → escalate to the strong model.
-const SMART_TOOLS = new Set(["get_available_slots", "book_appointment", "cancel_appointment"]);
+const SMART_TOOLS = new Set(["get_available_slots", "find_next_available", "book_appointment", "cancel_appointment"]);
 
 function pickInitialModel(
   incomingText: string,
@@ -76,6 +76,18 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
         serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
       },
       required: ["date"],
+    },
+  },
+  {
+    name: "find_next_available",
+    description: "מחזיר את התאריך הפנוי הקרוב ביותר ואת השעות בו, על ידי סריקה קדימה עד 30 יום. השתמש בו כשהלקוח מבקש 'התור הכי קרוב', 'הכי מהר שאפשר' או 'מתי יש מקום', במקום לבדוק יום-יום ידנית.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        staffId:   { type: "string", description: "מזהה ספר (אופציונלי)" },
+        serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
+      },
+      required: [],
     },
   },
   {
@@ -134,6 +146,90 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
   },
 ];
 
+// ─── Availability helper ───────────────────────────────────────────────────────
+// Compute the free slots for ONE date, per staff member. Shared by both
+// get_available_slots (single day) and find_next_available (scans forward).
+async function computeDayAvailability(
+  bizId: string,
+  date: string,
+  inputStaffId?: string,
+  inputServiceId?: string,
+): Promise<{ name: string; slots: string[]; load: number }[]> {
+  const dateObj = new Date(date + "T00:00:00.000Z");
+  const dayOfWeek = getDayOfWeek(dateObj);
+  const nowBiz = getBusinessNow();
+
+  const staffList = await prisma.staff.findMany({
+    where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
+    select: { id: true, name: true },
+  });
+  if (!staffList.length) return [];
+
+  const byStaff: { name: string; slots: string[]; load: number }[] = [];
+
+  for (const staff of staffList) {
+    // Service duration (specific service, else the staff's shortest).
+    let duration = 30;
+    if (inputServiceId) {
+      const ss = await prisma.staffService.findUnique({
+        where: { staffId_serviceId: { staffId: staff.id, serviceId: inputServiceId } },
+        include: { service: true },
+      });
+      if (!ss) continue; // staff doesn't offer this service
+      duration = ss.customDuration ?? ss.service.durationMinutes;
+    } else {
+      const firstSvc = await prisma.staffService.findFirst({
+        where: { staffId: staff.id },
+        include: { service: true },
+        orderBy: { service: { durationMinutes: "asc" } },
+      });
+      duration = firstSvc?.customDuration ?? firstSvc?.service.durationMinutes ?? 30;
+    }
+
+    // Per-date override beats the weekly schedule.
+    const override = await prisma.staffScheduleOverride.findUnique({
+      where: { staffId_date: { staffId: staff.id, date: dateObj } },
+    });
+    if (override && !override.isWorking) continue; // day off
+
+    let scheduleSlots: { start: string; end: string }[] = [];
+    let breaks: { start: string; end: string }[] | null = null;
+
+    if (override?.isWorking && override.slots) {
+      scheduleSlots = JSON.parse(override.slots);
+      breaks = override.breaks ? JSON.parse(override.breaks) : null;
+    } else {
+      const schedule = await prisma.staffSchedule.findUnique({
+        where: { staffId_dayOfWeek: { staffId: staff.id, dayOfWeek } },
+      });
+      if (!schedule?.isWorking) continue;
+      scheduleSlots = JSON.parse(schedule.slots);
+      breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
+    }
+
+    // `date` is stored as the full start datetime, so query the whole UTC day.
+    const dayStart = dateObj;
+    const dayEnd   = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
+    const booked = await prisma.appointment.findMany({
+      where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
+      select: { startTime: true, endTime: true },
+    });
+
+    let slots = generateSlots(scheduleSlots, breaks, duration, booked);
+
+    // Drop past slots when the date is today.
+    if (nowBiz.date === date) {
+      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + 15);
+    }
+
+    if (slots.length) byStaff.push({ name: staff.name, slots, load: booked.length });
+  }
+
+  // When no specific barber was requested, surface the least-busy one first.
+  if (!inputStaffId) byStaff.sort((a, b) => a.load - b.load);
+  return byStaff;
+}
+
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
 async function execTool(
@@ -174,88 +270,35 @@ async function execTool(
       // ── get_available_slots ──────────────────────────────────────────────────
       case "get_available_slots": {
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
-        const dateObj = new Date(date + "T00:00:00.000Z");
-        const dayOfWeek = getDayOfWeek(dateObj);
-        const nowBiz = getBusinessNow();
-
-        // Determine which staff members to check
-        const staffList = await prisma.staff.findMany({
-          where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
-          select: { id: true, name: true },
-        });
-
-        if (!staffList.length) return "אין ספרים פעילים.";
-
-        const byStaff: { name: string; slots: string[]; load: number }[] = [];
-
-        for (const staff of staffList) {
-          // Get service duration
-          let duration = 30;
-          if (inputServiceId) {
-            const ss = await prisma.staffService.findUnique({
-              where: { staffId_serviceId: { staffId: staff.id, serviceId: inputServiceId } },
-              include: { service: true },
-            });
-            if (!ss) continue; // staff doesn't offer this service
-            duration = ss.customDuration ?? ss.service.durationMinutes;
-          } else {
-            // Default to shortest service
-            const firstSvc = await prisma.staffService.findFirst({
-              where: { staffId: staff.id },
-              include: { service: true },
-              orderBy: { service: { durationMinutes: "asc" } },
-            });
-            duration = firstSvc?.customDuration ?? firstSvc?.service.durationMinutes ?? 30;
-          }
-
-          // Check override
-          const override = await prisma.staffScheduleOverride.findUnique({
-            where: { staffId_date: { staffId: staff.id, date: dateObj } },
-          });
-          if (override && !override.isWorking) continue; // day off
-
-          let scheduleSlots: { start: string; end: string }[] = [];
-          let breaks: { start: string; end: string }[] | null = null;
-
-          if (override?.isWorking && override.slots) {
-            scheduleSlots = JSON.parse(override.slots);
-            breaks = override.breaks ? JSON.parse(override.breaks) : null;
-          } else {
-            const schedule = await prisma.staffSchedule.findUnique({
-              where: { staffId_dayOfWeek: { staffId: staff.id, dayOfWeek } },
-            });
-            if (!schedule?.isWorking) continue;
-            scheduleSlots = JSON.parse(schedule.slots);
-            breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
-          }
-
-          // Existing appointments. `date` is stored as the full start datetime
-          // (date + startTime, see book_appointment), so an exact-midnight match
-          // would find nothing — query the whole UTC day instead.
-          const dayStart = dateObj;
-          const dayEnd   = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
-          const booked = await prisma.appointment.findMany({
-            where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
-            select: { startTime: true, endTime: true },
-          });
-
-          let slots = generateSlots(scheduleSlots, breaks, duration, booked);
-
-          // Filter past slots if today
-          if (nowBiz.date === date) {
-            slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + 15);
-          }
-
-          if (slots.length) byStaff.push({ name: staff.name, slots, load: booked.length });
-        }
-
+        const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length) return `אין תורים פנויים בתאריך ${date}.`;
-        // When no specific barber was requested, surface the least-busy one
-        // first so the agent spreads load instead of always picking the same.
-        if (!inputStaffId) byStaff.sort((a, b) => a.load - b.load);
         return byStaff
           .map(s => `${s.name}: ${s.slots.join(", ")}`)
           .join("\n");
+      }
+
+      // ── find_next_available ──────────────────────────────────────────────────
+      // Scans forward day-by-day (up to ~30 days) and returns the FIRST date
+      // that has any free slot. One call answers "the soonest appointment",
+      // instead of the model probing get_available_slots day after day (which
+      // blew the iteration budget and left the customer with no reply).
+      case "find_next_available": {
+        const { staffId: inputStaffId, serviceId: inputServiceId } = input;
+        const nowBiz = getBusinessNow();
+        const start = new Date(nowBiz.date + "T00:00:00.000Z");
+        const MAX_SCAN_DAYS = 30;
+        for (let d = 0; d < MAX_SCAN_DAYS; d++) {
+          const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
+          const ds = dObj.toISOString().slice(0, 10);
+          const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId);
+          if (byStaff.length) {
+            const lines = byStaff
+              .map(s => `${s.name}: ${s.slots.slice(0, 4).join(", ")}`)
+              .join("\n");
+            return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}`;
+          }
+        }
+        return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
       }
 
       // ── book_appointment ─────────────────────────────────────────────────────
@@ -445,7 +488,7 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 כדי להזיז או לשנות תור: קודם מצא את התור הקיים עם check_appointment, ספר ללקוח מה קבוע לו, ואחרי שהוא מאשר — בטל את הישן עם cancel_appointment וקבע את החדש עם book_appointment. אל תבקש ממנו פרטים שכבר יש לך מהתור הקיים.
 
-יש לך כלים: get_staff_list, get_services, get_available_slots, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
 }
 
 function buildSystemPrompt(params: {
