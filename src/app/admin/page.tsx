@@ -623,10 +623,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const heightCap = Math.max(8, height - (veryShort ? 4 : 6));
   let nameFont = Math.min(zoomFont, heightCap);
   if (lanes >= 3) nameFont = Math.min(nameFont, 11);
-  // When the block is tall enough, let the name wrap to two lines so the full
-  // first + last name shows cleanly (first name on top, surname below) instead
-  // of being cut off. Short blocks keep it on one line with an ellipsis.
-  const nameLines = (!short && lanes < 3) ? 2 : 1;
+  // Allow the name to wrap to two lines on any block that isn't tiny. This is
+  // what keeps the sizes UNIFORM: a longer name wraps to a second line at the
+  // same font as a short name, instead of shrinking to squeeze onto one line.
+  // FitName only steps the font down for the rare name too long for two lines.
+  const nameLines = (!veryShort && lanes < 3) ? 2 : 1;
   // Secondary lines (service, time) sit a step below the name size.
   const subFont = Math.max(7, Math.round(nameFont * 0.8));
   // With a possible two-line name, require a bit more height before adding the
