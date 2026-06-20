@@ -299,7 +299,7 @@ async function execTool(
         const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length) return `אין תורים פנויים בתאריך ${date}.`;
         return byStaff
-          .map(s => `${s.name}: ${s.slots.join(", ")}`)
+          .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
           .join("\n");
       }
 
@@ -319,7 +319,7 @@ async function execTool(
           const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId);
           if (byStaff.length) {
             const lines = byStaff
-              .map(s => `${s.name}: ${s.slots.slice(0, 4).join(", ")}`)
+              .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.slice(0, 4).join(", ")}`)
               .join("\n");
             return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}`;
           }
