@@ -624,6 +624,46 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
     parts.push(`ביקורים אחרונים שלו: ${visits}. אם זה רלוונטי אפשר להציע את אותו ספר או שירות, אבל אל תניח — תמיד תוודא איתו.`);
   }
 
+  // ── Preferred-barber signal (favorite vs. mixed) ─────────────────────────────
+  // Over a wider window than the 3 shown above, decide whether the customer has a
+  // clear go-to barber. A loyal customer should be offered their regular; a
+  // customer who spreads visits across barbers has no preference, so we load-
+  // balance (assign the least-busy one silently) — never ask "with whom?".
+  const history = await prisma.appointment.findMany({
+    where: {
+      customerId: customer.id,
+      businessId,
+      status: { notIn: ["cancelled_by_customer", "cancelled_by_staff"] },
+    },
+    orderBy: { date: "desc" },
+    take: 10,
+    select: { staff: { select: { name: true, isAvailable: true } } },
+  });
+  if (history.length >= 3) {
+    // Count visits ONLY for barbers who still work here. A customer's regular
+    // may have left the shop (deactivated) — in that case there's no active
+    // favorite to offer, so we fall through to load-balancing instead of
+    // promising a barber the system can no longer book.
+    const counts = new Map<string, number>();
+    for (const h of history) {
+      if (h.staff?.isAvailable) counts.set(h.staff.name, (counts.get(h.staff.name) ?? 0) + 1);
+    }
+    const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    const activeTotal = ranked.reduce((sum, r) => sum + r[1], 0);
+    const [topName, topCount] = ranked[0] ?? ["", 0];
+    // Dominant = at least 3 visits to active barbers AND one of them holds ≥60%
+    // (or is the only active barber the customer has ever used).
+    const dominant =
+      !!topName && activeTotal >= 3 && (ranked.length === 1 || topCount / activeTotal >= 0.6);
+    if (dominant) {
+      parts.push(`הספר הקבוע שלו הוא ${topName} (רוב הביקורים אצלו). אם הוא לא ביקש ספר אחר, אפשר להציע לו פעם אחת את ${topName} כרגיל ("אצל ${topName} כרגיל, או שלא קריטי?"). אם ענה שלא קריטי — קח את הפנוי ביותר.`);
+    } else {
+      // Either the customer spreads visits around, or their old regular no longer
+      // works here. Don't surface a barber from history; load-balance silently.
+      parts.push(`אין לו ספר קבוע פעיל אצלנו כרגע. אל תשאל אותו אצל מי הוא רוצה ואל תניח ספר מההיסטוריה; פשוט קבע אצל הספר הכי פנוי (איזון עומסים), בשקט.`);
+    }
+  }
+
   // Active waitlist entries — the customer explicitly asked to be queued for a
   // specific barber. If they come to book, that barber is the one they actually
   // want, so prefer them instead of auto-assigning the least-busy one.
