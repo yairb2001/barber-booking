@@ -317,11 +317,13 @@ async function execTool(
           .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
           .join("\n");
         // When several barbers come back, each line is a SEPARATE barber and the
-        // times next to it are free ONLY for that barber. The model has merged
+        // times next to it are free ONLY for that barber. The model had merged
         // these into one flat list and then booked a time at a barber who didn't
-        // actually have it — surface a hard rule in the result itself.
+        // actually have it. Switching barbers to satisfy the customer is fine —
+        // the invariant is that the offered/confirmed time must come from the line
+        // of the barber you will actually book with.
         if (byStaff.length > 1) {
-          return `${body}\n\n⚠️ כל שורה היא ספר נפרד, והשעות שלצדו פנויות אך ורק אצלו. אסור למזג שעות בין ספרים. בחר ספר אחד, הצע ללקוח רק את השעות שמופיעות לצד אותו ספר, וכשתקבע השתמש ב-staffId של אותו ספר בדיוק. אם הלקוח רוצה ספר מסוים — קרא שוב לכלי עם ה-staffId שלו וקבל את השעות האמיתיות שלו.`;
+          return `${body}\n\n⚠️ כל שורה היא ספר נפרד, והשעה שלצדו פנויה אך ורק אצלו. מותר לעבור בין ספרים כדי למצוא ללקוח שעה שמתאימה לו (למשל אם הוא רוצה מאוחר יותר ולספר הראשון אין) — אבל כל שעה שאתה מציע ומאשר חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל, ותקבע עם ה-staffId שלו. לעולם אל תציג שעה כפנויה אצל ספר אחד כשהיא פנויה רק אצל אחר.`;
         }
         return body;
       }
@@ -345,7 +347,7 @@ async function execTool(
               .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.slice(0, 4).join(", ")}`)
               .join("\n");
             const warn = byStaff.length > 1
-              ? `\n\n⚠️ כל שורה היא ספר נפרד; השעות פנויות רק אצל הספר שלצדן. אל תמזג בין ספרים — בחר ספר אחד והצע רק את השעות שלו.`
+              ? `\n\n⚠️ כל שורה היא ספר נפרד; השעה פנויה רק אצל הספר שלצדה. מותר לעבור בין ספרים כדי למצוא שעה שמתאימה ללקוח, אבל כל שעה שתציע ותקבע חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל.`
               : "";
             return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}${warn}`;
           }
