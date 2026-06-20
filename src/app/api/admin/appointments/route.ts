@@ -156,6 +156,10 @@ export async function POST(req: NextRequest) {
   // admin modal) OR — for programmatic callers without the flag — when the
   // appointment is genuinely upcoming. `notifyCustomer: false` lets a barber
   // record a past/quiet appointment without messaging the customer.
+  // Collect notifications and await before returning — on Vercel serverless a
+  // fire-and-forget send is often killed once the response is sent (messages
+  // were getting stuck in "queued"). The GreenAPI send is timeout-capped.
+  const notifyTasks: Promise<unknown>[] = [];
   const wantsNotify = body.notifyCustomer !== false && (body.notifyCustomer === true || isUpcoming);
   if (!body.walkIn && wantsNotify && hasFeature(business.features, "reminders")) {
     const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
@@ -199,13 +203,13 @@ export async function POST(req: NextRequest) {
       msgKind = "confirmation";
     }
 
-    sendMessage({
+    notifyTasks.push(sendMessage({
       businessId: business.id,
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
       kind: msgKind,
       body: msgBody,
-    }).catch(err => console.error("confirmation send failed", err));
+    }).catch(err => console.error("confirmation send failed", err)));
   }
 
   // ── Walk-in thank-you — always sent, regardless of whether time has passed ────
@@ -221,7 +225,7 @@ export async function POST(req: NextRequest) {
       booking_link: bookingLink,
     });
     console.log("[walk-in] sending thank-you to", appointment.customer.phone);
-    sendMessage({
+    notifyTasks.push(sendMessage({
       businessId: business.id,
       appointmentId: appointment.id,
       customerPhone: appointment.customer.phone,
@@ -230,8 +234,11 @@ export async function POST(req: NextRequest) {
     }).then(r => {
       if (!r.ok) console.error("[walk-in] send failed:", r.error);
       else console.log("[walk-in] sent ok");
-    }).catch(err => console.error("[walk-in] exception:", err));
+    }).catch(err => console.error("[walk-in] exception:", err)));
   }
+
+  // Await all sends so they complete before the function is frozen.
+  await Promise.allSettled(notifyTasks);
 
   return NextResponse.json(appointment, { status: 201 });
 }

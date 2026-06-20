@@ -187,20 +187,28 @@ export async function POST(request: NextRequest) {
     data: { lastVisitAt: new Date() },
   });
 
+  // Side-effect notifications (push + WhatsApp). On Vercel serverless the
+  // function is frozen once we return the response, so a true fire-and-forget
+  // promise often gets killed mid-flight (we saw many messages stuck in
+  // "queued"). Collect every notification here and await them all just before
+  // returning so they actually complete. Each is individually guarded, and the
+  // GreenAPI send is capped by a 12s timeout, so this can't hang the booking.
+  const notifyTasks: Promise<unknown>[] = [];
+
   // Native push to the assigned barber — "you have a new appointment".
   // Also notify the business owner/manager (who has the app installed).
   {
     const pushDateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
-    pushToStaff(staffId, {
+    notifyTasks.push(pushToStaff(staffId, {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       data: { type: "appointment", appointmentId: appointment.id, date },
-    }).catch(() => {});
-    pushToOwner(staff.businessId, {
+    }).catch(() => {}));
+    notifyTasks.push(pushToOwner(staff.businessId, {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       data: { type: "appointment", appointmentId: appointment.id, date },
-    }).catch(() => {});
+    }).catch(() => {}));
   }
 
   // Send WhatsApp confirmation (fire-and-forget)
@@ -265,13 +273,13 @@ export async function POST(request: NextRequest) {
       msgKind = "confirmation";
     }
 
-    sendMessage({
+    notifyTasks.push(sendMessage({
       businessId: staff.businessId,
       appointmentId: appointment.id,
       customerPhone,
       kind: msgKind,
       body: msgBody,
-    }).catch(err => console.error("confirmation send failed", err));
+    }).catch(err => console.error("confirmation send failed", err)));
   }
 
   // Send thank-you to the referrer (fire-and-forget) — only when the referral
@@ -293,13 +301,17 @@ export async function POST(request: NextRequest) {
       `${customer.name} קבע תור ב*${business.name}* ✂️ והזכיר את שמך כמי שהמליץ!\n\n` +
       `תודה על ההמלצה — אנחנו מעריכים אותך 🤩\n` +
       progressLine;
-    sendMessage({
+    notifyTasks.push(sendMessage({
       businessId: staff.businessId,
       customerPhone: referrerRecord.phone,
       kind: "referral_thankyou",
       body: thankYouBody,
-    }).catch(err => console.error("referral thank-you send failed", err));
+    }).catch(err => console.error("referral thank-you send failed", err)));
   }
+
+  // Await all notifications so they finish before the serverless function is
+  // frozen — otherwise the WhatsApp confirmation often never gets sent.
+  await Promise.allSettled(notifyTasks);
 
   return NextResponse.json(appointment, { status: 201 });
 }

@@ -103,7 +103,7 @@ async function triggerWaitlist(opts: {
       if (!matchesTimePreference(startTime, pref)) continue;
     }
 
-    void sendWaitlistEntryNotification(business.name, entry, triggerType);
+    void sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug);
   }
 }
 
@@ -127,6 +127,7 @@ export function sendWaitlistEntryNotification(
   businessName: string,
   entry: WaitlistEntryForNotify,
   triggerType: "cancellation" | "day_open",
+  slug?: string | null,
 ) {
   const pref = entry.preferredTimeOfDay || "any";
   const prefLabel = TIME_PREF_LABELS[pref] ?? "";
@@ -137,6 +138,11 @@ export function sendWaitlistEntryNotification(
     month: "long",
   });
 
+  // Direct booking link for this business so the customer can grab the slot in
+  // one tap (the message previously said "hurry to book" with no link).
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const bookingLink = `${baseUrl}${slug ? `/${slug}` : ""}/book`;
+
   const lines = [
     `שלום ${entry.customer.name} 👋`,
     ``,
@@ -146,6 +152,8 @@ export function sendWaitlistEntryNotification(
     `🔖 שירות: ${entry.service.name}`,
     ``,
     `מהרו לקבוע תור לפני שיתפס 🏃`,
+    `👇 קביעת תור:`,
+    bookingLink,
   ].filter(Boolean).join("\n");
 
   return sendMessage({

@@ -38,6 +38,29 @@ const COLORS = [
   { bg: "bg-cyan-500",   light: "bg-cyan-100 text-cyan-900 border-cyan-300" },
 ];
 
+// Per-service colors — so different services are visually distinguishable in the
+// calendar (a haircut reads differently from a beard trim, etc.). The color is a
+// deterministic hash of the service id → a stable palette slot, so the same
+// service always gets the same color without needing extra config. Soft tints
+// keep the dark text readable.
+const SERVICE_COLORS = [
+  "bg-amber-100 text-amber-900 border-amber-300",
+  "bg-sky-100 text-sky-900 border-sky-300",
+  "bg-emerald-100 text-emerald-900 border-emerald-300",
+  "bg-violet-100 text-violet-900 border-violet-300",
+  "bg-rose-100 text-rose-900 border-rose-300",
+  "bg-cyan-100 text-cyan-900 border-cyan-300",
+  "bg-lime-100 text-lime-900 border-lime-300",
+  "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300",
+  "bg-orange-100 text-orange-900 border-orange-300",
+  "bg-teal-100 text-teal-900 border-teal-300",
+];
+function serviceColorClass(serviceId: string): string {
+  let h = 0;
+  for (let i = 0; i < serviceId.length; i++) h = (h * 31 + serviceId.charCodeAt(i)) >>> 0;
+  return SERVICE_COLORS[h % SERVICE_COLORS.length];
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const todayISO = () => new Date().toISOString().split("T")[0];
 const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -510,51 +533,6 @@ type ApptBlockSwapState =
   | { kind: "pending-swap" }           // appt has open proposal in pending_response state (no agreement yet)
   | { kind: "swap-agreed" };           // appt has open proposal in accepted_by_customer state (awaiting admin approval)
 
-// ── Auto-fitting single-line text ─────────────────────────────────────────────
-// Shrinks the font-size until the text fits on ONE line inside its container, so
-// a full customer name (first + last) always stays visible without wrapping.
-// Re-fits on container resize (zoom +/-, day/week switch, lane changes).
-function FitText({ text, maxPx, minPx = 5, className, title, onFit }: {
-  text: string; maxPx: number; minPx?: number; className?: string; title?: string;
-  /** Reports the final fitted px each time the text is (re)fit. */
-  onFit?: (px: number) => void;
-}) {
-  const boxRef = useRef<HTMLDivElement>(null);
-  const spanRef = useRef<HTMLSpanElement>(null);
-  const [size, setSize] = React.useState(maxPx);
-  const onFitRef = useRef(onFit);
-  onFitRef.current = onFit;
-
-  React.useLayoutEffect(() => {
-    const box = boxRef.current, span = spanRef.current;
-    if (!box || !span) return;
-    const fit = () => {
-      const avail = box.clientWidth;
-      if (avail <= 0) return;
-      let s = maxPx;
-      span.style.fontSize = `${s}px`;
-      while (s > minPx && span.scrollWidth > avail) { s -= 0.5; span.style.fontSize = `${s}px`; }
-      setSize(prev => (prev === s ? prev : s));
-      onFitRef.current?.(s);
-    };
-    fit();
-    const ro = new ResizeObserver(fit);
-    ro.observe(box);
-    return () => ro.disconnect();
-  }, [text, maxPx, minPx]);
-
-  return (
-    // fontSize + lineHeight on the box make its line-box hug the (small) text
-    // instead of inheriting the parent's 16px strut — otherwise the name gets
-    // pushed down and clipped inside short, zoomed-out blocks.
-    <div ref={boxRef} className={className} style={{ width: "100%", overflow: "hidden", fontSize: size, lineHeight: 1.1 }} title={title}>
-      <span ref={spanRef} style={{ whiteSpace: "nowrap", fontSize: size, display: "inline-block", lineHeight: 1.1 }}>
-        {text}
-      </span>
-    </div>
-  );
-}
-
 function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState, lane }: {
   appt: Appt;
   colorClass: string;
@@ -574,29 +552,27 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const laneStyle: React.CSSProperties = lanes > 1
     ? { left: `calc(${(lane!.lane * 100) / lanes}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` }
     : { left: 2, right: 2 };
-  // The name always stays on ONE line via FitText (auto-shrinks to the lane
-  // width). The cap scales a little with how much room the block has.
   const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
   const short = height < 46;
-  // The name font scales with the zoom level (hourHeight) so text grows when you
-  // zoom in and shrinks when you zoom out — then it's capped by the block height
-  // so it never clips vertically on short, zoomed-out blocks.
-  const zoomFont = Math.max(8, Math.min(20, Math.round(8 + (hh - 28) * 0.1)));
-  const heightCap = Math.max(7, height - (veryShort ? 3 : 5));
-  let nameMaxPx = Math.min(zoomFont, heightCap);
-  if (lanes >= 3) nameMaxPx = Math.min(nameMaxPx, 12);
-  // The NAME is the most important text and must always read as the largest.
-  // In narrow week columns FitText shrinks the (long) name to fit one line, so we
-  // track its ACTUAL rendered size and size the secondary lines (service, time)
-  // strictly below it — otherwise the short "11:00" would look bigger than the name.
-  const [fittedName, setFittedName] = React.useState(nameMaxPx);
-  // Secondary size is a bit below the name AND hard-capped at the name's actual
-  // rendered size, so even when a long name shrinks to the floor in a narrow week
-  // column, the time/service can never end up looking bigger than the name.
-  const subFont = Math.min(
-    Math.round(fittedName),
-    Math.max(6, Math.round(Math.min(nameMaxPx, fittedName) * 0.85))
-  );
+  // CONSISTENT name font — driven purely by the zoom level (hourHeight), NOT by
+  // the name's length. Previously the name auto-shrank to fit on one line, so a
+  // long name rendered smaller than a short one and the calendar looked uneven.
+  // Now every block at the same zoom shows the name at the same size; it's only
+  // capped by the block height so it can't clip vertically on short blocks.
+  const zoomFont = Math.max(9, Math.min(16, Math.round(10 + (hh - 28) * 0.08)));
+  const heightCap = Math.max(8, height - (veryShort ? 4 : 6));
+  let nameFont = Math.min(zoomFont, heightCap);
+  if (lanes >= 3) nameFont = Math.min(nameFont, 11);
+  // When the block is tall enough, let the name wrap to two lines so the full
+  // first + last name shows cleanly (first name on top, surname below) instead
+  // of being cut off. Short blocks keep it on one line with an ellipsis.
+  const nameLines = (!short && lanes < 3) ? 2 : 1;
+  // Secondary lines (service, time) sit a step below the name size.
+  const subFont = Math.max(7, Math.round(nameFont * 0.8));
+  // With a possible two-line name, require a bit more height before adding the
+  // service/time lines so nothing gets cramped.
+  const showService = lanes < 3 && height > (nameLines === 2 ? 58 : 44);
+  const showTime    = lanes < 3 && height > (nameLines === 2 ? 76 : 60);
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -672,11 +648,26 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      {/* Full customer name (first + last) on a single line — the font auto-shrinks
-          to fit the block width so it never overflows or overlaps the next slot. */}
-      <FitText text={appt.customer.name} maxPx={nameMaxPx} minPx={5} className="font-bold" title={appt.customer.name} onFit={setFittedName} />
-      {height > 44 && lanes < 3 && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
-      {height > 60 && lanes < 3 && <p className="opacity-60" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
+      {/* Full customer name (first + last) at a CONSISTENT, zoom-based size.
+          Wraps to two lines when there's room, otherwise ellipsizes — the font
+          size stays the same regardless of how long the name is. */}
+      <div
+        className="font-bold w-full"
+        title={appt.customer.name}
+        style={{
+          fontSize: nameFont,
+          lineHeight: 1.1,
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: nameLines,
+          overflow: "hidden",
+          wordBreak: "break-word",
+        }}
+      >
+        {appt.customer.name}
+      </div>
+      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
+      {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
   );
 }
@@ -2379,6 +2370,11 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   const [saved, setSaved] = useState(false);
   const [newWaiting, setNewWaiting] = useState({ name: "", phone: "", serviceId: "" });
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
+  // Add-to-waitlist: pick from existing customers ("search") or type a new one ("new")
+  const [waitMode, setWaitMode] = useState<"search" | "new">("search");
+  const [waitQuery, setWaitQuery] = useState("");
+  const [waitCustomers, setWaitCustomers] = useState<{ id: string; name: string; phone: string }[]>([]);
+  const [waitSelected, setWaitSelected] = useState<{ id: string; name: string; phone: string } | null>(null);
   // When a save EXPANDS availability and people are waiting that day, we always
   // ask the manager before messaging the waitlist (instead of auto-sending).
   const [notifyPrompt, setNotifyPrompt] = useState<{ count: number } | null>(null);
@@ -2414,6 +2410,13 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
     fetch(`/api/admin/waitlist?date=${date}&staffId=${staffId}`).then(r => r.json()).then(setWaitlist).catch(() => {});
     fetch("/api/admin/services").then(r => r.json()).then(setServices).catch(() => {});
   }, [date, staffId]);
+
+  // Live customer search for the "add to waitlist" picker
+  useEffect(() => {
+    if (waitMode !== "search" || waitQuery.length < 1) { setWaitCustomers([]); return; }
+    fetch(`/api/admin/customers?q=${encodeURIComponent(waitQuery)}`)
+      .then(r => r.json()).then(setWaitCustomers).catch(() => {});
+  }, [waitQuery, waitMode]);
 
   // Post-save handling shared by both save flows. Reads the override response:
   // if availability grew and someone is waiting that day, surface the "notify
@@ -2525,12 +2528,15 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   }
 
   async function addToWaitlist() {
-    if (!newWaiting.phone || !newWaiting.serviceId) return;
+    const phone = waitMode === "search" ? waitSelected?.phone : newWaiting.phone;
+    const name  = waitMode === "search" ? waitSelected?.name  : newWaiting.name;
+    if (!phone || !newWaiting.serviceId) return;
     await fetch("/api/admin/waitlist", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...newWaiting, staffId, date }),
+      body: JSON.stringify({ phone, name: name || phone, serviceId: newWaiting.serviceId, staffId, date }),
     });
     setNewWaiting({ name: "", phone: "", serviceId: "" });
+    setWaitSelected(null); setWaitQuery(""); setWaitCustomers([]);
     fetch(`/api/admin/waitlist?date=${date}&staffId=${staffId}`).then(r => r.json()).then(setWaitlist);
   }
 
@@ -2707,17 +2713,61 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                 );
               })}
               <div className="border-t border-neutral-100 pt-3 space-y-2">
-                <p className="text-xs font-medium text-neutral-500">הוסף להמתנה</p>
-                <input value={newWaiting.name} onChange={e => setNewWaiting(p => ({ ...p, name: e.target.value }))}
-                  placeholder="שם" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
-                <input value={newWaiting.phone} onChange={e => setNewWaiting(p => ({ ...p, phone: e.target.value }))}
-                  placeholder="טלפון" dir="ltr" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-medium text-neutral-500">הוסף להמתנה</p>
+                  <div className="flex gap-2 text-xs">
+                    <button onClick={() => { setWaitMode("search"); setNewWaiting(p => ({ ...p, name: "", phone: "" })); }}
+                      className={`px-2 py-0.5 rounded-full ${waitMode === "search" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
+                      מרשימת לקוחות
+                    </button>
+                    <button onClick={() => { setWaitMode("new"); setWaitSelected(null); setWaitQuery(""); setWaitCustomers([]); }}
+                      className={`px-2 py-0.5 rounded-full ${waitMode === "new" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
+                      לקוח חדש
+                    </button>
+                  </div>
+                </div>
+
+                {waitMode === "search" ? (
+                  waitSelected ? (
+                    <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                      <span className="text-sm font-medium text-emerald-800 flex-1">{waitSelected.name}</span>
+                      <span className="text-xs text-emerald-600" dir="ltr">{waitSelected.phone}</span>
+                      <button onClick={() => setWaitSelected(null)} className="text-emerald-500 text-xs">✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <input value={waitQuery} onChange={e => setWaitQuery(e.target.value)}
+                        placeholder="חפש לפי שם או טלפון..."
+                        className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                      {waitCustomers.length > 0 && (
+                        <div className="border border-neutral-200 rounded-lg max-h-40 overflow-y-auto">
+                          {waitCustomers.map(c => (
+                            <button key={c.id} onClick={() => { setWaitSelected(c); setWaitQuery(""); setWaitCustomers([]); }}
+                              className="w-full text-right px-3 py-2 hover:bg-neutral-50 border-b border-neutral-50 last:border-0">
+                              <p className="text-sm font-medium">{c.name}</p>
+                              <p className="text-xs text-neutral-400" dir="ltr">{c.phone}</p>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )
+                ) : (
+                  <>
+                    <input value={newWaiting.name} onChange={e => setNewWaiting(p => ({ ...p, name: e.target.value }))}
+                      placeholder="שם" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                    <input value={newWaiting.phone} onChange={e => setNewWaiting(p => ({ ...p, phone: e.target.value }))}
+                      placeholder="טלפון" dir="ltr" className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+                  </>
+                )}
+
                 <select value={newWaiting.serviceId} onChange={e => setNewWaiting(p => ({ ...p, serviceId: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
                   <option value="">בחר שירות...</option>
                   {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
-                <button onClick={addToWaitlist} disabled={!newWaiting.phone || !newWaiting.serviceId}
+                <button onClick={addToWaitlist}
+                  disabled={!newWaiting.serviceId || (waitMode === "search" ? !waitSelected : !newWaiting.phone)}
                   className="w-full bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
                   + הוסף לרשימה
                 </button>
@@ -4229,8 +4279,8 @@ export default function AdminCalendar() {
                 onClick={() => { setDate(cell); setView("day"); setDayMenu({ date: cell, staffId: allStaff[0]?.id || "" }); }}>
                 <span className={`text-sm font-semibold ${isToday ? "text-teal-700" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
                 <div className="mt-1 space-y-0.5">
-                  {dayAppts.slice(0, 3).map((a, ai) => (
-                    <div key={a.id} className={`text-[10px] rounded px-1 truncate ${COLORS[ai % COLORS.length].light}`}>
+                  {dayAppts.slice(0, 3).map((a) => (
+                    <div key={a.id} className={`text-[10px] rounded px-1 truncate ${serviceColorClass(a.service.id)}`}>
                       {a.startTime} {a.customer.name}
                     </div>
                   ))}
@@ -4445,7 +4495,7 @@ export default function AdminCalendar() {
                           const dayAppts = getAppts(s.id, date);
                           const lanes = computeApptLanes(dayAppts);
                           return dayAppts.map(a => (
-                            <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                            <ApptBlock key={a.id} appt={a} colorClass={serviceColorClass(a.service.id)}
                               isMoving={dragMove?.appt.id === a.id}
                               swapState={swapStateFor(a.id)}
                               lane={lanes[a.id]}
@@ -4580,7 +4630,7 @@ export default function AdminCalendar() {
                           const dayAppts = getAppts(s.id, d);
                           const lanes = computeApptLanes(dayAppts);
                           return dayAppts.map(a => (
-                            <ApptBlock key={a.id} appt={a} colorClass={COLORS[si % COLORS.length].light}
+                            <ApptBlock key={a.id} appt={a} colorClass={serviceColorClass(a.service.id)}
                               isMoving={dragMove?.appt.id === a.id}
                               swapState={swapStateFor(a.id)}
                               lane={lanes[a.id]}

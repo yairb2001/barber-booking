@@ -32,6 +32,8 @@ export class GreenApiProvider implements MessagingProvider {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, message: body }),
+        // Cap the wait so an awaited send can never hang a booking response.
+        signal: AbortSignal.timeout(12_000),
       });
 
       if (!res.ok) {
