@@ -533,6 +533,67 @@ type ApptBlockSwapState =
   | { kind: "pending-swap" }           // appt has open proposal in pending_response state (no agreement yet)
   | { kind: "swap-agreed" };           // appt has open proposal in accepted_by_customer state (awaiting admin approval)
 
+/**
+ * Renders the customer's FULL name and auto-shrinks the font (between `min` and
+ * `max`) so the WHOLE name is always visible — never cut off with an ellipsis.
+ * The name may wrap onto up to `maxLines` lines; we measure the rendered text
+ * against the available box and step the font down until it fits both the width
+ * and the allowed number of lines. This keeps the look uniform at a given zoom
+ * (most names render at `max`) while guaranteeing long names stay readable.
+ */
+function FitName({ name, max, min, maxLines }: { name: string; max: number; min: number; maxLines: number }) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const [font, setFont] = React.useState(max);
+
+  React.useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const fit = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+      const availW = parent.clientWidth;
+      const availH = parent.clientHeight;
+      if (availW <= 0 || availH <= 0) return;
+
+      let size = max;
+      el.style.fontSize = `${size}px`;
+      // Step down until the text fits horizontally (no word overflow) AND
+      // vertically (within maxLines), or we hit the floor.
+      while (
+        size > min &&
+        (el.scrollWidth > availW || el.scrollHeight > Math.min(availH, size * 1.15 * maxLines + 1))
+      ) {
+        size -= 1;
+        el.style.fontSize = `${size}px`;
+      }
+      setFont(size);
+    };
+
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (el.parentElement) ro.observe(el.parentElement);
+    return () => ro.disconnect();
+  }, [name, max, min, maxLines]);
+
+  return (
+    <div
+      ref={ref}
+      className="font-bold w-full"
+      title={name}
+      style={{
+        fontSize: font,
+        lineHeight: 1.15,
+        whiteSpace: "normal",
+        wordBreak: "break-word",
+        overflow: "hidden",
+      }}
+    >
+      {name}
+    </div>
+  );
+}
+
 function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState, lane }: {
   appt: Appt;
   colorClass: string;
@@ -554,11 +615,10 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     : { left: 2, right: 2 };
   const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
   const short = height < 46;
-  // CONSISTENT name font — driven purely by the zoom level (hourHeight), NOT by
-  // the name's length. Previously the name auto-shrank to fit on one line, so a
-  // long name rendered smaller than a short one and the calendar looked uneven.
-  // Now every block at the same zoom shows the name at the same size; it's only
-  // capped by the block height so it can't clip vertically on short blocks.
+  // Preferred name font — driven by the zoom level (hourHeight). This is the
+  // MAX size; FitName auto-shrinks from here only as far as needed so the full
+  // name fits. Most names render at this size, so blocks stay visually uniform,
+  // and a long name simply steps down a little instead of being truncated.
   const zoomFont = Math.max(9, Math.min(16, Math.round(10 + (hh - 28) * 0.08)));
   const heightCap = Math.max(8, height - (veryShort ? 4 : 6));
   let nameFont = Math.min(zoomFont, heightCap);
@@ -648,24 +708,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      {/* Full customer name (first + last) at a CONSISTENT, zoom-based size.
-          Wraps to two lines when there's room, otherwise ellipsizes — the font
-          size stays the same regardless of how long the name is. */}
-      <div
-        className="font-bold w-full"
-        title={appt.customer.name}
-        style={{
-          fontSize: nameFont,
-          lineHeight: 1.1,
-          display: "-webkit-box",
-          WebkitBoxOrient: "vertical",
-          WebkitLineClamp: nameLines,
-          overflow: "hidden",
-          wordBreak: "break-word",
-        }}
-      >
-        {appt.customer.name}
-      </div>
+      {/* Full customer name (first + last) — ALWAYS shown in full. The font
+          starts at the zoom-based size and auto-shrinks only as much as needed
+          so the complete name fits (wrapping to up to `nameLines` lines); it is
+          never cut off with an ellipsis. */}
+      <FitName name={appt.customer.name} max={nameFont} min={7} maxLines={nameLines} />
       {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
       {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
