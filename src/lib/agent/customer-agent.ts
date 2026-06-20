@@ -21,7 +21,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
 import {
   generateSlots,
-  getDayOfWeek,
+  getDayOfWeekISO,
   timeToMinutes,
   getBusinessNow,
   addDaysISO,
@@ -157,7 +157,7 @@ async function computeDayAvailability(
   inputServiceId?: string,
 ): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
   const dateObj = new Date(date + "T00:00:00.000Z");
-  const dayOfWeek = getDayOfWeek(dateObj);
+  const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
   const nowBiz = getBusinessNow();
 
   const staffList = await prisma.staff.findMany({
@@ -166,31 +166,37 @@ async function computeDayAvailability(
   });
   if (!staffList.length) return [];
 
-  // Business-wide default booking horizon (each staff can override in settings).
+  // Business-wide defaults (each staff can override in their settings JSON).
+  // Mirrors the public /api/slots route so the agent offers EXACTLY the same
+  // slots the website would — same horizon and same lead-time gating.
   const biz = await prisma.business.findUnique({
     where: { id: bizId },
-    select: { bookingHorizonDays: true },
+    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true },
   });
   const defaultHorizon = biz?.bookingHorizonDays ?? 30;
 
   const byStaff: { staffId: string; name: string; slots: string[]; load: number }[] = [];
 
   for (const staff of staffList) {
+    // Parse this barber's settings once (horizon + lead times live here).
+    let cfg: Record<string, unknown> = {};
+    if (staff.settings) {
+      try { cfg = JSON.parse(staff.settings) as Record<string, unknown>; }
+      catch { /* malformed settings — fall back to business defaults */ }
+    }
+    const numFromCfg = (key: string): number | undefined => {
+      if (cfg[key] === undefined) return undefined;
+      const n = Number(cfg[key]);
+      return isNaN(n) ? undefined : n;
+    };
+
     // ── Booking-horizon gate (per staff) ─────────────────────────────────────
     // A date past this barber's horizon is NOT open for booking yet, even if
     // their weekly schedule says they work that weekday. Without this the agent
     // saw a far-future day as "available" for a barber whose calendar hadn't
     // opened that far and booked into a closed day. Mirrors api/slots.
-    let horizonDays = defaultHorizon;
-    if (staff.settings) {
-      try {
-        const cfg = JSON.parse(staff.settings) as Record<string, unknown>;
-        if (cfg.bookingHorizonDays !== undefined) {
-          const h = Number(cfg.bookingHorizonDays);
-          if (!isNaN(h) && h > 0) horizonDays = h;
-        }
-      } catch { /* malformed settings — keep business default */ }
-    }
+    const horizonCfg = numFromCfg("bookingHorizonDays");
+    const horizonDays = horizonCfg !== undefined && horizonCfg > 0 ? horizonCfg : defaultHorizon;
     const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
     if (date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
 
@@ -243,9 +249,18 @@ async function computeDayAvailability(
 
     let slots = generateSlots(scheduleSlots, breaks, duration, booked);
 
-    // Drop past slots when the date is today.
+    // Drop past slots + honor min-lead-time when the date is today. Mirrors
+    // /api/slots so the agent never offers a too-soon slot the website rejects.
     if (nowBiz.date === date) {
-      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + 15);
+      const leadMinutes =
+        numFromCfg("minBookingLeadMinutes") ?? biz?.minBookingLeadMinutes ?? 0;
+      const firstLeadMinutes =
+        numFromCfg("firstApptLeadMinutes") ?? biz?.firstApptLeadMinutes ?? 0;
+      // No appointments yet today → the next booking IS the first of the day.
+      const effectiveLead = booked.length === 0
+        ? Math.max(firstLeadMinutes, leadMinutes)
+        : leadMinutes;
+      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + effectiveLead);
     }
 
     if (slots.length) byStaff.push({ staffId: staff.id, name: staff.name, slots, load: booked.length });
