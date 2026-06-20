@@ -583,7 +583,7 @@ function buildSystemPrompt(params: {
 /** Builds a short "who am I talking to" note from the customer's record + recent
  *  visits, so the agent recognizes a returning customer by phone — knows their
  *  name without asking, and can reference past visits. Returns "" for new numbers. */
-async function loadCustomerContext(businessId: string, phone: string): Promise<string> {
+async function loadCustomerContext(businessId: string, phone: string, isFirstTurn: boolean): Promise<string> {
   // Customer.phone may be stored as 0... or 972... — try both. The same number
   // can sadly exist under BOTH formats as two separate records (with different
   // names), so fetch every match and pick deterministically: the one with the
@@ -594,7 +594,10 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
     select: { id: true, name: true, createdAt: true },
   });
   if (!candidates.length) {
-    return "זו הפעם הראשונה שהמספר הזה כותב — לקוח חדש שעדיין לא רשום אצלנו. קבל אותו בחום, ובמהלך קביעת התור שאל אותו איך קוראים לו.";
+    const openLine = isFirstTurn
+      ? 'זו ההודעה הראשונה בשיחה — פתח בברכה חמה וקצרה ("היי, מה קורה?") ואז המשך לעזור.'
+      : "אל תפתח שוב בברכה, פשוט המשך ענייני מאיפה שהשיחה נמצאת.";
+    return `זו הפעם הראשונה שהמספר הזה כותב — לקוח חדש שעדיין לא רשום אצלנו. ${openLine} במהלך קביעת התור שאל אותו איך קוראים לו.`;
   }
 
   let customer = candidates[0];
@@ -624,11 +627,48 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
   });
 
   const fname = firstName(customer.name);
+  const greeting = isFirstTurn
+    ? `זו ההודעה הראשונה בשיחה הזו — חובה לפתוח בברכה אישית חמה וקצרה בשמו ("היי ${fname}, מה קורה?" או "היי ${fname}, מה שלומך?") ואז להמשיך באותה הודעה ישר למה שביקש. אל תדלג על הברכה.`
+    : `זו כבר לא ההודעה הראשונה בשיחה — אל תפתח שוב בברכה ("היי ${fname}...") ואל תכתוב "מה נוכל לעזור לך היום", פשוט המשך ענייני בדיוק מאיפה שהשיחה נמצאת.`;
   const parts = [
-    `מי שמתכתב איתך עכשיו הוא ${fname}, לקוח שכבר רשום אצלנו. פנה אליו בשם הפרטי בלבד (${fname}) — לעולם לא בשם המלא או בשם משפחה — ואל תשאל אותו איך קוראים לו. אם זו ההודעה הראשונה שלו בשיחה הזו, פתח בברכה אישית חמה וקצרה בשמו ("היי ${fname}, מה קורה?" או "היי ${fname}, מה שלומך?") ואז המשך באותה הודעה ישר למה שביקש. אם זו כבר לא ההודעה הראשונה בשיחה — אל תפתח שוב בברכה ואל תכתוב "מה נוכל לעזור לך היום", פשוט תמשיך ענייני בדיוק מאיפה שהשיחה נמצאת. בהמשך השיחה אל תחזור על הברכה בכל הודעה.`,
+    `מי שמתכתב איתך עכשיו הוא ${fname}, לקוח שכבר רשום אצלנו. פנה אליו בשם הפרטי בלבד (${fname}) — לעולם לא בשם המלא או בשם משפחה — ואל תשאל אותו איך קוראים לו. ${greeting}`,
   ];
 
-  const past = recent.filter(a => !a.status.startsWith("cancelled"));
+  // ── Upcoming (booked) appointments ──────────────────────────────────────────
+  // The agent must be able to answer "מתי יש לי תור?" directly, without depending
+  // on the customer to ask it to look. Surface every confirmed/pending future
+  // appointment right here in the context. This is a REAL booked appointment —
+  // distinct from a waitlist entry (handled separately below).
+  const todayStart = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
+  const upcoming = await prisma.appointment.findMany({
+    where: {
+      customerId: customer.id,
+      businessId,
+      date:   { gte: todayStart },
+      status: { in: ["pending", "confirmed"] },
+    },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    take: 3,
+    select: {
+      date: true,
+      startTime: true,
+      staff:   { select: { name: true } },
+      service: { select: { name: true } },
+    },
+  });
+  if (upcoming.length) {
+    const list = upcoming
+      .map(a => {
+        const d = new Date(a.date).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+        return `${a.service.name} אצל ${a.staff.name} ביום ${d} בשעה ${a.startTime}`;
+      })
+      .join("; ");
+    parts.push(`יש לו כבר תור קבוע: ${list}. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה).`);
+  } else {
+    parts.push(`אין לו כרגע אף תור קבוע עתידי. אם ישאל "מתי התור שלי" — אמור לו בעדינות שאין לו תור קבוע כרגע, והצע לקבוע לו עכשיו.`);
+  }
+
+  const past = recent.filter(a => !a.status.startsWith("cancelled") && new Date(a.date) < todayStart);
   if (past.length) {
     const visits = past
       .map(a => {
@@ -787,7 +827,11 @@ export async function runCustomerAgent(opts: {
   });
 
   // Recognize the customer by phone (name + recent visits, or "new customer").
-  const customerContext = await loadCustomerContext(businessId, phone);
+  // First turn = the agent has not replied in this conversation yet (no assistant
+  // turn in history). Used to fire the personal greeting deterministically rather
+  // than relying on the model to guess whether to greet.
+  const isFirstTurn = !history.some(m => m.role === "assistant");
+  const customerContext = await loadCustomerContext(businessId, phone, isFirstTurn);
 
   const systemPrompt = buildSystemPrompt({
     agentName:         agentConfig?.agentName ?? "הסוכן",
