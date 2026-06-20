@@ -24,6 +24,7 @@ import {
   getDayOfWeek,
   timeToMinutes,
   getBusinessNow,
+  addDaysISO,
 } from "@/lib/utils";
 
 const anthropic = new Anthropic({
@@ -154,20 +155,45 @@ async function computeDayAvailability(
   date: string,
   inputStaffId?: string,
   inputServiceId?: string,
-): Promise<{ name: string; slots: string[]; load: number }[]> {
+): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
   const dateObj = new Date(date + "T00:00:00.000Z");
   const dayOfWeek = getDayOfWeek(dateObj);
   const nowBiz = getBusinessNow();
 
   const staffList = await prisma.staff.findMany({
     where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
-    select: { id: true, name: true },
+    select: { id: true, name: true, settings: true },
   });
   if (!staffList.length) return [];
 
-  const byStaff: { name: string; slots: string[]; load: number }[] = [];
+  // Business-wide default booking horizon (each staff can override in settings).
+  const biz = await prisma.business.findUnique({
+    where: { id: bizId },
+    select: { bookingHorizonDays: true },
+  });
+  const defaultHorizon = biz?.bookingHorizonDays ?? 30;
+
+  const byStaff: { staffId: string; name: string; slots: string[]; load: number }[] = [];
 
   for (const staff of staffList) {
+    // ── Booking-horizon gate (per staff) ─────────────────────────────────────
+    // A date past this barber's horizon is NOT open for booking yet, even if
+    // their weekly schedule says they work that weekday. Without this the agent
+    // saw a far-future day as "available" for a barber whose calendar hadn't
+    // opened that far and booked into a closed day. Mirrors api/slots.
+    let horizonDays = defaultHorizon;
+    if (staff.settings) {
+      try {
+        const cfg = JSON.parse(staff.settings) as Record<string, unknown>;
+        if (cfg.bookingHorizonDays !== undefined) {
+          const h = Number(cfg.bookingHorizonDays);
+          if (!isNaN(h) && h > 0) horizonDays = h;
+        }
+      } catch { /* malformed settings — keep business default */ }
+    }
+    const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
+    if (date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
+
     // Service duration (specific service, else the staff's shortest).
     let duration = 30;
     if (inputServiceId) {
@@ -222,7 +248,7 @@ async function computeDayAvailability(
       slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + 15);
     }
 
-    if (slots.length) byStaff.push({ name: staff.name, slots, load: booked.length });
+    if (slots.length) byStaff.push({ staffId: staff.id, name: staff.name, slots, load: booked.length });
   }
 
   // When no specific barber was requested, surface the least-busy one first.
@@ -314,6 +340,18 @@ async function execTool(
           prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } }),
         ]);
         if (!staff || !service || !biz) return "שגיאה: לא נמצא הספר או השירות לפי המזהה. קרא שוב ל-get_staff_list ו-get_services כדי לקבל מזהים מעודכנים, ואז נסה לקבוע שוב — אל תעביר לאדם בגלל זה.";
+
+        // ── Hard availability guard ──────────────────────────────────────────
+        // NEVER create an appointment on a slot that isn't genuinely open for
+        // THIS barber on THIS date — i.e. a closed day, a date beyond the
+        // barber's booking horizon, or a slot already taken. computeDayAvailability
+        // is the single source of truth (it applies schedule, overrides, horizon
+        // and existing bookings), so re-check the exact slot here before writing.
+        const dayAvail = await computeDayAvailability(bizId, date, staffId, serviceId);
+        const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
+        if (!staffSlots.includes(startTime)) {
+          return `שגיאה: ${startTime} בתאריך ${date} לא פנוי אצל ${staff.name} (יום סגור, מעבר לאופק ההזמנות, או שהשעה נתפסה). אל תקבע את זה. קרא ל-get_available_slots לאותו יום או ל-find_next_available כדי לראות מה באמת פנוי, והצע ללקוח אפשרות תקפה — אצל ספר שפתוח באותו יום.`;
+        }
 
         // Upsert customer — match either 0... or 972... so we don't duplicate.
         const localPhone = phone.replace(/^972/, "0");
@@ -584,6 +622,32 @@ async function loadCustomerContext(businessId: string, phone: string): Promise<s
       })
       .join(", ");
     parts.push(`ביקורים אחרונים שלו: ${visits}. אם זה רלוונטי אפשר להציע את אותו ספר או שירות, אבל אל תניח — תמיד תוודא איתו.`);
+  }
+
+  // Active waitlist entries — the customer explicitly asked to be queued for a
+  // specific barber. If they come to book, that barber is the one they actually
+  // want, so prefer them instead of auto-assigning the least-busy one.
+  const todayIso = getBusinessNow().date;
+  const waits = await prisma.waitlist.findMany({
+    where: {
+      customerId: customer.id,
+      businessId,
+      status: { in: ["waiting", "notified"] },
+      date: { gte: new Date(`${todayIso}T00:00:00.000Z`) },
+    },
+    orderBy: { date: "asc" },
+    take: 3,
+    select: { date: true, staff: { select: { name: true } }, service: { select: { name: true } } },
+  });
+  const waitsWithStaff = waits.filter(w => w.staff);
+  if (waitsWithStaff.length) {
+    const list = waitsWithStaff
+      .map(w => {
+        const d = new Date(w.date).toLocaleDateString("he-IL", { day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+        return `${w.staff!.name} (${w.service.name}, ${d})`;
+      })
+      .join(", ");
+    parts.push(`הוא רשום ברשימת המתנה אצל: ${list}. אם הוא רוצה לקבוע תור, קבע אותו אצל הספר שאצלו הוא בהמתנה — זה הספר שהוא ביקש — ולא אצל ספר אחר.`);
   }
 
   return parts.join(" ");
