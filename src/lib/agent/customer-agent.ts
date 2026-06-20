@@ -313,9 +313,17 @@ async function execTool(
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
         const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length) return `אין תורים פנויים בתאריך ${date}.`;
-        return byStaff
+        const body = byStaff
           .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
           .join("\n");
+        // When several barbers come back, each line is a SEPARATE barber and the
+        // times next to it are free ONLY for that barber. The model has merged
+        // these into one flat list and then booked a time at a barber who didn't
+        // actually have it — surface a hard rule in the result itself.
+        if (byStaff.length > 1) {
+          return `${body}\n\n⚠️ כל שורה היא ספר נפרד, והשעות שלצדו פנויות אך ורק אצלו. אסור למזג שעות בין ספרים. בחר ספר אחד, הצע ללקוח רק את השעות שמופיעות לצד אותו ספר, וכשתקבע השתמש ב-staffId של אותו ספר בדיוק. אם הלקוח רוצה ספר מסוים — קרא שוב לכלי עם ה-staffId שלו וקבל את השעות האמיתיות שלו.`;
+        }
+        return body;
       }
 
       // ── find_next_available ──────────────────────────────────────────────────
@@ -336,7 +344,10 @@ async function execTool(
             const lines = byStaff
               .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.slice(0, 4).join(", ")}`)
               .join("\n");
-            return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}`;
+            const warn = byStaff.length > 1
+              ? `\n\n⚠️ כל שורה היא ספר נפרד; השעות פנויות רק אצל הספר שלצדן. אל תמזג בין ספרים — בחר ספר אחד והצע רק את השעות שלו.`
+              : "";
+            return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}${warn}`;
           }
         }
         return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
@@ -663,7 +674,7 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
         return `${a.service.name} אצל ${a.staff.name} ביום ${d} בשעה ${a.startTime}`;
       })
       .join("; ");
-    parts.push(`יש לו כבר תור קבוע: ${list}. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה).`);
+    parts.push(`יש לו כבר תור קבוע: ${list}. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה). ⚠️ זהו מידע על תור קיים בלבד, ולא מקור לבדיקת זמינות — לעולם אל תשתמש בתאריך או בשעה של התור הקיים כדי להציע זמן פנוי או לטעון "זה הכי קרוב שיש". לבדיקת זמינות קרא תמיד ל-get_available_slots או ל-find_next_available.`);
   } else {
     parts.push(`אין לו כרגע אף תור קבוע עתידי. אם ישאל "מתי התור שלי" — אמור לו בעדינות שאין לו תור קבוע כרגע, והצע לקבוע לו עכשיו.`);
   }
