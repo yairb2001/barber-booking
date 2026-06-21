@@ -304,6 +304,42 @@ async function computeDayAvailability(
   return byStaff;
 }
 
+/**
+ * Resolve a barber's EFFECTIVE duration & price for a requested service.
+ * Each barber sets their own price/length via StaffService.customDuration /
+ * customPrice (the schema's per-barber override) — booking MUST honor those,
+ * not the catalog's base values. Also tolerates the duplicate-catalog problem
+ * (the requested serviceId may be a different Service row than the one this
+ * barber is linked to): falls back to a same-name, then same-duration service
+ * the barber actually offers. Returns the base values only as a last resort.
+ */
+async function resolveStaffService(
+  staffId: string,
+  serviceId: string,
+  reqName: string,
+  reqDuration: number,
+  reqPrice: number,
+): Promise<{ duration: number; price: number }> {
+  const ss =
+    (await prisma.staffService.findUnique({
+      where: { staffId_serviceId: { staffId, serviceId } },
+      include: { service: true },
+    })) ??
+    (await prisma.staffService.findFirst({
+      where: { staffId, service: { name: reqName } },
+      include: { service: true },
+    })) ??
+    (await prisma.staffService.findFirst({
+      where: { staffId, service: { durationMinutes: reqDuration } },
+      include: { service: true },
+    }));
+  if (!ss) return { duration: reqDuration, price: reqPrice };
+  return {
+    duration: ss.customDuration ?? ss.service.durationMinutes,
+    price:    ss.customPrice ?? ss.service.price,
+  };
+}
+
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
 async function execTool(
@@ -436,9 +472,14 @@ async function execTool(
         // public availability queries match the day by exact UTC-midnight value,
         // so baking the start time into `date` makes the appointment invisible to
         // them and causes double-booking. Keep the start time only in `startTime`.
+        // Use THIS barber's own length & price (per-barber override), falling
+        // back to base catalog values. Mirrors what computeDayAvailability used
+        // for the slot grid, so endTime matches the slot the customer picked.
+        const eff = await resolveStaffService(staffId, serviceId, service.name, service.durationMinutes, service.price);
+
         const apptDate = new Date(`${date}T00:00:00.000Z`);
         const startDateTime = new Date(`${date}T${startTime}:00.000Z`);
-        const endDate  = new Date(startDateTime.getTime() + service.durationMinutes * 60_000);
+        const endDate  = new Date(startDateTime.getTime() + eff.duration * 60_000);
         const endTime  = endDate.toISOString().slice(11, 16);
 
         // Create appointment
@@ -452,13 +493,13 @@ async function execTool(
             startTime,
             endTime,
             status:    "confirmed",
-            price:     service.price,
+            price:     eff.price,
             referralSource: "whatsapp_agent",
             source:    "agent",
           },
         });
 
-        return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${service.price}₪\nמזהה תור: ${appt.id}`;
+        return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}`;
       }
 
       // ── check_appointment ────────────────────────────────────────────────────
