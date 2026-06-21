@@ -103,7 +103,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
         serviceId:     { type: "string", description: "מזהה השירות" },
         date:          { type: "string", description: "תאריך YYYY-MM-DD" },
         startTime:     { type: "string", description: "שעת התחלה HH:MM" },
-        customerName:  { type: "string", description: "שם מלא של הלקוח (שם פרטי + שם משפחה אם נמסר). אם זה לקוח חדש שאינו מזוהה במערכת, ודא שיש לך גם שם פרטי וגם שם משפחה." },
+        customerName:  { type: "string", description: "שם מלא של הלקוח. אם הלקוח כבר רשום במערכת — השתמש בשם שכבר רשום ואל תשנה אותו. אם זה לקוח חדש שאינו רשום — חובה שם פרטי + שם משפחה כדי לקבוע, אבל אל תבקש את השם בתחילת השיחה: קודם עזור ללקוח לבחור שירות, ספר, יום ושעה, ורק כשמגיעים לסגור את התור בקש ממנו את שמו המלא." },
       },
       required: ["staffId", "serviceId", "date", "startTime", "customerName"],
     },
@@ -310,11 +310,24 @@ async function execTool(
         // Upsert customer — match either 0... or 972... so we don't duplicate.
         const localPhone = phone.replace(/^972/, "0");
         let customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] } });
+
+        // Count name words — a "full name" is first + last (≥ 2 words).
+        const nameWords = (s: string | null | undefined) => (s ?? "").trim().split(/\s+/).filter(Boolean).length;
+
         if (!customer) {
+          // NEW customer: never book without a full name. If the model only has
+          // a first name, refuse and tell it to ask for first + last, THEN retry.
+          if (nameWords(customerName) < 2) {
+            return "שגיאה: זה לקוח חדש שאינו רשום במערכת, ואסור לקבוע תור בלי שם מלא. בקש מהלקוח בנימוס את שמו המלא — שם פרטי ושם משפחה — ורק אחרי שקיבלת את שניהם קרא שוב ל-book_appointment עם השם המלא. אל תקבע עם שם פרטי בלבד ואל תעביר לאדם בגלל זה.";
+          }
           customer = await prisma.customer.create({
             data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" },
           });
-        } else if (customer.name !== customerName) {
+        } else if (nameWords(customerName) > nameWords(customer.name)) {
+          // EXISTING customer: the name on file is the source of truth. Only
+          // upgrade it when the new name is MORE complete (more words) — e.g.
+          // first-name-only → full name. Never overwrite a stored full name with
+          // a partial one the model may have passed.
           customer = await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } });
         }
 
