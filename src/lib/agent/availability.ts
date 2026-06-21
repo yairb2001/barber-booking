@@ -75,20 +75,37 @@ export async function computeDayAvailability(
       });
       if (ss) {
         duration = ss.customDuration ?? ss.service.durationMinutes;
-      } else if (reqService) {
-        const alt =
-          (await prisma.staffService.findFirst({
-            where: { staffId: staff.id, service: { name: reqService.name } },
-            include: { service: true },
-          })) ??
-          (await prisma.staffService.findFirst({
-            where: { staffId: staff.id, service: { durationMinutes: reqService.durationMinutes } },
-            include: { service: true },
-          }));
-        if (!alt) continue;
-        duration = alt.customDuration ?? alt.service.durationMinutes;
       } else {
-        continue; // unknown service id
+        // The barber has no direct StaffService row for this serviceId. Do NOT
+        // drop the barber from availability — that produced false "no
+        // appointments" answers when the model passed a stale/duplicate/unknown
+        // serviceId. Fall back gracefully (mirrors resolveStaffService): a
+        // same-name, then same-duration service the barber actually offers, then
+        // the requested service's own duration, then the barber's shortest
+        // service, then 30 min. A barber is only ever skipped for a REAL reason
+        // (day off, beyond horizon, no free slot) — never service-id confusion.
+        const alt = reqService
+          ? (await prisma.staffService.findFirst({
+              where: { staffId: staff.id, service: { name: reqService.name } },
+              include: { service: true },
+            })) ??
+            (await prisma.staffService.findFirst({
+              where: { staffId: staff.id, service: { durationMinutes: reqService.durationMinutes } },
+              include: { service: true },
+            }))
+          : null;
+        if (alt) {
+          duration = alt.customDuration ?? alt.service.durationMinutes;
+        } else if (reqService) {
+          duration = reqService.durationMinutes;
+        } else {
+          const firstSvc = await prisma.staffService.findFirst({
+            where: { staffId: staff.id },
+            include: { service: true },
+            orderBy: { service: { durationMinutes: "asc" } },
+          });
+          duration = firstSvc?.customDuration ?? firstSvc?.service.durationMinutes ?? 30;
+        }
       }
     } else {
       const firstSvc = await prisma.staffService.findFirst({
