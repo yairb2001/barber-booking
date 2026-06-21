@@ -175,6 +175,20 @@ async function computeDayAvailability(
   });
   const defaultHorizon = biz?.bookingHorizonDays ?? 30;
 
+  // The business catalog has duplicate/near-duplicate Service rows with the same
+  // real meaning (e.g. several "תספורת + זקן" 30-min rows). A barber is linked to
+  // only ONE of them via StaffService, but the agent may pass any duplicate's id.
+  // Resolve the requested service once so that, if a barber isn't linked to that
+  // EXACT id, we can still fall back to one of their own services with the same
+  // name/duration — instead of silently dropping the barber and reporting a false
+  // "no availability". Slot math only needs the duration.
+  const reqService = inputServiceId
+    ? await prisma.service.findUnique({
+        where: { id: inputServiceId },
+        select: { name: true, durationMinutes: true },
+      })
+    : null;
+
   const byStaff: { staffId: string; name: string; slots: string[]; load: number }[] = [];
 
   for (const staff of staffList) {
@@ -207,8 +221,27 @@ async function computeDayAvailability(
         where: { staffId_serviceId: { staffId: staff.id, serviceId: inputServiceId } },
         include: { service: true },
       });
-      if (!ss) continue; // staff doesn't offer this service
-      duration = ss.customDuration ?? ss.service.durationMinutes;
+      if (ss) {
+        duration = ss.customDuration ?? ss.service.durationMinutes;
+      } else if (reqService) {
+        // Not linked to this exact id — handle duplicate-catalog rows. Prefer a
+        // same-NAME service this barber offers; else a same-DURATION one (slot
+        // math only depends on duration). Only if neither exists does the barber
+        // genuinely not offer this service → skip them.
+        const alt =
+          (await prisma.staffService.findFirst({
+            where: { staffId: staff.id, service: { name: reqService.name } },
+            include: { service: true },
+          })) ??
+          (await prisma.staffService.findFirst({
+            where: { staffId: staff.id, service: { durationMinutes: reqService.durationMinutes } },
+            include: { service: true },
+          }));
+        if (!alt) continue;
+        duration = alt.customDuration ?? alt.service.durationMinutes;
+      } else {
+        continue; // unknown service id
+      }
     } else {
       const firstSvc = await prisma.staffService.findFirst({
         where: { staffId: staff.id },
