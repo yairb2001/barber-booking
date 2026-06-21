@@ -104,13 +104,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (cancelled || document.visibilityState !== "visible") return;
       fetch("/api/admin/chats")
         .then(r => r.ok ? r.json() : [])
-        .then((list: { unreadCount?: number }[]) => {
+        .then((list: { needsHandling?: boolean }[]) => {
           if (cancelled) return;
-          // Red badge = number of conversations with UNREAD (not-yet-handled)
-          // incoming messages. The API already zeroes out unreadCount for chats
-          // the agent is handling, and for escalated chats you've already read /
-          // replied to — so the badge only counts what genuinely awaits you.
-          const total = Array.isArray(list) ? list.filter(c => (c.unreadCount ?? 0) > 0).length : 0;
+          // Red badge = number of conversations that still NEED HANDLING — i.e.
+          // human-handled chats where the customer spoke last and you haven't
+          // replied yet. Agent-handled chats, and ones you've already replied
+          // to, never count — no nagging once it's dealt with.
+          const total = Array.isArray(list) ? list.filter(c => c.needsHandling).length : 0;
           setUnreadChats(total);
         })
         .catch(() => {});

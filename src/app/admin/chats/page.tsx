@@ -9,6 +9,7 @@ type ChatListItem = {
   status: string;
   escalated: boolean;
   needsHuman: boolean;
+  needsHandling: boolean;
   lastMessageAt: string | null;
   lastMessageSnippet: string;
   lastMessageRole: string | null;
@@ -142,21 +143,26 @@ export default function ChatsPage() {
     return (c.customerName?.toLowerCase().includes(q) ?? false) || c.phone.includes(q);
   });
 
-  // Two buckets, driven purely by what's been READ:
-  //   • Top — UNREAD conversations (someone is waiting on you). Red, bold.
-  //   • Bottom — everything already handled: a normal WhatsApp-style inbox.
-  //     This includes agent-handled chats AND escalated chats you've already
-  //     read/replied to (those get a calm gray "סוכן מושהה" tag, not red).
-  // Opening or replying to a chat sets lastReadAt server-side → unreadCount
-  // drops to 0 → it slides from the top group down into the calm inbox.
-  const unreadChats = filteredChats.filter(c => c.unreadCount > 0);
-  const inboxChats = filteredChats.filter(c => c.unreadCount === 0);
+  // Two fixed inboxes:
+  //   • Top — "טיפול אנושי": every conversation a human is responsible for
+  //     (escalated OR agent off). WITHIN this inbox, conversations that still
+  //     need handling (the CUSTOMER spoke last — you haven't replied) float to
+  //     the very top in red; ones you've already replied to sink below with a
+  //     calm "✓ טופל" tag and STAY here (the agent doesn't resume). A new
+  //     customer message flips it back to "needs handling" and bumps it up.
+  //   • Bottom — "מטופל ע״י הסוכן": the agent's own inbox, always calm.
+  // "Handled" = you replied (last message is yours), NOT merely opening the
+  // chat. After 24h with no activity the escalation expires server-side and the
+  // conversation moves down into the agent inbox on its own.
+  const humanChats = filteredChats
+    .filter(c => c.needsHuman)
+    .sort((a, b) => Number(b.needsHandling) - Number(a.needsHandling));
+  const agentChats = filteredChats.filter(c => !c.needsHuman);
 
   const renderRow = (c: ChatListItem) => {
-    const unread = c.unreadCount > 0;
-    // Escalated / agent-off, but already read — the agent is paused here, yet
-    // it's been handled, so we show a quiet gray hint instead of a red alarm.
-    const paused = !unread && c.needsHuman;
+    const needsHandling = c.needsHandling;
+    // In the human inbox but you already replied → handled. Calm, not red.
+    const handled = !needsHandling && c.needsHuman;
     return (
       <button
         key={c.id}
@@ -164,32 +170,27 @@ export default function ChatsPage() {
         className={`w-full text-right px-4 py-3 border-b border-slate-100 transition ${
           selId === c.id
             ? "bg-teal-50"
-            : unread
+            : needsHandling
               ? "bg-red-50 hover:bg-red-100 border-r-4 border-r-red-500"
               : "hover:bg-slate-50"
         }`}
       >
         <div className="flex items-center justify-between gap-2 mb-1">
           <span className={`text-sm truncate flex items-center gap-1.5 ${
-            unread ? "font-bold text-slate-900" : "font-semibold text-slate-800"
+            needsHandling ? "font-bold text-slate-900" : "font-semibold text-slate-800"
           }`}>
-            {unread && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+            {needsHandling && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
             {c.customerName || c.phone}
           </span>
           <div className="flex items-center gap-1 shrink-0">
-            {paused && (
+            {handled && (
               <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">
-                🔇 סוכן מושהה
-              </span>
-            )}
-            {unread && (
-              <span className="bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                {c.unreadCount > 99 ? "99+" : c.unreadCount}
+                ✓ טופל
               </span>
             )}
           </div>
         </div>
-        <p className={`text-xs truncate ${unread ? "text-slate-700 font-medium" : "text-slate-500"}`} dir="auto">
+        <p className={`text-xs truncate ${needsHandling ? "text-slate-700 font-medium" : "text-slate-500"}`} dir="auto">
           {c.lastMessageRole === "assistant" && <span className="text-slate-400">→ </span>}
           {c.lastMessageSnippet || "—"}
         </p>
@@ -223,18 +224,18 @@ export default function ChatsPage() {
             </div>
           ) : (
             <>
-              {unreadChats.length > 0 && (
+              {humanChats.length > 0 && (
                 <div className="px-4 py-1.5 bg-red-100/60 text-red-700 text-[11px] font-bold sticky top-0 z-10">
-                  🔴 דורש טיפול ({unreadChats.length})
+                  🔴 טיפול אנושי ({humanChats.length})
                 </div>
               )}
-              {unreadChats.map(renderRow)}
-              {inboxChats.length > 0 && unreadChats.length > 0 && (
+              {humanChats.map(renderRow)}
+              {agentChats.length > 0 && (
                 <div className="px-4 py-1.5 bg-slate-100 text-slate-500 text-[11px] font-bold sticky top-0 z-10">
-                  שיחות
+                  🤖 מטופל ע״י הסוכן ({agentChats.length})
                 </div>
               )}
-              {inboxChats.map(renderRow)}
+              {agentChats.map(renderRow)}
             </>
           )}
         </div>

@@ -93,6 +93,15 @@ export async function GET(req: NextRequest) {
     });
     const unreadCount = needsHuman ? rawUnread : 0;
 
+    // "Needs handling" = it's a human-handled conversation AND the LAST message
+    // is from the customer (role "user") — i.e. the customer spoke last and
+    // nobody has replied yet. Replying (in-app or on WhatsApp) makes the last
+    // message ours → no longer needs handling → it sinks within the section.
+    // A new customer message flips the last role back to "user" → bumps it up.
+    // This is intentionally based on who-spoke-last, NOT on lastReadAt: merely
+    // opening a chat to peek does not count as "handled".
+    const needsHandling = needsHuman && last?.role === "user";
+
     // Resolve display name in priority order:
     //   1. Linked customer in DB (most reliable — name they registered with)
     //   2. Phone match in customers table
@@ -108,6 +117,7 @@ export async function GET(req: NextRequest) {
       status: c.status,
       escalated,
       needsHuman,
+      needsHandling,
       lastMessageAt: c.lastMessageAt,
       lastMessageSnippet: last?.content?.slice(0, 80) ?? "",
       lastMessageRole: last?.role ?? null,
@@ -115,11 +125,17 @@ export async function GET(req: NextRequest) {
     };
   }));
 
-  // UNREAD / not-yet-handled conversations float to the TOP (these are the only
-  // ones screaming red). Everything already read — whether the agent handled it
-  // or a human already replied — drops into the calm inbox below, keeping the
-  // most-recent-first order from the query (lastMessageAt desc).
-  data.sort((a, b) => Number(b.unreadCount > 0) - Number(a.unreadCount > 0));
+  // Ordering for the two-section UI:
+  //   1. Human-handled conversations (escalated / agent off) first — the top
+  //      "טיפול אנושי" section.
+  //   2. WITHIN that section, conversations that still need handling (customer
+  //      spoke last) float above the ones you've already replied to.
+  //   3. Recency (lastMessageAt desc) is preserved within each subgroup since
+  //      the DB query already returns that order and sort is stable.
+  data.sort((a, b) => {
+    if (a.needsHuman !== b.needsHuman) return Number(b.needsHuman) - Number(a.needsHuman);
+    return Number(b.needsHandling) - Number(a.needsHandling);
+  });
 
   return NextResponse.json(data);
 }
