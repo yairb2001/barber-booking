@@ -38,6 +38,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.serviceId !== undefined) data.serviceId = body.serviceId;
   if (body.price     !== undefined) data.price     = Number(body.price);
 
+  // Reassign the appointment to a DIFFERENT existing customer (chosen from the
+  // customer pool in the edit modal). We move the appointment's customerId — we
+  // do NOT rename the current customer. The target must belong to this business.
+  if (typeof body.customerId === "string" && body.customerId) {
+    const target = await prisma.customer.findUnique({
+      where: { id: body.customerId },
+      select: { businessId: true },
+    });
+    if (!target || target.businessId !== before.businessId) {
+      return NextResponse.json({ error: "לקוח לא נמצא" }, { status: 400 });
+    }
+    data.customerId = body.customerId;
+  }
+
   // Date change (YYYY-MM-DD)
   let nextDate: Date = before.date;
   if (body.date !== undefined) {

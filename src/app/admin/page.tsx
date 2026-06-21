@@ -1211,6 +1211,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [editPrice, setEditPrice] = useState(String(appt.price));
   // Customer search in name editor
   const [custSuggestions, setCustSuggestions] = useState<{id:string;name:string;phone:string}[]>([]);
+  // When a DIFFERENT existing customer is picked from the pool, we reassign the
+  // appointment to them instead of renaming the current customer. Holds that
+  // chosen customer's id; cleared when the user types manually (= edit in place).
+  const [editCustomerId, setEditCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (inlineEdit !== "name" || editName.length < 1) { setCustSuggestions([]); return; }
@@ -1224,7 +1228,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   function openInline(field: "name" | "date" | "time" | "price") {
     setInlineErr(null);
     setInlineConflict(null);
-    if (field === "name") { setEditName(dispName); setEditPhone(dispPhone); }
+    if (field === "name") { setEditName(dispName); setEditPhone(dispPhone); setEditCustomerId(null); }
     if (field === "date") setEditDate(dispDate.split("T")[0]);
     if (field === "time") { setEditStart(dispStart); setEditEnd(dispEnd); }
     if (field === "price") setEditPrice(String(dispPrice));
@@ -1251,6 +1255,26 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   async function saveInlineName() {
     setInlineSaving(true);
     setInlineErr(null);
+
+    // Case 1 — a DIFFERENT existing customer was picked from the pool: move the
+    // appointment to them. We must NOT rename the current customer (that both
+    // corrupts the original record and fails on the unique-phone constraint).
+    if (editCustomerId && editCustomerId !== appt.customer.id) {
+      const r = await fetch(`/api/admin/appointments/${appt.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: editCustomerId }),
+      });
+      setInlineSaving(false);
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setInlineErr(j.error || "שגיאה בשמירה"); return; }
+      setDispName(editName.trim());
+      setDispPhone(editPhone.trim());
+      setEditCustomerId(null);
+      setInlineEdit(null);
+      onReload?.();
+      return;
+    }
+
+    // Case 2 — editing THIS customer's name/phone in place (typo fix etc.).
     const r = await fetch(`/api/admin/customers/${appt.customer.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: editName.trim(), phone: editPhone.trim() }),
@@ -1577,14 +1601,14 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {inlineEdit === "name" ? (
             <div className="space-y-2">
               <div className="relative">
-                <input value={editName} onChange={e => { setEditName(e.target.value); }} placeholder="חפש לקוח..."
+                <input value={editName} onChange={e => { setEditName(e.target.value); setEditCustomerId(null); }} placeholder="חפש לקוח..."
                   autoFocus
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 {custSuggestions.length > 0 && (
                   <div className="absolute right-0 left-0 top-full mt-1 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden">
                     {custSuggestions.map(c => (
                       <button key={c.id} type="button"
-                        onPointerDown={e => { e.preventDefault(); setEditName(c.name); setEditPhone(c.phone); setCustSuggestions([]); }}
+                        onPointerDown={e => { e.preventDefault(); setEditName(c.name); setEditPhone(c.phone); setEditCustomerId(c.id); setCustSuggestions([]); }}
                         className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-teal-50 text-right transition border-b border-neutral-50 last:border-0">
                         <div className="w-7 h-7 rounded-full bg-neutral-200 text-neutral-700 flex items-center justify-center text-xs font-bold shrink-0">{c.name[0]}</div>
                         <div className="flex-1 min-w-0">
@@ -1596,7 +1620,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   </div>
                 )}
               </div>
-              <input value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="טלפון" dir="ltr"
+              <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setEditCustomerId(null); }} placeholder="טלפון" dir="ltr"
                 className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
               <div className="flex gap-2">
