@@ -139,7 +139,8 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
       "מעביר תור קיים של הלקוח לתאריך/שעה אחרים שהוא ביקש, עם כמה שפחות הטרדה לאחרים. " +
       "השתמש בו כשלקוח רוצה לשנות/להזיז את התור שלו לזמן מסוים (במקום לבטל ולקבוע מחדש). " +
       "קודם מצא את התור הקיים עם check_appointment כדי לקבל את ה-appointmentId. " +
-      "המערכת מטפלת בכל הלוגיקה: אם השעה פנויה אצל הספר היא מעבירה מיד; אם הלקוח לא קפדן לגבי הספר (או לקוח חדש) והשעה פנויה אצל ספר אחר היא מעבירה לשם; ואם אין פנוי בכלל היא מבקשת אישור מהספר ואז מציעה ללקוחות אחרים להחליף — בלי שתצטרך לנהל את זה בעצמך. " +
+      "המערכת מטפלת בכל הלוגיקה: אם השעה פנויה אצל הספר היא מעבירה מיד; אם הלקוח לא קפדן לגבי הספר (או לקוח חדש) והשעה פנויה אצל ספר אחר היא מעבירה לשם; ואם השעה תפוסה היא מחזירה לך את הזמנים הפנויים הכי קרובים כדי שתציע אותם ללקוח קודם — לפני שמטריחים מישהו. " +
+      "רק אם הלקוח מתעקש דווקא על השעה התפוסה, קרא שוב לכלי עם insistExactTime=true, ואז הוא יבקש אישור מהספר ויציע ללקוחות אחרים להחליף. " +
       "קרא לזה רק אחרי שאישרת מול הלקוח לאיזה תאריך ושעה הוא רוצה לעבור. קרא את הטקסט שחוזר מהכלי ופעל לפיו מול הלקוח.",
     input_schema: {
       type: "object" as const,
@@ -148,6 +149,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
         targetDate:      { type: "string", description: "התאריך הרצוי בפורמט YYYY-MM-DD" },
         targetStartTime: { type: "string", description: "השעה הרצויה בפורמט HH:MM" },
         allowOtherBarber: { type: "boolean", description: "true אם ללקוח לא אכפת אצל איזה ספר (או שהוא לקוח חדש בלי בקשה לספר מסוים). כברירת מחדל false — נשארים עם אותו ספר." },
+        insistExactTime: { type: "boolean", description: "true רק אם הלקוח מתעקש דווקא על השעה שביקש למרות שהיא תפוסה, אחרי שהצעת לו את הזמנים הפנויים הקרובים והוא סירב. ברירת מחדל false. כשהוא true המערכת תתחיל תהליך החלפה מול הספר ולקוח אחר." },
       },
       required: ["appointmentId", "targetDate", "targetStartTime"],
     },
@@ -454,6 +456,7 @@ async function execTool(
           targetDate:      input.targetDate,
           targetStartTime: input.targetStartTime,
           allowOtherBarber: (input as Record<string, unknown>).allowOtherBarber === true,
+          insistExactTime: (input as Record<string, unknown>).insistExactTime === true,
         });
       }
 

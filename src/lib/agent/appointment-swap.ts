@@ -44,6 +44,18 @@ function computeEndTime(date: string, start: string, durationMin: number): strin
   const startDT = new Date(`${date}T${start}:00.000Z`);
   return new Date(startDT.getTime() + durationMin * 60_000).toISOString().slice(11, 16);
 }
+/**
+ * Pick the `n` free slots closest to a target time (by absolute minute
+ * distance), then return them in chronological order. Used to offer the
+ * customer the nearest AVAILABLE alternatives before bothering anyone.
+ */
+function nearestSlots(slots: string[], target: string, n = 3): string[] {
+  const t = timeToMinutes(target);
+  return [...slots]
+    .sort((a, b) => Math.abs(timeToMinutes(a) - t) - Math.abs(timeToMinutes(b) - t))
+    .slice(0, n)
+    .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+}
 
 /** Robust-enough Hebrew yes/no detection for short WhatsApp replies. */
 export function parseYesNo(text: string): "yes" | "no" | "unclear" {
@@ -182,9 +194,11 @@ export async function requestAppointmentMove(opts: {
   targetDate: string;       // YYYY-MM-DD
   targetStartTime: string;  // HH:MM
   allowOtherBarber?: boolean;
+  insistExactTime?: boolean; // customer insists on the exact (taken) time → allow swap flow
 }): Promise<string> {
   const { bizId, conversationId, callerPhone, appointmentId, targetDate, targetStartTime } = opts;
   const allowOtherBarber = !!opts.allowOtherBarber;
+  const insistExactTime = !!opts.insistExactTime;
 
   const appt = await prisma.appointment.findUnique({
     where: { id: appointmentId },
@@ -254,6 +268,29 @@ export async function requestAppointmentMove(opts: {
       });
       return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${freeOther.name}. אמור ללקוח שאצל ${appt.staff.name} לא היה פנוי באותה שעה, אז קבעתי אצל ${freeOther.name} — ושאל אם זה מתאים לו.`;
     }
+  }
+
+  // ── Step 2.5: exact slot taken → offer the CLOSEST FREE times first ────────
+  // Don't bother the barber or another customer yet. Only when the customer
+  // explicitly insists on the exact taken time (insistExactTime=true) do we fall
+  // through to the swap-approval flow below.
+  if (!insistExactTime) {
+    const sameNearest = nearestSlots(sameSlots, targetStartTime);
+    if (sameNearest.length) {
+      return `השעה ${targetStartTime} תפוסה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה. אם הוא בוחר אחד מהם, קרא שוב ל-request_appointment_move עם השעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} (התפוס), קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
+    }
+    if (allowOtherBarber) {
+      const allAvail = await computeDayAvailability(bizId, targetDate, undefined, appt.serviceId);
+      const otherFree = allAvail
+        .filter(s => s.staffId !== appt.staffId && s.slots.length)
+        .map(s => ({ name: s.name, slots: nearestSlots(s.slots, targetStartTime) }))
+        .filter(s => s.slots.length);
+      if (otherFree.length) {
+        const lines = otherFree.map(s => `${s.name}: ${s.slots.join(", ")}`).join(" | ");
+        return `השעה ${targetStartTime} תפוסה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה. אם הוא בוחר אחת, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.`;
+      }
+    }
+    // No free alternatives at all that day → fall through to the swap flow.
   }
 
   // ── Step 3: no free slot → need to bother another customer (with approval) ─
