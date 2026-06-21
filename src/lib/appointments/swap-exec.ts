@@ -27,6 +27,27 @@ function minToTime(m: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 }
 
+/**
+ * Mirror an outgoing confirmation into the requester's agent conversation so
+ * the chat thread stays coherent (the final "done!" shows in /admin/chats and
+ * in the customer's view of the thread). No-op when there's no conversation
+ * (e.g. admin-created proposals). Errors are logged, never thrown.
+ */
+async function recordInConversation(conversationId: string | null, text: string): Promise<void> {
+  if (!conversationId) return;
+  try {
+    await prisma.conversationMessage.create({
+      data: { conversationId, role: "assistant", content: text },
+    });
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    });
+  } catch (err) {
+    console.error("[swap-exec] failed to record confirmation in conversation:", err);
+  }
+}
+
 export type ExecResult =
   | { ok: true; kind: "move" | "swap"; primary: unknown; candidate?: unknown }
   | { ok: false; error: string; status?: number };
@@ -94,13 +115,21 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
       newStaffName: newStaff?.name || p.staff.name,
       serviceName: p.service.name,
     }, business.appointmentMovedTemplate);
-    sendMessage({
-      businessId: business.id,
-      appointmentId: p.id,
-      customerPhone: p.customer.phone,
-      kind: "appointment_moved",
-      body: text,
-    }).catch(err => console.error("move_confirmation send failed:", err));
+    // Mirror into the requester's agent chat so the thread stays coherent
+    // (otherwise it looks like the agent went silent after "I'm checking").
+    await recordInConversation(proposal.requesterConversationId, text);
+    // Awaited + logged so a send failure is visible (was fire-and-forget).
+    try {
+      await sendMessage({
+        businessId: business.id,
+        appointmentId: p.id,
+        customerPhone: p.customer.phone,
+        kind: "appointment_moved",
+        body: text,
+      });
+    } catch (err) {
+      console.error("[swap-exec] move confirmation send FAILED:", err);
+    }
 
     const primaryFinal = await prisma.appointment.findUnique({
       where: { id: p.id },
@@ -169,22 +198,33 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     serviceName:  c.service.name,
   }, business.swapConfirmationTemplate);
 
-  Promise.all([
-    sendMessage({
+  // Requester (primary): mirror the confirmation into their agent chat thread,
+  // then send via WhatsApp. Awaited + logged individually so one failure doesn't
+  // silently swallow the other and so failures are actually visible.
+  await recordInConversation(proposal.requesterConversationId, primaryConfirm);
+  try {
+    await sendMessage({
       businessId: business.id,
       appointmentId: p.id,
       customerPhone: p.customer.phone,
       kind: "swap_confirmation",
       body: primaryConfirm,
-    }),
-    sendMessage({
+    });
+  } catch (err) {
+    console.error("[swap-exec] primary swap confirmation send FAILED:", err);
+  }
+  // Candidate (the customer who agreed to give up their slot).
+  try {
+    await sendMessage({
       businessId: business.id,
       appointmentId: c.id,
       customerPhone: c.customer.phone,
       kind: "swap_confirmation",
       body: candidateConfirm,
-    }),
-  ]).catch(err => console.error("swap_confirmation send failed:", err));
+    });
+  } catch (err) {
+    console.error("[swap-exec] candidate swap confirmation send FAILED:", err);
+  }
 
   const [primaryFinal, candidateFinal] = await Promise.all([
     prisma.appointment.findUnique({
