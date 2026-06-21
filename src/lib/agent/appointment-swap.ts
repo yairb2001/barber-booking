@@ -290,10 +290,13 @@ export async function requestAppointmentMove(opts: {
         return `השעה ${targetStartTime} תפוסה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה. אם הוא בוחר אחת, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.`;
       }
     }
-    // No free alternatives at all that day → fall through to the swap flow.
+    // No free alternatives that day → still DON'T bother anyone. Offer another
+    // day / barber. The swap flow only starts if the customer explicitly insists
+    // on the exact taken time (insistExactTime=true).
+    return `אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). אל תפתח בקשת החלפה. הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או שאל אם בא לו אצל ספר אחר. רק אם הלקוח מתעקש דווקא על ${targetStartTime} ב-${hebDate(dateOnly(targetDate))}, קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
   }
 
-  // ── Step 3: no free slot → need to bother another customer (with approval) ─
+  // ── Step 3: customer INSISTS on the exact taken time → bother another customer (with approval) ─
   const candidates = await gatherCandidates(bizId, appt.staffId, dateOnly(targetDate), targetStartTime, appt.customerId);
   if (!candidates.length) {
     return `אין מקום פנוי בשעה ${targetStartTime} ב-${targetDate} אצל ${appt.staff.name}, וגם אין שם תור של לקוח אחר שאפשר להציע לו החלפה (כנראה הספר לא עובד אז, או זו הפסקה). אל תפתח בקשה — במקום זה הצע ללקוח את הזמן הפנוי הקרוב ביותר (קרא ל-get_available_slots לאותו יום) או שעה אחרת.`;
