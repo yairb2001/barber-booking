@@ -4,11 +4,13 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 // GET /api/cron/cleanup-conversations
-// Daily Vercel cron — deletes conversations + their messages older than 7 days
-// (no message activity since). Keeps the DB lean.
+// Daily Vercel cron — deletes conversations + their messages with no activity
+// in the last 3 days. After that a returning customer starts a fresh chat (the
+// agent still recognizes them by phone — name/history/upcoming appointments are
+// reloaded from the customer record, only the old chat text is dropped).
 export async function GET() {
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 7);
+  cutoff.setDate(cutoff.getDate() - 3);
 
   // Find old conversations
   const oldConvs = await prisma.conversation.findMany({
