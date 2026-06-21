@@ -58,8 +58,14 @@ function pickInitialModel(
 const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_services",
-    description: "מחזיר רשימת השירותים הזמינים עם מחיר ומשך בדקות.",
-    input_schema: { type: "object" as const, properties: {}, required: [] },
+    description: "מחזיר רשימת השירותים הזמינים עם מחיר ומשך בדקות. אם מועבר staffId — מחזיר את השמות, המחירים, המשך וההערות המותאמים של אותו ספר.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        staffId: { type: "string", description: "מזהה ספר (אופציונלי) — להצגת השירותים המותאמים שלו" },
+      },
+      required: [],
+    },
   },
   {
     name: "get_staff_list",
@@ -353,6 +359,28 @@ async function execTool(
     switch (name) {
       // ── get_services ────────────────────────────────────────────────────────
       case "get_services": {
+        const svcStaffId = input.staffId as string | undefined;
+        // With a staffId, show that barber's personal name/price/duration/note
+        // (same underlying service — overrides via StaffService).
+        if (svcStaffId) {
+          const ssList = await prisma.staffService.findMany({
+            where: { staffId: svcStaffId, service: { isVisible: true } },
+            include: { service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } },
+          });
+          if (ssList.length) {
+            return ssList
+              .sort((a, b) => a.service.sortOrder - b.service.sortOrder)
+              .map(ss => {
+                const name = ss.customName ?? ss.service.name;
+                const price = ss.customPrice ?? ss.service.price;
+                const dur = ss.customDuration ?? ss.service.durationMinutes;
+                const note = ss.customNote ?? ss.service.note;
+                return `• ${name} — ${price}₪, ${dur} דקות${note ? ` (${note})` : ""} [id: ${ss.service.id}]`;
+              })
+              .join("\n");
+          }
+          // No per-barber rows → fall through to the shared list.
+        }
         const services = await prisma.service.findMany({
           where: { businessId: bizId, isVisible: true },
           orderBy: { sortOrder: "asc" },
@@ -829,7 +857,7 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
         return `${w.staff!.name} (${w.service.name}, ${d})`;
       })
       .join(", ");
-    parts.push(`הוא רשום ברשימת המתנה אצל: ${list}. אם הוא רוצה לקבוע תור, קבע אותו אצל הספר שאצלו הוא בהמתנה — זה הספר שהוא ביקש — ולא אצל ספר אחר.`);
+    parts.push(`הוא רשום ברשימת המתנה אצל: ${list}. המשמעות היחידה: זה הספר שהוא מעדיף, אז אם הוא רוצה לקבוע — נסה קודם אצלו. ⚠️ רישום לרשימת המתנה לא אומר שאין מקום! זה לא מקור מידע על זמינות. לעולם אל תסיק מזה שאין תורים פנויים ואל תזכיר את רשימת ההמתנה כסיבה לחוסר זמינות. כדי לדעת מה פנוי קרא תמיד ל-get_available_slots; אם יצא שעה פנויה — הצע וקבע אותה כרגיל.`);
   }
 
   return parts.join(" ");

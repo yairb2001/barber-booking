@@ -212,6 +212,8 @@ model StaffService {
   serviceId      String  @map("service_id")
   customPrice    Float?  @map("custom_price")
   customDuration Int?    @map("custom_duration")
+  customName     String? @map("custom_name")
+  customNote     String? @map("custom_note")
 
   staff          Staff   @relation(fields: [staffId], references: [id])
   service        Service @relation(fields: [serviceId], references: [id])

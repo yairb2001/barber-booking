@@ -36,13 +36,15 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       enabled: s.ownerStaffId === params.id ? true : !!staffMap[s.id],
       customPrice: staffMap[s.id]?.customPrice ?? null,
       customDuration: staffMap[s.id]?.customDuration ?? null,
+      customName: staffMap[s.id]?.customName ?? null,
+      customNote: staffMap[s.id]?.customNote ?? null,
     })),
   });
 }
 
 // POST /api/admin/staff/[id]/services — manage this staff's services.
 // Actions:
-//   (default toggle)   { serviceId, enabled, customPrice?, customDuration? }
+//   (default toggle)   { serviceId, enabled, customPrice?, customDuration?, customName?, customNote? }
 //   create own service { action: "create-own", name, price, durationMinutes }
 //   update own service { action: "update-own", serviceId, name?, price?, durationMinutes? }
 //   delete own service { action: "delete-own", serviceId }
@@ -129,7 +131,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // ── Default: toggle a shared service on/off for this barber ──
-  const { serviceId, enabled, customPrice, customDuration } = body;
+  const { serviceId, enabled, customPrice, customDuration, customName, customNote } = body;
+
+  // Normalize the per-barber name/note overrides: blank → null (use the shared service value).
+  const normName = typeof customName === "string" && customName.trim() ? customName.trim() : null;
+  const normNote = typeof customNote === "string" && customNote.trim() ? customNote.trim() : null;
 
   if (enabled) {
     await prisma.staffService.upsert({
@@ -139,10 +145,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         serviceId,
         customPrice: customPrice ?? null,
         customDuration: customDuration ?? null,
+        customName: normName,
+        customNote: normNote,
       },
       update: {
         customPrice: customPrice ?? null,
         customDuration: customDuration ?? null,
+        customName: normName,
+        customNote: normNote,
       },
     });
   } else {

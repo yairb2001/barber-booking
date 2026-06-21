@@ -33,8 +33,15 @@ export async function GET(request: Request) {
 
     const services = staffServices.map((ss) => ({
       ...ss.service,
+      // Per-barber overrides win when set (same underlying service, personal label/note).
+      name: ss.customName ?? ss.service.name,
+      note: ss.customNote ?? ss.service.note,
+      price: ss.customPrice ?? ss.service.price,
+      durationMinutes: ss.customDuration ?? ss.service.durationMinutes,
       customPrice: ss.customPrice,
       customDuration: ss.customDuration,
+      customName: ss.customName,
+      customNote: ss.customNote,
     }));
 
     return NextResponse.json(services);

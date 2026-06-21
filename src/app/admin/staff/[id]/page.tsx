@@ -25,6 +25,8 @@ type ServiceRow = {
   owned: boolean;
   customPrice: number | null;
   customDuration: number | null;
+  customName: string | null;
+  customNote: string | null;
 };
 
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -61,6 +63,8 @@ export default function StaffSettingsPage() {
   const [editingService, setEditingService] = useState<string | null>(null);
   const [customPrice, setCustomPrice] = useState("");
   const [customDuration, setCustomDuration] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customNote, setCustomNote] = useState("");
   // Own-service management (barber's private services)
   const [canManageOwn, setCanManageOwn] = useState(false);
   const [ownForm, setOwnForm] = useState<{ id: string | null; name: string; description: string; price: string; durationMinutes: string } | null>(null);
@@ -189,6 +193,8 @@ export default function StaffSettingsPage() {
         enabled: true,
         customPrice: customPrice ? Number(customPrice) : null,
         customDuration: customDuration ? Number(customDuration) : null,
+        customName: customName.trim() || null,
+        customNote: customNote.trim() || null,
       }),
     });
     setEditingService(null);
@@ -308,19 +314,25 @@ export default function StaffSettingsPage() {
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${svc.enabled ? "right-0.5" : "left-0.5"}`} />
                 </button>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-neutral-900 text-sm">{svc.name}</div>
+                  <div className="font-medium text-neutral-900 text-sm">
+                    {svc.customName || svc.name}
+                    {svc.customName && <span className="text-neutral-400 font-normal"> ({svc.name})</span>}
+                  </div>
                   <div className="text-xs text-neutral-400">
                     {svc.customPrice != null ? `₪${svc.customPrice}` : `₪${svc.price}`}
                     {" · "}
                     {svc.customDuration != null ? `${svc.customDuration} דק'` : `${svc.durationMinutes} דק'`}
-                    {(svc.customPrice != null || svc.customDuration != null) && <span className="text-teal-600"> (מותאם)</span>}
+                    {(svc.customPrice != null || svc.customDuration != null || svc.customName || svc.customNote) && <span className="text-teal-600"> (מותאם)</span>}
                   </div>
+                  {svc.customNote && <div className="text-xs text-neutral-400 mt-0.5 truncate">📝 {svc.customNote}</div>}
                 </div>
                 {svc.enabled && (
                   <button onClick={() => {
                     setEditingService(svc.id);
                     setCustomPrice(svc.customPrice != null ? String(svc.customPrice) : "");
                     setCustomDuration(svc.customDuration != null ? String(svc.customDuration) : "");
+                    setCustomName(svc.customName ?? "");
+                    setCustomNote(svc.customNote ?? "");
                   }}
                     className="text-xs text-neutral-500 hover:text-teal-700 px-2 py-1 rounded-lg border border-neutral-200 hover:border-teal-300 transition">
                     ✏️ התאם
@@ -331,6 +343,20 @@ export default function StaffSettingsPage() {
               {/* Inline editor for custom price/duration */}
               {editingService === svc.id && (
                 <div className="mt-3 pt-3 border-t border-neutral-100 space-y-3">
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">שם מותאם</label>
+                    <input type="text" value={customName}
+                      onChange={e => setCustomName(e.target.value)}
+                      placeholder={`${svc.name} (ברירת מחדל)`}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">הערה אישית</label>
+                    <textarea value={customNote} rows={2}
+                      onChange={e => setCustomNote(e.target.value)}
+                      placeholder="הערה אישית שתוצג ללקוח (אופציונלי)"
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
+                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="text-xs text-neutral-500 block mb-1">מחיר מותאם (₪)</label>
