@@ -440,13 +440,17 @@ async function execTool(
           const ds = dObj.toISOString().slice(0, 10);
           const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId);
           if (byStaff.length) {
+            // Return the FULL day per barber (morning through evening), not just
+            // the first few. Truncating to the earliest slots hid the evening
+            // availability, so when a customer asked for "ערב" the agent thought
+            // the soonest day had none and skipped to the next day.
             const lines = byStaff
-              .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.slice(0, 4).join(", ")}`)
+              .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
               .join("\n");
             const warn = byStaff.length > 1
               ? `\n\n⚠️ כל שורה היא ספר נפרד; השעה פנויה רק אצל הספר שלצדה. מותר לעבור בין ספרים כדי למצוא שעה שמתאימה ללקוח, אבל כל שעה שתציע ותקבע חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל.`
               : "";
-            return `התאריך הפנוי הקרוב ביותר הוא ${ds}:\n${lines}${warn}`;
+            return `התאריך הפנוי הקרוב ביותר הוא ${ds} (זו כל הזמינות באותו יום, בוקר עד ערב):\n${lines}${warn}`;
           }
         }
         return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
