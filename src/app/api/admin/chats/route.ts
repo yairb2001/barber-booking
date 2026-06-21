@@ -115,9 +115,11 @@ export async function GET(req: NextRequest) {
     };
   }));
 
-  // Conversations needing a human float to the TOP; within each group keep the
+  // UNREAD / not-yet-handled conversations float to the TOP (these are the only
+  // ones screaming red). Everything already read — whether the agent handled it
+  // or a human already replied — drops into the calm inbox below, keeping the
   // most-recent-first order from the query (lastMessageAt desc).
-  data.sort((a, b) => Number(b.needsHuman) - Number(a.needsHuman));
+  data.sort((a, b) => Number(b.unreadCount > 0) - Number(a.unreadCount > 0));
 
   return NextResponse.json(data);
 }
