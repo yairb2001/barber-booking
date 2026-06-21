@@ -319,6 +319,17 @@ model SwapProposal {
   // Discriminator (default "swap" for backward-compat with existing rows)
   kind                   String    @default("swap") // "swap" | "move"
 
+  // Who started this proposal: "admin" (calendar UI) | "agent" (WhatsApp AI).
+  // The agent flow adds an extra barber-approval phase + sequential candidate
+  // contact and notifies the requesting customer through their conversation.
+  initiatedBy            String    @default("admin") @map("initiated_by") // "admin" | "agent"
+  // Conversation of the customer who ASKED to move (agent flow) — used to send
+  // them progress updates ("checking with the barber", "done", "couldn't arrange").
+  requesterConversationId String?  @map("requester_conversation_id")
+  // The barber asked to approve "bothering" another customer for a swap (agent
+  // flow). Their WhatsApp כן/לא reply gates whether candidates are contacted.
+  approvalStaffId        String?   @map("approval_staff_id")
+
   // For kind=swap: the appointment to trade with
   candidateAppointmentId String?   @map("candidate_appointment_id")
   // For kind=move: the empty slot to relocate to
@@ -326,12 +337,21 @@ model SwapProposal {
   targetDate             DateTime? @map("target_date")
   targetStartTime        String?   @map("target_start_time")
 
+  // status (agent flow adds the first two):
+  //   pending_staff_approval → barber asked, awaiting their כן/לא (agent)
+  //   queued_next            → candidate held in reserve, not yet contacted (agent)
+  //   pending_response       → candidate messaged, awaiting their כן/לא
+  //   accepted_by_customer   → candidate said yes (manual mark OR bot-detected)
+  //   rejected_by_customer   → candidate said no
+  //   approved               → executed
+  //   staff_rejected         → barber declined (agent)
+  //   cancelled / expired
   status                 String    @default("pending_response")
   rawResponse            String?   @map("raw_response") // free-text customer reply, if captured
   createdAt              DateTime  @default(now()) @map("created_at")
   respondedAt            DateTime? @map("responded_at")
   approvedAt             DateTime? @map("approved_at")
-  expiresAt              DateTime  @map("expires_at") // createdAt + 24h
+  expiresAt              DateTime  @map("expires_at") // createdAt + 24h (admin) / +2h (agent)
 
   business  Business     @relation(fields: [businessId], references: [id])
   primary   Appointment  @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
@@ -340,6 +360,7 @@ model SwapProposal {
   @@index([businessId, status])
   @@index([primaryAppointmentId, status])
   @@index([candidateAppointmentId, status])
+  @@index([approvalStaffId, status])
   @@map("swap_proposals")
 }
 

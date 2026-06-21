@@ -1,0 +1,559 @@
+/**
+ * Agent-driven appointment MOVE / SWAP orchestration.
+ * ───────────────────────────────────────────────────
+ * Lets the WhatsApp customer agent move a customer's appointment to a time they
+ * asked for, with the least possible disturbance to everyone else. Priority
+ * order (decided with the owner):
+ *
+ *   1. Free slot at the SAME barber → relocate in place. Bother no one.
+ *   2. Customer doesn't care which barber (or is new) → relocate to any FREE
+ *      barber at that time, silently. Still bother no one.
+ *   3. No free slot anywhere near the time → ask the barber (per-request) for
+ *      permission to "bother" another customer. If the barber says כן, contact
+ *      up to 2 customers who hold that exact slot, SEQUENTIALLY. The first to
+ *      agree gets swapped. If the barber doesn't answer within 2h, give up.
+ *
+ * The heavy lifting is in code (this module) + the webhook reply router, not in
+ * the prompt — the agent only calls one tool, `request_appointment_move`.
+ *
+ * All async hand-offs are tracked as SwapProposal rows (initiatedBy="agent").
+ * There is no cron: expiry is lazy (`expireStaleAgentSwaps` runs on every
+ * inbound webhook for the business).
+ */
+
+import { prisma } from "@/lib/prisma";
+import { sendMessage, swapProposalText, firstName } from "@/lib/messaging";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
+import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
+import { timeToMinutes, getBusinessNow } from "@/lib/utils";
+
+// 2-hour windows: barber approval AND each candidate contact.
+const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
+
+// SwapProposal statuses that mean "an agent swap flow is live for this primary".
+const LIVE_STATUSES = ["pending_staff_approval", "pending_response", "queued_next", "accepted_by_customer"];
+
+function hebDate(date: Date): string {
+  return date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+}
+function dateOnly(iso: string): Date {
+  return new Date(`${iso}T00:00:00.000Z`);
+}
+function computeEndTime(date: string, start: string, durationMin: number): string {
+  const startDT = new Date(`${date}T${start}:00.000Z`);
+  return new Date(startDT.getTime() + durationMin * 60_000).toISOString().slice(11, 16);
+}
+
+/** Robust-enough Hebrew yes/no detection for short WhatsApp replies. */
+export function parseYesNo(text: string): "yes" | "no" | "unclear" {
+  const t = (text || "").trim().toLowerCase();
+  if (!t) return "unclear";
+  // Check "no" first — a "no" reply must never be misread as "yes".
+  const no = ["לא רוצה", "לא מתאים", "לא יכול", "אי אפשר", "ממש לא", "לצערי לא", "לא,", "לא ", "לא.", "no", "❌", "👎"];
+  const yes = ["כן", "בטח", "אישור", "מאשר", "מסכים", "סבבה", "אוקיי", "אוקי", "יאללה", "אפשר", "בסדר גמור", "אין בעיה", "ok", "okay", "yes", "👍", "✅", "👌"];
+  for (const n of no) if (t.includes(n)) return "no";
+  if (t === "לא") return "no";
+  for (const y of yes) if (t.includes(y)) return "yes";
+  return "unclear";
+}
+
+/** Notify the customer who ASKED for the move, through their conversation. */
+async function notifyRequester(
+  bizId: string,
+  conversationId: string | null,
+  phone: string,
+  text: string,
+): Promise<void> {
+  if (conversationId) {
+    await prisma.conversationMessage.create({
+      data: { conversationId, role: "assistant", content: text },
+    }).catch(() => {});
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: new Date() },
+    }).catch(() => {});
+  }
+  await sendMessage({ businessId: bizId, customerPhone: phone, kind: "agent_reply", body: text }).catch(() => {});
+}
+
+/** Find up to 2 OTHER customers' appointments occupying a specific slot. */
+async function gatherCandidates(
+  bizId: string,
+  staffId: string,
+  targetDate: Date,
+  targetStartTime: string,
+  excludeCustomerId: string,
+) {
+  return prisma.appointment.findMany({
+    where: {
+      businessId: bizId,
+      staffId,
+      date: targetDate,
+      startTime: targetStartTime,
+      status: { in: ["pending", "confirmed"] },
+      customerId: { not: excludeCustomerId },
+    },
+    orderBy: { createdAt: "asc" },
+    take: 2,
+    include: { customer: true, staff: true, service: true },
+  });
+}
+
+/** Send the swap question to a candidate customer for a given proposal row. */
+async function messageCandidate(proposalId: string): Promise<void> {
+  const proposal = await prisma.swapProposal.findUnique({
+    where: { id: proposalId },
+    include: {
+      business: { select: { name: true, swapProposalTemplate: true } },
+      primary:   { include: { customer: true, staff: true, service: true } },
+      candidate: { include: { customer: true, staff: true, service: true } },
+    },
+  });
+  if (!proposal?.candidate || !proposal.primary) return;
+  const c = proposal.candidate;
+  const p = proposal.primary;
+  const body = swapProposalText({
+    candidateName:     c.customer.name,
+    businessName:      proposal.business.name,
+    candidateDateLabel: hebDate(c.date),
+    candidateTime:     c.startTime,
+    primaryDateLabel:  hebDate(p.date),
+    primaryTime:       p.startTime,
+    primaryStaffName:  p.staff.name,
+  }, proposal.business.swapProposalTemplate);
+  await sendMessage({
+    businessId: proposal.businessId,
+    appointmentId: c.id,
+    customerPhone: c.customer.phone,
+    kind: "swap_proposal",
+    body,
+  }).catch(err => console.error("[agent-swap] candidate message failed", err));
+}
+
+/**
+ * Promote the next reserved candidate (queued_next → pending_response) for a
+ * primary and message them. Returns true if a candidate was promoted.
+ */
+async function promoteNextCandidate(primaryAppointmentId: string): Promise<boolean> {
+  const next = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId, status: "queued_next", initiatedBy: "agent" },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!next) return false;
+  await prisma.swapProposal.update({
+    where: { id: next.id },
+    data: { status: "pending_response", expiresAt: new Date(Date.now() + APPROVAL_TTL_MS) },
+  });
+  await messageCandidate(next.id);
+  return true;
+}
+
+/** No (more) candidate accepted — tell the requester their appt stays put. */
+async function finishUnsuccessful(primaryAppointmentId: string): Promise<void> {
+  // Cancel any leftover reserved candidates for this primary.
+  await prisma.swapProposal.updateMany({
+    where: { primaryAppointmentId, status: { in: ["pending_response", "queued_next", "pending_staff_approval"] }, initiatedBy: "agent" },
+    data: { status: "cancelled" },
+  });
+  const any = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId, initiatedBy: "agent" },
+    orderBy: { createdAt: "desc" },
+    include: { primary: { include: { customer: true } } },
+  });
+  if (!any?.primary) return;
+  await notifyRequester(
+    any.businessId,
+    any.requesterConversationId,
+    any.primary.customer.phone,
+    `לא הצלחתי לארגן החלפה לשעה שביקשת, אז התור הקיים שלך נשאר כרגיל. רוצה שאחפש לך זמן פנוי אחר?`,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1) Tool entry: the agent asks to move a customer's appointment.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function requestAppointmentMove(opts: {
+  bizId: string;
+  conversationId: string;
+  callerPhone: string;
+  appointmentId: string;
+  targetDate: string;       // YYYY-MM-DD
+  targetStartTime: string;  // HH:MM
+  allowOtherBarber?: boolean;
+}): Promise<string> {
+  const { bizId, conversationId, callerPhone, appointmentId, targetDate, targetStartTime } = opts;
+  const allowOtherBarber = !!opts.allowOtherBarber;
+
+  const appt = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    include: { customer: true, staff: true, service: true },
+  });
+  if (!appt || appt.businessId !== bizId) {
+    return "לא מצאתי את התור הזה. קרא ל-check_appointment כדי לקבל את מזהה התור הנכון של הלקוח, ואז נסה שוב.";
+  }
+  if (["cancelled_by_customer", "cancelled_by_staff"].includes(appt.status)) {
+    return "התור הזה כבר בוטל, אין מה להעביר.";
+  }
+
+  // Safety: the caller must be the owner of this appointment (same phone).
+  const phone = normalizeIsraeliPhone(callerPhone);
+  const localPhone = phone.replace(/^972/, "0");
+  const custPhone = normalizeIsraeliPhone(appt.customer.phone);
+  if (custPhone !== phone && custPhone !== normalizeIsraeliPhone(localPhone)) {
+    return "התור הזה שייך ללקוח אחר — אי אפשר להעביר אותו מהשיחה הזו.";
+  }
+
+  // Same time/date as now? Nothing to do.
+  const apptDateIso = new Date(appt.date).toISOString().slice(0, 10);
+  if (apptDateIso === targetDate && appt.startTime === targetStartTime) {
+    return "זה בדיוק הזמן של התור הקיים — אין צורך לשנות כלום.";
+  }
+
+  // Don't start a second flow if one is already live for this appointment.
+  const live = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId: appt.id, status: { in: LIVE_STATUSES }, initiatedBy: "agent" },
+  });
+  if (live) {
+    return "כבר יש בקשת העברה פעילה לתור הזה שמחכה לתשובה. אמור ללקוח שאתה עדיין בודק את זה ותעדכן אותו ברגע שיש תשובה — אל תפתח בקשה נוספת.";
+  }
+
+  const duration = timeToMinutes(appt.endTime) - timeToMinutes(appt.startTime);
+
+  // ── Step 1: free slot at the SAME barber → relocate in place ───────────────
+  const sameAvail = await computeDayAvailability(bizId, targetDate, appt.staffId, appt.serviceId);
+  const sameSlots = sameAvail.find(s => s.staffId === appt.staffId)?.slots ?? [];
+  if (sameSlots.includes(targetStartTime)) {
+    await prisma.appointment.update({
+      where: { id: appt.id },
+      data: {
+        date: dateOnly(targetDate),
+        startTime: targetStartTime,
+        endTime: computeEndTime(targetDate, targetStartTime, duration),
+      },
+    });
+    return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${appt.staff.name} (אותו ספר). אשר ללקוח שזה סודר.`;
+  }
+
+  // ── Step 2: customer doesn't mind the barber → any FREE barber, silently ───
+  if (allowOtherBarber) {
+    const allAvail = await computeDayAvailability(bizId, targetDate, undefined, appt.serviceId);
+    const freeOther = allAvail.find(s => s.staffId !== appt.staffId && s.slots.includes(targetStartTime));
+    if (freeOther) {
+      const eff = await resolveStaffService(freeOther.staffId, appt.serviceId, appt.service.name, appt.service.durationMinutes, appt.price);
+      await prisma.appointment.update({
+        where: { id: appt.id },
+        data: {
+          staffId: freeOther.staffId,
+          date: dateOnly(targetDate),
+          startTime: targetStartTime,
+          endTime: computeEndTime(targetDate, targetStartTime, eff.duration),
+          price: eff.price,
+        },
+      });
+      return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${freeOther.name}. אמור ללקוח שאצל ${appt.staff.name} לא היה פנוי באותה שעה, אז קבעתי אצל ${freeOther.name} — ושאל אם זה מתאים לו.`;
+    }
+  }
+
+  // ── Step 3: no free slot → need to bother another customer (with approval) ─
+  const candidates = await gatherCandidates(bizId, appt.staffId, dateOnly(targetDate), targetStartTime, appt.customerId);
+  if (!candidates.length) {
+    return `אין מקום פנוי בשעה ${targetStartTime} ב-${targetDate} אצל ${appt.staff.name}, וגם אין שם תור של לקוח אחר שאפשר להציע לו החלפה (כנראה הספר לא עובד אז, או זו הפסקה). אל תפתח בקשה — במקום זה הצע ללקוח את הזמן הפנוי הקרוב ביותר (קרא ל-get_available_slots לאותו יום) או שעה אחרת.`;
+  }
+
+  if (!appt.staff.phone) {
+    return `כדי לבקש מלקוח אחר להחליף צריך לקבל אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום במערכת ואי אפשר לפנות אליו. אל תפתח בקשה — הצע ללקוח זמן פנוי אחר במקום.`;
+  }
+
+  // Create the barber-approval request (no candidate contacted yet).
+  await prisma.swapProposal.create({
+    data: {
+      businessId: bizId,
+      primaryAppointmentId: appt.id,
+      kind: "swap",
+      initiatedBy: "agent",
+      requesterConversationId: conversationId,
+      approvalStaffId: appt.staffId,
+      targetStaffId: appt.staffId,
+      targetDate: dateOnly(targetDate),
+      targetStartTime,
+      status: "pending_staff_approval",
+      expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+    },
+  });
+
+  const targetLabel = `${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime}`;
+  const currentLabel = `${hebDate(new Date(appt.date))} בשעה ${appt.startTime}`;
+  const approvalMsg =
+    `🔔 בקשת החלפת תור\n` +
+    `${appt.customer.name} רוצה להעביר את התור שלו (${appt.service.name}) מ-${currentLabel} ל-${targetLabel}, אבל השעה תפוסה.\n` +
+    `אפשר להציע ללקוח אחר שיש לו תור בשעה הזו להחליף? ענה כן או לא.`;
+  await sendMessage({
+    businessId: bizId,
+    customerPhone: normalizeIsraeliPhone(appt.staff.phone),
+    kind: "swap_staff_request",
+    body: approvalMsg,
+  }).catch(err => console.error("[agent-swap] staff approval send failed", err));
+
+  return `אין מקום פנוי בשעה שביקש, אז שלחתי ל${appt.staff.name} בקשה לאשר החלפה עם לקוח אחר. אמור ללקוח שאתה בודק מול הספר אפשרות להחליף לשעה הזו ותעדכן אותו ברגע שיש תשובה — בלי להבטיח שזה סגור.`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2) Webhook: a BARBER replied to an approval request.
+//    Returns true if the reply was consumed (don't run the booking agent).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function handleStaffApprovalReply(
+  bizId: string,
+  fromPhone: string,
+  text: string,
+): Promise<boolean> {
+  const phone = normalizeIsraeliPhone(fromPhone);
+  const local = phone.replace(/^972/, "0");
+
+  // Is the sender a staff member of this business with a live approval request?
+  const staff = await prisma.staff.findFirst({
+    where: { businessId: bizId, OR: [{ phone }, { phone: local }] },
+    select: { id: true, name: true },
+  });
+  if (!staff) return false;
+
+  const proposal = await prisma.swapProposal.findFirst({
+    where: { businessId: bizId, approvalStaffId: staff.id, status: "pending_staff_approval", initiatedBy: "agent" },
+    orderBy: { createdAt: "desc" },
+    include: { primary: { include: { customer: true, staff: true, service: true } } },
+  });
+  if (!proposal || !proposal.primary) return false;
+
+  // Expired (>2h)? Treat as a timeout and clean up.
+  if (proposal.expiresAt.getTime() < Date.now()) {
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "expired" } });
+    await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+
+  const ans = parseYesNo(text);
+  if (ans === "unclear") {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_staff_request",
+      body: `לא הבנתי — לגבי ההחלפה של ${proposal.primary.customer.name}, ענה כן או לא בבקשה.`,
+    }).catch(() => {});
+    return true;
+  }
+
+  if (ans === "no") {
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "staff_rejected", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await notifyRequester(
+      bizId,
+      proposal.requesterConversationId,
+      proposal.primary.customer.phone,
+      `בדקתי מול ${proposal.primary.staff.name} ולצערי אי אפשר להחליף לשעה שביקשת כרגע, אז התור הקיים שלך נשאר. רוצה שאחפש לך זמן פנוי אחר?`,
+    );
+    return true;
+  }
+
+  // ans === "yes" → contact candidates sequentially.
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: { respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+  });
+
+  if (!proposal.targetStaffId || !proposal.targetDate || !proposal.targetStartTime) {
+    await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+
+  const candidates = await gatherCandidates(
+    bizId,
+    proposal.targetStaffId,
+    proposal.targetDate,
+    proposal.targetStartTime,
+    proposal.primary.customerId,
+  );
+
+  if (!candidates.length) {
+    // Slot may have freed up since the request — try a clean in-place move.
+    const iso = proposal.targetDate.toISOString().slice(0, 10);
+    const avail = await computeDayAvailability(bizId, iso, proposal.targetStaffId, proposal.primary.serviceId);
+    const slots = avail.find(s => s.staffId === proposal.targetStaffId)?.slots ?? [];
+    if (slots.includes(proposal.targetStartTime)) {
+      const dur = timeToMinutes(proposal.primary.endTime) - timeToMinutes(proposal.primary.startTime);
+      await prisma.appointment.update({
+        where: { id: proposal.primaryAppointmentId },
+        data: {
+          date: proposal.targetDate,
+          startTime: proposal.targetStartTime,
+          endTime: computeEndTime(iso, proposal.targetStartTime, dur),
+        },
+      });
+      await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "approved", approvedAt: new Date() } });
+      await notifyRequester(
+        bizId,
+        proposal.requesterConversationId,
+        proposal.primary.customer.phone,
+        `התפנה מקום! העברתי את התור שלך ל-${hebDate(proposal.targetDate)} בשעה ${proposal.targetStartTime} אצל ${proposal.primary.staff.name}. נתראה!`,
+      );
+      return true;
+    }
+    await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+
+  // Reuse THIS row for candidate #1, reserve the rest as queued_next.
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: {
+      status: "pending_response",
+      candidateAppointmentId: candidates[0].id,
+      approvalStaffId: null,
+      expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+    },
+  });
+  await messageCandidate(proposal.id);
+
+  for (const extra of candidates.slice(1)) {
+    await prisma.swapProposal.create({
+      data: {
+        businessId: bizId,
+        primaryAppointmentId: proposal.primaryAppointmentId,
+        kind: "swap",
+        initiatedBy: "agent",
+        requesterConversationId: proposal.requesterConversationId,
+        candidateAppointmentId: extra.id,
+        targetStaffId: proposal.targetStaffId,
+        targetDate: proposal.targetDate,
+        targetStartTime: proposal.targetStartTime,
+        status: "queued_next",
+        expiresAt: new Date(Date.now() + 2 * APPROVAL_TTL_MS),
+      },
+    });
+  }
+
+  await notifyRequester(
+    bizId,
+    proposal.requesterConversationId,
+    proposal.primary.customer.phone,
+    `${proposal.primary.staff.name} אישר, ואני בודק עכשיו מול לקוח אחר אם הוא מוכן להחליף איתך לשעה הזו. אעדכן אותך ברגע שתהיה תשובה 🙏`,
+  );
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3) Webhook: a CANDIDATE customer replied to a swap proposal.
+//    Returns true if the reply was consumed (don't run the booking agent).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function handleCandidateReply(
+  bizId: string,
+  fromPhone: string,
+  text: string,
+): Promise<boolean> {
+  const phone = normalizeIsraeliPhone(fromPhone);
+  const local = phone.replace(/^972/, "0");
+
+  // Find an agent-initiated proposal awaiting THIS customer's answer.
+  const proposal = await prisma.swapProposal.findFirst({
+    where: {
+      businessId: bizId,
+      status: "pending_response",
+      initiatedBy: "agent",
+      candidate: { customer: { OR: [{ phone }, { phone: local }] } },
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      candidate: { include: { customer: true } },
+      primary:   { include: { customer: true } },
+    },
+  });
+  if (!proposal || !proposal.candidate) return false;
+
+  // Expired (>2h)? Treat as no answer → move on to the next candidate.
+  if (proposal.expiresAt.getTime() < Date.now()) {
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "expired" } });
+    const promoted = await promoteNextCandidate(proposal.primaryAppointmentId);
+    if (!promoted) await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+
+  const ans = parseYesNo(text);
+  if (ans === "unclear") {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_proposal",
+      body: `רק שאדע — מתאים לך להחליף את התור? ענה כן או לא 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+
+  if (ans === "no") {
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "rejected_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_proposal",
+      body: `אין בעיה, תודה על התשובה! התור שלך נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    const promoted = await promoteNextCandidate(proposal.primaryAppointmentId);
+    if (!promoted) await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+
+  // ans === "yes" → execute the swap.
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: { status: "accepted_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+  });
+  const result = await executeApprovedProposal(proposal.id);
+  if (!result.ok) {
+    // Couldn't execute (slot changed under us) — apologize + try the next one.
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "cancelled" } }).catch(() => {});
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_proposal",
+      body: `תודה על הנכונות! בסוף ההחלפה כבר לא רלוונטית, אז התור שלך נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    const promoted = await promoteNextCandidate(proposal.primaryAppointmentId);
+    if (!promoted) await finishUnsuccessful(proposal.primaryAppointmentId);
+    return true;
+  }
+  // Success: executeApprovedProposal already sent swap_confirmation to BOTH
+  // customers (the requester included) and cancelled sibling proposals.
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 4) Lazy expiry — runs on every inbound webhook for the business (no cron).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function expireStaleAgentSwaps(bizId: string): Promise<void> {
+  const now = new Date();
+  const stale = await prisma.swapProposal.findMany({
+    where: {
+      businessId: bizId,
+      initiatedBy: "agent",
+      status: { in: ["pending_staff_approval", "pending_response"] },
+      expiresAt: { lt: now },
+    },
+    select: { id: true, status: true, primaryAppointmentId: true },
+  });
+  for (const s of stale) {
+    await prisma.swapProposal.update({ where: { id: s.id }, data: { status: "expired" } }).catch(() => {});
+    if (s.status === "pending_response") {
+      const promoted = await promoteNextCandidate(s.primaryAppointmentId);
+      if (!promoted) await finishUnsuccessful(s.primaryAppointmentId);
+    } else {
+      await finishUnsuccessful(s.primaryAppointmentId);
+    }
+  }
+}

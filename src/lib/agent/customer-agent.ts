@@ -19,13 +19,9 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
-import {
-  generateSlots,
-  getDayOfWeekISO,
-  timeToMinutes,
-  getBusinessNow,
-  addDaysISO,
-} from "@/lib/utils";
+import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
+import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
+import { getBusinessNow } from "@/lib/utils";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -42,7 +38,7 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
 // Tools whose use means we're mid high-stakes flow → escalate to the strong model.
-const SMART_TOOLS = new Set(["get_available_slots", "find_next_available", "book_appointment", "cancel_appointment"]);
+const SMART_TOOLS = new Set(["get_available_slots", "find_next_available", "book_appointment", "cancel_appointment", "request_appointment_move"]);
 
 function pickInitialModel(
   incomingText: string,
@@ -138,6 +134,25 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
   {
+    name: "request_appointment_move",
+    description:
+      "מעביר תור קיים של הלקוח לתאריך/שעה אחרים שהוא ביקש, עם כמה שפחות הטרדה לאחרים. " +
+      "השתמש בו כשלקוח רוצה לשנות/להזיז את התור שלו לזמן מסוים (במקום לבטל ולקבוע מחדש). " +
+      "קודם מצא את התור הקיים עם check_appointment כדי לקבל את ה-appointmentId. " +
+      "המערכת מטפלת בכל הלוגיקה: אם השעה פנויה אצל הספר היא מעבירה מיד; אם הלקוח לא קפדן לגבי הספר (או לקוח חדש) והשעה פנויה אצל ספר אחר היא מעבירה לשם; ואם אין פנוי בכלל היא מבקשת אישור מהספר ואז מציעה ללקוחות אחרים להחליף — בלי שתצטרך לנהל את זה בעצמך. " +
+      "קרא לזה רק אחרי שאישרת מול הלקוח לאיזה תאריך ושעה הוא רוצה לעבור. קרא את הטקסט שחוזר מהכלי ופעל לפיו מול הלקוח.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        appointmentId:   { type: "string", description: "מזהה התור הקיים של הלקוח (מ-check_appointment)" },
+        targetDate:      { type: "string", description: "התאריך הרצוי בפורמט YYYY-MM-DD" },
+        targetStartTime: { type: "string", description: "השעה הרצויה בפורמט HH:MM" },
+        allowOtherBarber: { type: "boolean", description: "true אם ללקוח לא אכפת אצל איזה ספר (או שהוא לקוח חדש בלי בקשה לספר מסוים). כברירת מחדל false — נשארים עם אותו ספר." },
+      },
+      required: ["appointmentId", "targetDate", "targetStartTime"],
+    },
+  },
+  {
     name: "escalate_to_human",
     description: "מעביר את הלקוח לטיפול אנושי ושולח התראה לספר הרלוונטי (או לבעל העסק) עם פרטי הלקוח והבעיה. לשימוש כשהלקוח מבקש לדבר עם ספר/בעל עסק, מתלונן, או כשהסוכן לא מצליח לעזור. נסה להעביר staffId אם ברור על איזה ספר מדובר (למשל הלקוח התלונן על תספורת אצל ניתאי) — אחרת המערכת תזהה לבד את הספר של הלקוח.",
     input_schema: {
@@ -153,199 +168,6 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
     cache_control: { type: "ephemeral" },
   },
 ];
-
-// ─── Availability helper ───────────────────────────────────────────────────────
-// Compute the free slots for ONE date, per staff member. Shared by both
-// get_available_slots (single day) and find_next_available (scans forward).
-async function computeDayAvailability(
-  bizId: string,
-  date: string,
-  inputStaffId?: string,
-  inputServiceId?: string,
-): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
-  const dateObj = new Date(date + "T00:00:00.000Z");
-  const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
-  const nowBiz = getBusinessNow();
-
-  const staffList = await prisma.staff.findMany({
-    where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
-    select: { id: true, name: true, settings: true },
-  });
-  if (!staffList.length) return [];
-
-  // Business-wide defaults (each staff can override in their settings JSON).
-  // Mirrors the public /api/slots route so the agent offers EXACTLY the same
-  // slots the website would — same horizon and same lead-time gating.
-  const biz = await prisma.business.findUnique({
-    where: { id: bizId },
-    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true },
-  });
-  const defaultHorizon = biz?.bookingHorizonDays ?? 30;
-
-  // The business catalog has duplicate/near-duplicate Service rows with the same
-  // real meaning (e.g. several "תספורת + זקן" 30-min rows). A barber is linked to
-  // only ONE of them via StaffService, but the agent may pass any duplicate's id.
-  // Resolve the requested service once so that, if a barber isn't linked to that
-  // EXACT id, we can still fall back to one of their own services with the same
-  // name/duration — instead of silently dropping the barber and reporting a false
-  // "no availability". Slot math only needs the duration.
-  const reqService = inputServiceId
-    ? await prisma.service.findUnique({
-        where: { id: inputServiceId },
-        select: { name: true, durationMinutes: true },
-      })
-    : null;
-
-  const byStaff: { staffId: string; name: string; slots: string[]; load: number }[] = [];
-
-  for (const staff of staffList) {
-    // Parse this barber's settings once (horizon + lead times live here).
-    let cfg: Record<string, unknown> = {};
-    if (staff.settings) {
-      try { cfg = JSON.parse(staff.settings) as Record<string, unknown>; }
-      catch { /* malformed settings — fall back to business defaults */ }
-    }
-    const numFromCfg = (key: string): number | undefined => {
-      if (cfg[key] === undefined) return undefined;
-      const n = Number(cfg[key]);
-      return isNaN(n) ? undefined : n;
-    };
-
-    // ── Booking-horizon gate (per staff) ─────────────────────────────────────
-    // A date past this barber's horizon is NOT open for booking yet, even if
-    // their weekly schedule says they work that weekday. Without this the agent
-    // saw a far-future day as "available" for a barber whose calendar hadn't
-    // opened that far and booked into a closed day. Mirrors api/slots.
-    const horizonCfg = numFromCfg("bookingHorizonDays");
-    const horizonDays = horizonCfg !== undefined && horizonCfg > 0 ? horizonCfg : defaultHorizon;
-    const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
-    if (date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
-
-    // Service duration (specific service, else the staff's shortest).
-    let duration = 30;
-    if (inputServiceId) {
-      const ss = await prisma.staffService.findUnique({
-        where: { staffId_serviceId: { staffId: staff.id, serviceId: inputServiceId } },
-        include: { service: true },
-      });
-      if (ss) {
-        duration = ss.customDuration ?? ss.service.durationMinutes;
-      } else if (reqService) {
-        // Not linked to this exact id — handle duplicate-catalog rows. Prefer a
-        // same-NAME service this barber offers; else a same-DURATION one (slot
-        // math only depends on duration). Only if neither exists does the barber
-        // genuinely not offer this service → skip them.
-        const alt =
-          (await prisma.staffService.findFirst({
-            where: { staffId: staff.id, service: { name: reqService.name } },
-            include: { service: true },
-          })) ??
-          (await prisma.staffService.findFirst({
-            where: { staffId: staff.id, service: { durationMinutes: reqService.durationMinutes } },
-            include: { service: true },
-          }));
-        if (!alt) continue;
-        duration = alt.customDuration ?? alt.service.durationMinutes;
-      } else {
-        continue; // unknown service id
-      }
-    } else {
-      const firstSvc = await prisma.staffService.findFirst({
-        where: { staffId: staff.id },
-        include: { service: true },
-        orderBy: { service: { durationMinutes: "asc" } },
-      });
-      duration = firstSvc?.customDuration ?? firstSvc?.service.durationMinutes ?? 30;
-    }
-
-    // Per-date override beats the weekly schedule.
-    const override = await prisma.staffScheduleOverride.findUnique({
-      where: { staffId_date: { staffId: staff.id, date: dateObj } },
-    });
-    if (override && !override.isWorking) continue; // day off
-
-    let scheduleSlots: { start: string; end: string }[] = [];
-    let breaks: { start: string; end: string }[] | null = null;
-
-    if (override?.isWorking && override.slots) {
-      scheduleSlots = JSON.parse(override.slots);
-      breaks = override.breaks ? JSON.parse(override.breaks) : null;
-    } else {
-      const schedule = await prisma.staffSchedule.findUnique({
-        where: { staffId_dayOfWeek: { staffId: staff.id, dayOfWeek } },
-      });
-      if (!schedule?.isWorking) continue;
-      scheduleSlots = JSON.parse(schedule.slots);
-      breaks = schedule.breaks ? JSON.parse(schedule.breaks) : null;
-    }
-
-    // `date` is stored as the full start datetime, so query the whole UTC day.
-    const dayStart = dateObj;
-    const dayEnd   = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
-    const booked = await prisma.appointment.findMany({
-      where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
-      select: { startTime: true, endTime: true },
-    });
-
-    let slots = generateSlots(scheduleSlots, breaks, duration, booked);
-
-    // Drop past slots + honor min-lead-time when the date is today. Mirrors
-    // /api/slots so the agent never offers a too-soon slot the website rejects.
-    if (nowBiz.date === date) {
-      const leadMinutes =
-        numFromCfg("minBookingLeadMinutes") ?? biz?.minBookingLeadMinutes ?? 0;
-      const firstLeadMinutes =
-        numFromCfg("firstApptLeadMinutes") ?? biz?.firstApptLeadMinutes ?? 0;
-      // No appointments yet today → the next booking IS the first of the day.
-      const effectiveLead = booked.length === 0
-        ? Math.max(firstLeadMinutes, leadMinutes)
-        : leadMinutes;
-      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes + effectiveLead);
-    }
-
-    if (slots.length) byStaff.push({ staffId: staff.id, name: staff.name, slots, load: booked.length });
-  }
-
-  // When no specific barber was requested, surface the least-busy one first.
-  if (!inputStaffId) byStaff.sort((a, b) => a.load - b.load);
-  return byStaff;
-}
-
-/**
- * Resolve a barber's EFFECTIVE duration & price for a requested service.
- * Each barber sets their own price/length via StaffService.customDuration /
- * customPrice (the schema's per-barber override) — booking MUST honor those,
- * not the catalog's base values. Also tolerates the duplicate-catalog problem
- * (the requested serviceId may be a different Service row than the one this
- * barber is linked to): falls back to a same-name, then same-duration service
- * the barber actually offers. Returns the base values only as a last resort.
- */
-async function resolveStaffService(
-  staffId: string,
-  serviceId: string,
-  reqName: string,
-  reqDuration: number,
-  reqPrice: number,
-): Promise<{ duration: number; price: number }> {
-  const ss =
-    (await prisma.staffService.findUnique({
-      where: { staffId_serviceId: { staffId, serviceId } },
-      include: { service: true },
-    })) ??
-    (await prisma.staffService.findFirst({
-      where: { staffId, service: { name: reqName } },
-      include: { service: true },
-    })) ??
-    (await prisma.staffService.findFirst({
-      where: { staffId, service: { durationMinutes: reqDuration } },
-      include: { service: true },
-    }));
-  if (!ss) return { duration: reqDuration, price: reqPrice };
-  return {
-    duration: ss.customDuration ?? ss.service.durationMinutes,
-    price:    ss.customPrice ?? ss.service.price,
-  };
-}
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
@@ -622,6 +444,19 @@ async function execTool(
         return lines.join("\n");
       }
 
+      // ── request_appointment_move ─────────────────────────────────────────────
+      case "request_appointment_move": {
+        return await requestAppointmentMove({
+          bizId,
+          conversationId,
+          callerPhone,
+          appointmentId:   input.appointmentId,
+          targetDate:      input.targetDate,
+          targetStartTime: input.targetStartTime,
+          allowOtherBarber: (input as Record<string, unknown>).allowOtherBarber === true,
+        });
+      }
+
       // ── escalate_to_human ────────────────────────────────────────────────────
       case "escalate_to_human": {
         const reason = (input.reason || "").trim() || "הלקוח ביקש לדבר עם נציג.";
@@ -752,9 +587,9 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 לפני שאתה בכלל מחפש שעות, תוודא שהבנת עד הסוף מה הלקוח רוצה — איזה יום, ובוקר/צהריים/ערב או שעה מסוימת, ואם ביקש ספר מסוים. רק כשזה ברור, קרא פעם אחת ל-get_available_slots — אל תחפש שוב ושוב באמצע. אם הלקוח לא ביקש ספר מסוים, בדוק אצל כל הספרים; אסור להגיד שאין שעה לפני שבדקת אצל כולם, ואם אצל אחד אין אבל אצל אחר יש — תגיד שיש ואצל מי. הצג ללקוח רק את השעות שמתאימות למה שביקש (למשל רק שעות ערב אם ביקש ערב), לא רשימה ענקית. אם הוא מבקש "מה עוד יש" או אפשרויות נוספות — תן לו עוד מתוך אותן שעות שכבר קיבלת, בלי לחפש מחדש.
 
-כדי להזיז או לשנות תור: קודם מצא את התור הקיים עם check_appointment, ספר ללקוח מה קבוע לו, ואחרי שהוא מאשר — בטל את הישן עם cancel_appointment וקבע את החדש עם book_appointment. אל תבקש ממנו פרטים שכבר יש לך מהתור הקיים.
+כדי להזיז או לשנות תור קיים לזמן אחר: קודם מצא את התור עם check_appointment, ודא מול הלקוח לאיזה תאריך ושעה הוא רוצה לעבור, ואז קרא ל-request_appointment_move עם מזהה התור והזמן הרצוי. הכלי מטפל בהכל לבד — אם פנוי הוא מעביר מיד, ואם לא הוא מבקש אישור מהספר ומסדר החלפה מול לקוח אחר. אל תבטל ותקבע מחדש כדי להזיז זמן, ואל תבטיח ללקוח שעה תפוסה לפני שהכלי החזיר תשובה — קרא את מה שהכלי מחזיר ופעל לפיו. (לביטול מלא בלי זמן חלופי השתמש ב-cancel_appointment כרגיל.)
 
-יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
 }
 
 function buildSystemPrompt(params: {

@@ -23,6 +23,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
+import {
+  handleStaffApprovalReply,
+  handleCandidateReply,
+  expireStaleAgentSwaps,
+} from "@/lib/agent/appointment-swap";
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
@@ -167,6 +172,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!biz) {
     console.error("[webhook] no business found");
     return NextResponse.json({ ok: false, error: "no business" }, { status: 404 });
+  }
+
+  // ── 0. Agent move/swap reply routing ────────────────────────────────────────
+  // Before anything else: lazily expire stale agent-initiated swap requests
+  // (there is no cron — every inbound message drives expiry), then check whether
+  // THIS message is a barber approving/declining a swap, or a candidate customer
+  // answering a swap offer. If so it's a transactional reply — handle it and stop
+  // here so it never reaches the booking agent or the customer chat inbox.
+  await expireStaleAgentSwaps(biz.id).catch((e) => console.error("[swap expiry]", e));
+  try {
+    if (await handleStaffApprovalReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_staff_reply" });
+    }
+    if (await handleCandidateReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_candidate_reply" });
+    }
+  } catch (e) {
+    console.error("[swap reply routing]", e);
   }
 
   // ── 1. Always persist the incoming message ──────────────────────────────────
