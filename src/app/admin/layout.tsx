@@ -104,9 +104,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (cancelled || document.visibilityState !== "visible") return;
       fetch("/api/admin/chats")
         .then(r => r.ok ? r.json() : [])
-        .then((list: { unreadCount: number }[]) => {
+        .then((list: { needsHuman?: boolean }[]) => {
           if (cancelled) return;
-          const total = Array.isArray(list) ? list.reduce((s, c) => s + (c.unreadCount || 0), 0) : 0;
+          // Red badge = number of conversations needing a human (escalated or
+          // agent off). Agent-handled chats never count — no nagging while the
+          // agent is doing its job.
+          const total = Array.isArray(list) ? list.filter(c => c.needsHuman).length : 0;
           setUnreadChats(total);
         })
         .catch(() => {});

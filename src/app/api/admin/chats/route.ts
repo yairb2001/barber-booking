@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { tierHas } from "@/lib/tier";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -21,9 +22,18 @@ export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await getSessionBusiness(req, { id: true, chatsEnabled: true });
+  const business = await getSessionBusiness(req, { id: true, chatsEnabled: true, tier: true });
   if (!business) return NextResponse.json([]);
   if (!business.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
+
+  // Is the AI agent active for this business at all? When it's globally off (or
+  // not included in the tier), EVERY conversation needs a human — there's no
+  // agent answering — so they all count as "needs human attention".
+  const agentConfig = await prisma.agentConfig.findUnique({
+    where: { businessId: business.id },
+    select: { isEnabled: true },
+  });
+  const agentGloballyOn = !!agentConfig?.isEnabled && tierHas(business.tier, "aiAgent");
 
   // Permission enforcement: a barber may only read the shared inbox when granted
   // "view all chats" (per-staff flag OR business-wide flag). Otherwise no access.
@@ -66,14 +76,22 @@ export async function GET(req: NextRequest) {
     const last = c.messages[0];
     const escalated = !!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS;
 
-    // Unread = number of "user" messages newer than lastReadAt
-    const unreadCount = await prisma.conversationMessage.count({
+    // A conversation "needs human" when the agent is NOT handling it: either it
+    // was escalated / a human took over (escalatedAt within 24h), or the agent
+    // is globally off for the business. While the agent IS handling a chat we
+    // deliberately surface NO red alert — the owner shouldn't be nagged.
+    const needsHuman = escalated || !agentGloballyOn;
+
+    // Unread = number of "user" messages newer than lastReadAt — but ONLY for
+    // conversations that need a human. Agent-handled chats never show a red dot.
+    const rawUnread = await prisma.conversationMessage.count({
       where: {
         conversationId: c.id,
         role: "user",
         ...(c.lastReadAt ? { createdAt: { gt: c.lastReadAt } } : {}),
       },
     });
+    const unreadCount = needsHuman ? rawUnread : 0;
 
     // Resolve display name in priority order:
     //   1. Linked customer in DB (most reliable — name they registered with)
@@ -89,12 +107,17 @@ export async function GET(req: NextRequest) {
       customerName,
       status: c.status,
       escalated,
+      needsHuman,
       lastMessageAt: c.lastMessageAt,
       lastMessageSnippet: last?.content?.slice(0, 80) ?? "",
       lastMessageRole: last?.role ?? null,
       unreadCount,
     };
   }));
+
+  // Conversations needing a human float to the TOP; within each group keep the
+  // most-recent-first order from the query (lastMessageAt desc).
+  data.sort((a, b) => Number(b.needsHuman) - Number(a.needsHuman));
 
   return NextResponse.json(data);
 }

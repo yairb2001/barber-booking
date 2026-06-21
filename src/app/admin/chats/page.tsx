@@ -8,6 +8,7 @@ type ChatListItem = {
   customerName: string | null;
   status: string;
   escalated: boolean;
+  needsHuman: boolean;
   lastMessageAt: string | null;
   lastMessageSnippet: string;
   lastMessageRole: string | null;
@@ -141,6 +142,51 @@ export default function ChatsPage() {
     return (c.customerName?.toLowerCase().includes(q) ?? false) || c.phone.includes(q);
   });
 
+  // Two buckets: conversations that need a human (escalated / agent off) float
+  // to the top with a red alert; agent-handled conversations sit below, calm,
+  // with no red dot at all. The API already sorts needsHuman first, but we split
+  // explicitly so we can show a divider header between the groups.
+  const needsHumanChats = filteredChats.filter(c => c.needsHuman);
+  const agentChats = filteredChats.filter(c => !c.needsHuman);
+
+  const renderRow = (c: ChatListItem) => (
+    <button
+      key={c.id}
+      onClick={() => setSelId(c.id)}
+      className={`w-full text-right px-4 py-3 border-b border-slate-100 transition ${
+        selId === c.id
+          ? "bg-teal-50"
+          : c.needsHuman
+            ? "bg-red-50 hover:bg-red-100 border-r-4 border-r-red-500"
+            : "hover:bg-slate-50"
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className="font-semibold text-sm text-slate-900 truncate flex items-center gap-1.5">
+          {c.needsHuman && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
+          {c.customerName || c.phone}
+        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {c.needsHuman && (
+            <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full font-semibold">
+              {c.escalated ? "🔴 דורש טיפול" : "🔴 סוכן כבוי"}
+            </span>
+          )}
+          {c.unreadCount > 0 && (
+            <span className="bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
+              {c.unreadCount > 99 ? "99+" : c.unreadCount}
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="text-xs text-slate-500 truncate" dir="auto">
+        {c.lastMessageRole === "assistant" && <span className="text-slate-400">→ </span>}
+        {c.lastMessageSnippet || "—"}
+      </p>
+      <p className="text-[10px] text-slate-400 mt-1">{timeAgo(c.lastMessageAt)}</p>
+    </button>
+  );
+
   return (
     <div className="flex h-full bg-slate-50">
 
@@ -165,34 +211,20 @@ export default function ChatsPage() {
               <p className="text-sm">{search ? "לא נמצאו תוצאות" : "אין שיחות"}</p>
             </div>
           ) : (
-            filteredChats.map(c => (
-              <button
-                key={c.id}
-                onClick={() => setSelId(c.id)}
-                className={`w-full text-right px-4 py-3 border-b border-slate-100 transition ${
-                  selId === c.id ? "bg-teal-50" : "hover:bg-slate-50"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="font-semibold text-sm text-slate-900 truncate">
-                    {c.customerName || c.phone}
-                  </span>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {c.escalated && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-semibold">🤖 כבוי</span>}
-                    {c.unreadCount > 0 && (
-                      <span className="bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                        {c.unreadCount > 99 ? "99+" : c.unreadCount}
-                      </span>
-                    )}
-                  </div>
+            <>
+              {needsHumanChats.length > 0 && (
+                <div className="px-4 py-1.5 bg-red-100/60 text-red-700 text-[11px] font-bold sticky top-0 z-10">
+                  🔴 דורש טיפול אנושי ({needsHumanChats.length})
                 </div>
-                <p className="text-xs text-slate-500 truncate" dir="auto">
-                  {c.lastMessageRole === "assistant" && <span className="text-slate-400">→ </span>}
-                  {c.lastMessageSnippet || "—"}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-1">{timeAgo(c.lastMessageAt)}</p>
-              </button>
-            ))
+              )}
+              {needsHumanChats.map(renderRow)}
+              {agentChats.length > 0 && (
+                <div className="px-4 py-1.5 bg-slate-100 text-slate-500 text-[11px] font-bold sticky top-0 z-10">
+                  🤖 מטופל ע״י הסוכן ({agentChats.length})
+                </div>
+              )}
+              {agentChats.map(renderRow)}
+            </>
           )}
         </div>
       </aside>
