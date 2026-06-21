@@ -90,6 +90,49 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Wrap everything in try/catch so Green API always gets 200
   try {
 
+  // ── Manual reply typed on the real WhatsApp app → mute the agent ────────────
+  // GreenAPI fires `outgoingMessageReceived` ONLY for messages typed on the
+  // phone itself. Messages we send through the API (agent replies, reminders,
+  // confirmations) arrive as `outgoingAPIMessageReceived`, which we deliberately
+  // ignore here — otherwise the agent would mute itself on every reply. A
+  // phone-typed message means the owner/barber took over the chat, so we mute
+  // the agent for 24h exactly like a manual reply from the admin platform.
+  // (Requires `outgoingMessageWebhook: "yes"` in the GreenAPI instance settings.)
+  if (body.typeWebhook === "outgoingMessageReceived") {
+    const outPhone = normalizeIsraeliPhone(phoneFromChatId(body.senderData?.chatId ?? ""));
+    const outText = extractText(body);
+    if (!outPhone || !outText?.trim()) {
+      return NextResponse.json({ ok: true, skipped: "outgoing-empty" });
+    }
+    const outInstance = body.instanceData?.idInstance;
+    const outInstanceStr = outInstance != null ? String(outInstance) : null;
+    let outBiz = outInstanceStr
+      ? await prisma.business.findFirst({ where: { greenApiInstanceId: outInstanceStr }, select: { id: true } })
+      : null;
+    if (!outBiz && !outInstanceStr) outBiz = await fallbackBusiness({ select: { id: true } });
+    if (!outBiz) return NextResponse.json({ ok: true, skipped: "outgoing-no-biz" });
+
+    let outConv = await prisma.conversation.findFirst({
+      where: { businessId: outBiz.id, phone: outPhone },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!outConv) {
+      outConv = await prisma.conversation.create({
+        data: { businessId: outBiz.id, phone: outPhone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+      });
+    }
+    // Mirror the admin-platform manual reply: record it (role=assistant,
+    // source=admin) so it shows in the chat UI, and mute the agent for 24h.
+    await prisma.conversationMessage.create({
+      data: { conversationId: outConv.id, role: "assistant", source: "admin", content: outText.trim() },
+    });
+    await prisma.conversation.update({
+      where: { id: outConv.id },
+      data: { escalatedAt: new Date(), lastMessageAt: new Date(), lastReadAt: new Date() },
+    });
+    return NextResponse.json({ ok: true, mutedByManualReply: true });
+  }
+
   // Only handle incoming text messages
   if (body.typeWebhook !== "incomingMessageReceived") {
     return NextResponse.json({ ok: true, skipped: true });
