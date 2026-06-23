@@ -44,21 +44,22 @@ const COLORS = [
 // length: longer services get a bolder, more prominent shade so the big jobs pop.
 // Tailwind needs full literal class names (no string interpolation) to keep them
 // from being purged — hence the spelled-out 3-tier families below.
-// Backgrounds use an opacity suffix (/65, /70, /80) so blocks read as soft,
-// slightly see-through tints rather than solid fills — the grid lines behind
-// stay faintly visible.
+// Backgrounds use a low opacity suffix (/30, /35, /55) so blocks read as very
+// soft, delicate see-through tints rather than solid fills — the grid lines
+// behind stay clearly visible. The long/prominent tier stays a touch stronger
+// so it still stands out.
 const STAFF_COLOR_FAMILIES: [string, string, string][] = [
   // [short / light, medium, long / prominent]
-  ["bg-sky-100/65 text-sky-900 border-sky-300",         "bg-sky-200/70 text-sky-900 border-sky-400",         "bg-sky-500/80 text-white border-sky-700"],
-  ["bg-emerald-100/65 text-emerald-900 border-emerald-300", "bg-emerald-200/70 text-emerald-900 border-emerald-400", "bg-emerald-500/80 text-white border-emerald-700"],
-  ["bg-violet-100/65 text-violet-900 border-violet-300", "bg-violet-200/70 text-violet-900 border-violet-400", "bg-violet-500/80 text-white border-violet-700"],
-  ["bg-rose-100/65 text-rose-900 border-rose-300",       "bg-rose-200/70 text-rose-900 border-rose-400",       "bg-rose-500/80 text-white border-rose-700"],
-  ["bg-amber-100/65 text-amber-900 border-amber-300",    "bg-amber-200/70 text-amber-900 border-amber-400",    "bg-amber-500/80 text-white border-amber-700"],
-  ["bg-cyan-100/65 text-cyan-900 border-cyan-300",       "bg-cyan-200/70 text-cyan-900 border-cyan-400",       "bg-cyan-500/80 text-white border-cyan-700"],
-  ["bg-fuchsia-100/65 text-fuchsia-900 border-fuchsia-300", "bg-fuchsia-200/70 text-fuchsia-900 border-fuchsia-400", "bg-fuchsia-500/80 text-white border-fuchsia-700"],
-  ["bg-orange-100/65 text-orange-900 border-orange-300", "bg-orange-200/70 text-orange-900 border-orange-400", "bg-orange-500/80 text-white border-orange-700"],
-  ["bg-teal-100/65 text-teal-900 border-teal-300",       "bg-teal-200/70 text-teal-900 border-teal-400",       "bg-teal-500/80 text-white border-teal-700"],
-  ["bg-indigo-100/65 text-indigo-900 border-indigo-300", "bg-indigo-200/70 text-indigo-900 border-indigo-400", "bg-indigo-500/80 text-white border-indigo-700"],
+  ["bg-sky-100/30 text-sky-900 border-sky-300",         "bg-sky-200/35 text-sky-900 border-sky-400",         "bg-sky-500/55 text-white border-sky-600"],
+  ["bg-emerald-100/30 text-emerald-900 border-emerald-300", "bg-emerald-200/35 text-emerald-900 border-emerald-400", "bg-emerald-500/55 text-white border-emerald-600"],
+  ["bg-violet-100/30 text-violet-900 border-violet-300", "bg-violet-200/35 text-violet-900 border-violet-400", "bg-violet-500/55 text-white border-violet-600"],
+  ["bg-rose-100/30 text-rose-900 border-rose-300",       "bg-rose-200/35 text-rose-900 border-rose-400",       "bg-rose-500/55 text-white border-rose-600"],
+  ["bg-amber-100/30 text-amber-900 border-amber-300",    "bg-amber-200/35 text-amber-900 border-amber-400",    "bg-amber-500/55 text-white border-amber-600"],
+  ["bg-cyan-100/30 text-cyan-900 border-cyan-300",       "bg-cyan-200/35 text-cyan-900 border-cyan-400",       "bg-cyan-500/55 text-white border-cyan-600"],
+  ["bg-fuchsia-100/30 text-fuchsia-900 border-fuchsia-300", "bg-fuchsia-200/35 text-fuchsia-900 border-fuchsia-400", "bg-fuchsia-500/55 text-white border-fuchsia-600"],
+  ["bg-orange-100/30 text-orange-900 border-orange-300", "bg-orange-200/35 text-orange-900 border-orange-400", "bg-orange-500/55 text-white border-orange-600"],
+  ["bg-teal-100/30 text-teal-900 border-teal-300",       "bg-teal-200/35 text-teal-900 border-teal-400",       "bg-teal-500/55 text-white border-teal-600"],
+  ["bg-indigo-100/30 text-indigo-900 border-indigo-300", "bg-indigo-200/35 text-indigo-900 border-indigo-400", "bg-indigo-500/55 text-white border-indigo-600"],
 ];
 // Map a service duration to a prominence tier (0 = short, 1 = medium, 2 = long).
 function durationTier(durationMinutes: number): 0 | 1 | 2 {
