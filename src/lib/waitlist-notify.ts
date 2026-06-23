@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sendMessage } from "@/lib/messaging";
+import { enqueueMessage } from "@/lib/messaging";
 
 // ── Time preference helpers ───────────────────────────────────────────────────
 
@@ -119,7 +119,12 @@ export type WaitlistEntryForNotify = {
 };
 
 /**
- * Sends ONE waitlist member a "slot freed up" message and marks them "notified".
+ * ENQUEUES ONE waitlist member a "slot freed up" message and marks them
+ * "notified". BAN-SAFETY: we do NOT send immediately — a freed slot can match
+ * many waiting customers at once, which would blast the WhatsApp number. Instead
+ * we enqueue with scheduledFor=now (high priority over staggered broadcasts) and
+ * let the drip-queue cron (`/api/cron/drip-queue`) send them ~1/min per number.
+ * "notified" therefore now means "queued to notify" — still prevents re-spam.
  * Fire-and-forget (does not block the caller). Reused by both the live triggers
  * above and the daily booking-horizon cron.
  */
@@ -156,14 +161,15 @@ export function sendWaitlistEntryNotification(
     bookingLink,
   ].filter(Boolean).join("\n");
 
-  return sendMessage({
+  return enqueueMessage({
     businessId: entry.businessId,
     customerPhone: entry.customer.phone,
     kind: "waitlist_notify",
     body: lines,
+    scheduledFor: new Date(), // due now → drip cron sends it ahead of staggered broadcasts
   })
     .then(() =>
-      // Mark as notified so we don't spam them
+      // Mark as notified immediately so a repeat trigger doesn't re-enqueue.
       prisma.waitlist.update({
         where: { id: entry.id },
         data: { status: "notified" },

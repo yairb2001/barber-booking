@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, applyTemplate, firstName } from "@/lib/messaging";
+import { applyTemplate, firstName } from "@/lib/messaging";
 import { getRequestSession, getSessionBusiness, scopedStaffId } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
@@ -118,25 +118,34 @@ export async function POST(req: NextRequest) {
   const customers = await fetchFilteredCustomers(business, qs);
 
   if (customers.length === 0) {
-    return NextResponse.json({ ok: true, sent: 0, skipped: 0, total: 0 });
+    return NextResponse.json({ ok: true, queued: 0, total: 0, etaMinutes: 0 });
   }
 
-  let sent = 0, skipped = 0;
+  // BAN-SAFETY: don't blast all messages at once (that gets the WhatsApp number
+  // banned). Instead enqueue them into MessageLog with staggered `scheduledFor`
+  // timestamps; the drip-queue cron (`/api/cron/drip-queue`) drains them at
+  // ~1/min per number. Staggering into the future also lets time-sensitive
+  // waitlist notifications (scheduledFor=now) jump ahead of a long broadcast.
+  const BROADCAST_INTERVAL_SEC = 60; // ~1 message per minute
+  const now = Date.now();
 
-  const results = await Promise.allSettled(
-    customers.map(async (customer) => {
-      const personalizedMsg = applyTemplate(message, { name: firstName(customer.name) });
-      await sendMessage({
-        businessId: business.id,
-        customerPhone: customer.phone,
-        kind: "broadcast",
-        body: personalizedMsg,
-      });
-    })
-  );
+  const rows = customers.map((customer, i) => {
+    const jitterMs = Math.floor((Math.random() * 20 - 10) * 1000); // ±10s
+    const scheduledFor = new Date(now + i * BROADCAST_INTERVAL_SEC * 1000 + jitterMs);
+    return {
+      businessId: business.id,
+      customerPhone: customer.phone,
+      kind: "broadcast",
+      body: applyTemplate(message, { name: firstName(customer.name) }),
+      status: "scheduled",
+      scheduledFor,
+    };
+  });
 
-  results.forEach(r => (r.status === "fulfilled" ? sent++ : skipped++));
-  return NextResponse.json({ ok: true, sent, skipped, total: customers.length });
+  await prisma.messageLog.createMany({ data: rows });
+
+  const etaMinutes = Math.ceil((customers.length * BROADCAST_INTERVAL_SEC) / 60);
+  return NextResponse.json({ ok: true, queued: customers.length, total: customers.length, etaMinutes });
 }
 
 // GET /api/admin/messaging/broadcast — broadcast history

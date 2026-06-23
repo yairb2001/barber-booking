@@ -18,7 +18,7 @@ type MessageLog = {
   sentAt: string | null;
 };
 
-type BroadcastResult = { ok: boolean; sent: number; skipped: number; total: number };
+type BroadcastResult = { ok: boolean; queued: number; total: number; etaMinutes: number };
 
 // ── Audience & filter config ──────────────────────────────────────────────────
 const UPCOMING_OPTIONS: { value: UpcomingPeriod; label: string }[] = [
@@ -336,7 +336,7 @@ export default function MessagingPage() {
           {result && (
             <div className={`rounded-xl px-4 py-3 text-sm font-medium ${result.ok ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
               {result.ok
-                ? `✓ נשלח בהצלחה! — ${result.sent} נמענים${result.skipped > 0 ? ` (${result.skipped} נכשלו)` : ""}`
+                ? `✓ ${result.queued} הודעות נקבעו לשליחה — יישלחו בהדרגה (~1 לדקה, כ-${result.etaMinutes} דק׳) כדי לא לסכן את המספר בחסימה`
                 : "❌ שגיאה בשליחה"}
             </div>
           )}

@@ -40,7 +40,9 @@ export type MessageKind =
   | "barber_daily_summary";
 
 export type MessageStatus =
+  | "scheduled" // enqueued in the drip queue, waiting for its scheduledFor time
   | "queued"
+  | "sending"   // claimed by the drip cron, mid-send (prevents double-send)
   | "sent"
   | "delivered"
   | "read"

@@ -99,10 +99,11 @@ model MessageLog {
   appointmentId String?  @map("appointment_id")
   customerPhone String   @map("customer_phone")
   kind          String   // confirmation | reminder_24h | otp | broadcast | manual | agent_reply
-  status        String   @default("queued") // queued | sent | delivered | read | failed
+  status        String   @default("queued") // scheduled | queued | sending | sent | delivered | read | failed
   providerId    String?  @map("provider_id")   // ID from WhatsApp provider
   body          String
   error         String?
+  scheduledFor  DateTime? @map("scheduled_for") // when a drip-queued message is due to send (null = sent immediately)
   createdAt     DateTime @default(now()) @map("created_at")
   sentAt        DateTime? @map("sent_at")
   deliveredAt   DateTime? @map("delivered_at")
@@ -112,6 +113,7 @@ model MessageLog {
 
   @@index([businessId, createdAt])
   @@index([appointmentId])
+  @@index([status, scheduledFor])
   @@map("message_logs")
 }
 

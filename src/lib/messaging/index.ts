@@ -135,6 +135,54 @@ export function reminderVars(params: {
   };
 }
 
+/** Minimal shape of a MessageLog row needed to deliver it. */
+type DeliverableLog = {
+  id: string;
+  customerPhone: string;
+  body: string;
+};
+
+/** Minimal shape of a Business needed to build a provider. */
+type ProviderBusiness = {
+  messagingProvider: string | null;
+  whatsappNumber: string | null;
+  greenApiInstanceId: string | null;
+  greenApiToken: string | null;
+};
+
+/**
+ * Deliver an EXISTING MessageLog row: resolve the provider, send the text, and
+ * update the row to "sent"/"failed". Shared by sendMessage() (immediate path)
+ * and the drip-queue cron (deferred path). Does not create a new log row.
+ */
+export async function deliverMessageLog(
+  log: DeliverableLog,
+  business: ProviderBusiness,
+): Promise<SendResult> {
+  const provider = providerForBusiness(business);
+  if (!provider || !provider.isConfigured()) {
+    await prisma.messageLog.update({
+      where: { id: log.id },
+      data: { status: "failed", error: "provider_not_configured" },
+    });
+    return { ok: false, error: "provider_not_configured" };
+  }
+
+  const result = await provider.sendText(log.customerPhone, log.body);
+
+  await prisma.messageLog.update({
+    where: { id: log.id },
+    data: {
+      status: result.ok ? "sent" : "failed",
+      providerId: result.providerId,
+      error: result.error,
+      sentAt: result.ok ? new Date() : null,
+    },
+  });
+
+  return result;
+}
+
 /**
  * Send a WhatsApp message and log it to MessageLog.
  * Silently no-ops if the business has no provider configured.
@@ -163,28 +211,34 @@ export async function sendMessage(opts: {
     },
   });
 
-  const provider = providerForBusiness(business);
-  if (!provider || !provider.isConfigured()) {
-    await prisma.messageLog.update({
-      where: { id: log.id },
-      data: { status: "failed", error: "provider_not_configured" },
-    });
-    return { ok: false, error: "provider_not_configured" };
-  }
+  return deliverMessageLog(log, business);
+}
 
-  const result = await provider.sendText(opts.customerPhone, opts.body);
-
-  await prisma.messageLog.update({
-    where: { id: log.id },
+/**
+ * Enqueue a WhatsApp message for deferred delivery by the drip-queue cron
+ * (`/api/cron/drip-queue`). Creates a MessageLog row with status "scheduled"
+ * and a `scheduledFor` timestamp; does NOT send. Used for the bulk paths
+ * (broadcast, waitlist) so a single number never blasts many messages at once.
+ */
+export async function enqueueMessage(opts: {
+  businessId: string;
+  appointmentId?: string;
+  customerPhone: string;
+  kind: MessageKind;
+  body: string;
+  scheduledFor: Date;
+}): Promise<void> {
+  await prisma.messageLog.create({
     data: {
-      status: result.ok ? "sent" : "failed",
-      providerId: result.providerId,
-      error: result.error,
-      sentAt: result.ok ? new Date() : null,
+      businessId: opts.businessId,
+      appointmentId: opts.appointmentId || null,
+      customerPhone: opts.customerPhone,
+      kind: opts.kind,
+      body: opts.body,
+      status: "scheduled",
+      scheduledFor: opts.scheduledFor,
     },
   });
-
-  return result;
 }
 
 // ── Default templates ────────────────────────────────────────────────────────
