@@ -3109,8 +3109,33 @@ function DraftApptBlock({
   const [transX, setTransX] = React.useState(0);
   void staffName;
 
+  // ── Keep the mobile action pill inside the viewport ──
+  // The pill is centered over a narrow column, so on the edge columns it would
+  // overflow off-screen (e.g. "+ קבע" clipped on the left). Measure the block's
+  // position after layout and nudge the pill horizontally so it stays visible.
+  const blockRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLDivElement>(null);
+  const [pillShift, setPillShift] = React.useState(0);
+  React.useLayoutEffect(() => {
+    if (!isMobile) return;
+    const block = blockRef.current, pill = pillRef.current;
+    if (!block || !pill) return;
+    const br = block.getBoundingClientRect();
+    const pw = pill.offsetWidth;
+    const centerX = br.left + br.width / 2;
+    const margin = 6;
+    const vw = window.innerWidth;
+    let shift = 0;
+    const left = centerX - pw / 2;
+    const right = centerX + pw / 2;
+    if (left < margin) shift = margin - left;
+    else if (right > vw - margin) shift = (vw - margin) - right;
+    setPillShift(Math.round(shift));
+  }, [isMobile, time, transX, clampedTop]);
+
   return (
     <div
+      ref={blockRef}
       className="no-touch-select absolute left-1 right-1 select-none cursor-grab active:cursor-grabbing"
       style={{
         top: clampedTop,
@@ -3172,7 +3197,9 @@ function DraftApptBlock({
               start-line marker so it never covers the calendar grid/day headers.
               Buttons stopPropagation so taps don't start a drag. */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white rounded-full shadow-xl ring-1 ring-slate-200 pl-1.5 pr-2 py-1 whitespace-nowrap z-50 ${clampedTop < 60 ? "top-full mt-2" : "-top-12"}`}>
+            ref={pillRef}
+            style={{ transform: `translateX(calc(-50% + ${pillShift}px))` }}
+            className={`absolute left-1/2 flex items-center gap-1.5 bg-white rounded-full shadow-xl ring-1 ring-slate-200 pl-1.5 pr-2 py-1 whitespace-nowrap z-50 ${clampedTop < 60 ? "top-full mt-2" : "-top-12"}`}>
             <button
               className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-sm leading-none transition"
               onPointerDown={e => e.stopPropagation()}
