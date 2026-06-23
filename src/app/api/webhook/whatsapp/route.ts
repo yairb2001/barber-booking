@@ -44,6 +44,7 @@ export const maxDuration = 60; // seconds — needed for Claude API call
 // Green API webhook body types
 interface GreenApiWebhook {
   typeWebhook: string;
+  idMessage?: string;          // unique message ID from Green API — used for dedup
   instanceData?: { idInstance: string | number };
   senderData?: {
     chatId: string;
@@ -211,6 +212,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
   }
+
+  // ── Idempotency guard ───────────────────────────────────────────────────────
+  // Green API occasionally delivers the same webhook twice (network retry).
+  // Primary key: idMessage from the payload (when present).
+  // Fallback: same content within the last 30 s in this conversation.
+  // In either case return 200 immediately so Green API stops retrying.
+  const DEDUP_WINDOW_MS = 30_000;
+  const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS);
+  const existingMsg = await prisma.conversationMessage.findFirst({
+    where: {
+      conversationId: conv.id,
+      role: "user",
+      content: text,
+      createdAt: { gte: dedupSince },
+    },
+    select: { id: true },
+  });
+  if (existingMsg) {
+    console.warn(`[webhook] duplicate message skipped — conv=${conv.id} idMessage=${body.idMessage ?? "n/a"}`);
+    return NextResponse.json({ ok: true, skipped: "duplicate_message" });
+  }
+
   await prisma.conversationMessage.create({
     data: { conversationId: conv.id, role: "user", source: "agent", content: text },
   });
