@@ -38,27 +38,36 @@ const COLORS = [
   { bg: "bg-cyan-500",   light: "bg-cyan-100 text-cyan-900 border-cyan-300" },
 ];
 
-// Per-service colors — so different services are visually distinguishable in the
-// calendar (a haircut reads differently from a beard trim, etc.). The color is a
-// deterministic hash of the service id → a stable palette slot, so the same
-// service always gets the same color without needing extra config. Soft tints
-// keep the dark text readable.
-const SERVICE_COLORS = [
-  "bg-amber-100 text-amber-900 border-amber-300",
-  "bg-sky-100 text-sky-900 border-sky-300",
-  "bg-emerald-100 text-emerald-900 border-emerald-300",
-  "bg-violet-100 text-violet-900 border-violet-300",
-  "bg-rose-100 text-rose-900 border-rose-300",
-  "bg-cyan-100 text-cyan-900 border-cyan-300",
-  "bg-lime-100 text-lime-900 border-lime-300",
-  "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300",
-  "bg-orange-100 text-orange-900 border-orange-300",
-  "bg-teal-100 text-teal-900 border-teal-300",
+// Per-barber appointment colors. Each barber gets a distinct hue (a deterministic
+// hash of the staff id → a stable color family), so at a glance you can tell whose
+// appointment is whose. WITHIN a barber's hue, the shade scales with service
+// length: longer services get a bolder, more prominent shade so the big jobs pop.
+// Tailwind needs full literal class names (no string interpolation) to keep them
+// from being purged — hence the spelled-out 3-tier families below.
+const STAFF_COLOR_FAMILIES: [string, string, string][] = [
+  // [short / light, medium, long / prominent]
+  ["bg-sky-100 text-sky-900 border-sky-300",         "bg-sky-200 text-sky-900 border-sky-400",         "bg-sky-500 text-white border-sky-700"],
+  ["bg-emerald-100 text-emerald-900 border-emerald-300", "bg-emerald-200 text-emerald-900 border-emerald-400", "bg-emerald-500 text-white border-emerald-700"],
+  ["bg-violet-100 text-violet-900 border-violet-300", "bg-violet-200 text-violet-900 border-violet-400", "bg-violet-500 text-white border-violet-700"],
+  ["bg-rose-100 text-rose-900 border-rose-300",       "bg-rose-200 text-rose-900 border-rose-400",       "bg-rose-500 text-white border-rose-700"],
+  ["bg-amber-100 text-amber-900 border-amber-300",    "bg-amber-200 text-amber-900 border-amber-400",    "bg-amber-500 text-white border-amber-700"],
+  ["bg-cyan-100 text-cyan-900 border-cyan-300",       "bg-cyan-200 text-cyan-900 border-cyan-400",       "bg-cyan-500 text-white border-cyan-700"],
+  ["bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300", "bg-fuchsia-200 text-fuchsia-900 border-fuchsia-400", "bg-fuchsia-500 text-white border-fuchsia-700"],
+  ["bg-orange-100 text-orange-900 border-orange-300", "bg-orange-200 text-orange-900 border-orange-400", "bg-orange-500 text-white border-orange-700"],
+  ["bg-teal-100 text-teal-900 border-teal-300",       "bg-teal-200 text-teal-900 border-teal-400",       "bg-teal-500 text-white border-teal-700"],
+  ["bg-indigo-100 text-indigo-900 border-indigo-300", "bg-indigo-200 text-indigo-900 border-indigo-400", "bg-indigo-500 text-white border-indigo-700"],
 ];
-function serviceColorClass(serviceId: string): string {
+// Map a service duration to a prominence tier (0 = short, 1 = medium, 2 = long).
+function durationTier(durationMinutes: number): 0 | 1 | 2 {
+  if (durationMinutes >= 45) return 2;
+  if (durationMinutes >= 30) return 1;
+  return 0;
+}
+function apptColorClass(staffId: string, durationMinutes: number): string {
   let h = 0;
-  for (let i = 0; i < serviceId.length; i++) h = (h * 31 + serviceId.charCodeAt(i)) >>> 0;
-  return SERVICE_COLORS[h % SERVICE_COLORS.length];
+  for (let i = 0; i < staffId.length; i++) h = (h * 31 + staffId.charCodeAt(i)) >>> 0;
+  const family = STAFF_COLOR_FAMILIES[h % STAFF_COLOR_FAMILIES.length];
+  return family[durationTier(durationMinutes)];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -4409,7 +4418,7 @@ export default function AdminCalendar() {
                 <span className={`text-sm font-semibold ${isToday ? "text-teal-700" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
                 <div className="mt-1 space-y-0.5">
                   {dayAppts.slice(0, 3).map((a) => (
-                    <div key={a.id} className={`text-[10px] rounded px-1 truncate ${serviceColorClass(a.service.id)}`}>
+                    <div key={a.id} className={`text-[10px] rounded px-1 truncate ${apptColorClass(a.staff.id, a.service.durationMinutes)}`}>
                       {a.startTime} {a.customer.name}
                     </div>
                   ))}
@@ -4624,7 +4633,7 @@ export default function AdminCalendar() {
                           const dayAppts = getAppts(s.id, date);
                           const lanes = computeApptLanes(dayAppts);
                           return dayAppts.map(a => (
-                            <ApptBlock key={a.id} appt={a} colorClass={serviceColorClass(a.service.id)}
+                            <ApptBlock key={a.id} appt={a} colorClass={apptColorClass(a.staff.id, a.service.durationMinutes)}
                               isMoving={dragMove?.appt.id === a.id}
                               swapState={swapStateFor(a.id)}
                               lane={lanes[a.id]}
@@ -4759,7 +4768,7 @@ export default function AdminCalendar() {
                           const dayAppts = getAppts(s.id, d);
                           const lanes = computeApptLanes(dayAppts);
                           return dayAppts.map(a => (
-                            <ApptBlock key={a.id} appt={a} colorClass={serviceColorClass(a.service.id)}
+                            <ApptBlock key={a.id} appt={a} colorClass={apptColorClass(a.staff.id, a.service.durationMinutes)}
                               isMoving={dragMove?.appt.id === a.id}
                               swapState={swapStateFor(a.id)}
                               lane={lanes[a.id]}
