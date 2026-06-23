@@ -37,18 +37,23 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
-// Tools whose use means we're mid a high-stakes write flow → escalate to the
-// strong model. Availability reads (get_available_slots, find_next_available)
-// are intentionally excluded: they just format DB data, and Haiku handles that
-// fine — keeping them here was causing every slot-browse to burn Sonnet tokens.
+// Mid-loop escalation: only write operations need Sonnet mid-turn.
+// Availability reads are excluded — Haiku handles "here are the slots" fine
+// and there's no point burning Sonnet just to format a list.
 const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_appointment_move", "escalate_to_human"]);
+
+// Cross-turn context: if ANY of these ran in recent turns, the conversation is
+// in an active booking flow and the NEXT turn needs Sonnet. Availability tools
+// are included here because a follow-up turn (e.g. "can I switch to a different
+// barber?") requires Sonnet-level reasoning even though slot-listing itself doesn't.
+const BOOKING_CONTEXT_TOOLS = new Set([...SMART_TOOLS, "get_available_slots", "find_next_available"]);
 
 function pickInitialModel(
   incomingText: string,
   recentToolNames: (string | null)[]
 ): string {
   if (SMART_INTENT.test(incomingText)) return MODEL_SMART;
-  if (recentToolNames.some(t => t && SMART_TOOLS.has(t))) return MODEL_SMART;
+  if (recentToolNames.some(t => t && BOOKING_CONTEXT_TOOLS.has(t))) return MODEL_SMART;
   return MODEL_FAST;
 }
 
