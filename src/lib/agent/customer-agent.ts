@@ -37,8 +37,11 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
-// Tools whose use means we're mid high-stakes flow → escalate to the strong model.
-const SMART_TOOLS = new Set(["get_available_slots", "find_next_available", "book_appointment", "cancel_appointment", "request_appointment_move"]);
+// Tools whose use means we're mid a high-stakes write flow → escalate to the
+// strong model. Availability reads (get_available_slots, find_next_available)
+// are intentionally excluded: they just format DB data, and Haiku handles that
+// fine — keeping them here was causing every slot-browse to burn Sonnet tokens.
+const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_appointment_move", "escalate_to_human"]);
 
 function pickInitialModel(
   incomingText: string,
@@ -234,7 +237,10 @@ async function execTool(
       case "get_available_slots": {
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
         const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
-        if (!byStaff.length) return `אין תורים פנויים בתאריך ${date}.`;
+        if (!byStaff.length) {
+          console.warn(`[agent] get_available_slots returned empty — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
+          return `אין תורים פנויים בתאריך ${date}.`;
+        }
         const body = byStaff
           .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
           .join("\n");
@@ -278,6 +284,7 @@ async function execTool(
             return `התאריך הפנוי הקרוב ביותר הוא ${ds} (זו כל הזמינות באותו יום, בוקר עד ערב):\n${lines}${warn}`;
           }
         }
+        console.warn(`[agent] find_next_available returned empty — biz=${bizId} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"} scanned=${MAX_SCAN_DAYS}d`);
         return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
       }
 
