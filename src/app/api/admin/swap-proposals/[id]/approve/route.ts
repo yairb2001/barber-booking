@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOwner } from "@/lib/session";
+import { requireOwnerOrSubManager } from "@/lib/session";
 import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 
 /**
@@ -15,7 +15,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
+  const guard = await requireOwnerOrSubManager(req);
   if (guard) return guard;
 
   const result = await executeApprovedProposal(params.id);

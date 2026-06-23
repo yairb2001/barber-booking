@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { sendMessage, cancellationText } from "@/lib/messaging";
 import { pushToOwner } from "@/lib/native/push";
 
@@ -21,12 +21,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
   if (!before) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Staff scoping: barbers can only modify appointments that are currently
-  // theirs. They MAY reassign one of their own appointments to another barber
-  // (drag-to-move across columns), but cannot touch another barber's bookings.
+  // Staff scoping: a regular barber can only modify appointments that are
+  // currently theirs. A "sub-manager" (barber with the "view all calendars"
+  // permission opened by the owner) may modify and move ANY barber's
+  // appointment — same as the owner. Without that permission, a barber is
+  // locked to their own bookings.
   const session = getRequestSession(req);
   if (session && !session.isOwner && session.staffId && before.staffId !== session.staffId) {
-    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+    const perms = await getEffectivePermissions(req);
+    if (!perms.canViewAllCalendars) {
+      return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+    }
   }
 
   // Build update data

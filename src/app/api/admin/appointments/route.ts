@@ -51,8 +51,14 @@ export async function POST(req: NextRequest) {
   const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
-  // If barber → can only create appointments for themselves
-  const staffId = (!session?.isOwner && session?.staffId) ? session.staffId : body.staffId;
+  // Whose calendar does this appointment land on?
+  //  - Owner → the requested staffId (books for anyone).
+  //  - Sub-manager (barber with "view all calendars") → the requested staffId
+  //    too, so booking into another barber's column actually lands there.
+  //  - Regular barber → forced to their own staffId (can only book for self).
+  const perms = await getEffectivePermissions(req);
+  const canBookForOthers = perms.isOwner || perms.canViewAllCalendars;
+  const staffId = (!canBookForOthers && session?.staffId) ? session.staffId : body.staffId;
 
   // Find or create customer
   let customer = await prisma.customer.findUnique({

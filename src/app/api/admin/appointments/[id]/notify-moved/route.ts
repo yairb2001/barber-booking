@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession } from "@/lib/session";
 import { sendMessage, appointmentMovedText } from "@/lib/messaging";
 
 /**
@@ -15,8 +15,11 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  // Notifying a customer that their appointment moved is available to EVERYONE
+  // (any authenticated staff). The move itself is already permission-gated, so a
+  // barber who legitimately moved an appointment may always notify the customer.
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const appt = await prisma.appointment.findUnique({
     where: { id: params.id },

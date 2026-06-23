@@ -90,6 +90,29 @@ export function requireOwnStaffOrOwner(
   return null;
 }
 
+/**
+ * Guard for endpoints available to the owner OR a "sub-manager" — a barber whose
+ * "view all calendars" permission has been opened by the owner. A regular barber
+ * (permission off) is rejected with 403.
+ *
+ * Async because it reads the per-staff flag from the DB. Usage:
+ *   const guard = await requireOwnerOrSubManager(req);
+ *   if (guard) return guard;
+ */
+export async function requireOwnerOrSubManager(req: NextRequest): Promise<NextResponse | null> {
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (session.isOwner) return null;
+  const perms = await getEffectivePermissions(req);
+  if (!perms.canViewAllCalendars) {
+    return NextResponse.json(
+      { error: "פעולה זו זמינה למנהל בלבד" },
+      { status: 403 }
+    );
+  }
+  return null;
+}
+
 export type EffectivePermissions = {
   isOwner: boolean;
   staffId?: string;

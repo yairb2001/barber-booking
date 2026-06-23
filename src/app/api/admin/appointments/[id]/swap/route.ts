@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { requireOwnerOrSubManager } from "@/lib/session";
 import { sendMessage, swapProposalText, moveProposalText } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
@@ -80,7 +80,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
+  const guard = await requireOwnerOrSubManager(req);
   if (guard) return guard;
 
   const primaryId = params.id;

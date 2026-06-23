@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { requireOwnerOrSubManager } from "@/lib/session";
 
 /**
  * PATCH /api/admin/swap-proposals/[id]
@@ -17,7 +17,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
+  const guard = await requireOwnerOrSubManager(req);
   if (guard) return guard;
 
   const body = await req.json().catch(() => ({}));
@@ -76,7 +76,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const guard = requireOwner(req);
+  const guard = await requireOwnerOrSubManager(req);
   if (guard) return guard;
 
   await prisma.swapProposal.delete({ where: { id: params.id } });

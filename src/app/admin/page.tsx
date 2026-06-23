@@ -730,6 +730,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const [customerMode, setCustomerMode] = useState<"search" | "new">("search");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
+  // Per-staff services (StaffService): the EXACT services the selected barber
+  // offers, with their own custom name/price/duration. null = not loaded yet
+  // (fall back to the global list). Reloaded whenever the chosen barber changes.
+  const [staffServices, setStaffServices] = useState<Service[] | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
   // Referral tracking — required when creating a NEW customer (parity with /book/confirm)
@@ -757,7 +761,40 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
       .catch(() => {});
   }, []);
 
-  const selectedService = services.find(s => s.id === form.serviceId);
+  // Load the SELECTED barber's own services — so booking for them shows THEIR
+  // custom service names/prices/durations, not the main manager's defaults.
+  useEffect(() => {
+    if (!form.staffId) { setStaffServices(null); return; }
+    let cancelled = false;
+    fetch(`/api/admin/staff/${form.staffId}/services`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (cancelled || !data?.services) return;
+        const eff: Service[] = (data.services as Array<{
+          id: string; name: string; price: number; durationMinutes: number;
+          enabled: boolean; customName?: string | null; customPrice?: number | null; customDuration?: number | null;
+        }>)
+          .filter(s => s.enabled)
+          .map(s => ({
+            id: s.id,
+            name: s.customName || s.name,
+            price: s.customPrice ?? s.price,
+            durationMinutes: s.customDuration ?? s.durationMinutes,
+          }));
+        setStaffServices(eff);
+        // Clear a service the newly-chosen barber doesn't actually offer.
+        setForm(p => (p.serviceId && !eff.some(e => e.id === p.serviceId) ? { ...p, serviceId: "" } : p));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [form.staffId]);
+
+  // Effective service list: the barber's own services once loaded; otherwise
+  // fall back to the global pool filtered to this barber (avoids a flash of empty).
+  const availableServices: Service[] = staffServices
+    ?? services.filter(s => !s.ownerStaffId || s.ownerStaffId === form.staffId);
+
+  const selectedService = availableServices.find(s => s.id === form.serviceId);
   const endTime = selectedService
     ? minToTime(toMin(form.time) + selectedService.durationMinutes) : "";
   // Which source (owner-renamable) opens the referrer field.
@@ -779,6 +816,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         startTime: form.time,
         phone,
         customerName: name,
+        // Send the barber's CUSTOM price/duration so the appointment reflects
+        // their own pricing, not the shared service default.
+        price: selectedService?.price,
+        durationMinutes: selectedService?.durationMinutes,
         // Referral fields are only meaningful for new customers
         referralSource: customerMode === "new" ? referralSource : undefined,
         referrerPhone:  customerMode === "new" && !!friendSource && referralSource === friendSource ? referrerPhone.trim() : undefined,
@@ -904,8 +945,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             <select value={form.serviceId} onChange={e => setForm(p => ({ ...p, serviceId: e.target.value }))}
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
               <option value="">בחר שירות...</option>
-              {services
-                .filter(s => !s.ownerStaffId || s.ownerStaffId === form.staffId)
+              {availableServices
                 .map(s => <option key={s.id} value={s.id}>{s.name} – ₪{s.price} ({s.durationMinutes} דק׳)</option>)}
             </select>
             {endTime && <p className="text-xs text-neutral-400 mt-1">יסתיים בשעה {endTime}</p>}
@@ -1098,6 +1138,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
     const total = h * 60 + m + 30;
     return `${String(Math.floor(total/60)).padStart(2,"0")}:${String(total%60).padStart(2,"0")}`;
   });
+  const [name, setName] = useState("הפסקה");
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -1114,8 +1155,8 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
     const existingBreaks = overrideRes?.breaks ? JSON.parse(overrideRes.breaks) : (baseSchedule?.breaks ? JSON.parse(baseSchedule.breaks || "[]") : []);
     const existingSlots = overrideRes?.slots ? JSON.parse(overrideRes.slots) : baseSlots;
 
-    // Add the new break
-    const newBreaks = [...existingBreaks, { start, end }];
+    // Add the new break (with its name, set before creation)
+    const newBreaks = [...existingBreaks, { start, end, name: name.trim() || "הפסקה" }];
 
     await fetch(`/api/admin/staff/${staffId}/schedule/override`, {
       method: "POST",
@@ -1136,6 +1177,12 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-white rounded-2xl w-80 shadow-2xl p-5" onClick={e => e.stopPropagation()}>
         <h3 className="font-bold text-neutral-900 mb-4">הוספת הפסקה</h3>
+        <div className="mb-3">
+          <label className="text-xs text-neutral-500 block mb-1">שם ההפסקה</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)}
+            placeholder="הפסקה" maxLength={40}
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div>
             <label className="text-xs text-neutral-500 block mb-1">מ</label>
@@ -3110,7 +3157,7 @@ function DraftApptBlock({
         <div className="relative w-full h-full">
           {/* Floating time bubble — above the frame (or below near the very top) */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-sm font-extrabold px-3.5 py-1 rounded-full shadow-lg ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 38 ? "top-full mt-1.5" : "-top-8"}`}
+            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-base font-extrabold px-4 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 52 ? "top-full mt-2.5" : "-top-11"}`}
             dir="ltr">
             {time}
           </div>
@@ -4515,7 +4562,7 @@ export default function AdminCalendar() {
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
                               style={{ top: ghostTop, height: ghostH, borderColor: "#10b981", background: "rgba(16,185,129,0.18)" }}>
                               {/* Time bubble — above the ghost, so finger doesn't cover it */}
-                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-base font-extrabold px-3.5 py-1 rounded-full shadow-xl ring-2 ring-white whitespace-nowrap ${ghostTop < 52 ? "top-full mt-2.5" : "-top-10"}`} dir="ltr">
                                 {dragMove.dropTarget!.startTime}
                               </div>
                               <div className="flex flex-col items-center justify-center h-full">
@@ -4651,7 +4698,7 @@ export default function AdminCalendar() {
                           return (
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
                               style={{ top: ghostTop, height: ghostH, borderColor: "#10b981", background: "rgba(16,185,129,0.18)" }}>
-                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-lg whitespace-nowrap ${ghostTop < 36 ? "top-full mt-1" : "-top-6"}`} dir="ltr">
+                              <div className={`absolute left-1/2 -translate-x-1/2 bg-emerald-700 text-white text-base font-extrabold px-3.5 py-1 rounded-full shadow-xl ring-2 ring-white whitespace-nowrap ${ghostTop < 52 ? "top-full mt-2.5" : "-top-10"}`} dir="ltr">
                                 {dragMove.dropTarget!.startTime}
                               </div>
                               <div className="flex flex-col items-center justify-center h-full">

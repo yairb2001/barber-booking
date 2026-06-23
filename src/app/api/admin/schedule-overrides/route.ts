@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 
 /**
  * GET /api/admin/schedule-overrides?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
@@ -20,13 +20,20 @@ export async function GET(req: NextRequest) {
   const start = new Date(startDate + "T00:00:00.000Z");
   const end   = new Date(endDate   + "T23:59:59.999Z");
 
+  // A sub-manager (barber with "view all calendars") sees EVERY barber's
+  // overrides — otherwise they can't tell another barber closed their day and
+  // would wrongly think the slot is bookable. A regular barber sees only their
+  // own; the owner sees all.
+  const perms = await getEffectivePermissions(req);
+  const seesAll = perms.isOwner || perms.canViewAllCalendars;
+
   // Scope to this business's staff only
   const overrides = await prisma.staffScheduleOverride.findMany({
     where: {
       staff: { businessId: session.businessId },
       date: { gte: start, lte: end },
-      // Barbers only see their own overrides
-      ...(session.isOwner ? {} : { staffId: session.staffId }),
+      // Regular barbers only see their own overrides
+      ...(seesAll ? {} : { staffId: session.staffId }),
     },
     select: {
       staffId: true,

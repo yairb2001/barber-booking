@@ -1,13 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getSessionBusiness, requireOwnStaffOrOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, getEffectivePermissions, requireOwnStaffOrOwner } from "@/lib/session";
 
 // GET /api/admin/staff/[id]/services — all services with whether this staff offers them
 // Returns: shared (owner-managed) services + this barber's own services.
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = requireOwnStaffOrOwner(req, params.id);
-  if (guard) return guard;
   const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Owner and own-self may always read. A sub-manager (barber with "view all
+  // calendars") may also READ another barber's services — needed so booking
+  // into that barber's calendar shows their custom service names/prices.
+  if (!session.isOwner && session.staffId !== params.id) {
+    const perms = await getEffectivePermissions(req);
+    if (!perms.canViewAllCalendars) {
+      return NextResponse.json({ error: "אין הרשאה למשאב זה" }, { status: 403 });
+    }
+  }
 
   const [allServices, staffServices, business] = await Promise.all([
     // Shared pool (ownerStaffId = null) + services owned by this barber.
