@@ -352,22 +352,36 @@ async function execTool(
         const endDate  = new Date(startDateTime.getTime() + eff.duration * 60_000);
         const endTime  = endDate.toISOString().slice(11, 16);
 
-        // Create appointment
-        const appt = await prisma.appointment.create({
-          data: {
-            businessId: bizId,
-            customerId: customer.id,
-            staffId,
-            serviceId,
-            date:      apptDate,
-            startTime,
-            endTime,
-            status:    "confirmed",
-            price:     eff.price,
-            referralSource: "whatsapp_agent",
-            source:    "agent",
-          },
-        });
+        // Create appointment — guarded by a partial unique index on
+        // (staff_id, date, start_time) WHERE status IN ('pending','confirmed').
+        // If two requests race past the availability guard above, the DB will
+        // reject the second one with a unique-violation (P2002) instead of
+        // silently creating a double-booking.
+        let appt;
+        try {
+          appt = await prisma.appointment.create({
+            data: {
+              businessId: bizId,
+              customerId: customer.id,
+              staffId,
+              serviceId,
+              date:      apptDate,
+              startTime,
+              endTime,
+              status:    "confirmed",
+              price:     eff.price,
+              referralSource: "whatsapp_agent",
+              source:    "agent",
+            },
+          });
+        } catch (err: unknown) {
+          // Unique-violation = slot was grabbed by another customer between the
+          // guard check and this insert. Tell the model to offer an alternative.
+          if ((err as { code?: string }).code === "P2002") {
+            return `שגיאה: השעה ${startTime} ב-${date} אצל ${staff.name} נתפסה הרגע ע"י לקוח אחר. קרא ל-find_next_available כדי לראות מה פנוי ולהציע ללקוח חלופה.`;
+          }
+          throw err;
+        }
 
         return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}`;
       }
