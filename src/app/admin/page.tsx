@@ -3155,11 +3155,25 @@ function DraftApptBlock({
         //    invisible hit area (blockH) keeps it easy to grab. The time floats
         //    above the frame with a gap so the finger never hides it.
         <div className="relative w-full h-full">
-          {/* Floating time bubble — above the frame (or below near the very top) */}
+          {/* Floating action pill — time + compact buttons, attached right by the
+              start-line marker so it never covers the calendar grid/day headers.
+              Buttons stopPropagation so taps don't start a drag. */}
           <div
-            className={`absolute left-1/2 -translate-x-1/2 bg-teal-700 text-white text-base font-extrabold px-4 py-1 rounded-full shadow-xl ring-2 ring-white pointer-events-none whitespace-nowrap z-50 ${clampedTop < 52 ? "top-full mt-2.5" : "-top-11"}`}
-            dir="ltr">
-            {time}
+            className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white rounded-full shadow-xl ring-1 ring-slate-200 pl-1.5 pr-2 py-1 whitespace-nowrap z-50 ${clampedTop < 60 ? "top-full mt-2" : "-top-12"}`}>
+            <button
+              className="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-sm leading-none transition"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onDismiss(); }}>✕</button>
+            <span className="text-sm font-extrabold text-slate-800 tabular-nums" dir="ltr">{time}</span>
+            <button
+              className="shrink-0 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs px-3 py-1.5 rounded-full transition"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onConfirm(); }}>+ קבע</button>
+            <button
+              className="shrink-0 w-7 h-7 flex items-center justify-center rounded-full bg-slate-100 hover:bg-teal-50 text-[15px] transition"
+              title="הוסף הפסקה"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onAddBreak(); }}>☕</button>
           </div>
           {/* Transparent 10-minute frame — outline only, anchored at the start line */}
           <div
@@ -3254,23 +3268,18 @@ export default function AdminCalendar() {
     setAddBreak({ staffId: draftAppt.staffId, date: draftAppt.date, time: yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) });
     setDraftAppt(null);
   }, [draftAppt, hourHeight, calStart, calEnd]);
-  const draftTime = draftAppt ? yToTimeFn(draftAppt.startY, hourHeight, calStart, calEnd) : null;
   const gridRef = useRef<HTMLDivElement>(null);
-  // The fixed mobile draft action bar (קבע תור / הפסקה) lives OUTSIDE the grid,
-  // so taps on it must NOT count as "outside" cancels.
-  const draftBarRef = useRef<HTMLDivElement>(null);
 
   // Cancel an open draft when the user taps anywhere OUTSIDE the calendar grid
   // — e.g. the hamburger menu, headers, toolbar. Taps INSIDE the grid reposition
-  // the draft (handled by the column onClick), and taps on the floating action
-  // bar are explicitly excluded so its buttons keep working.
+  // the draft (handled by the column onClick), and the draft's own action pill
+  // lives inside the grid so its buttons keep working.
   useEffect(() => {
     if (!draftAppt && !draftMoveSlot) return;
     const onPointerDown = (e: PointerEvent) => {
       const t = e.target as Node | null;
       if (!t) return;
       if (gridRef.current?.contains(t)) return;       // inside the calendar — reposition, don't cancel
-      if (draftBarRef.current?.contains(t)) return;    // the action bar — let its buttons run
       setDraftAppt(null);
       setDraftMoveSlot(null);
     };
@@ -5244,33 +5253,6 @@ export default function AdminCalendar() {
                 }}
                 className="flex-1 bg-teal-600 text-white rounded-xl py-2.5 text-sm font-bold hover:bg-teal-700 transition">
                 להעביר בכל זאת
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Mobile floating draft action bar ── */}
-      {isMobile && draftAppt && draftTime && (
-        <div ref={draftBarRef} className="fixed bottom-[60px] inset-x-0 z-50 px-4 pb-2 pointer-events-none">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden pointer-events-auto">
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-100">
-              <span className="text-xs text-slate-400">תור ב-</span>
-              <span className="text-sm font-bold text-slate-800" dir="ltr">{draftTime}</span>
-              <button
-                className="mr-auto text-slate-400 hover:text-slate-700 text-sm px-1"
-                onClick={() => setDraftAppt(null)}>✕</button>
-            </div>
-            <div className="flex gap-2 p-3">
-              <button
-                onClick={handleDraftConfirm}
-                className="flex-1 bg-teal-600 hover:bg-teal-700 text-white font-semibold text-sm py-3 rounded-xl transition shadow-sm">
-                + קבע תור
-              </button>
-              <button
-                onClick={handleDraftBreak}
-                className="flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm py-3 px-4 rounded-xl transition flex items-center gap-1.5">
-                <span>☕</span><span>הפסקה</span>
               </button>
             </div>
           </div>
