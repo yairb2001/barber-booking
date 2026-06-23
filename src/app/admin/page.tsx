@@ -3660,8 +3660,9 @@ export default function AdminCalendar() {
         // Non-paging gesture (day view) — navigate dates on a strong horizontal flick.
         const dragActive = !!dragMoveRef.current || !!draftApptRef.current || !!breakDragRef.current;
         if (!dragActive && Math.abs(dx) > 90 && Math.abs(dx) > dy * 2) {
-          // Day view keeps the RTL convention: swipe right = earlier, left = later.
-          navigateRef.current(dx > 0 ? -1 : 1);
+          // Match the week view: drag left→right (dx>0) = NEXT (forward),
+          // right→left = previous. (Day view used to be inverted.)
+          navigateRef.current(dx > 0 ? 1 : -1);
         }
       }
       swipeStartX = 0;
