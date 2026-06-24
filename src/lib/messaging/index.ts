@@ -74,7 +74,9 @@ export const DEFAULT_24H_TEMPLATE =
 🕒 {{time}}
 💈 אצל {{staff}}{{address_line}}
 
-אם יש שינוי — נא להודיע מראש 🙏{{cancel_line}}`;
+אם יש שינוי — נא להודיע מראש 🙏
+
+{{cancel_line}}`;
 
 /** Default 24h reminder for a FIRST-TIME customer — same as the regular reminder
  *  plus a warm welcome and room for arrival details. */
@@ -89,7 +91,9 @@ export const DEFAULT_24H_NEW_TEMPLATE =
 📍 *איך מגיעים אלינו:*
 [כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
 
-מתרגשים לארח אותך 🙏 אם יש שינוי — נא להודיע מראש{{cancel_line}}`;
+מתרגשים לארח אותך 🙏 אם יש שינוי — נא להודיע מראש
+
+{{cancel_line}}`;
 
 /** Default 24h reminder for a customer on their SECOND visit — a "smart promotion"
  *  that nudges loyalty/upsell. Admin can tailor the offer. */
@@ -104,7 +108,9 @@ export const DEFAULT_24H_RETURNING_TEMPLATE =
 
 🎁 *מבצע במיוחד בשבילך:* בביקור הזה תוכל לשדרג את התספורת עם טיפול זקן/עיצוב בהנחה — שווה לנסות!
 
-נתראה מחר 🙏{{cancel_line}}`;
+נתראה מחר 🙏
+
+{{cancel_line}}`;
 
 /** Default template for 2-hour reminder. */
 export const DEFAULT_2H_TEMPLATE =
@@ -119,7 +125,7 @@ export const DEFAULT_2H_TEMPLATE =
 /** Build a "cancel/manage your appointment" line for message templates.
  *  Returns "" when no link is provided (so templates stay clean). */
 export function cancelLine(cancelLink?: string | null): string {
-  return cancelLink ? `\n\nלצפייה או ביטול תור:\n${cancelLink}` : "";
+  return cancelLink ? `לצפייה או ביטול תור:\n${cancelLink}` : "";
 }
 
 /** Build reminder vars from appointment data. */
@@ -264,7 +270,9 @@ export const DEFAULT_CONFIRMATION_TEMPLATE =
 💈 {{service}} אצל {{staff}}
 💰 {{price}}₪{{address_line}}
 
-נתראה!{{cancel_line}}`;
+נתראה!
+
+{{cancel_line}}`;
 
 export const DEFAULT_SWAP_PROPOSAL_TEMPLATE =
 `שלום {{name}} 👋
@@ -357,7 +365,9 @@ export const DEFAULT_FIRST_BOOKING_TEMPLATE =
 [כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
 
 יש שאלות? פשוט כתוב לנו כאן 😊
-מחכים לך! 💈{{cancel_line}}`;
+מחכים לך! 💈
+
+{{cancel_line}}`;
 
 export const DEFAULT_WALK_IN_TEMPLATE =
 `שלום {{name}} 👋
@@ -390,7 +400,7 @@ export const TEMPLATE_DEFS = {
       { key: "service",      label: "שם השירות" },
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
-      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
     ],
   },
   reminder_24h: {
@@ -405,7 +415,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
-      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
     ],
   },
   reminder_24h_new: {
@@ -420,7 +430,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
-      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
     ],
   },
   reminder_24h_returning: {
@@ -435,7 +445,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
-      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
     ],
   },
   reminder_2h: {
@@ -536,7 +546,7 @@ export const TEMPLATE_DEFS = {
       { key: "service",      label: "שם השירות" },
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
-      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
     ],
   },
   walk_in: {
