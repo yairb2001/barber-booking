@@ -11,6 +11,7 @@ type Config = {
   greetingMsg: string | null;
   escalatePhone: string | null;
   maxIdleMinutes: number;
+  requireSwapApproval: boolean;
   faqs: FAQ[];
 };
 
@@ -245,6 +246,33 @@ export default function AdminAgentPage() {
                 dir="ltr"
               />
             </label>
+          </div>
+
+          {/* Swap approval */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-neutral-800">אישור ספר להחלפות תור</h2>
+                <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                  כשפעיל — לפני שהסוכן מציע ללקוח אחר להחליף תור, הוא שולח לספר בקשת אישור (כן/לא).
+                  <br />
+                  כשכבוי — הסוכן פונה ישירות ללקוח שבשעה המבוקשת ומסדר את ההחלפה לבד, בלי לשאול את הספר.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm text-neutral-500">{config.requireSwapApproval ? "פעיל" : "כבוי"}</span>
+                <button
+                  onClick={() => setConfig(c => c ? { ...c, requireSwapApproval: !c.requireSwapApproval } : c)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                    config.requireSwapApproval ? "bg-emerald-500" : "bg-neutral-300"
+                  }`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                    config.requireSwapApproval ? "-translate-x-7" : "-translate-x-1"
+                  }`} />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* System prompt */}

@@ -549,6 +549,10 @@ model AgentConfig {
   greetingMsg     String?  @map("greeting_msg")    // first message when agent starts
   escalatePhone   String?  @map("escalate_phone")  // barber phone to forward to
   maxIdleMinutes  Int      @default(30) @map("max_idle_minutes")
+  // When true (default) the agent asks the barber to approve before offering a
+  // swap to another customer. When false the agent contacts the candidate
+  // customer directly, no barber approval needed.
+  requireSwapApproval Boolean @default(true) @map("require_swap_approval")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

@@ -302,47 +302,97 @@ export async function requestAppointmentMove(opts: {
     return `אין מקום פנוי בשעה ${targetStartTime} ב-${targetDate} אצל ${appt.staff.name}, וגם אין שם תור של לקוח אחר שאפשר להציע לו החלפה (כנראה הספר לא עובד אז, או זו הפסקה). אל תפתח בקשה — במקום זה הצע ללקוח את הזמן הפנוי הקרוב ביותר (קרא ל-get_available_slots לאותו יום) או שעה אחרת.`;
   }
 
-  if (!appt.staff.phone) {
-    return `כדי לבקש מלקוח אחר להחליף צריך לקבל אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום במערכת ואי אפשר לפנות אליו. אל תפתח בקשה — הצע ללקוח זמן פנוי אחר במקום.`;
+  // Per-business setting: must the barber approve a swap before we bother
+  // another customer? Default true (safe — preserves the legacy behaviour).
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { requireSwapApproval: true },
+  });
+  const requireApproval = cfg?.requireSwapApproval ?? true;
+
+  // ── 3a: approval required → ask the barber first (no candidate contacted) ──
+  if (requireApproval) {
+    if (!appt.staff.phone) {
+      return `כדי לבקש מלקוח אחר להחליף צריך לקבל אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום במערכת ואי אפשר לפנות אליו. אל תפתח בקשה — הצע ללקוח זמן פנוי אחר במקום.`;
+    }
+
+    await prisma.swapProposal.create({
+      data: {
+        businessId: bizId,
+        primaryAppointmentId: appt.id,
+        kind: "swap",
+        initiatedBy: "agent",
+        requesterConversationId: conversationId,
+        approvalStaffId: appt.staffId,
+        targetStaffId: appt.staffId,
+        targetDate: dateOnly(targetDate),
+        targetStartTime,
+        status: "pending_staff_approval",
+        expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+      },
+    });
+
+    const targetLabel = `${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime}`;
+    const currentLabel = `${hebDate(new Date(appt.date))} בשעה ${appt.startTime}`;
+    // Who is sitting in the requested slot today — so the barber knows exactly
+    // which customer would be asked to give it up before approving.
+    const occupantNames = Array.from(new Set(candidates.map(c => c.customer.name))).join(" / ");
+    const approvalMsg =
+      `🔔 בקשת החלפת תור\n` +
+      `הלקוח שרוצה להחליף: ${appt.customer.name} (${appt.service.name})\n` +
+      `התור הנוכחי שלו: ${currentLabel}\n` +
+      `רוצה לעבור ל: ${targetLabel}\n` +
+      `אבל השעה הזו תפוסה אצל: ${occupantNames}\n` +
+      `אפשר להציע ל${occupantNames} להחליף? ענה כן או לא.`;
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: normalizeIsraeliPhone(appt.staff.phone),
+      kind: "swap_staff_request",
+      body: approvalMsg,
+    }).catch(err => console.error("[agent-swap] staff approval send failed", err));
+
+    return `אין מקום פנוי בשעה שביקש, אז שלחתי ל${appt.staff.name} בקשה לאשר החלפה עם לקוח אחר. אמור ללקוח שאתה בודק מול הספר אפשרות להחליף לשעה הזו ותעדכן אותו ברגע שיש תשובה — בלי להבטיח שזה סגור.`;
   }
 
-  // Create the barber-approval request (no candidate contacted yet).
-  await prisma.swapProposal.create({
+  // ── 3b: no approval needed → contact the candidate customer(s) directly ────
+  // Mirror the post-approval path: the first candidate gets the live
+  // pending_response row, the rest are queued as fallbacks.
+  const proposal = await prisma.swapProposal.create({
     data: {
       businessId: bizId,
       primaryAppointmentId: appt.id,
       kind: "swap",
       initiatedBy: "agent",
       requesterConversationId: conversationId,
-      approvalStaffId: appt.staffId,
+      candidateAppointmentId: candidates[0].id,
       targetStaffId: appt.staffId,
       targetDate: dateOnly(targetDate),
       targetStartTime,
-      status: "pending_staff_approval",
+      status: "pending_response",
       expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
     },
   });
+  await messageCandidate(proposal.id);
 
-  const targetLabel = `${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime}`;
-  const currentLabel = `${hebDate(new Date(appt.date))} בשעה ${appt.startTime}`;
-  // Who is sitting in the requested slot today — so the barber knows exactly
-  // which customer would be asked to give it up before approving.
-  const occupantNames = Array.from(new Set(candidates.map(c => c.customer.name))).join(" / ");
-  const approvalMsg =
-    `🔔 בקשת החלפת תור\n` +
-    `הלקוח שרוצה להחליף: ${appt.customer.name} (${appt.service.name})\n` +
-    `התור הנוכחי שלו: ${currentLabel}\n` +
-    `רוצה לעבור ל: ${targetLabel}\n` +
-    `אבל השעה הזו תפוסה אצל: ${occupantNames}\n` +
-    `אפשר להציע ל${occupantNames} להחליף? ענה כן או לא.`;
-  await sendMessage({
-    businessId: bizId,
-    customerPhone: normalizeIsraeliPhone(appt.staff.phone),
-    kind: "swap_staff_request",
-    body: approvalMsg,
-  }).catch(err => console.error("[agent-swap] staff approval send failed", err));
+  for (const extra of candidates.slice(1)) {
+    await prisma.swapProposal.create({
+      data: {
+        businessId: bizId,
+        primaryAppointmentId: appt.id,
+        kind: "swap",
+        initiatedBy: "agent",
+        requesterConversationId: conversationId,
+        candidateAppointmentId: extra.id,
+        targetStaffId: appt.staffId,
+        targetDate: dateOnly(targetDate),
+        targetStartTime,
+        status: "queued_next",
+        expiresAt: new Date(Date.now() + 2 * APPROVAL_TTL_MS),
+      },
+    });
+  }
 
-  return `אין מקום פנוי בשעה שביקש, אז שלחתי ל${appt.staff.name} בקשה לאשר החלפה עם לקוח אחר. אמור ללקוח שאתה בודק מול הספר אפשרות להחליף לשעה הזו ותעדכן אותו ברגע שיש תשובה — בלי להבטיח שזה סגור.`;
+  return `אין מקום פנוי בשעה שביקש, אז פניתי ישירות ללקוח שיש לו תור בשעה הזו לבדוק אם הוא מוכן להחליף. אמור ללקוח שאתה בודק מול לקוח אחר אפשרות להחליף לשעה הזו ותעדכן אותו ברגע שיש תשובה — בלי להבטיח שזה סגור.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
