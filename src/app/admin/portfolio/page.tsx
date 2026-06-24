@@ -37,9 +37,14 @@ export default function AdminPortfolioPage() {
     if (!file) return;
     setUploading(staffId);
 
+    // Compress before upload — portfolio photos are the heaviest images on the
+    // booking page, so a raw phone photo (3–5MB) would make it crawl.
+    const { compressImage } = await import("@/lib/image-compress");
+    const compressed = await compressImage(file, "portfolio");
+
     // Upload via the existing upload API
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", compressed);
     const uploadRes = await fetch("/api/admin/upload", { method: "POST", body: fd });
     const uploadData = await uploadRes.json();
 

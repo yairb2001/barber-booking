@@ -79,8 +79,10 @@ export default function AdminProductsPage() {
   async function uploadImage(file: File) {
     setUploading(true);
     try {
+      const { compressImage } = await import("@/lib/image-compress");
+      const compressed = await compressImage(file, "portfolio");
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", compressed);
       const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
       const data = await res.json();
       if (res.ok && data.url) {

@@ -131,8 +131,10 @@ export default function OnboardingPage() {
 
   // ── Image upload helper ──
   const uploadImage = async (file: File): Promise<string | null> => {
+    const { compressImage } = await import("@/lib/image-compress");
+    const compressed = await compressImage(file, "cover");
     const fd = new FormData();
-    fd.append("file", file);
+    fd.append("file", compressed);
     const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
     if (!res.ok) return null;
     const data = await res.json();

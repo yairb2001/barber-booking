@@ -4,7 +4,7 @@
  * and uploads fast even on slow connections.
  */
 
-export type ImagePreset = "avatar" | "logo" | "cover" | "story";
+export type ImagePreset = "avatar" | "logo" | "cover" | "story" | "portfolio";
 
 type PresetConfig = {
   maxWidth: number;
@@ -19,6 +19,10 @@ const PRESETS: Record<ImagePreset, PresetConfig> = {
   logo:   { maxWidth: 800, maxHeight: 800, quality: 0.9 },
   cover:  { maxWidth: 1920, maxHeight: 1080, quality: 0.85 },
   story:  { maxWidth: 1080, maxHeight: 1920, quality: 0.85 },
+  // Gallery/work-sample photos: cap the longest side to 1280px (handles both
+  // portrait and landscape) — keeps them crisp on the booking page while
+  // shrinking a 4MB phone photo down to ~150–300KB.
+  portfolio: { maxWidth: 1280, maxHeight: 1280, quality: 0.82 },
 };
 
 /**
