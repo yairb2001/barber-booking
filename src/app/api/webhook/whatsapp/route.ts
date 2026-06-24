@@ -80,6 +80,17 @@ function phoneFromChatId(chatId: string): string {
   return chatId.replace(/@.*$/, "");
 }
 
+/**
+ * GreenAPI group chats carry a chatId ending in "@g.us" (e.g.
+ * "120363012345678901@g.us"); 1-on-1 chats end in "@c.us". We never want the
+ * agent to act on group traffic — it would reply into the group as if it were a
+ * private DM, the thread shows up nowhere useful, and every message burns tokens.
+ * So we hard-skip anything that isn't a personal chat.
+ */
+function isGroupChat(chatId: string): boolean {
+  return chatId.endsWith("@g.us");
+}
+
 export async function GET(): Promise<NextResponse> {
   // Green API may send GET to verify the endpoint
   return NextResponse.json({ ok: true });
@@ -96,6 +107,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Wrap everything in try/catch so Green API always gets 200
   try {
+
+  // ── Ignore group chats entirely ─────────────────────────────────────────────
+  // Group messages (chatId "...@g.us") must never reach the agent or the inbox —
+  // it would answer into the group like a private DM and waste tokens. Bail out
+  // before any DB work, for both incoming and phone-typed outgoing webhooks.
+  if (isGroupChat(body.senderData?.chatId ?? "")) {
+    return NextResponse.json({ ok: true, skipped: "group_chat" });
+  }
 
   // ── Manual reply typed on the real WhatsApp app → mute the agent ────────────
   // GreenAPI fires `outgoingMessageReceived` ONLY for messages typed on the
