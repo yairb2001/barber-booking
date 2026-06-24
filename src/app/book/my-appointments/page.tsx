@@ -68,6 +68,26 @@ export default function MyAppointmentsPage() {
   const [cancelError, setCancelError]   = useState("");
   // Leave-waitlist flow state
   const [leavingWaitlistId, setLeavingWaitlistId] = useState<string | null>(null); // request in flight
+  // Phone + OTP login (fallback when there's no bk_session cookie — e.g. incognito
+  // or a different device/browser than the one used to book).
+  const [loginStep, setLoginStep]     = useState<"phone" | "code">("phone");
+  const [loginPhone, setLoginPhone]   = useState("");
+  const [loginCode, setLoginCode]     = useState("");
+  const [loginBusy, setLoginBusy]     = useState(false);
+  const [loginError, setLoginError]   = useState("");
+
+  // Fetch a customer's appointments with phone + OTP token. Returns true on success.
+  async function loadAppointments(phone: string, token: string): Promise<boolean> {
+    const url = apiWithSlug(`/api/my-appointments?phone=${encodeURIComponent(phone)}&token=${encodeURIComponent(token)}`, slug);
+    const res = await fetch(url);
+    if (!res.ok) return false;
+    const data = await res.json();
+    setUpcoming(Array.isArray(data.upcoming) ? data.upcoming : []);
+    setPast(Array.isArray(data.past) ? data.past : []);
+    setWaitlist(Array.isArray(data.waitlist) ? data.waitlist : []);
+    if (data?.customer?.name) setName(String(data.customer.name).split(" ")[0]);
+    return true;
+  }
 
   useEffect(() => {
     (async () => {
@@ -75,6 +95,7 @@ export default function MyAppointmentsPage() {
         // 1) Exchange the bk_session cookie for a fresh OTP token (no SMS).
         const authRes = await fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" });
         if (!authRes.ok) {
+          // No session (incognito / different browser) → offer phone+OTP login.
           setError("not-signed-in");
           setLoading(false);
           return;
@@ -84,17 +105,8 @@ export default function MyAppointmentsPage() {
         if (auth?.phone && auth?.token) setAuth({ phone: auth.phone, token: auth.token });
 
         // 2) Fetch this customer's appointments using phone + token.
-        const url = apiWithSlug(`/api/my-appointments?phone=${encodeURIComponent(auth.phone)}&token=${encodeURIComponent(auth.token)}`, slug);
-        const res = await fetch(url);
-        if (!res.ok) {
-          setError("load-failed");
-          setLoading(false);
-          return;
-        }
-        const data = await res.json();
-        setUpcoming(Array.isArray(data.upcoming) ? data.upcoming : []);
-        setPast(Array.isArray(data.past) ? data.past : []);
-        setWaitlist(Array.isArray(data.waitlist) ? data.waitlist : []);
+        const ok = await loadAppointments(auth.phone, auth.token);
+        if (!ok) { setError("load-failed"); setLoading(false); return; }
         setLoading(false);
       } catch {
         setError("load-failed");
@@ -102,6 +114,61 @@ export default function MyAppointmentsPage() {
       }
     })();
   }, []);
+
+  // ── Phone + OTP login (no session) ──────────────────────────────────────────
+  async function sendLoginOtp() {
+    const digits = loginPhone.replace(/\D/g, "");
+    if (digits.length < 9) { setLoginError("מספר טלפון לא תקין"); return; }
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const res = await fetch(apiWithSlug("/api/otp/send", slug), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: loginPhone }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setLoginError(d?.error || "שליחת הקוד נכשלה, נסה שוב");
+        setLoginBusy(false);
+        return;
+      }
+      setLoginStep("code");
+    } catch {
+      setLoginError("שליחת הקוד נכשלה, נסה שוב");
+    }
+    setLoginBusy(false);
+  }
+
+  async function verifyLoginOtp() {
+    if (loginCode.replace(/\D/g, "").length < 4) { setLoginError("הזן את הקוד בן 4 הספרות"); return; }
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      const res = await fetch(apiWithSlug("/api/otp/verify", slug), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: loginPhone, code: loginCode }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setLoginError(d?.error || "קוד שגוי או שפג תוקפו");
+        setLoginBusy(false);
+        return;
+      }
+      const data = await res.json(); // { ok, token, customerName }
+      if (data?.customerName) setName(String(data.customerName).split(" ")[0]);
+      setAuth({ phone: loginPhone, token: data.token });
+      setError("");
+      setLoading(true);
+      const ok = await loadAppointments(loginPhone, data.token);
+      setError(ok ? "" : "load-failed");
+      setLoading(false);
+    } catch {
+      setLoginError("האימות נכשל, נסה שוב");
+      setLoginBusy(false);
+    }
+  }
 
   // Cancel an upcoming appointment (after the user confirms).
   async function handleCancel(id: string) {
@@ -181,21 +248,82 @@ export default function MyAppointmentsPage() {
         </div>
       )}
 
-      {/* ── Not signed in ── */}
+      {/* ── Not signed in → phone + OTP login ── */}
       {!loading && error === "not-signed-in" && (
-        <div className="px-6 pt-20 text-center">
-          <div className="text-5xl mb-4">🔒</div>
-          <p className="text-[16px] font-bold mb-1" style={{ color: "var(--text-pri)" }}>
-            עדיין לא קבעת תור
-          </p>
-          <p className="text-[13px] mb-6" style={{ color: "var(--text-muted)" }}>
-            אחרי שתקבע תור ראשון, תוכל לראות כאן את כל התורים שלך
-          </p>
-          <Link href={publicHref(slug, "/book")}
-            className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
-            style={{ background: "var(--brand)" }}>
-            קבע תור עכשיו
-          </Link>
+        <div className="px-6 pt-16">
+          <div className="text-center mb-6">
+            <div className="text-5xl mb-4">🔒</div>
+            <p className="text-[16px] font-bold mb-1" style={{ color: "var(--text-pri)" }}>
+              {loginStep === "phone" ? "כניסה לתורים שלך" : "הזן את קוד האימות"}
+            </p>
+            <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
+              {loginStep === "phone"
+                ? "הזן את מספר הטלפון שאיתו קבעת — נשלח לך קוד אימות"
+                : `שלחנו קוד בן 4 ספרות ל-${loginPhone}`}
+            </p>
+          </div>
+
+          <div className="max-w-sm mx-auto">
+            {loginStep === "phone" ? (
+              <>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  dir="ltr"
+                  value={loginPhone}
+                  onChange={e => { setLoginPhone(e.target.value); setLoginError(""); }}
+                  onKeyDown={e => { if (e.key === "Enter") sendLoginOtp(); }}
+                  placeholder="050-0000000"
+                  className="w-full text-center text-[18px] tracking-wide rounded-2xl px-4 py-3.5 mb-3 outline-none"
+                  style={{ background: "var(--card)", border: "1px solid var(--divider)", color: "var(--text-pri)" }}
+                />
+                {loginError && <p className="text-[12px] text-center mb-3" style={{ color: "#dc2626" }}>{loginError}</p>}
+                <button
+                  onClick={sendLoginOtp}
+                  disabled={loginBusy}
+                  className="w-full py-3.5 rounded-2xl font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
+                  style={{ background: "var(--brand)" }}>
+                  {loginBusy ? "שולח…" : "שלח לי קוד"}
+                </button>
+              </>
+            ) : (
+              <>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  dir="ltr"
+                  maxLength={4}
+                  value={loginCode}
+                  onChange={e => { setLoginCode(e.target.value.replace(/\D/g, "")); setLoginError(""); }}
+                  onKeyDown={e => { if (e.key === "Enter") verifyLoginOtp(); }}
+                  placeholder="••••"
+                  className="w-full text-center text-[26px] font-extrabold tracking-[0.5em] rounded-2xl px-4 py-3.5 mb-3 outline-none"
+                  style={{ background: "var(--card)", border: "1px solid var(--divider)", color: "var(--text-pri)" }}
+                />
+                {loginError && <p className="text-[12px] text-center mb-3" style={{ color: "#dc2626" }}>{loginError}</p>}
+                <button
+                  onClick={verifyLoginOtp}
+                  disabled={loginBusy}
+                  className="w-full py-3.5 rounded-2xl font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
+                  style={{ background: "var(--brand)" }}>
+                  {loginBusy ? "מאמת…" : "כניסה"}
+                </button>
+                <button
+                  onClick={() => { setLoginStep("phone"); setLoginCode(""); setLoginError(""); }}
+                  className="w-full mt-3 text-[12px] font-semibold"
+                  style={{ color: "var(--text-muted)" }}>
+                  ← שינוי מספר טלפון
+                </button>
+              </>
+            )}
+
+            <div className="mt-6 text-center">
+              <Link href={publicHref(slug, "/book")}
+                className="text-[13px] font-semibold" style={{ color: "var(--text-muted)" }}>
+                עדיין לא קבעת תור? קבע עכשיו
+              </Link>
+            </div>
+          </div>
         </div>
       )}
 
