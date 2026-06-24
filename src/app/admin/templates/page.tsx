@@ -25,6 +25,8 @@ function applyPreview(template: string): string {
     proposed_staff: "יאיר הרוש",
     delay_minutes:  "15",
     booking_link:   "https://dominant.co.il/book",
+    cancel_link:    "https://dominant.co.il/book/my-appointments",
+    cancel_line:    "\n\nלצפייה או ביטול תור:\nhttps://dominant.co.il/book/my-appointments",
   };
   return template.replace(/\{\{(\w+)\}\}/g, (_, k) => sample[k] ?? `{{${k}}}`);
 }

@@ -390,6 +390,7 @@ export const TEMPLATE_DEFS = {
       { key: "service",      label: "שם השירות" },
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
     ],
   },
   reminder_24h: {
@@ -404,6 +405,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
     ],
   },
   reminder_24h_new: {
@@ -418,6 +420,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
     ],
   },
   reminder_24h_returning: {
@@ -432,6 +435,7 @@ export const TEMPLATE_DEFS = {
       { key: "time",         label: "שעת התחלה" },
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
     ],
   },
   reminder_2h: {
@@ -532,6 +536,7 @@ export const TEMPLATE_DEFS = {
       { key: "service",      label: "שם השירות" },
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
+      { key: "cancel_line",  label: "קישור לצפייה/ביטול תור (שורה נפרדת)" },
     ],
   },
   walk_in: {

@@ -1350,6 +1350,7 @@ function ReminderTemplateEditor({
               ["{{date}}", "תאריך"],
               ["{{time}}", "שעה"],
               ["{{address_line}}", "כתובת"],
+              ["{{cancel_line}}", "קישור לביטול תור"],
               ["{{booking_link}}", "קישור לקביעת תור"],
             ].map(([placeholder, label]) => (
               <button
