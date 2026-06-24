@@ -87,21 +87,30 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
       endTime:   minToTime(timeToMinutes(proposal.targetStartTime) + pDur),
     };
 
-    await prisma.$transaction([
-      prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
-      prisma.swapProposal.update({
-        where: { id: proposal.id },
-        data:  { status: "approved", approvedAt: new Date() },
-      }),
-      prisma.swapProposal.updateMany({
-        where: {
-          primaryAppointmentId: p.id,
-          status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
-          id: { not: proposal.id },
-        },
-        data: { status: "cancelled" },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
+        prisma.swapProposal.update({
+          where: { id: proposal.id },
+          data:  { status: "approved", approvedAt: new Date() },
+        }),
+        prisma.swapProposal.updateMany({
+          where: {
+            primaryAppointmentId: p.id,
+            status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
+            id: { not: proposal.id },
+          },
+          data: { status: "cancelled" },
+        }),
+      ]);
+    } catch (err) {
+      // Most likely a unique-violation (P2002) from the partial active-slot index
+      // — the target slot was taken between proposal and execution. Return a
+      // clean failure so callers can apologize; never throw (a throw would let
+      // the webhook fall back to the context-less agent).
+      console.error("[swap-exec] move transaction failed:", err);
+      return { ok: false, error: "לא ניתן היה לבצע את ההעברה — ייתכן שהשעה נתפסה בינתיים", status: 409 };
+    }
 
     const newStaff = await prisma.staff.findUnique({
       where: { id: newPrimary.staffId },
@@ -157,22 +166,38 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     endTime:   minToTime(timeToMinutes(p.startTime) + cDur),
   };
 
-  await prisma.$transaction([
-    prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
-    prisma.appointment.update({ where: { id: c.id }, data: newCandidate }),
-    prisma.swapProposal.update({
-      where: { id: proposal.id },
-      data:  { status: "approved", approvedAt: new Date() },
-    }),
-    prisma.swapProposal.updateMany({
-      where: {
-        primaryAppointmentId: p.id,
-        status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
-        id: { not: proposal.id },
-      },
-      data: { status: "cancelled" },
-    }),
-  ]);
+  // ⚠️ A swap trades two appointments INTO each other's slots. With the partial
+  // unique index on (staff_id, date, start_time) WHERE status active, a naive
+  // two-step update trips P2002: after moving the primary into the candidate's
+  // slot, the candidate is momentarily still sitting in that same slot. So we
+  // first "park" the candidate at a sentinel date (1970) that no real
+  // appointment occupies, then move the primary in, then move the candidate to
+  // its final slot. All inside one transaction → atomic and rollback-safe.
+  const PARK_DATE = new Date(0); // 1970-01-01 — guaranteed-free sentinel slot
+  try {
+    await prisma.$transaction([
+      prisma.appointment.update({ where: { id: c.id }, data: { date: PARK_DATE } }),
+      prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
+      prisma.appointment.update({ where: { id: c.id }, data: newCandidate }),
+      prisma.swapProposal.update({
+        where: { id: proposal.id },
+        data:  { status: "approved", approvedAt: new Date() },
+      }),
+      prisma.swapProposal.updateMany({
+        where: {
+          primaryAppointmentId: p.id,
+          status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
+          id: { not: proposal.id },
+        },
+        data: { status: "cancelled" },
+      }),
+    ]);
+  } catch (err) {
+    // Slot taken between proposal and execution (P2002) or any other DB error —
+    // fail cleanly so callers apologize; never throw (would leak to the agent).
+    console.error("[swap-exec] swap transaction failed:", err);
+    return { ok: false, error: "לא ניתן היה לבצע את ההחלפה — ייתכן שאחת השעות נתפסה בינתיים", status: 409 };
+  }
 
   const staffIds = Array.from(new Set([p.staffId, c.staffId]));
   const staffRecords = await prisma.staff.findMany({
