@@ -2,7 +2,36 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwnerOrSubManager } from "@/lib/session";
 import { sendMessage, swapProposalText, moveProposalText } from "@/lib/messaging";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { timeToMinutes } from "@/lib/utils";
+
+/**
+ * Mirror a manual (admin-built) proposal into the recipient's WhatsApp
+ * conversation so it (a) shows in /admin/chats as an outgoing bubble and
+ * (b) lands in the AI agent's context. The barber created this offer from the
+ * calendar, so without mirroring the agent never sees the message it "sent" and
+ * can't make sense of the customer's reply. role=assistant + source=admin marks
+ * it as a human-initiated outgoing message (does NOT mute the agent).
+ */
+async function mirrorProposalToChat(bizId: string, recipientPhone: string, body: string): Promise<void> {
+  const phone = normalizeIsraeliPhone(recipientPhone);
+  let conv = await prisma.conversation.findFirst({
+    where: { businessId: bizId, phone },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!conv) {
+    conv = await prisma.conversation.create({
+      data: { businessId: bizId, phone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+    });
+  }
+  await prisma.conversationMessage.create({
+    data: { conversationId: conv.id, role: "assistant", source: "admin", content: body },
+  });
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: { lastMessageAt: new Date() },
+  });
+}
 
 /**
  * POST /api/admin/appointments/[id]/swap
@@ -264,6 +293,17 @@ export async function POST(
       });
     }
   }
+
+  // Mirror each outgoing manual proposal into the recipient's conversation so it
+  // appears in /admin/chats and enters the agent's context. Best-effort — a
+  // mirror failure must never block the actual WhatsApp send below.
+  await Promise.all(
+    sendJobs.map(j =>
+      mirrorProposalToChat(primary.businessId, j.phone, j.body).catch(err =>
+        console.error("swap_proposal mirror failed:", err)
+      )
+    )
+  );
 
   // Send all WhatsApps in parallel — failures don't block the response
   const sendResults = await Promise.all(

@@ -26,6 +26,7 @@ import { runCustomerAgent } from "@/lib/agent/customer-agent";
 import {
   handleStaffApprovalReply,
   handleCandidateReply,
+  handleAdminProposalReply,
   expireStaleAgentSwaps,
 } from "@/lib/agent/appointment-swap";
 import { pushToOwner } from "@/lib/native/push";
@@ -188,6 +189,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     if (await handleCandidateReply(biz.id, phone, text)) {
       return NextResponse.json({ ok: true, handled: "swap_candidate_reply" });
+    }
+    // Manual (admin-built) swap/move proposal — the barber created it from the
+    // calendar, so the agent never saw the outgoing offer. Intercept the yes/no
+    // here and execute deterministically instead of letting the context-less
+    // agent guess what "כן" means.
+    if (await handleAdminProposalReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_admin_reply" });
     }
   } catch (e) {
     console.error("[swap reply routing]", e);

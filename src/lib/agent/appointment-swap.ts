@@ -573,6 +573,119 @@ export async function handleCandidateReply(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 3b) Webhook: a customer replied to an ADMIN-initiated (MANUAL) swap/move.
+//     The barber built the proposal from the calendar, so the agent never saw
+//     the outgoing offer and can't understand a bare "כן". We intercept the
+//     yes/no deterministically here, run the same money-path executor, and stop
+//     — so the reply never reaches the context-less booking agent.
+//       • swap → the CANDIDATE customer is the one answering.
+//       • move → the PRIMARY customer (the one being relocated) is answering.
+//     Unlike the agent flow there is NO candidate queue: for a multi-candidate
+//     manual swap the admin route created one independent proposal per candidate,
+//     so a "no" just closes that one row and the others stay open; the first
+//     "yes" wins and executeApprovedProposal cancels the siblings.
+//     Returns true if the reply was consumed (don't run the booking agent).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function handleAdminProposalReply(
+  bizId: string,
+  fromPhone: string,
+  text: string,
+): Promise<boolean> {
+  const phone = normalizeIsraeliPhone(fromPhone);
+  const local = phone.replace(/^972/, "0");
+
+  // Find a manual (admin) proposal awaiting THIS customer's answer. For a swap
+  // the responder is the candidate; for a move it's the primary customer. We do
+  // NOT match a swap by its primary's phone — the primary was never messaged.
+  const proposal = await prisma.swapProposal.findFirst({
+    where: {
+      businessId: bizId,
+      status: "pending_response",
+      initiatedBy: "admin",
+      OR: [
+        { candidate: { customer: { OR: [{ phone }, { phone: local }] } } },
+        { kind: "move", primary: { customer: { OR: [{ phone }, { phone: local }] } } },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    include: {
+      candidate: { include: { customer: true } },
+      primary:   { include: { customer: true } },
+    },
+  });
+  if (!proposal) return false;
+
+  // Always answer the person who actually received the offer.
+  const replyPhone =
+    proposal.kind === "move"
+      ? normalizeIsraeliPhone(proposal.primary?.customer.phone ?? phone)
+      : normalizeIsraeliPhone(proposal.candidate?.customer.phone ?? phone);
+  const replyKind: "move_proposal" | "swap_proposal" =
+    proposal.kind === "move" ? "move_proposal" : "swap_proposal";
+
+  // Expired? Admin proposals default to a 24h window and are never auto-expired
+  // by the agent cron, so enforce it lazily on reply. Close it and let the
+  // customer know the offer lapsed.
+  if (proposal.expiresAt.getTime() < Date.now()) {
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "expired" } }).catch(() => {});
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: replyPhone,
+      kind: replyKind,
+      body: `תודה על התשובה! ההצעה כבר אינה בתוקף, אז התור נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+
+  const ans = parseYesNo(text);
+  if (ans === "unclear") {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: replyPhone,
+      kind: replyKind,
+      body: `רק שאדע — מתאים לך? ענה כן או לא 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+
+  if (ans === "no") {
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "rejected_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: replyPhone,
+      kind: replyKind,
+      body: `אין בעיה, תודה על התשובה! התור נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+
+  // ans === "yes" → execute deterministically via the shared money-path.
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: { status: "accepted_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+  });
+  const result = await executeApprovedProposal(proposal.id);
+  if (!result.ok) {
+    // Slot changed under us (e.g. someone cancelled/booked) — apologize cleanly.
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "cancelled" } }).catch(() => {});
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: replyPhone,
+      kind: replyKind,
+      body: `תודה על הנכונות! בסוף ההחלפה כבר לא רלוונטית, אז התור נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+  // Success: executeApprovedProposal already sent the WhatsApp confirmation(s)
+  // to both parties and cancelled any sibling proposals.
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 4) Lazy expiry — runs on every inbound webhook for the business (no cron).
 // ─────────────────────────────────────────────────────────────────────────────
 
