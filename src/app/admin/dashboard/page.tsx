@@ -25,6 +25,7 @@ type SourceRow = { source: string; new: number; returned: number };
 type Analytics = {
   totalRevenue:         number;
   totalAppointments:    number;
+  uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
   newToStaff:           number;
@@ -59,6 +60,7 @@ type Analytics = {
     name:              string;
     revenue:           number;
     appointments:      number;
+    uniqueCustomers:   number;
     newToStaff:        number;
     newAlsoToBusiness: number;
     secondVisit:       number;
@@ -1005,6 +1007,12 @@ export default function Dashboard() {
               sub={`תפוסה ${a.occupancyMonth}%`}
             />
             <StatCard
+              label="לקוחות החודש"
+              value={a.uniqueCustomers}
+              color="text-slate-800"
+              sub={a.uniqueCustomers > 0 ? `ממוצע ${(a.totalAppointments / a.uniqueCustomers).toFixed(1)} תורים ללקוח` : undefined}
+            />
+            <StatCard
               label={isStaffScoped ? "חדשים אצלך" : "לקוחות חדשים"}
               value={isStaffScoped ? a.newToStaff : a.newToBusiness}
               color="text-teal-600"
@@ -1054,6 +1062,10 @@ export default function Dashboard() {
                         <p className="font-bold text-sm text-teal-600">{row.newToStaff}</p>
                       </div>
                     </div>
+                    <p className="text-[10px] text-neutral-400 mt-2 pt-2 border-t border-neutral-100">
+                      {row.uniqueCustomers} לקוחות
+                      {row.uniqueCustomers > 0 && ` · ממוצע ${(row.appointments / row.uniqueCustomers).toFixed(1)} תורים/לקוח`}
+                    </p>
                   </button>
                 ))}
               </div>

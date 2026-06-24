@@ -147,6 +147,7 @@ export async function GET(req: NextRequest) {
     ]);
     return NextResponse.json({
       totalRevenue, totalAppointments,
+      uniqueCustomers: 0,
       newCustomers: 0,           // legacy alias
       newToBusiness: 0,
       newToStaff: 0,
@@ -318,7 +319,7 @@ export async function GET(req: NextRequest) {
   // ── 7. Per-barber summary (only when no staff filter) ─────────────────────
   type StaffRow = {
     staffId: string; name: string;
-    revenue: number; appointments: number;
+    revenue: number; appointments: number; uniqueCustomers: number;
     newToStaff: number;          // customer's first visit WITH this staff is in period
     newAlsoToBusiness: number;   // of newToStaff, also customer's first visit ANYWHERE is in period
     secondVisit: number;
@@ -384,7 +385,7 @@ export async function GET(req: NextRequest) {
       }
       staffSummary.push({
         staffId: sid, name,
-        revenue: stRev, appointments: appts.length,
+        revenue: stRev, appointments: appts.length, uniqueCustomers: stCusts.length,
         newToStaff: stNew, newAlsoToBusiness: stNewAlsoBiz,
         secondVisit: stSec,
         secondVisitRate: {
@@ -432,6 +433,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     totalRevenue,
     totalAppointments,
+    // Unique customers served in the period (respects staff filter via sf)
+    uniqueCustomers: periodCustIds.length,
     // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.
     newCustomers: effectiveStaffId ? newToStaff : newToBusiness,
     newToBusiness,
