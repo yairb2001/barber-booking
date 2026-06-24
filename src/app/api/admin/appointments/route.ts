@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 export async function GET(req: NextRequest) {
@@ -180,6 +180,9 @@ export async function POST(req: NextRequest) {
     let msgBody: string;
     let msgKind: "confirmation" | "first_booking";
 
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const cancelLink = `${baseUrl}/book/my-appointments`;
+
     if (isFirstBooking) {
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
       msgBody = applyTemplate(tmpl, {
@@ -192,6 +195,8 @@ export async function POST(req: NextRequest) {
         service:      appointment.service.name,
         price:        String(appointment.price),
         address_line: business.address ? `\n📍 ${business.address}` : "",
+        cancel_link:  cancelLink,
+        cancel_line:  cancelLine(cancelLink),
       });
       msgKind = "first_booking";
     } else {
@@ -205,6 +210,7 @@ export async function POST(req: NextRequest) {
         endTime: appointment.endTime,
         price: appointment.price,
         address: business.address,
+        cancelLink,
       }, business.confirmationTemplate);
       msgKind = "confirmation";
     }

@@ -84,6 +84,7 @@ export async function GET(req: NextRequest) {
       template = appt.business.reminder24hTemplate || DEFAULT_24H_TEMPLATE;
     }
 
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
     const body = applyTemplate(template, reminderVars({
       customerName: appt.customer.name,
       businessName: appt.business.name,
@@ -91,6 +92,7 @@ export async function GET(req: NextRequest) {
       startTime:    appt.startTime,
       dateLabel,
       address:      appt.business.address,
+      cancelLink:   `${baseUrl}/book/my-appointments`,
     }));
 
     const result = await sendMessage({

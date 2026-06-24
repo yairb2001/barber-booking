@@ -74,7 +74,7 @@ export const DEFAULT_24H_TEMPLATE =
 🕒 {{time}}
 💈 אצל {{staff}}{{address_line}}
 
-אם יש שינוי — נא להודיע מראש 🙏`;
+אם יש שינוי — נא להודיע מראש 🙏{{cancel_line}}`;
 
 /** Default 24h reminder for a FIRST-TIME customer — same as the regular reminder
  *  plus a warm welcome and room for arrival details. */
@@ -89,7 +89,7 @@ export const DEFAULT_24H_NEW_TEMPLATE =
 📍 *איך מגיעים אלינו:*
 [כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
 
-מתרגשים לארח אותך 🙏 אם יש שינוי — נא להודיע מראש`;
+מתרגשים לארח אותך 🙏 אם יש שינוי — נא להודיע מראש{{cancel_line}}`;
 
 /** Default 24h reminder for a customer on their SECOND visit — a "smart promotion"
  *  that nudges loyalty/upsell. Admin can tailor the offer. */
@@ -104,7 +104,7 @@ export const DEFAULT_24H_RETURNING_TEMPLATE =
 
 🎁 *מבצע במיוחד בשבילך:* בביקור הזה תוכל לשדרג את התספורת עם טיפול זקן/עיצוב בהנחה — שווה לנסות!
 
-נתראה מחר 🙏`;
+נתראה מחר 🙏{{cancel_line}}`;
 
 /** Default template for 2-hour reminder. */
 export const DEFAULT_2H_TEMPLATE =
@@ -116,6 +116,12 @@ export const DEFAULT_2H_TEMPLATE =
 
 נתראה בקרוב! 💈`;
 
+/** Build a "cancel/manage your appointment" line for message templates.
+ *  Returns "" when no link is provided (so templates stay clean). */
+export function cancelLine(cancelLink?: string | null): string {
+  return cancelLink ? `\n\nלצפייה או ביטול תור:\n${cancelLink}` : "";
+}
+
 /** Build reminder vars from appointment data. */
 export function reminderVars(params: {
   customerName: string;
@@ -124,6 +130,7 @@ export function reminderVars(params: {
   startTime: string;
   dateLabel: string;
   address?: string | null;
+  cancelLink?: string | null;
 }): Record<string, string> {
   return {
     name: firstName(params.customerName),
@@ -132,6 +139,8 @@ export function reminderVars(params: {
     time: params.startTime,
     date: params.dateLabel,
     address_line: params.address ? `\n📍 ${params.address}` : "",
+    cancel_link: params.cancelLink ?? "",
+    cancel_line: cancelLine(params.cancelLink),
   };
 }
 
@@ -255,7 +264,7 @@ export const DEFAULT_CONFIRMATION_TEMPLATE =
 💈 {{service}} אצל {{staff}}
 💰 {{price}}₪{{address_line}}
 
-נתראה!`;
+נתראה!{{cancel_line}}`;
 
 export const DEFAULT_SWAP_PROPOSAL_TEMPLATE =
 `שלום {{name}} 👋
@@ -348,7 +357,7 @@ export const DEFAULT_FIRST_BOOKING_TEMPLATE =
 [כתוב כאן הנחיות הגעה — רחוב, קומה, חניה וכו׳]
 
 יש שאלות? פשוט כתוב לנו כאן 😊
-מחכים לך! 💈`;
+מחכים לך! 💈{{cancel_line}}`;
 
 export const DEFAULT_WALK_IN_TEMPLATE =
 `שלום {{name}} 👋
@@ -554,6 +563,7 @@ export function confirmationText(
     endTime: string;
     price: number;
     address?: string | null;
+    cancelLink?: string | null;
   },
   customTemplate?: string | null,
 ): string {
@@ -568,6 +578,8 @@ export function confirmationText(
     service:      params.serviceName,
     price:        String(params.price),
     address_line: params.address ? `\n📍 ${params.address}` : "",
+    cancel_link:  params.cancelLink ?? "",
+    cancel_line:  cancelLine(params.cancelLink),
   });
 }
 

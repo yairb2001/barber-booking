@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
 import { jwtVerify } from "jose";
@@ -228,6 +228,10 @@ export async function POST(request: NextRequest) {
     let msgBody: string;
     let msgKind: "confirmation" | "first_booking";
 
+    // Link to the customer's "my appointments" page, where they can view/cancel.
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const cancelLink = `${baseUrl}/book/my-appointments`;
+
     if (isFirstBooking && business.firstBookingTemplate !== null) {
       // Owner has customised the first-booking template → use it
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
@@ -241,6 +245,8 @@ export async function POST(request: NextRequest) {
         service:      appointment.service.name,
         price:        String(price),
         address_line: business.address ? `\n📍 ${business.address}` : "",
+        cancel_link:  cancelLink,
+        cancel_line:  cancelLine(cancelLink),
       });
       msgKind = "first_booking";
     } else if (isFirstBooking) {
@@ -255,6 +261,8 @@ export async function POST(request: NextRequest) {
         service:      appointment.service.name,
         price:        String(price),
         address_line: business.address ? `\n📍 ${business.address}` : "",
+        cancel_link:  cancelLink,
+        cancel_line:  cancelLine(cancelLink),
       });
       msgKind = "first_booking";
     } else {
@@ -269,6 +277,7 @@ export async function POST(request: NextRequest) {
         endTime,
         price,
         address: business.address,
+        cancelLink,
       }, business.confirmationTemplate);
       msgKind = "confirmation";
     }
