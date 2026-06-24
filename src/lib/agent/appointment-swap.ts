@@ -325,10 +325,16 @@ export async function requestAppointmentMove(opts: {
 
   const targetLabel = `${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime}`;
   const currentLabel = `${hebDate(new Date(appt.date))} בשעה ${appt.startTime}`;
+  // Who is sitting in the requested slot today — so the barber knows exactly
+  // which customer would be asked to give it up before approving.
+  const occupantNames = Array.from(new Set(candidates.map(c => c.customer.name))).join(" / ");
   const approvalMsg =
     `🔔 בקשת החלפת תור\n` +
-    `${appt.customer.name} רוצה להעביר את התור שלו (${appt.service.name}) מ-${currentLabel} ל-${targetLabel}, אבל השעה תפוסה.\n` +
-    `אפשר להציע ללקוח אחר שיש לו תור בשעה הזו להחליף? ענה כן או לא.`;
+    `הלקוח שרוצה להחליף: ${appt.customer.name} (${appt.service.name})\n` +
+    `התור הנוכחי שלו: ${currentLabel}\n` +
+    `רוצה לעבור ל: ${targetLabel}\n` +
+    `אבל השעה הזו תפוסה אצל: ${occupantNames}\n` +
+    `אפשר להציע ל${occupantNames} להחליף? ענה כן או לא.`;
   await sendMessage({
     businessId: bizId,
     customerPhone: normalizeIsraeliPhone(appt.staff.phone),
