@@ -128,6 +128,20 @@ export function cancelLine(cancelLink?: string | null): string {
   return cancelLink ? `לצפייה או ביטול תור:\n${cancelLink}` : "";
 }
 
+/**
+ * Split a rendered message body into separate WhatsApp messages.
+ * A line containing only "---" (optionally surrounded by spaces) is the split
+ * marker, so a long template can be delivered as 2+ shorter chats. Surrounding
+ * blank lines are trimmed from each part. Returns [body] when no marker exists.
+ */
+export function splitMessageParts(body: string): string[] {
+  const parts = body
+    .split(/^[ \t]*-{3,}[ \t]*$/m)
+    .map(p => p.trim())
+    .filter(p => p.length > 0);
+  return parts.length > 1 ? parts : [body];
+}
+
 /** Build reminder vars from appointment data. */
 export function reminderVars(params: {
   customerName: string;
@@ -183,7 +197,19 @@ export async function deliverMessageLog(
     return { ok: false, error: "provider_not_configured" };
   }
 
-  const result = await provider.sendText(log.customerPhone, log.body);
+  // A template may ask to be delivered as several WhatsApp messages (split on a
+  // line of "---"). Send each part in order; stop at the first failure.
+  const parts = splitMessageParts(log.body);
+  const sent: SendResult[] = [];
+  for (const part of parts) {
+    const r = await provider.sendText(log.customerPhone, part);
+    sent.push(r);
+    if (!r.ok) break;
+  }
+  const failure = sent.find(r => !r.ok);
+  const result: SendResult = failure
+    ? failure
+    : { ok: true, providerId: sent[0]?.providerId };
 
   await prisma.messageLog.update({
     where: { id: log.id },

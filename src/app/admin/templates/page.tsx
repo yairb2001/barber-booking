@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { TEMPLATE_DEFS, type TemplateKey } from "@/lib/messaging";
+import { TEMPLATE_DEFS, splitMessageParts, type TemplateKey } from "@/lib/messaging";
 
 // ── Sample-data generator for the live preview ───────────────────────────────
 // Renders a realistic-looking message so the admin can see how their template
@@ -178,19 +178,25 @@ export default function MessagesHubPage() {
   }
 
   /** Insert {{var}} at the textarea's cursor position. */
-  function insertVar(k: TemplateKey, varKey: string) {
+  // Insert arbitrary text at the cursor (used by both the variable chips and the
+  // "split into two messages" button).
+  function insertText(k: TemplateKey, text: string) {
     const ta = textareaRefs.current[k];
     const cur = byKey[k];
-    if (!ta) { setVal(k, cur.value + `{{${varKey}}}`); return; }
+    if (!ta) { setVal(k, cur.value + text); return; }
     const start = ta.selectionStart ?? cur.value.length;
     const end = ta.selectionEnd ?? cur.value.length;
-    const next = cur.value.slice(0, start) + `{{${varKey}}}` + cur.value.slice(end);
+    const next = cur.value.slice(0, start) + text + cur.value.slice(end);
     setVal(k, next);
     requestAnimationFrame(() => {
       ta.focus();
-      const pos = start + `{{${varKey}}}`.length;
+      const pos = start + text.length;
       ta.setSelectionRange(pos, pos);
     });
+  }
+
+  function insertVar(k: TemplateKey, varKey: string) {
+    insertText(k, `{{${varKey}}}`);
   }
 
   if (loading) {
@@ -257,7 +263,15 @@ export default function MessagesHubPage() {
                 {`{{${v.key}}}`}
               </button>
             ))}
+            <button type="button" onClick={() => insertText(k, "\n---\n")}
+              className="text-[11px] bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 rounded-full px-2.5 py-1 transition"
+              title="פיצול: כל מה שאחרי השורה הזו יישלח כהודעה נפרדת">
+              ✂️ פצל להודעה נפרדת
+            </button>
           </div>
+          <p className="text-[10px] text-neutral-400 mt-1.5">
+            שורה עם <span className="font-mono">---</span> בלבד מפצלת את ההודעה לשתי הודעות נפרדות בוואטסאפ.
+          </p>
         </div>
 
         {/* Editor */}
@@ -297,8 +311,12 @@ export default function MessagesHubPage() {
         {showPreview === k && (
           <div className="px-5 py-4 border-t border-neutral-100 bg-emerald-50/40">
             <p className="text-[11px] text-emerald-800 font-semibold mb-2">תצוגה מקדימה (עם נתונים לדוגמה):</p>
-            <div className="bg-white rounded-xl border border-emerald-200 p-3 whitespace-pre-line text-sm leading-relaxed text-neutral-800 shadow-sm">
-              {applyPreview(state.value)}
+            <div className="space-y-2">
+              {splitMessageParts(applyPreview(state.value)).map((part, i) => (
+                <div key={i} className="bg-white rounded-xl border border-emerald-200 p-3 whitespace-pre-line text-sm leading-relaxed text-neutral-800 shadow-sm">
+                  {part}
+                </div>
+              ))}
             </div>
           </div>
         )}
