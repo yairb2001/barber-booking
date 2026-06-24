@@ -553,6 +553,9 @@ model AgentConfig {
   // swap to another customer. When false the agent contacts the candidate
   // customer directly, no barber approval needed.
   requireSwapApproval Boolean @default(true) @map("require_swap_approval")
+  // Hand a stuck conversation to a human after this many customer messages
+  // without resolution. 0 = disabled (never auto-escalate on length).
+  escalateAfterMessages Int @default(14) @map("escalate_after_messages")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

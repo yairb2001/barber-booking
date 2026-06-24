@@ -600,100 +600,14 @@ async function execTool(
       // ── escalate_to_human ────────────────────────────────────────────────────
       case "escalate_to_human": {
         const reason = (input.reason || "").trim() || "הלקוח ביקש לדבר עם נציג.";
-        const phone = normalizeIsraeliPhone(callerPhone);
-        const localPhone = phone.replace(/^972/, "0");
-
-        // Identify the customer (for the alert + to find their barber).
-        const customer = await prisma.customer.findFirst({
-          where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
-          select: { id: true, name: true },
+        const { notified, targetStaffName } = await escalateToHuman({
+          bizId,
+          conversationId,
+          callerPhone,
+          reason,
+          staffIdHint: input.staffId,
         });
-        const convo = await prisma.conversation.findUnique({
-          where: { id: conversationId },
-          select: { whatsappName: true },
-        });
-        const custName = customer?.name || convo?.whatsappName || "לקוח";
-
-        // Resolve which barber to alert:
-        //   1. explicit staffId hint from the model (verify it belongs to this biz)
-        //   2. the customer's upcoming appointment's barber
-        //   3. the barber the customer visits most (history)
-        let targetStaff: { id: string; name: string; phone: string | null } | null = null;
-        if (input.staffId) {
-          targetStaff = await prisma.staff.findFirst({
-            where: { id: input.staffId, businessId: bizId },
-            select: { id: true, name: true, phone: true },
-          });
-        }
-        if (!targetStaff && customer) {
-          const todayStart = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
-          const upcoming = await prisma.appointment.findFirst({
-            where: {
-              customerId: customer.id, businessId: bizId,
-              date: { gte: todayStart },
-              status: { in: ["pending", "confirmed"] },
-            },
-            orderBy: [{ date: "asc" }, { startTime: "asc" }],
-            select: { staff: { select: { id: true, name: true, phone: true } } },
-          });
-          if (upcoming?.staff) targetStaff = upcoming.staff;
-          if (!targetStaff) {
-            // Fall back to the most-frequently-visited barber.
-            const past = await prisma.appointment.findMany({
-              where: { customerId: customer.id, businessId: bizId },
-              select: { staff: { select: { id: true, name: true, phone: true } } },
-              take: 50, orderBy: { date: "desc" },
-            });
-            const counts = new Map<string, { staff: { id: string; name: string; phone: string | null }; n: number }>();
-            for (const a of past) {
-              if (!a.staff) continue;
-              const e = counts.get(a.staff.id) ?? { staff: a.staff, n: 0 };
-              e.n++; counts.set(a.staff.id, e);
-            }
-            const top = Array.from(counts.values()).sort((x, y) => y.n - x.n)[0];
-            if (top) targetStaff = top.staff;
-          }
-        }
-
-        // Build the alert and pick a recipient (barber phone → business owner phone).
-        const biz = await prisma.business.findUnique({
-          where: { id: bizId }, select: { name: true, phone: true },
-        });
-        const custLine = `${custName} (${localPhone})`;
-        let recipientPhone: string | null = null;
-        let alert: string;
-        if (targetStaff?.phone) {
-          recipientPhone = targetStaff.phone;
-          alert = `🔔 פנייה שדורשת טיפול\nלקוח: ${custLine}\nבעיה: ${reason}\n\nהלקוח ממתין בוואטסאפ — כדאי לחזור אליו.`;
-        } else {
-          // No barber phone — alert the business owner instead.
-          recipientPhone = biz?.phone ?? null;
-          const who = targetStaff ? `הספר ${targetStaff.name} (אין לו טלפון רשום)` : "לא זוהה ספר ספציפי";
-          alert = `🔔 פנייה שדורשת טיפול (${who})\nלקוח: ${custLine}\nבעיה: ${reason}\n\nהלקוח ממתין בוואטסאפ — כדאי לחזור אליו.`;
-        }
-
-        let notified = false;
-        if (recipientPhone) {
-          try {
-            await sendMessage({
-              businessId: bizId,
-              customerPhone: normalizeIsraeliPhone(recipientPhone),
-              kind: "agent_escalation",
-              body: alert,
-            });
-            notified = true;
-          } catch (e) {
-            console.error("[escalate] staff alert send failed", e);
-          }
-        }
-
-        // Mute the agent for this conversation (24h lazy expiry) and mark escalated.
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { status: "escalated", escalatedAt: new Date() },
-        });
-
-        const target = targetStaff ? `ל${targetStaff.name}` : "לבעל העסק";
+        const target = targetStaffName ? `ל${targetStaffName}` : "לבעל העסק";
         return notified
           ? `הועברה התראה ${target} עם פרטי הלקוח והבעיה. אמור ללקוח שנציג יחזור אליו בהקדם.`
           : `סומן להעברה לאדם, אך לא נמצא מספר טלפון לשליחת התראה. אמור ללקוח שנציג יחזור אליו בהקדם.`;
@@ -706,6 +620,116 @@ async function execTool(
     console.error(`[agent tool ${name}]`, err);
     return `שגיאה בביצוע הפעולה: ${err instanceof Error ? err.message : "unknown"}`;
   }
+}
+
+/**
+ * Hand a conversation to a human: resolve the right barber (explicit hint →
+ * the customer's upcoming-appointment barber → most-visited barber → business
+ * owner), WhatsApp them an alert with the customer + reason, then mute the agent
+ * for this conversation (24h lazy expiry). Used both by the escalate_to_human
+ * tool and by the "too many messages" auto-guard in runCustomerAgent.
+ */
+async function escalateToHuman(opts: {
+  bizId: string;
+  conversationId: string;
+  callerPhone: string;
+  reason: string;
+  staffIdHint?: string | null;
+}): Promise<{ notified: boolean; targetStaffName: string | null }> {
+  const { bizId, conversationId, callerPhone, reason } = opts;
+  const phone = normalizeIsraeliPhone(callerPhone);
+  const localPhone = phone.replace(/^972/, "0");
+
+  // Identify the customer (for the alert + to find their barber).
+  const customer = await prisma.customer.findFirst({
+    where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
+    select: { id: true, name: true },
+  });
+  const convo = await prisma.conversation.findUnique({
+    where: { id: conversationId },
+    select: { whatsappName: true },
+  });
+  const custName = customer?.name || convo?.whatsappName || "לקוח";
+
+  // Resolve which barber to alert:
+  //   1. explicit staffId hint (verify it belongs to this biz)
+  //   2. the customer's upcoming appointment's barber
+  //   3. the barber the customer visits most (history)
+  let targetStaff: { id: string; name: string; phone: string | null } | null = null;
+  if (opts.staffIdHint) {
+    targetStaff = await prisma.staff.findFirst({
+      where: { id: opts.staffIdHint, businessId: bizId },
+      select: { id: true, name: true, phone: true },
+    });
+  }
+  if (!targetStaff && customer) {
+    const todayStart = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
+    const upcoming = await prisma.appointment.findFirst({
+      where: {
+        customerId: customer.id, businessId: bizId,
+        date: { gte: todayStart },
+        status: { in: ["pending", "confirmed"] },
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      select: { staff: { select: { id: true, name: true, phone: true } } },
+    });
+    if (upcoming?.staff) targetStaff = upcoming.staff;
+    if (!targetStaff) {
+      // Fall back to the most-frequently-visited barber.
+      const past = await prisma.appointment.findMany({
+        where: { customerId: customer.id, businessId: bizId },
+        select: { staff: { select: { id: true, name: true, phone: true } } },
+        take: 50, orderBy: { date: "desc" },
+      });
+      const counts = new Map<string, { staff: { id: string; name: string; phone: string | null }; n: number }>();
+      for (const a of past) {
+        if (!a.staff) continue;
+        const e = counts.get(a.staff.id) ?? { staff: a.staff, n: 0 };
+        e.n++; counts.set(a.staff.id, e);
+      }
+      const top = Array.from(counts.values()).sort((x, y) => y.n - x.n)[0];
+      if (top) targetStaff = top.staff;
+    }
+  }
+
+  // Build the alert and pick a recipient (barber phone → business owner phone).
+  const biz = await prisma.business.findUnique({
+    where: { id: bizId }, select: { name: true, phone: true },
+  });
+  const custLine = `${custName} (${localPhone})`;
+  let recipientPhone: string | null = null;
+  let alert: string;
+  if (targetStaff?.phone) {
+    recipientPhone = targetStaff.phone;
+    alert = `🔔 פנייה שדורשת טיפול\nלקוח: ${custLine}\nבעיה: ${reason}\n\nהלקוח ממתין בוואטסאפ — כדאי לחזור אליו.`;
+  } else {
+    recipientPhone = biz?.phone ?? null;
+    const who = targetStaff ? `הספר ${targetStaff.name} (אין לו טלפון רשום)` : "לא זוהה ספר ספציפי";
+    alert = `🔔 פנייה שדורשת טיפול (${who})\nלקוח: ${custLine}\nבעיה: ${reason}\n\nהלקוח ממתין בוואטסאפ — כדאי לחזור אליו.`;
+  }
+
+  let notified = false;
+  if (recipientPhone) {
+    try {
+      await sendMessage({
+        businessId: bizId,
+        customerPhone: normalizeIsraeliPhone(recipientPhone),
+        kind: "agent_escalation",
+        body: alert,
+      });
+      notified = true;
+    } catch (e) {
+      console.error("[escalate] staff alert send failed", e);
+    }
+  }
+
+  // Mute the agent for this conversation (24h lazy expiry) and mark escalated.
+  await prisma.conversation.update({
+    where: { id: conversationId },
+    data: { status: "escalated", escalatedAt: new Date() },
+  });
+
+  return { notified, targetStaffName: targetStaff?.name ?? null };
 }
 
 // ─── Default system prompt ─────────────────────────────────────────────────────
@@ -981,6 +1005,33 @@ export async function runCustomerAgent(opts: {
       where: { id: conversation.id },
       data: { lastMessageAt: new Date() },
     });
+  }
+
+  // ── Auto hand-off guard: too many messages without resolution ─────────────────
+  // If the customer has sent more than the configured number of messages and the
+  // conversation still isn't resolved, the agent is probably stuck in a loop (or
+  // the case is genuinely too complex). Stop burning tokens, hand it to a human,
+  // and tell the customer someone will follow up. 0 = disabled.
+  const escalateThreshold = agentConfig?.escalateAfterMessages ?? 0;
+  if (escalateThreshold > 0) {
+    const userMsgCount = await prisma.conversationMessage.count({
+      where: { conversationId: conversation.id, role: "user" },
+    });
+    if (userMsgCount >= escalateThreshold) {
+      await escalateToHuman({
+        bizId: businessId,
+        conversationId: conversation.id,
+        callerPhone: phone,
+        reason: `השיחה נמשכת מעבר לרגיל (${userMsgCount} הודעות מהלקוח) בלי שנסגרה — ייתכן שהסוכן נתקע. כדאי לחזור ללקוח.`,
+      });
+      const handoffMsg = "אני מעביר אותך לטיפול אישי של אחד מהצוות — מישהו יחזור אליך בהקדם 🙏";
+      await prisma.conversationMessage.create({
+        data: { conversationId: conversation.id, role: "assistant", content: handoffMsg },
+      });
+      await sendMessage({ businessId, customerPhone: phone, kind: "agent_reply", body: handoffMsg })
+        .catch(e => console.error("[agent] handoff message send failed", e));
+      return;
+    }
   }
 
   // ── Load recent dialogue ───────────────────────────────────────────────────────

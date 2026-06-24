@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       escalatePhone: null,
       maxIdleMinutes: 30,
       requireSwapApproval: true,
+      escalateAfterMessages: 14,
       faqs:          [],
     });
   }
@@ -44,7 +45,7 @@ export async function PATCH(req: NextRequest) {
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
   const body = await req.json();
-  const { isEnabled, agentName, systemPrompt, greetingMsg, escalatePhone, maxIdleMinutes, requireSwapApproval } = body;
+  const { isEnabled, agentName, systemPrompt, greetingMsg, escalatePhone, maxIdleMinutes, requireSwapApproval, escalateAfterMessages } = body;
 
   const config = await prisma.agentConfig.upsert({
     where:  { businessId: biz.id },
@@ -57,6 +58,7 @@ export async function PATCH(req: NextRequest) {
       escalatePhone:  escalatePhone  || null,
       maxIdleMinutes: maxIdleMinutes ?? 30,
       requireSwapApproval: requireSwapApproval ?? true,
+      escalateAfterMessages: escalateAfterMessages ?? 14,
     },
     update: {
       ...(isEnabled      !== undefined && { isEnabled }),
@@ -66,6 +68,7 @@ export async function PATCH(req: NextRequest) {
       ...(escalatePhone  !== undefined && { escalatePhone:  escalatePhone  || null }),
       ...(maxIdleMinutes !== undefined && { maxIdleMinutes }),
       ...(requireSwapApproval !== undefined && { requireSwapApproval }),
+      ...(escalateAfterMessages !== undefined && { escalateAfterMessages }),
     },
     include: { faqs: { orderBy: { sortOrder: "asc" } } },
   });

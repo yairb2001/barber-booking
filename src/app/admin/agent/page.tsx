@@ -12,6 +12,7 @@ type Config = {
   escalatePhone: string | null;
   maxIdleMinutes: number;
   requireSwapApproval: boolean;
+  escalateAfterMessages: number;
   faqs: FAQ[];
 };
 
@@ -245,6 +246,24 @@ export default function AdminAgentPage() {
                 className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 dir="ltr"
               />
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-neutral-500 block mb-1">
+                העברה לאדם אחרי כמה הודעות מהלקוח בלי שנסגר תור (0 = כבוי)
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={50}
+                value={config.escalateAfterMessages}
+                onChange={e => setConfig(c => c ? { ...c, escalateAfterMessages: parseInt(e.target.value) || 0 } : c)}
+                className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                dir="ltr"
+              />
+              <span className="text-[11px] text-neutral-400 block mt-1">
+                מומלץ 12-16. אם שיחה נמשכת מעבר לזה, הסוכן עוצר ומעביר את הלקוח לטיפול אנושי עם התראה.
+              </span>
             </label>
           </div>
 
