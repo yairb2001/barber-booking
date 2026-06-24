@@ -35,12 +35,14 @@ export async function GET(request: Request) {
       ...ss.service,
       // Per-barber overrides win when set (same underlying service, personal label/note).
       name: ss.customName ?? ss.service.name,
+      description: ss.customDescription ?? ss.service.description,
       note: ss.customNote ?? ss.service.note,
       price: ss.customPrice ?? ss.service.price,
       durationMinutes: ss.customDuration ?? ss.service.durationMinutes,
       customPrice: ss.customPrice,
       customDuration: ss.customDuration,
       customName: ss.customName,
+      customDescription: ss.customDescription,
       customNote: ss.customNote,
     }));
 

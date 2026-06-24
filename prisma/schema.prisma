@@ -210,12 +210,13 @@ model Service {
 
 // === שירות לפי ספר ===
 model StaffService {
-  staffId        String  @map("staff_id")
-  serviceId      String  @map("service_id")
-  customPrice    Float?  @map("custom_price")
-  customDuration Int?    @map("custom_duration")
-  customName     String? @map("custom_name")
-  customNote     String? @map("custom_note")
+  staffId           String  @map("staff_id")
+  serviceId         String  @map("service_id")
+  customPrice       Float?  @map("custom_price")
+  customDuration    Int?    @map("custom_duration")
+  customName        String? @map("custom_name")
+  customDescription String? @map("custom_description")
+  customNote        String? @map("custom_note")
 
   staff          Staff   @relation(fields: [staffId], references: [id])
   service        Service @relation(fields: [serviceId], references: [id])

@@ -26,6 +26,7 @@ type ServiceRow = {
   customPrice: number | null;
   customDuration: number | null;
   customName: string | null;
+  customDescription: string | null;
   customNote: string | null;
 };
 
@@ -64,6 +65,7 @@ export default function StaffSettingsPage() {
   const [customPrice, setCustomPrice] = useState("");
   const [customDuration, setCustomDuration] = useState("");
   const [customName, setCustomName] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
   const [customNote, setCustomNote] = useState("");
   // Own-service management (barber's private services)
   const [canManageOwn, setCanManageOwn] = useState(false);
@@ -194,6 +196,7 @@ export default function StaffSettingsPage() {
         customPrice: customPrice ? Number(customPrice) : null,
         customDuration: customDuration ? Number(customDuration) : null,
         customName: customName.trim() || null,
+        customDescription: customDescription.trim() || null,
         customNote: customNote.trim() || null,
       }),
     });
@@ -322,8 +325,9 @@ export default function StaffSettingsPage() {
                     {svc.customPrice != null ? `₪${svc.customPrice}` : `₪${svc.price}`}
                     {" · "}
                     {svc.customDuration != null ? `${svc.customDuration} דק'` : `${svc.durationMinutes} דק'`}
-                    {(svc.customPrice != null || svc.customDuration != null || svc.customName || svc.customNote) && <span className="text-teal-600"> (מותאם)</span>}
+                    {(svc.customPrice != null || svc.customDuration != null || svc.customName || svc.customDescription || svc.customNote) && <span className="text-teal-600"> (מותאם)</span>}
                   </div>
+                  {svc.customDescription && <div className="text-xs text-neutral-400 mt-0.5 truncate">{svc.customDescription}</div>}
                   {svc.customNote && <div className="text-xs text-neutral-400 mt-0.5 truncate">📝 {svc.customNote}</div>}
                 </div>
                 {svc.enabled && (
@@ -332,6 +336,7 @@ export default function StaffSettingsPage() {
                     setCustomPrice(svc.customPrice != null ? String(svc.customPrice) : "");
                     setCustomDuration(svc.customDuration != null ? String(svc.customDuration) : "");
                     setCustomName(svc.customName ?? "");
+                    setCustomDescription(svc.customDescription ?? "");
                     setCustomNote(svc.customNote ?? "");
                   }}
                     className="text-xs text-neutral-500 hover:text-teal-700 px-2 py-1 rounded-lg border border-neutral-200 hover:border-teal-300 transition">
@@ -349,6 +354,13 @@ export default function StaffSettingsPage() {
                       onChange={e => setCustomName(e.target.value)}
                       placeholder={`${svc.name} (ברירת מחדל)`}
                       className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">תיאור מותאם</label>
+                    <textarea value={customDescription} rows={2}
+                      onChange={e => setCustomDescription(e.target.value)}
+                      placeholder={svc.description ? `${svc.description} (ברירת מחדל)` : "תיאור השירות שיוצג ללקוח (אופציונלי)"}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
                   </div>
                   <div>
                     <label className="text-xs text-neutral-500 block mb-1">הערה אישית</label>

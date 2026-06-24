@@ -45,6 +45,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       customPrice: staffMap[s.id]?.customPrice ?? null,
       customDuration: staffMap[s.id]?.customDuration ?? null,
       customName: staffMap[s.id]?.customName ?? null,
+      customDescription: staffMap[s.id]?.customDescription ?? null,
       customNote: staffMap[s.id]?.customNote ?? null,
     })),
   });
@@ -139,10 +140,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // ── Default: toggle a shared service on/off for this barber ──
-  const { serviceId, enabled, customPrice, customDuration, customName, customNote } = body;
+  const { serviceId, enabled, customPrice, customDuration, customName, customDescription, customNote } = body;
 
-  // Normalize the per-barber name/note overrides: blank → null (use the shared service value).
+  // Normalize the per-barber name/description/note overrides: blank → null (use the shared service value).
   const normName = typeof customName === "string" && customName.trim() ? customName.trim() : null;
+  const normDescription = typeof customDescription === "string" && customDescription.trim() ? customDescription.trim() : null;
   const normNote = typeof customNote === "string" && customNote.trim() ? customNote.trim() : null;
 
   if (enabled) {
@@ -154,12 +156,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         customPrice: customPrice ?? null,
         customDuration: customDuration ?? null,
         customName: normName,
+        customDescription: normDescription,
         customNote: normNote,
       },
       update: {
         customPrice: customPrice ?? null,
         customDuration: customDuration ?? null,
         customName: normName,
+        customDescription: normDescription,
         customNote: normNote,
       },
     });
