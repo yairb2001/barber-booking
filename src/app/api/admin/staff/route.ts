@@ -12,6 +12,7 @@ export async function GET(_req: NextRequest) {
   const todayDate = new Date(todayStr + "T00:00:00.000Z");
 
   const staff = await prisma.staff.findMany({
+    where: { isActive: true },
     include: {
       schedules: true,
       staffServices: { include: { service: true } },

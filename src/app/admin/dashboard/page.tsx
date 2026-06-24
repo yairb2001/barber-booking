@@ -64,6 +64,18 @@ type Analytics = {
     secondVisit:       number;
     secondVisitRate:   { cohortSize: number; returned: number; rate: number };
   }[];
+  serviceBreakdown: {
+    serviceId: string;
+    name:      string;
+    count:     number;
+    revenue:   number;
+  }[];
+  staffUniqueCustomers: {
+    staffId:         string;
+    name:            string;
+    isActive:        boolean;
+    uniqueCustomers: number;
+  }[];
 };
 
 type Me    = { isOwner: boolean; staffId: string | null; staff: { id: string; name: string; role: string } | null };
@@ -479,6 +491,92 @@ function ActivityBreakdownCard({ breakdown }: { breakdown: Analytics["activityBr
               </div>
               <div className="h-2.5 bg-neutral-100 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${row.color}`} style={{ width: `${row.pct}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── ServicePieChart — pure-SVG donut, no chart library ────────────────────────
+const PIE_COLORS = ["#0d9488", "#10b981", "#f59e0b", "#334155", "#0ea5e9", "#f43f5e", "#8b5cf6", "#84cc16", "#ec4899", "#64748b"];
+function ServicePieChart({ data }: { data: Analytics["serviceBreakdown"] }) {
+  const total = data.reduce((s, d) => s + d.count, 0);
+  // Donut geometry
+  const R = 60, C = 2 * Math.PI * R;
+  let offset = 0;
+  const segments = data.map((d, i) => {
+    const frac = total > 0 ? d.count / total : 0;
+    const len = frac * C;
+    const seg = { color: PIE_COLORS[i % PIE_COLORS.length], len, dashOffset: -offset, pct: Math.round(frac * 100) };
+    offset += len;
+    return seg;
+  });
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-neutral-800 text-sm">תורים לפי שירות</h3>
+        <p className="text-xs text-neutral-400 mt-0.5">סה״כ {total} תורים בתקופה</p>
+      </div>
+      {total === 0 ? (
+        <p className="text-sm text-neutral-400 text-center py-4">אין נתונים</p>
+      ) : (
+        <div className="flex items-center gap-5 flex-wrap justify-center">
+          <svg viewBox="0 0 160 160" className="w-36 h-36 shrink-0" style={{ transform: "rotate(-90deg)" }}>
+            {segments.map((s, i) => (
+              <circle key={i} cx="80" cy="80" r={R} fill="none"
+                stroke={s.color} strokeWidth="22"
+                strokeDasharray={`${s.len} ${C - s.len}`} strokeDashoffset={s.dashOffset} />
+            ))}
+          </svg>
+          <div className="flex-1 min-w-[140px] space-y-2">
+            {data.map((d, i) => (
+              <div key={d.serviceId} className="flex items-center gap-2 text-sm">
+                <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
+                <span className="text-neutral-700 flex-1 truncate">{d.name}</span>
+                <span className="font-bold text-neutral-800">{d.count}</span>
+                <span className="text-neutral-400 text-xs w-9 text-left">{segments[i].pct}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── DeepDataCard — total + per-barber unique customers (all-time) ──────────────
+function DeepDataCard({ total, perStaff }: { total: number; perStaff: Analytics["staffUniqueCustomers"] }) {
+  const max = perStaff.reduce((m, s) => Math.max(m, s.uniqueCustomers), 0);
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-neutral-800 text-sm">📊 נתונים מעמקים</h3>
+        <p className="text-xs text-neutral-400 mt-0.5">לקוחות שונים שירתנו במספרה — כל הזמנים</p>
+      </div>
+      <div className="bg-slate-50 rounded-xl p-4 mb-4 text-center">
+        <p className="text-3xl font-bold text-teal-600">{total}</p>
+        <p className="text-xs text-neutral-500 mt-1">סה״כ לקוחות ייחודיים</p>
+      </div>
+      {perStaff.length === 0 ? (
+        <p className="text-sm text-neutral-400 text-center py-2">אין נתונים פר-ספר</p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-[11px] text-neutral-400">פר-ספר (לקוח ששירתו כמה ספרים נספר אצל כל אחד)</p>
+          {perStaff.map(s => (
+            <div key={s.staffId}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-neutral-700 font-medium flex items-center gap-1.5">
+                  {s.name}
+                  {!s.isActive && <span className="text-[10px] bg-neutral-100 text-neutral-400 px-1.5 py-0.5 rounded-full">עזב</span>}
+                </span>
+                <span className="font-bold text-neutral-800">{s.uniqueCustomers}</span>
+              </div>
+              <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+                <div className={`h-full rounded-full ${s.isActive ? "bg-teal-500" : "bg-neutral-300"}`}
+                  style={{ width: `${max > 0 ? Math.round((s.uniqueCustomers / max) * 100) : 0}%` }} />
               </div>
             </div>
           ))}
@@ -970,9 +1068,19 @@ export default function Dashboard() {
                 <MiniStat icon="👥" label="לקוחות היום" value={a.todayAppointments} />
                 <MiniStat icon="🆕" label="חדשים היום" value={a.todayNewToBusiness} />
                 <MiniStat icon="💰" label="מחזור יומי" value={`₪${a.todayRevenue.toLocaleString("he-IL")}`} />
-                <MiniStat icon="📅" label="נקבעו ב-24 שעות" value={a.bookingsCreatedToday} sub="ידני + עצמאי" />
+                <MiniStat icon="📅" label="נקבעו היום" value={a.bookingsCreatedToday} sub="ידני + עצמאי" />
               </div>
             </div>
+          )}
+
+          {/* ── Service distribution pie ── */}
+          {a.serviceBreakdown.length > 0 && (
+            <ServicePieChart data={a.serviceBreakdown} />
+          )}
+
+          {/* ── Deep data — owners only ── */}
+          {isOwner && !selStaff && (
+            <DeepDataCard total={a.activityBreakdown.total} perStaff={a.staffUniqueCustomers} />
           )}
         </>
       )}

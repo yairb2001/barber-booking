@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   const resolvedBusinessId = (await resolveBusinessId(req)) ?? undefined;
 
   const staff = await prisma.staff.findMany({
-    where: { isAvailable: true, ...(resolvedBusinessId ? { businessId: resolvedBusinessId } : {}) },
+    where: { isAvailable: true, isActive: true, ...(resolvedBusinessId ? { businessId: resolvedBusinessId } : {}) },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,

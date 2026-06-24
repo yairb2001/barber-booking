@@ -57,7 +57,6 @@ export async function GET(req: NextRequest) {
   // Today range (UTC day — matches how Appointment.date is stored)
   const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
   const todayEnd   = new Date(); todayEnd.setUTCHours(23, 59, 59, 999);
-  const last24h    = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
   // Previous calendar month (relative to [from])
   const prevMonthEnd   = new Date(fromDate); prevMonthEnd.setUTCDate(0); prevMonthEnd.setUTCHours(23, 59, 59, 999);
@@ -68,8 +67,10 @@ export async function GET(req: NextRequest) {
     where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, ...sf },
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
+      serviceId: true,
       customer: { select: { id: true, referralSource: true } },
       staff:    { select: { id: true, name: true } },
+      service:  { select: { id: true, name: true } },
     },
   });
 
@@ -78,6 +79,18 @@ export async function GET(req: NextRequest) {
   // Revenue = sum of ALL non-cancelled appointments (price is known at booking)
   const totalRevenue      = activeAppts.reduce((s, a) => s + a.price, 0);
   const totalAppointments = activeAppts.length;
+
+  // ── Service breakdown (for the pie chart): appointments per service in period ──
+  const svcMap = new Map<string, { name: string; count: number; revenue: number }>();
+  for (const a of activeAppts) {
+    const key = a.serviceId;
+    const v = svcMap.get(key) ?? { name: a.service?.name ?? "ללא שירות", count: 0, revenue: 0 };
+    v.count++; v.revenue += a.price;
+    svcMap.set(key, v);
+  }
+  const serviceBreakdown = Array.from(svcMap.entries())
+    .map(([serviceId, v]) => ({ serviceId, name: v.name, count: v.count, revenue: v.revenue }))
+    .sort((a, b) => b.count - a.count);
 
   // Unique customers with active appointments
   const periodCustMap = new Map<string, { referralSource: string | null }>();
@@ -115,11 +128,12 @@ export async function GET(req: NextRequest) {
   const todayAppointments = todayAppts.length;
   const todayRevenue = todayAppts.reduce((s, a) => s + a.price, 0);
 
-  // bookingsCreatedToday — appointments BOOKED in last 24h (regardless of when the appt is)
+  // bookingsCreatedToday — appointments BOOKED today (full calendar day, midnight→midnight),
+  // regardless of when the appt itself is. Includes barber-created entries (no source filter).
   const bookingsCreatedToday = await prisma.appointment.count({
     where: {
       businessId: bizId,
-      createdAt: { gte: last24h },
+      createdAt: { gte: todayStart, lte: todayEnd },
       status: { notIn: cancelledArr },
       ...sf,
     },
@@ -143,6 +157,7 @@ export async function GET(req: NextRequest) {
       activityBreakdown: { total: 0, oneTime: 0, active: 0, regulars: 0 },
       returnRate: { windowDays: returnWindowDays, cohortSize: 0, returned: 0, rate: 0 },
       dailyRevenue, staffSummary: [],
+      serviceBreakdown, staffUniqueCustomers: [],
     });
   }
 
@@ -388,6 +403,32 @@ export async function GET(req: NextRequest) {
     computeOccupancy({ businessId: bizId, from: fromDate,   to: toDate,   staffId: effectiveStaffId }),
   ]);
 
+  // ── 9. Deep data — all-time unique customers per staff (owner view only) ──────
+  // A customer served by multiple staff is counted once for EACH staff (overlap OK).
+  // Includes departed (isActive:false) staff so their history isn't lost.
+  type StaffUnique = { staffId: string; name: string; isActive: boolean; uniqueCustomers: number };
+  let staffUniqueCustomers: StaffUnique[] = [];
+  if (!effectiveStaffId) {
+    const pairs = await prisma.appointment.groupBy({
+      by: ["staffId", "customerId"],
+      where: { businessId: bizId, status: { notIn: cancelledArr } },
+    });
+    const countByStaff = new Map<string, number>();
+    for (const p of pairs) countByStaff.set(p.staffId, (countByStaff.get(p.staffId) ?? 0) + 1);
+
+    const allStaff = await prisma.staff.findMany({
+      where: { businessId: bizId },
+      select: { id: true, name: true, isActive: true },
+    });
+    const nameById = new Map(allStaff.map(s => [s.id, s]));
+    staffUniqueCustomers = Array.from(countByStaff.entries())
+      .map(([staffId, uniqueCustomers]) => {
+        const s = nameById.get(staffId);
+        return { staffId, name: s?.name ?? "—", isActive: s?.isActive ?? true, uniqueCustomers };
+      })
+      .sort((a, b) => b.uniqueCustomers - a.uniqueCustomers);
+  }
+
   return NextResponse.json({
     totalRevenue,
     totalAppointments,
@@ -413,5 +454,7 @@ export async function GET(req: NextRequest) {
     },
     dailyRevenue,
     staffSummary,
+    serviceBreakdown,
+    staffUniqueCustomers,
   });
 }

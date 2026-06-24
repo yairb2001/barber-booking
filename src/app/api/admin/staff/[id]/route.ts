@@ -80,15 +80,12 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     );
   }
 
-  // Cascade-delete related data
-  await prisma.$transaction([
-    prisma.staffScheduleOverride.deleteMany({ where: { staffId } }),
-    prisma.staffSchedule.deleteMany({ where: { staffId } }),
-    prisma.staffService.deleteMany({ where: { staffId } }),
-    prisma.portfolioItem.deleteMany({ where: { staffId } }),
-    prisma.waitlist.deleteMany({ where: { staffId } }),
-    prisma.staff.delete({ where: { id: staffId } }),
-  ]);
+  // Soft-delete: hide from calendar + public booking, but keep ALL history
+  // (appointments, schedules, services, portfolio) so stats aren't corrupted.
+  await prisma.staff.update({
+    where: { id: staffId },
+    data: { isActive: false, isAvailable: false, inQuickPool: false },
+  });
 
   return NextResponse.json({ ok: true });
 }
