@@ -334,11 +334,13 @@ export default function ChooseBarberPage() {
 
                 {/* Name */}
                 <Link href={publicHref(slug, `/book/service?staffId=${member.id}`)}
-                  className="absolute inset-x-0 z-10 px-2"
+                  className="absolute inset-x-0 z-10 px-2 text-center"
                   style={{ bottom: slot ? 38 : 10 }}>
-                  <p className="font-bold text-[11px] text-white leading-tight truncate">{member.name}</p>
+                  <p className="font-bold text-[11px] text-white leading-tight truncate"
+                    style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>{member.name}</p>
                   {member.tagline && (
-                    <p className="text-[9px] text-white/75 leading-tight truncate mt-0.5">{member.tagline}</p>
+                    <p className="text-[10px] text-white/85 leading-tight truncate mt-0.5"
+                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>{member.tagline}</p>
                   )}
                 </Link>
 
