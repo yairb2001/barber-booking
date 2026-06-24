@@ -8,6 +8,7 @@ type StaffInfo = {
   id: string;
   name: string;
   phone: string | null;
+  tagline: string | null;
   avatarUrl: string | null;
   settings: string | null;
   canViewAllCalendars: boolean;
@@ -92,6 +93,10 @@ export default function StaffSettingsPage() {
   const [canViewAllChats,     setCanViewAllChats]     = useState(false);
   const [permSaved, setPermSaved] = useState(false);
 
+  // Tagline (short note shown under the barber's name in the booking screen)
+  const [tagline, setTagline] = useState("");
+  const [taglineSaved, setTaglineSaved] = useState(false);
+
   async function loadStaff() {
     const data: StaffInfo = await fetch(`/api/admin/staff/${id}`).then(r => r.json());
     setStaff(data);
@@ -118,7 +123,21 @@ export default function StaffSettingsPage() {
     } catch { /* ignore */ }
     setCanViewAllCalendars(!!data.canViewAllCalendars);
     setCanViewAllChats(!!data.canViewAllChats);
+    setTagline(data.tagline ?? "");
     setLoading(false);
+  }
+
+  async function saveTagline() {
+    setSaving(true);
+    await fetch(`/api/admin/staff/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tagline: tagline.trim() || null }),
+    });
+    setStaff(s => (s ? { ...s, tagline: tagline.trim() || null } : s));
+    setSaving(false);
+    setTaglineSaved(true);
+    setTimeout(() => setTaglineSaved(false), 2000);
   }
 
   async function loadServices() {
@@ -283,6 +302,27 @@ export default function StaffSettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">{staff.name}</h1>
           {staff.phone && <p className="text-sm text-neutral-500" dir="ltr">{staff.phone}</p>}
+        </div>
+      </div>
+
+      {/* Tagline — short note shown under the barber's name in the booking screen */}
+      <div className="mb-8 bg-white border border-neutral-200 rounded-2xl p-4">
+        <p className="text-sm font-semibold text-neutral-800">הערה קצרה</p>
+        <p className="text-xs text-neutral-400 mt-0.5 mb-3">תוצג מתחת לשם של {staff.name} במסך בחירת הספר ללקוח. לדוגמה: ״מתמחה בתספורות קלאסיות״.</p>
+        <div className="flex items-center gap-2">
+          <input
+            value={tagline}
+            onChange={e => setTagline(e.target.value)}
+            maxLength={60}
+            placeholder="כתוב הערה קצרה…"
+            className="flex-1 px-3 py-2 rounded-xl border border-neutral-200 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/40"
+          />
+          <button
+            onClick={saveTagline}
+            disabled={saving || tagline.trim() === (staff.tagline ?? "")}
+            className="px-4 py-2 rounded-xl bg-teal-600 text-white text-sm font-medium disabled:opacity-40 hover:bg-teal-700 transition">
+            {taglineSaved ? "נשמר ✓" : "שמור"}
+          </button>
         </div>
       </div>
 

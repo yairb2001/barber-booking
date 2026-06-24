@@ -124,6 +124,7 @@ model Staff {
   phone         String?
   name          String
   nickname      String?
+  tagline       String?  @map("tagline")
   avatarUrl     String?  @map("avatar_url")
   role          String   @default("barber") // owner, manager, barber
   isAvailable   Boolean  @default(true) @map("is_available")

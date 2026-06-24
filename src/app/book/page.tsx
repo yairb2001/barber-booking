@@ -20,6 +20,7 @@ type Staff = {
   id: string;
   name: string;
   nickname: string | null;
+  tagline: string | null;
   avatarUrl: string | null;
   isAvailable: boolean;
 };
@@ -336,6 +337,9 @@ export default function ChooseBarberPage() {
                   className="absolute inset-x-0 z-10 px-2"
                   style={{ bottom: slot ? 38 : 10 }}>
                   <p className="font-bold text-[11px] text-white leading-tight truncate">{member.name}</p>
+                  {member.tagline && (
+                    <p className="text-[9px] text-white/75 leading-tight truncate mt-0.5">{member.tagline}</p>
+                  )}
                 </Link>
 
                 {/* Slot / CTA */}

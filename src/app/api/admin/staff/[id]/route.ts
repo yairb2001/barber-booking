@@ -22,9 +22,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (session.staffId !== params.id) {
       return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
     }
-    // Only avatarUrl and settings are self-editable by barbers
+    // Only avatarUrl, tagline and settings are self-editable by barbers
     const data: Record<string, unknown> = {};
     if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
+    if (body.tagline !== undefined) data.tagline = body.tagline ? String(body.tagline).trim() : null;
     if (body.settings !== undefined) {
       data.settings = body.settings === null ? null
         : typeof body.settings === "string" ? body.settings
@@ -41,6 +42,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: params.id },
     data: {
       ...(body.name !== undefined && { name: body.name }),
+      ...(body.tagline !== undefined && { tagline: body.tagline ? String(body.tagline).trim() : null }),
       ...(body.phone !== undefined && { phone: body.phone }),
       ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
       ...(body.isAvailable !== undefined && { isAvailable: body.isAvailable }),
