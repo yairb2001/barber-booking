@@ -85,6 +85,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.walkInTemplate !== undefined && {
         walkInTemplate: body.walkInTemplate || null,
       }),
+      ...(body.waitlistNotifyTemplate !== undefined && {
+        waitlistNotifyTemplate: body.waitlistNotifyTemplate || null,
+      }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {
         bookingHorizonDays: Number(body.bookingHorizonDays) || 30,

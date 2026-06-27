@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { enqueueMessage } from "@/lib/messaging";
+import { enqueueMessage, applyTemplate, firstName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 
 // ── Time preference helpers ───────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ async function triggerWaitlist(opts: {
       if (!matchesTimePreference(startTime, pref)) continue;
     }
 
-    void sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug);
+    void sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate);
   }
 }
 
@@ -133,6 +133,7 @@ export function sendWaitlistEntryNotification(
   entry: WaitlistEntryForNotify,
   triggerType: "cancellation" | "day_open",
   slug?: string | null,
+  customTemplate?: string | null,
 ) {
   const pref = entry.preferredTimeOfDay || "any";
   const prefLabel = TIME_PREF_LABELS[pref] ?? "";
@@ -148,24 +149,32 @@ export function sendWaitlistEntryNotification(
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
   const bookingLink = `${baseUrl}${slug ? `/${slug}` : ""}/book`;
 
-  const lines = [
-    `שלום ${entry.customer.name} 👋`,
-    ``,
-    `בשורות טובות! ${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"} ${prefLabel}ב*${businessName}* ✂️`,
-    `📅 ${dateLabel}`,
-    staffName ? `💈 אצל ${staffName}` : null,
-    `🔖 שירות: ${entry.service.name}`,
-    ``,
-    `מהרו לקבוע תור לפני שיתפס 🏃`,
-    `👇 קביעת תור:`,
-    bookingLink,
-  ].filter(Boolean).join("\n");
+  // The opening phrase: "תור פנוי בבוקר" / "יום נפתח" (trigger + time window).
+  const slotLabel = `${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"}${prefLabel ? ` ${prefLabel}` : ""}`;
+
+  // Render the owner's editable template (or the built-in default).
+  let body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {
+    name:         firstName(entry.customer.name),
+    business:     businessName,
+    slot:         slotLabel,
+    date:         dateLabel,
+    staff_line:   staffName ? `💈 אצל ${staffName}\n` : "",
+    service:      entry.service.name,
+    booking_link: bookingLink,
+  });
+
+  // Always guarantee a booking link. If the owner edited the template and
+  // removed the link, append it so the customer can still tap through and grab
+  // the slot — a waitlist message without a booking link is useless.
+  if (bookingLink && !body.includes(bookingLink)) {
+    body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
+  }
 
   return enqueueMessage({
     businessId: entry.businessId,
     customerPhone: entry.customer.phone,
     kind: "waitlist_notify",
-    body: lines,
+    body,
     scheduledFor: new Date(), // due now → drip cron sends it ahead of staggered broadcasts
   })
     .then(() =>

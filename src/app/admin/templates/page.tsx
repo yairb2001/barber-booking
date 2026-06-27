@@ -24,6 +24,8 @@ function applyPreview(template: string): string {
     proposed_time:  "16:00",
     proposed_staff: "יאיר הרוש",
     delay_minutes:  "15",
+    slot:           "תור פנוי בבוקר",
+    staff_line:     "💈 אצל אוריה\n",
     booking_link:   "https://dominant.co.il/book",
     cancel_link:    "https://dominant.co.il/book/my-appointments",
     cancel_line:    "לצפייה או ביטול תור:\nhttps://dominant.co.il/book/my-appointments",
@@ -65,6 +67,7 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   swap_confirmation:      { emoji: "🤝", when: "נשלחת ללקוח כשהחלפת התור מאושרת" },
   appointment_moved:      { emoji: "📅", when: "נשלחת ללקוח כשמזיזים את התור שלו ביומן" },
   delay_notification:     { emoji: "⏳", when: "נשלחת ללקוח כשמודיעים לו על עיכוב" },
+  waitlist_notify:        { emoji: "📣", when: "נשלחת אוטומטית ללקוח שברשימת המתנה כשמתפנה תור מתאים" },
 };
 
 // Display order, grouped into sections.
@@ -83,6 +86,11 @@ const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
     title: "החלפות והעברות תורים",
     subtitle: "נשלחות אוטומטית כשאתה מבצע פעולה ביומן",
     keys: ["swap_proposal", "move_proposal", "swap_confirmation", "appointment_moved", "delay_notification"],
+  },
+  {
+    title: "רשימת המתנה",
+    subtitle: "נשלחת אוטומטית כשמתפנה תור ללקוח שממתין",
+    keys: ["waitlist_notify"],
   },
 ];
 

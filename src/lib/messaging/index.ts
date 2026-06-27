@@ -409,6 +409,20 @@ export const DEFAULT_WALK_IN_TEMPLATE =
 
 נתראה בפעם הבאה 💈`;
 
+/** Default "a slot freed up" message sent to a waitlist member. The booking
+ *  link is always guaranteed at send time (see waitlistNotifyText), so even if
+ *  the owner removes it from a custom template it gets appended automatically. */
+export const DEFAULT_WAITLIST_NOTIFY_TEMPLATE =
+`שלום {{name}} 👋
+
+בשורות טובות! {{slot}} ב*{{business}}* ✂️
+📅 {{date}}
+{{staff_line}}🔖 שירות: {{service}}
+
+מהרו לקבוע תור לפני שיתפס 🏃
+👇 קביעת תור:
+{{booking_link}}`;
+
 /** All editable template definitions (used by the /admin/templates UI). */
 export const TEMPLATE_DEFS = {
   confirmation: {
@@ -583,6 +597,21 @@ export const TEMPLATE_DEFS = {
     variables: [
       { key: "name",         label: "שם הלקוח" },
       { key: "business",     label: "שם העסק" },
+      { key: "booking_link", label: "קישור לקביעת תור" },
+    ],
+  },
+  waitlist_notify: {
+    label: "הודעת רשימת המתנה (תור התפנה)",
+    description: "נשלחת ללקוח שברשימת ההמתנה כשמתפנה תור מתאים או נפתח יום. הקישור לקביעת תור יתווסף אוטומטית גם אם תמחק אותו.",
+    field: "waitlistNotifyTemplate" as const,
+    default: DEFAULT_WAITLIST_NOTIFY_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "business",     label: "שם העסק" },
+      { key: "slot",         label: "סוג הפתיחה (למשל: תור פנוי בבוקר / יום נפתח)" },
+      { key: "date",         label: "תאריך" },
+      { key: "staff_line",   label: "שורת הספר (💈 אצל X) — ריקה אם 'כל ספר'" },
+      { key: "service",      label: "שם השירות" },
       { key: "booking_link", label: "קישור לקביעת תור" },
     ],
   },

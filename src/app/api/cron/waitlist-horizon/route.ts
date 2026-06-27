@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   // Only businesses that actually have someone waiting on a future date.
   const businesses = await prisma.business.findMany({
-    select: { id: true, name: true, slug: true, bookingHorizonDays: true },
+    select: { id: true, name: true, slug: true, bookingHorizonDays: true, waitlistNotifyTemplate: true },
   });
 
   let notified = 0;
@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
         customer: entry.customer,
         service: entry.service,
         staff: entry.staff,
-      }, "day_open", biz.slug);
+      }, "day_open", biz.slug, biz.waitlistNotifyTemplate);
       notified++;
       details.push(`${biz.name}: ${entry.customer.name} → ${entryISO}`);
     }
