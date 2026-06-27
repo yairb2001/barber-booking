@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
+import { sendMessage, cancellationText } from "@/lib/messaging";
 
 const SECRET = new TextEncoder().encode(
   process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
@@ -93,9 +94,10 @@ export async function POST(req: NextRequest) {
     data: { status: "cancelled_by_customer" },
   });
 
+  const dateLabel = appt.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+
   // Notify the assigned barber + business owner (native push).
   {
-    const dateLabel = appt.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
     pushToStaff(appt.staffId, {
       title: "תור בוטל ע״י הלקוח ❌",
       body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
@@ -115,6 +117,33 @@ export async function POST(req: NextRequest) {
     date:       appt.date,
     startTime:  appt.startTime,
   }).catch(console.error);
+
+  // Confirm the cancellation to the CUSTOMER on WhatsApp so they know for sure
+  // their appointment was cancelled. Awaited (not fire-and-forget) because on
+  // Vercel serverless the function is frozen right after we return — a detached
+  // promise would often be killed before the message actually sends.
+  if (appt.customer?.phone) {
+    try {
+      const business = await prisma.business.findUnique({ where: { id: appt.businessId } });
+      if (business) {
+        const cancelBody = cancellationText({
+          customerName: appt.customer.name,
+          businessName: business.name,
+          dateLabel,
+          startTime: appt.startTime,
+        });
+        await sendMessage({
+          businessId:    appt.businessId,
+          appointmentId: appt.id,
+          customerPhone: appt.customer.phone,
+          kind:          "appointment_cancelled",
+          body:          cancelBody,
+        });
+      }
+    } catch (err) {
+      console.error("customer cancellation confirmation send failed", err);
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }

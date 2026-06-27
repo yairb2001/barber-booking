@@ -14,6 +14,11 @@ const TOTAL_HOURS = DAY_END - DAY_START;
 const HHCtx = React.createContext(DEFAULT_HOUR_HEIGHT);
 // Context for calendar display range (calendarStartHour / calendarEndHour from settings)
 const HourRangeCtx = React.createContext({ start: DAY_START, end: DAY_END });
+// Tap-guard: holds a timestamp (performance.now()) until which block taps should
+// be ignored. The grid's pinch/zoom & swipe handlers push this into the future so
+// a finger that happens to rest on a block during a two-finger gesture doesn't
+// register as a tap and open its edit dialog. null when no provider is present.
+const TapGuardCtx = React.createContext<React.MutableRefObject<number> | null>(null);
 
 // Detects narrow viewports so draft blocks etc. can switch to a vertical
 // stacked layout instead of the squished horizontal pill that happens in
@@ -349,6 +354,8 @@ function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onL
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lpStart = useRef<{ x: number; y: number } | null>(null);
   const lpFired = useRef(false);
+  const lpMoved = useRef(false);
+  const tapGuard = React.useContext(TapGuardCtx);
   const clearLP = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
   const veryShort = height < 28;
   return (
@@ -360,6 +367,7 @@ function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onL
         e.stopPropagation();
         lpStart.current = { x: e.clientX, y: e.clientY };
         lpFired.current = false;
+        lpMoved.current = false;
         clearLP();
         lpTimer.current = setTimeout(() => { lpFired.current = true; onLongPress(e.clientX, e.clientY); }, LONG_PRESS_MS);
       }}
@@ -367,15 +375,18 @@ function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onL
         if (lpFired.current || !lpStart.current) return;
         const dx = Math.abs(e.clientX - lpStart.current.x);
         const dy = Math.abs(e.clientY - lpStart.current.y);
-        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) clearLP();
+        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) { lpMoved.current = true; clearLP(); }
       }}
       onPointerUp={e => {
         e.stopPropagation();
         clearLP();
-        if (!lpFired.current) onClick();
-        lpStart.current = null; lpFired.current = false;
+        // Open the break editor only on a genuine tap — not after a drag/scroll,
+        // while this break is mid-move, or during a pinch/zoom gesture.
+        const gestureActive = !!tapGuard && performance.now() < tapGuard.current;
+        if (!lpFired.current && !lpMoved.current && !isMoving && !gestureActive) onClick();
+        lpStart.current = null; lpFired.current = false; lpMoved.current = false;
       }}
-      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; }}>
+      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
       {height >= 14 && (
         <span className="text-[9px] font-semibold tracking-wide leading-none px-1 truncate max-w-full">☕ {name}</span>
       )}
@@ -536,6 +547,10 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
 // ── Appointment Block ─────────────────────────────────────────────────────────
 const LONG_PRESS_MS = 500; // hold this long to enter drag-to-move
 const LONG_PRESS_TOLERANCE_PX = 10; // movement before threshold cancels long-press (it's a scroll, not a hold)
+// After lifting the finger mid-drag we don't finalize immediately — we wait
+// this long for the finger to come back down so the user can release-and-regrab
+// to keep adjusting the position without being kicked out of drag mode.
+const DRAG_RELEASE_GRACE_MS = 600;
 
 type ApptBlockSwapState =
   | { kind: "none" }
@@ -653,6 +668,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const lpTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lpStart = useRef<{ x: number; y: number } | null>(null);
   const lpFired = useRef(false);
+  // True once the finger travels past the tap tolerance during this press — so a
+  // scroll/drag/pinch that ends on this block isn't mistaken for a tap.
+  const lpMoved = useRef(false);
+  // Shared gesture guard (pinch/zoom/swipe in progress on the grid).
+  const tapGuard = React.useContext(TapGuardCtx);
 
   function clearLP() {
     if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
@@ -698,6 +718,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
         if (!longPressEnabled) return; // no long-press in swap mode
         lpStart.current = { x: e.clientX, y: e.clientY };
         lpFired.current = false;
+        lpMoved.current = false;
         clearLP();
         lpTimer.current = setTimeout(() => {
           lpFired.current = true;
@@ -708,17 +729,22 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
         if (lpFired.current || !lpStart.current) return;
         const dx = Math.abs(e.clientX - lpStart.current.x);
         const dy = Math.abs(e.clientY - lpStart.current.y);
-        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) clearLP();
+        if (dx > LONG_PRESS_TOLERANCE_PX || dy > LONG_PRESS_TOLERANCE_PX) { lpMoved.current = true; clearLP(); }
       }}
       onPointerUp={e => {
         e.stopPropagation();
         clearLP();
-        // If long-press didn't fire — it was a tap → handle click
-        if (!lpFired.current) onClick();
+        // Only a genuine tap opens the edit dialog: no long-press fired, the
+        // finger didn't travel (scroll/drag), this block isn't mid-move, and no
+        // pinch/zoom gesture is active (a finger resting on a block during a
+        // two-finger zoom must not count as a tap).
+        const gestureActive = !!tapGuard && performance.now() < tapGuard.current;
+        if (!lpFired.current && !lpMoved.current && !isMoving && !gestureActive) onClick();
         lpStart.current = null;
         lpFired.current = false;
+        lpMoved.current = false;
       }}
-      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; }}>
+      onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
@@ -3386,6 +3412,12 @@ export default function AdminCalendar() {
   const breakDragMovedRef = useRef(false);
   const breakDragStartPt = useRef<{ x: number; y: number } | null>(null);
 
+  // Release-grace timers: when the finger lifts mid-drag we wait briefly before
+  // finalizing, so a quick release-and-regrab continues the same drag instead of
+  // dropping into the confirm card. Cleared if the finger comes back down in time.
+  const dragReleaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const breakReleaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Last VALID drop target seen during a drag. On release the pointer is often
   // over a gap (between columns / outside the grid) where computeDropTarget
   // returns null — which would throw the drag away and force the user to start
@@ -3460,6 +3492,10 @@ export default function AdminCalendar() {
   // 32px block). This ref lets us swallow that one ghost click so the block
   // doesn't immediately disappear after dragging.
   const suppressNextGridClick = useRef(false);
+  // Timestamp (performance.now()) until which block taps are ignored. The pinch/
+  // swipe handlers push this forward so a finger resting on an appt/break during
+  // a two-finger gesture doesn't open its edit dialog. Read via TapGuardCtx.
+  const tapGuardUntil = useRef(0);
 
   // Conflict modal that appears when drag-drop hits an occupied slot
   const [moveConflict, setMoveConflict] = useState<{
@@ -3638,6 +3674,9 @@ export default function AdminCalendar() {
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
         isPinch = true;
+        // A two-finger gesture started — block taps until shortly after it ends
+        // so a finger resting on an appt/break doesn't open its edit dialog.
+        tapGuardUntil.current = performance.now() + 1500;
         startDist = Math.hypot(
           e.touches[1].clientX - e.touches[0].clientX,
           e.touches[1].clientY - e.touches[0].clientY
@@ -3655,6 +3694,8 @@ export default function AdminCalendar() {
     const onTouchMove = (e: TouchEvent) => {
       if (e.touches.length === 2 && startDist > 0) {
         e.preventDefault();
+        // Keep the tap-guard alive for the whole pinch (it may outlast 1.5s).
+        tapGuardUntil.current = performance.now() + 1500;
         const dist = Math.hypot(
           e.touches[1].clientX - e.touches[0].clientX,
           e.touches[1].clientY - e.touches[0].clientY
@@ -3682,6 +3723,9 @@ export default function AdminCalendar() {
     };
     const onTouchEnd = (e: TouchEvent) => {
       startDist = 0;
+      // If a pinch just ended, keep blocking taps for a brief trailing window so
+      // the pointerup from lifting fingers off a block isn't read as a tap.
+      if (isPinch) tapGuardUntil.current = performance.now() + 400;
       const dx = (e.changedTouches[0]?.clientX ?? swipeStartX) - swipeStartX;
       const dy = Math.abs((e.changedTouches[0]?.clientY ?? swipeStartY) - swipeStartY);
 
@@ -4097,10 +4141,9 @@ export default function AdminCalendar() {
 
     const drag = dragMoveRef.current;
     setDragMove(null);
-    // Block the synthetic click that fires on the grid cell under the cursor
-    // right after pointerup — otherwise it would create a DraftApptBlock on
-    // top of the drop location.
-    suppressNextGridClick.current = true;
+    // (The synthetic grid click after pointerup is already suppressed in the
+    // global onUp handler, which runs on every release — including the grace
+    // path — so we don't set the flag again here and risk a stale suppress.)
     if (!drag || !target) return;
     const origDate = drag.appt.date.slice(0, 10);
     const origStaff = drag.appt.staff.id;
@@ -4159,6 +4202,12 @@ export default function AdminCalendar() {
     // For a RESUMED drag the finger isn't down yet — record the touch-down
     // point so we can tell a real slide from a stray tap.
     const onDown = (e: PointerEvent) => {
+      // Re-grabbing within the release-grace window → cancel the pending
+      // finalize and keep dragging from here (don't drop into the card).
+      if (dragReleaseTimer.current) {
+        clearTimeout(dragReleaseTimer.current);
+        dragReleaseTimer.current = null;
+      }
       dragStartPt.current = { x: e.clientX, y: e.clientY };
       dragMovedRef.current = false;
     };
@@ -4175,6 +4224,10 @@ export default function AdminCalendar() {
       } else {
         dragMovedRef.current = true;
       }
+      // While actively dragging, keep blocking block-taps — so releasing the
+      // drag over ANY appt/break (not just the one being moved) doesn't open its
+      // edit dialog. Refreshed every move so it stays valid through the release.
+      tapGuardUntil.current = performance.now() + 600;
       const dropTarget = computeDropTarget(e.clientX, e.clientY);
       if (dropTarget) lastMoveTargetRef.current = dropTarget; // remember last good spot
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
@@ -4187,7 +4240,16 @@ export default function AdminCalendar() {
       // Release is forgiving: if the finger ends over a gap (null target),
       // fall back to the last valid spot we tracked so the drag isn't lost.
       const dropTarget = computeDropTarget(e.clientX, e.clientY) ?? lastMoveTargetRef.current;
-      finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
+      // Suppress the synthetic grid click that fires right after this release
+      // (otherwise it would drop a draft slot where the finger lifted).
+      suppressNextGridClick.current = true;
+      // Don't finalize right away — give the finger a brief window to come back
+      // down and keep dragging. onDown clears this timer if they re-grab in time.
+      if (dragReleaseTimer.current) clearTimeout(dragReleaseTimer.current);
+      dragReleaseTimer.current = setTimeout(() => {
+        dragReleaseTimer.current = null;
+        finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
+      }, DRAG_RELEASE_GRACE_MS);
     };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
@@ -4198,6 +4260,7 @@ export default function AdminCalendar() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (dragReleaseTimer.current) { clearTimeout(dragReleaseTimer.current); dragReleaseTimer.current = null; }
     };
   }, [dragMove !== null, computeDropTarget, finalizeMoveDrag]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -4259,7 +4322,8 @@ export default function AdminCalendar() {
     breakDragProcessed.current = true;
     const drag = breakDragRef.current;
     setBreakDrag(null);
-    suppressNextGridClick.current = true;
+    // (Synthetic grid click is suppressed in the global onUp handler, including
+    // the grace path — so we don't set the flag here and risk a stale suppress.)
     if (!drag || !target) return;
     const newStartMin = toMin(target.startTime);
     // No move (same column + same start time) → don't write
@@ -4323,6 +4387,12 @@ export default function AdminCalendar() {
     // For a RESUMED break drag the finger isn't down yet — record the
     // touch-down point so we can tell a real slide from a stray tap.
     const onDown = (e: PointerEvent) => {
+      // Re-grabbing within the release-grace window → cancel the pending
+      // finalize and keep dragging (mirrors the appointment flow).
+      if (breakReleaseTimer.current) {
+        clearTimeout(breakReleaseTimer.current);
+        breakReleaseTimer.current = null;
+      }
       breakDragStartPt.current = { x: e.clientX, y: e.clientY };
       breakDragMovedRef.current = false;
     };
@@ -4338,6 +4408,8 @@ export default function AdminCalendar() {
       } else {
         breakDragMovedRef.current = true;
       }
+      // Keep block-taps blocked through the release (see appt onMove note).
+      tapGuardUntil.current = performance.now() + 600;
       const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY));
       if (dropTarget) lastBreakTargetRef.current = dropTarget; // remember last good spot
       setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
@@ -4349,7 +4421,15 @@ export default function AdminCalendar() {
       // Forgiving release: fall back to the last valid spot if the finger
       // ends over a gap, so a sloppy release doesn't throw the break away.
       const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY)) ?? lastBreakTargetRef.current;
-      finalizeBreakDrag(dropTarget);
+      // Suppress the synthetic grid click that fires right after this release.
+      suppressNextGridClick.current = true;
+      // Brief grace window: don't finalize yet — let the finger come back down
+      // and keep dragging. onDown clears this timer on a re-grab.
+      if (breakReleaseTimer.current) clearTimeout(breakReleaseTimer.current);
+      breakReleaseTimer.current = setTimeout(() => {
+        breakReleaseTimer.current = null;
+        finalizeBreakDrag(dropTarget);
+      }, DRAG_RELEASE_GRACE_MS);
     };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
@@ -4360,6 +4440,7 @@ export default function AdminCalendar() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (breakReleaseTimer.current) { clearTimeout(breakReleaseTimer.current); breakReleaseTimer.current = null; }
     };
   }, [breakDrag !== null, computeDropTarget, finalizeBreakDrag, adjustBreakDrop]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -4533,6 +4614,7 @@ export default function AdminCalendar() {
 
         {/* Scrollable grid — vertical + horizontal on mobile */}
         <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto">
+          <TapGuardCtx.Provider value={tapGuardUntil}>
           <HHCtx.Provider value={hourHeight}>
           <HourRangeCtx.Provider value={{ start: calStart, end: calEnd }}>
             <div className="flex" style={{ height: totalHeight, minWidth: gridMinWidth }}>
@@ -4816,6 +4898,7 @@ export default function AdminCalendar() {
             </div>
           </HourRangeCtx.Provider>
           </HHCtx.Provider>
+          </TapGuardCtx.Provider>
         </div>
       </div>
     );
