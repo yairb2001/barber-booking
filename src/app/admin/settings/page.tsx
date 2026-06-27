@@ -26,6 +26,7 @@ type Business = {
   reengageTemplate: string;
   chatsEnabled: boolean;
   staffManageOwnServices: boolean;
+  facebookPixel: string;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -89,6 +90,7 @@ const emptyBusiness: Business = {
   reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
   chatsEnabled: false,
   staffManageOwnServices: false,
+  facebookPixel: "",
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
@@ -494,6 +496,7 @@ export default function AdminSettingsPage() {
           reengageTemplate:    data.reengageTemplate    || "",
           chatsEnabled:        data.chatsEnabled        ?? false,
           staffManageOwnServices: data.staffManageOwnServices ?? false,
+          facebookPixel:       data.facebookPixel       || "",
         });
         const settingsObj = data.settings || {};
         // Resolve theme preset (with backward compat for old "theme: light/dark")
@@ -1245,6 +1248,29 @@ export default function AdminSettingsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── Facebook / Meta Pixel (שיווק ורימרקטינג) ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">📊</span>
+                <h3 className="text-sm font-semibold text-neutral-900">פיקסל פייסבוק (Meta Pixel)</h3>
+              </div>
+              <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+                מאפשר רימרקטינג למי שנכנס לדף ההזמנות ומדידת המרות ממודעות.
+                הדבק את מזהה הפיקסל (15–16 ספרות) — תמצא אותו ב-Meta Events Manager.
+              </p>
+              <label className="text-xs text-neutral-500 block mb-1">מזהה פיקסל</label>
+              <input
+                value={form.facebookPixel}
+                onChange={e => setField("facebookPixel", (e.target.value.match(/\d{6,20}/)?.[0] || ""))}
+                dir="ltr"
+                inputMode="numeric"
+                placeholder="לדוגמה: 123456789012345"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              <p className="text-[11px] text-neutral-400 mt-2 leading-relaxed">
+                אפשר להדביק גם את קוד הסקריפט המלא — נשמר רק המספר. השאר ריק כדי לכבות את המעקב.
+              </p>
             </div>
 
             <button onClick={saveBiz} disabled={saving}

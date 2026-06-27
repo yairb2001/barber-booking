@@ -100,7 +100,13 @@ export async function GET(req: NextRequest) {
     // A new customer message flips the last role back to "user" → bumps it up.
     // This is intentionally based on who-spoke-last, NOT on lastReadAt: merely
     // opening a chat to peek does not count as "handled".
-    const needsHandling = needsHuman && last?.role === "user";
+    //
+    // Manual "handled" override: if an admin marked the chat handled and the
+    // customer hasn't written since (no message newer than handledAt), it no
+    // longer needs handling — even though the customer technically spoke last.
+    // A newer customer message (createdAt > handledAt) re-flags it automatically.
+    const handledCovered = !!c.handledAt && !!last && last.createdAt <= c.handledAt;
+    const needsHandling = needsHuman && last?.role === "user" && !handledCovered;
 
     // Resolve display name in priority order:
     //   1. Linked customer in DB (most reliable — name they registered with)

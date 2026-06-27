@@ -506,6 +506,10 @@ model Conversation {
   // ── Read marker: when any admin opens the conversation. Used to surface
   // unread customer messages with a badge in the nav. Shared across all admins.
   lastReadAt    DateTime? @map("last_read_at")
+  // ── Handled marker: an admin marked the conversation as handled (no reply
+  // needed). It loses the red "needs handling" alert while the customer hasn't
+  // written again. A newer customer message (createdAt > handledAt) re-flags it.
+  handledAt     DateTime? @map("handled_at")
   // ── WhatsApp display name (from senderData.senderName). Captured by the
   // webhook on every incoming message — used as a fallback when the customer
   // is not in our DB so the chat list shows something meaningful.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Script from "next/script";
 import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
@@ -12,11 +13,18 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
   const slug = useSlug();
   const serverTheme = useServerTheme();
   const [theme, setTheme] = useState<Theme>(serverTheme);
+  // Owner-configured Meta/Facebook Pixel ID (null = no tracking). Loaded from
+  // the same /api/business fetch and injected once for the whole booking flow,
+  // so PageView fires on every /book step (the "entered the site" audience).
+  const [pixelId, setPixelId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(apiWithSlug("/api/business", slug))
       .then(r => r.json())
-      .then(biz => { if (biz?.theme) setTheme(biz.theme); })
+      .then(biz => {
+        if (biz?.theme) setTheme(biz.theme);
+        if (biz?.facebookPixel) setPixelId(String(biz.facebookPixel));
+      })
       .catch(() => {});
   }, []);
 
@@ -49,6 +57,22 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
   return (
     <>
       <style>{cssVars}</style>
+      {pixelId && (
+        <Script id="fb-pixel" strategy="afterInteractive">
+          {`
+            !function(f,b,e,v,n,t,s)
+            {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+            n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+            if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+            n.queue=[];t=b.createElement(e);t.async=!0;
+            t.src=v;s=b.getElementsByTagName(e)[0];
+            s.parentNode.insertBefore(t,s)}(window, document,'script',
+            'https://connect.facebook.net/en_US/fbevents.js');
+            fbq('init', '${pixelId}');
+            fbq('track', 'PageView');
+          `}
+        </Script>
+      )}
       {children}
       <FooterCTA />
     </>

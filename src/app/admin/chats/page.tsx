@@ -125,6 +125,16 @@ export default function ChatsPage() {
     setSending(false);
   }
 
+  // ── Mark a conversation as handled (drops the red "needs handling" alert
+  // without replying). A newer customer message re-flags it automatically.
+  async function markHandled(id: string) {
+    // Optimistic: drop the red flag immediately so the button feels instant.
+    setChats(prev => prev.map(c => c.id === id ? { ...c, needsHandling: false } : c));
+    await fetch(`/api/admin/chats/${id}/mark-handled`, { method: "POST" }).catch(() => {});
+    fetchList();
+    if (selId === id) fetchDetail(id);
+  }
+
   // ── Toggle agent for this conversation ──────────────────────────────────────
   async function toggleAgent(active: boolean) {
     if (!selId) return;
@@ -164,10 +174,13 @@ export default function ChatsPage() {
     // In the human inbox but you already replied → handled. Calm, not red.
     const handled = !needsHandling && c.needsHuman;
     return (
-      <button
+      <div
         key={c.id}
+        role="button"
+        tabIndex={0}
         onClick={() => setSelId(c.id)}
-        className={`w-full text-right px-4 py-3 border-b border-slate-100 transition ${
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelId(c.id); } }}
+        className={`w-full text-right px-4 py-3 border-b border-slate-100 transition cursor-pointer ${
           selId === c.id
             ? "bg-teal-50"
             : needsHandling
@@ -183,6 +196,15 @@ export default function ChatsPage() {
             {c.customerName || c.phone}
           </span>
           <div className="flex items-center gap-1 shrink-0">
+            {needsHandling && (
+              <button
+                onClick={e => { e.stopPropagation(); markHandled(c.id); }}
+                className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-medium hover:bg-emerald-100 transition"
+                title="סמן כטופל — מסיר את ההתראה האדומה בלי לענות"
+              >
+                ✓ טופל
+              </button>
+            )}
             {handled && (
               <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">
                 ✓ טופל
@@ -195,7 +217,7 @@ export default function ChatsPage() {
           {c.lastMessageSnippet || "—"}
         </p>
         <p className="text-[10px] text-slate-400 mt-1">{timeAgo(c.lastMessageAt)}</p>
-      </button>
+      </div>
     );
   };
 

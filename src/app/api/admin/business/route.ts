@@ -46,6 +46,8 @@ export async function PATCH(req: NextRequest) {
       ...(body.greenApiInstanceId !== undefined && { greenApiInstanceId: body.greenApiInstanceId }),
       ...(body.greenApiToken !== undefined && { greenApiToken: body.greenApiToken }),
       ...(body.features !== undefined && { features: JSON.stringify(body.features) }),
+      // Facebook/Meta Pixel ID (owner-only; null = no pixel)
+      ...(body.facebookPixel !== undefined && { facebookPixel: body.facebookPixel?.trim() || null }),
       // Message templates (null = use built-in default)
       ...(body.reminder24hTemplate !== undefined && {
         reminder24hTemplate: body.reminder24hTemplate || null,

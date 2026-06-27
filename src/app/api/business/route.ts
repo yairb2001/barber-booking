@@ -15,13 +15,13 @@ export async function GET(req: NextRequest) {
     ? await prisma.business.findUnique({ where: { slug }, select: {
         id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
         phone: true, address: true, about: true, socialLinks: true,
-        settings: true, bookingHorizonDays: true,
+        settings: true, bookingHorizonDays: true, facebookPixel: true,
       } })
     : businessId
       ? await prisma.business.findUnique({ where: { id: businessId }, select: {
           id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
           phone: true, address: true, about: true, socialLinks: true,
-          settings: true, bookingHorizonDays: true,
+          settings: true, bookingHorizonDays: true, facebookPixel: true,
         } })
       : await fallbackBusiness({
     select: {
@@ -36,6 +36,7 @@ export async function GET(req: NextRequest) {
       socialLinks: true,
       settings: true,
       bookingHorizonDays: true,
+      facebookPixel: true,
     },
   });
 

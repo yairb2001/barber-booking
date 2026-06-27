@@ -397,6 +397,30 @@ function ConfirmPageContent() {
     return () => clearTimeout(timer);
   }, [referrerQuery]);
 
+  // Facebook/Meta Pixel funnel events. window.fbq is injected by the booking
+  // layout ONLY when the owner configured a pixel, and it loads asynchronously,
+  // so we poll briefly for it and no-op (give up) if it never appears.
+  //   • InitiateCheckout — reached the final confirm step ("almost booked").
+  //   • Schedule (value + ILS) — booking completed ("became a customer"),
+  //     which also lets Meta attribute the conversion back to the source ad.
+  useEffect(() => {
+    const success = searchParams.get("success") === "true";
+    const fire = (fbq: (...a: unknown[]) => void) => {
+      if (success) {
+        fbq("track", "Schedule", { value: Number(searchParams.get("price")) || 0, currency: "ILS" });
+      } else {
+        fbq("track", "InitiateCheckout");
+      }
+    };
+    let tries = 0;
+    const id = setInterval(() => {
+      const fbq = (window as unknown as { fbq?: (...a: unknown[]) => void }).fbq;
+      if (fbq) { fire(fbq); clearInterval(id); }
+      else if (++tries > 40) clearInterval(id); // ~10s, then give up (no pixel)
+    }, 250);
+    return () => clearInterval(id);
+  }, [searchParams]);
+
   useEffect(() => {
     fetch(apiWithSlug("/api/referral-sources", slug)).then(r => r.json()).then(setReferralOptions).catch(() => {});
     fetch(apiWithSlug("/api/business", slug)).then(r => r.json()).then(biz => {
