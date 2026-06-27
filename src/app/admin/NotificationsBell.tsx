@@ -33,19 +33,47 @@ export default function NotificationsBell() {
   const [hasUnread, setHasUnread] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Toasts that "pop up" on their own when a NEW cancellation arrives.
+  const [toasts, setToasts] = useState<FeedEvent[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Cancellation ids we've already accounted for, so each one pops exactly once.
+  const knownCancelIds = useRef<Set<string>>(new Set());
+  // First poll only seeds the "known" set — we don't pop historical cancels.
+  const seeded = useRef(false);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
 
   const fetchFeed = useCallback(async () => {
     try {
       const r = await fetch("/api/admin/notifications");
       if (!r.ok) return;
       const data = await r.json();
-      setEvents(Array.isArray(data.events) ? data.events : []);
+      const evs: FeedEvent[] = Array.isArray(data.events) ? data.events : [];
+      setEvents(evs);
       setHasUnread(!!data.hasUnread);
       setIsOwner(!!data.isOwner);
+
+      // Pop a toast for any cancellation we haven't seen before. On the very
+      // first load we just record the existing ones (no popping) so we don't
+      // spam the owner with old cancellations every time the page opens.
+      const cancels = evs.filter(e => e.type === "cancellation");
+      if (!seeded.current) {
+        cancels.forEach(c => knownCancelIds.current.add(c.id));
+        seeded.current = true;
+      } else {
+        const fresh = cancels.filter(c => !knownCancelIds.current.has(c.id));
+        if (fresh.length) {
+          fresh.forEach(c => knownCancelIds.current.add(c.id));
+          setToasts(prev => [...fresh, ...prev].slice(0, 4));
+          // Auto-dismiss each toast after 12s (owner can also close manually).
+          fresh.forEach(c => setTimeout(() => dismissToast(c.id), 12000));
+        }
+      }
     } catch { /* ignore — offline/transient */ }
     finally { setLoading(false); }
-  }, []);
+  }, [dismissToast]);
 
   // Smart polling: only while the tab is visible (CLAUDE.md convention).
   useEffect(() => {
@@ -79,6 +107,35 @@ export default function NotificationsBell() {
 
   return (
     <div ref={wrapRef} className="relative shrink-0">
+      {/* ── Pop-up toasts: a cancellation just came in ── */}
+      {toasts.length > 0 && (
+        <div dir="rtl" className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[340px] max-w-[92vw] pointer-events-none">
+          {toasts.map(t => (
+            <div
+              key={t.id}
+              onClick={() => dismissToast(t.id)}
+              className="pointer-events-auto cursor-pointer bg-white border border-red-200 rounded-2xl shadow-2xl px-4 py-3 flex gap-3 items-start ring-1 ring-red-500/10"
+            >
+              <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-base font-bold">✕</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-bold text-neutral-900 leading-snug">
+                  {t.customerName} ביטל/ה תור{isOwner && t.staffName ? ` אצל ${t.staffName}` : ""}
+                </p>
+                <p className="text-[12px] text-neutral-500 mt-0.5 leading-snug">
+                  {t.serviceName && <span>{t.serviceName} · </span>}
+                  {t.dateLabel} בשעה <span dir="ltr">{t.startTime}</span>
+                </p>
+              </div>
+              <button
+                onClick={e => { e.stopPropagation(); dismissToast(t.id); }}
+                aria-label="סגור"
+                className="flex-shrink-0 text-neutral-300 hover:text-neutral-500 text-lg leading-none"
+              >×</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <button
         onClick={toggle}
         aria-label="התראות"
