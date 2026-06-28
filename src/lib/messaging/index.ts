@@ -629,6 +629,30 @@ export const TEMPLATE_DEFS = {
       { key: "booking_link", label: "קישור לקביעת תור" },
     ],
   },
+  appointment_cancelled: {
+    label: "ביטול תור (ע״י העסק)",
+    description: "נשלחת ללקוח כשהעסק/הספר מבטל לו תור — בנימה מתנצלת.",
+    field: "appointmentCancelledTemplate" as const,
+    default: DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "business", label: "שם העסק" },
+      { key: "date",     label: "תאריך" },
+      { key: "time",     label: "שעה" },
+    ],
+  },
+  appointment_self_cancelled: {
+    label: "ביטול תור (ע״י הלקוח)",
+    description: "נשלחת ללקוח כשהוא מבטל לעצמו תור דרך 'התורים שלי' — בנימה של 'בוטל בהצלחה'.",
+    field: "appointmentSelfCancelledTemplate" as const,
+    default: DEFAULT_APPOINTMENT_SELF_CANCELLED_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "business", label: "שם העסק" },
+      { key: "date",     label: "תאריך" },
+      { key: "time",     label: "שעה" },
+    ],
+  },
 } as const;
 
 export type TemplateKey = keyof typeof TEMPLATE_DEFS;

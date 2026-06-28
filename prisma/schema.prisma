@@ -44,6 +44,8 @@ model Business {
   walkInTemplate            String?  @map("walk_in_template")
   firstBookingTemplate      String?  @map("first_booking_template")
   waitlistNotifyTemplate    String?  @map("waitlist_notify_template")
+  appointmentCancelledTemplate     String?  @map("appointment_cancelled_template")
+  appointmentSelfCancelledTemplate String?  @map("appointment_self_cancelled_template")
   // ── Re-engagement automation ──
   reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
   reengageWeeks         Int      @default(6)     @map("reengage_weeks")

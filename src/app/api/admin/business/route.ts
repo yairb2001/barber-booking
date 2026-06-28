@@ -88,6 +88,12 @@ export async function PATCH(req: NextRequest) {
       ...(body.waitlistNotifyTemplate !== undefined && {
         waitlistNotifyTemplate: body.waitlistNotifyTemplate || null,
       }),
+      ...(body.appointmentCancelledTemplate !== undefined && {
+        appointmentCancelledTemplate: body.appointmentCancelledTemplate || null,
+      }),
+      ...(body.appointmentSelfCancelledTemplate !== undefined && {
+        appointmentSelfCancelledTemplate: body.appointmentSelfCancelledTemplate || null,
+      }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {
         bookingHorizonDays: Number(body.bookingHorizonDays) || 30,

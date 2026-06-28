@@ -68,6 +68,8 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   appointment_moved:      { emoji: "📅", when: "נשלחת ללקוח כשמזיזים את התור שלו ביומן" },
   delay_notification:     { emoji: "⏳", when: "נשלחת ללקוח כשמודיעים לו על עיכוב" },
   waitlist_notify:        { emoji: "📣", when: "נשלחת אוטומטית ללקוח שברשימת המתנה כשמתפנה תור מתאים" },
+  appointment_cancelled:      { emoji: "❌", when: "נשלחת ללקוח כשהעסק/הספר מבטל לו תור" },
+  appointment_self_cancelled: { emoji: "🗑️", when: "נשלחת ללקוח כשהוא מבטל לעצמו תור דרך 'התורים שלי'" },
 };
 
 // Display order, grouped into sections.
@@ -91,6 +93,11 @@ const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
     title: "רשימת המתנה",
     subtitle: "נשלחת אוטומטית כשמתפנה תור ללקוח שממתין",
     keys: ["waitlist_notify"],
+  },
+  {
+    title: "ביטול תור",
+    subtitle: "ההודעות שנשלחות ללקוח כשתור מתבטל",
+    keys: ["appointment_cancelled", "appointment_self_cancelled"],
   },
 ];
 

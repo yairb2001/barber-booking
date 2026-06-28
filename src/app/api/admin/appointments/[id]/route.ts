@@ -70,7 +70,31 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   let nextStaffId   = (body.staffId as string) ?? before.staffId;
   let nextServiceId = (body.serviceId as string) ?? before.serviceId;
 
-  if (body.startTime !== undefined || body.endTime !== undefined || body.durationMinutes !== undefined || body.serviceId !== undefined) {
+  // ── Adapt the service to the TARGET barber when moving between barbers ──────
+  // Each barber can charge a different price and take a different amount of time
+  // for the SAME service (StaffService.customPrice / customDuration). When a
+  // drag moves the appointment to another barber, the service stays the same but
+  // its price + length switch to that barber's own settings (fallback: service
+  // base values). The caller may still override price/duration explicitly.
+  const staffChanged = body.staffId !== undefined && body.staffId !== before.staffId;
+  let staffAdaptedDuration: number | null = null;
+  if (staffChanged && nextServiceId) {
+    const svc = await prisma.service.findUnique({
+      where: { id: nextServiceId },
+      select: { durationMinutes: true, price: true },
+    });
+    const ss = await prisma.staffService.findUnique({
+      where: { staffId_serviceId: { staffId: nextStaffId, serviceId: nextServiceId } },
+      select: { customPrice: true, customDuration: true },
+    }).catch(() => null);
+    if (svc) {
+      staffAdaptedDuration = ss?.customDuration || svc.durationMinutes;
+      // Only auto-set the price if the caller didn't pass one explicitly.
+      if (body.price === undefined) data.price = ss?.customPrice || svc.price;
+    }
+  }
+
+  if (staffChanged || body.startTime !== undefined || body.endTime !== undefined || body.durationMinutes !== undefined || body.serviceId !== undefined) {
     const startStr = body.startTime !== undefined ? String(body.startTime) : before.startTime;
     const [sh, sm] = startStr.split(":").map(Number);
     const startMins = sh * 60 + sm;
@@ -83,6 +107,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       let durMin: number;
       if (body.durationMinutes !== undefined && Number(body.durationMinutes) > 0) {
         durMin = Number(body.durationMinutes);
+      } else if (staffAdaptedDuration !== null) {
+        // Moved to another barber → use that barber's duration for this service.
+        durMin = staffAdaptedDuration;
       } else {
         // derive from current endTime or from service default
         const prevStart = timeToMinutes(before.startTime);
@@ -208,7 +235,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           businessName: business.name,
           dateLabel,
           startTime:    appointment.startTime,
-        });
+        }, business.appointmentCancelledTemplate);
         sendMessage({
           businessId:    before.businessId,
           appointmentId: appointment.id,

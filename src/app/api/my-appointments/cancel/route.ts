@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
           dateLabel,
           startTime: appt.startTime,
           bySelf: true, // customer cancelled their own appointment → "בוטל בהצלחה"
-        });
+        }, business.appointmentSelfCancelledTemplate);
         await sendMessage({
           businessId:    appt.businessId,
           appointmentId: appt.id,
