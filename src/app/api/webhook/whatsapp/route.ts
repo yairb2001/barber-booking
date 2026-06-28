@@ -227,11 +227,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const senderStaff = staffWithPhones.find(
         s => s.phone && normalizeIsraeliPhone(s.phone) === phone
       );
-      // Owner agent allowed if: matches ownerLoginPhone, OR is a staff member who is
-      // an owner / explicitly granted canUseOwnerAgent.
-      const isOwnerSender =
+      // The owner is recognised by ownerLoginPhone OR a role==="owner" staff record.
+      // The owner gets the personal agent by default, but can switch it off FOR
+      // HIMSELF via `settings.ownerAgentSelfDisabled` (the per-business master switch
+      // `ownerAgentEnabled`, checked above, turns it off for EVERYONE).
+      const isOwner =
         (!!ownerPhone && phone === ownerPhone) ||
-        (!!senderStaff && (senderStaff.role === "owner" || senderStaff.canUseOwnerAgent));
+        (!!senderStaff && senderStaff.role === "owner");
+      const ownerSelfDisabled = bizSettings.ownerAgentSelfDisabled === true;
+      const isOwnerSender = isOwner
+        ? !ownerSelfDisabled
+        : (!!senderStaff && senderStaff.canUseOwnerAgent); // barber: explicit grant
       if (isOwnerSender) {
         try {
           await runOwnerAgent({
