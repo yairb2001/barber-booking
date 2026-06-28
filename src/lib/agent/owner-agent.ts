@@ -14,7 +14,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
-import { getBusinessNow } from "@/lib/utils";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { getBusinessNow, timeToMinutes, minutesToTime } from "@/lib/utils";
+import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -55,6 +57,44 @@ const OWNER_TOOLS: Anthropic.Tool[] = [
       },
       required: ["appointment_id_1", "appointment_id_2"],
     },
+  },
+  {
+    name: "move_appointment",
+    description:
+      "מזיז תור בודד לשעה (ואופציונלית תאריך) חדשים — בלי קשר ללקוח אחר. משך השירות נשמר. שולח הודעת WhatsApp מיידית ללקוח. אם השעה החדשה תפוסה אצל אותו ספר, הכלי יחזיר אזהרה ולא יבצע — אלא אם תעביר force=true.",
+    input_schema: {
+      type: "object",
+      properties: {
+        appointment_id: { type: "string", description: "מזהה התור להזזה" },
+        new_time: { type: "string", description: "השעה החדשה בפורמט HH:MM" },
+        new_date: { type: "string", description: "תאריך חדש YYYY-MM-DD (אופציונלי — ברירת מחדל: אותו יום)" },
+        force: { type: "boolean", description: "להזיז גם אם השעה תפוסה (יוצר כפל). ברירת מחדל: false" },
+      },
+      required: ["appointment_id", "new_time"],
+    },
+  },
+  {
+    name: "book_for_customer",
+    description:
+      "קובע תור חדש ללקוח בשעה מסוימת. השתמש קודם ב-get_staff_and_services כדי לקבל staff_id ו-service_id, וב-get_customer_info כדי לאתר לקוח קיים. אם הלקוח קיים — אפשר רק שם. ללקוח חדש — צריך גם טלפון. שולח אישור ללקוח אם יש לו טלפון.",
+    input_schema: {
+      type: "object",
+      properties: {
+        customer_name: { type: "string", description: "שם הלקוח (מלא ללקוח חדש)" },
+        customer_phone: { type: "string", description: "טלפון הלקוח (חובה ללקוח חדש; אופציונלי אם הלקוח כבר קיים)" },
+        staff_id: { type: "string", description: "מזהה הספר" },
+        service_id: { type: "string", description: "מזהה השירות" },
+        date: { type: "string", description: "תאריך YYYY-MM-DD" },
+        time: { type: "string", description: "שעה HH:MM" },
+        force: { type: "boolean", description: "לקבוע גם אם השעה לא פנויה לפי הלוח. ברירת מחדל: false" },
+      },
+      required: ["customer_name", "staff_id", "service_id", "date", "time"],
+    },
+  },
+  {
+    name: "get_staff_and_services",
+    description: "מחזיר את רשימת הספרים והשירותים עם המזהים (id), משך ומחיר. נדרש לפני קביעת תור.",
+    input_schema: { type: "object", properties: {} },
   },
   {
     name: "cancel_appointment",
@@ -198,6 +238,183 @@ async function execOwnerTool(
       );
     }
 
+    // ── Staff + services catalog (for booking) ──────────────────────────────
+    case "get_staff_and_services": {
+      const [staff, services] = await Promise.all([
+        prisma.staff.findMany({
+          where: { businessId, isActive: true },
+          select: { id: true, name: true, role: true },
+          orderBy: { sortOrder: "asc" },
+        }),
+        prisma.service.findMany({
+          where: { businessId },
+          select: { id: true, name: true, durationMinutes: true, price: true },
+          orderBy: { name: "asc" },
+        }),
+      ]);
+      const staffLines = staff.map(s => `${s.name} | id=${s.id}`).join("\n");
+      const svcLines = services
+        .map(s => `${s.name} | ${s.durationMinutes} דק' | ${s.price}₪ | id=${s.id}`)
+        .join("\n");
+      return `ספרים:\n${staffLines}\n\nשירותים:\n${svcLines}`;
+    }
+
+    // ── Move a single appointment to a new time/date ────────────────────────
+    case "move_appointment": {
+      const id = input.appointment_id as string;
+      const newTime = input.new_time as string;
+      const force = input.force === true;
+      if (!/^\d{1,2}:\d{2}$/.test(newTime || "")) return "שגיאה: שעה לא תקינה (צריך HH:MM).";
+
+      const appt = await prisma.appointment.findUnique({
+        where: { id },
+        include: { customer: true, staff: true, service: true },
+      });
+      if (!appt || appt.businessId !== businessId) return `שגיאה: תור ${id} לא נמצא בעסק.`;
+      if (!ACTIVE_STATUSES.includes(appt.status)) return "התור כבר אינו פעיל (מבוטל/הושלם).";
+
+      const curDateIso = new Date(appt.date).toISOString().slice(0, 10);
+      const newDateIso = (input.new_date as string) || curDateIso;
+      const duration = timeToMinutes(appt.endTime) - timeToMinutes(appt.startTime);
+      const newEnd = minutesToTime(timeToMinutes(newTime) + duration);
+
+      // Conflict check — same barber, same day, overlapping, different appointment.
+      if (!force) {
+        const dayStart = new Date(`${newDateIso}T00:00:00.000Z`);
+        const dayEnd = new Date(`${newDateIso}T23:59:59.999Z`);
+        const sameDayAppts = await prisma.appointment.findMany({
+          where: {
+            businessId, staffId: appt.staffId, id: { not: appt.id },
+            date: { gte: dayStart, lte: dayEnd }, status: { in: ACTIVE_STATUSES },
+          },
+          include: { customer: { select: { name: true } } },
+        });
+        const ns = timeToMinutes(newTime);
+        const ne = timeToMinutes(newEnd);
+        const clash = sameDayAppts.find(a => {
+          const as = timeToMinutes(a.startTime);
+          const ae = timeToMinutes(a.endTime);
+          return ns < ae && as < ne; // overlap
+        });
+        if (clash) {
+          return `שים לב: ב-${newTime} (${newDateIso}) כבר יש תור אצל ${appt.staff.name} — ${clash.customer.name} (${clash.startTime}–${clash.endTime}). אם בכל זאת להזיז ולגרום לכפל, קרא שוב עם force=true. אחרת אפשר להחליף ביניהם עם swap_appointments.`;
+        }
+      }
+
+      const newDate = new Date(`${newDateIso}T00:00:00.000Z`);
+      try {
+        await prisma.appointment.update({
+          where: { id: appt.id },
+          data: { date: newDate, startTime: newTime, endTime: newEnd },
+        });
+      } catch (err: unknown) {
+        if ((err as { code?: string }).code === "P2002") {
+          return `שגיאה: ${newTime} ב-${newDateIso} כבר תפוס אצל ${appt.staff.name}. הצע שעה אחרת או החלפה.`;
+        }
+        throw err;
+      }
+
+      let notified = false;
+      if (appt.customer.phone) {
+        const sameDay = newDateIso === curDateIso;
+        const when = sameDay
+          ? `מ-${appt.startTime} ל-${newTime}`
+          : `ל-${hebDayLabel(newDateIso)} בשעה ${newTime}`;
+        const res = await sendMessage({
+          businessId,
+          customerPhone: appt.customer.phone,
+          kind: "appointment_moved",
+          body: `היי ${firstName(appt.customer.name)}, עדכון לגבי התור שלך ב-DOMINANT — הוא הועבר ${when}. נתראה!`,
+        });
+        notified = res.ok;
+      }
+      return `הוזז: ${appt.customer.name} → ${newDateIso} ${newTime}–${newEnd} (${appt.staff.name}). הודעה ללקוח: ${appt.customer.phone ? (notified ? "נשלחה" : "נכשלה") : "אין טלפון"}.`;
+    }
+
+    // ── Book a new appointment for a customer ───────────────────────────────
+    case "book_for_customer": {
+      const staffId = input.staff_id as string;
+      const serviceId = input.service_id as string;
+      const date = input.date as string;
+      const time = input.time as string;
+      const customerName = ((input.customer_name as string) || "").trim();
+      const rawPhone = ((input.customer_phone as string) || "").trim();
+      const force = input.force === true;
+      if (!customerName) return "שגיאה: חסר שם לקוח.";
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return "שגיאה: תאריך לא תקין (YYYY-MM-DD).";
+      if (!/^\d{1,2}:\d{2}$/.test(time || "")) return "שגיאה: שעה לא תקינה (HH:MM).";
+
+      const [staff, service] = await Promise.all([
+        prisma.staff.findFirst({ where: { id: staffId, businessId }, select: { id: true, name: true } }),
+        prisma.service.findUnique({ where: { id: serviceId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
+      ]);
+      if (!staff) return "שגיאה: ספר לא נמצא. קרא ל-get_staff_and_services לקבלת מזהים.";
+      if (!service) return "שגיאה: שירות לא נמצא. קרא ל-get_staff_and_services לקבלת מזהים.";
+
+      // Availability guard (owner may override with force).
+      if (!force) {
+        const dayAvail = await computeDayAvailability(businessId, date, staffId, serviceId);
+        const slots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
+        if (!slots.includes(time)) {
+          return `שים לב: ${time} ב-${date} לא פנוי אצל ${staff.name} (יום סגור / מעבר לאופק / תפוס). אם בכל זאת לקבוע, קרא שוב עם force=true. אחרת קרא ל-get_schedule כדי לראות מה תפוס.`;
+        }
+      }
+
+      // Find or create the customer.
+      const phone = rawPhone ? normalizeIsraeliPhone(rawPhone) : "";
+      let customer = null;
+      if (phone) {
+        const local = phone.replace(/^972/, "0");
+        customer = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone }, { phone: local }] } });
+      }
+      if (!customer) {
+        customer = await prisma.customer.findFirst({
+          where: { businessId, name: { equals: customerName, mode: "insensitive" } },
+        });
+      }
+      if (!customer) {
+        if (!phone) {
+          return "שגיאה: לא נמצא לקוח קיים בשם הזה, ולקוח חדש חייב מספר טלפון. בקש מהבעלים את הטלפון של הלקוח וקרא שוב עם customer_phone.";
+        }
+        customer = await prisma.customer.create({
+          data: { businessId, name: customerName, phone, referralSource: "owner_agent" },
+        });
+      }
+
+      const eff = await resolveStaffService(staffId, serviceId, service.name, service.durationMinutes, service.price);
+      const apptDate = new Date(`${date}T00:00:00.000Z`);
+      const endTime = minutesToTime(timeToMinutes(time) + eff.duration);
+
+      let appt;
+      try {
+        appt = await prisma.appointment.create({
+          data: {
+            businessId, customerId: customer.id, staffId, serviceId,
+            date: apptDate, startTime: time, endTime,
+            status: "confirmed", price: eff.price,
+            referralSource: "owner_agent", source: "admin",
+          },
+        });
+      } catch (err: unknown) {
+        if ((err as { code?: string }).code === "P2002") {
+          return `שגיאה: ${time} ב-${date} כבר תפוס אצל ${staff.name}. הצע שעה אחרת.`;
+        }
+        throw err;
+      }
+
+      let notified = false;
+      if (customer.phone) {
+        const res = await sendMessage({
+          businessId,
+          customerPhone: customer.phone,
+          kind: "confirmation",
+          body: `היי ${firstName(customer.name)}, נקבע לך תור ב-DOMINANT ל-${hebDayLabel(date)} בשעה ${time} — ${service.name} אצל ${staff.name}. נתראה!`,
+        });
+        notified = res.ok;
+      }
+      return `נקבע: ${customer.name} | ${date} ${time}–${endTime} | ${service.name} אצל ${staff.name} | ${eff.price}₪. אישור ללקוח: ${customer.phone ? (notified ? "נשלח" : "נכשל") : "אין טלפון"}. id=${appt.id}`;
+    }
+
     // ── Cancel an appointment ───────────────────────────────────────────────
     case "cancel_appointment": {
       const id = input.appointment_id as string;
@@ -325,8 +542,11 @@ function ownerSystemPrompt(ownerName: string, businessName: string): string {
     `אתה העוזר האישי של ${ownerName}, בעל ${businessName}.`,
     `אתה מקבל ממנו פקודות ישירות בוואטסאפ ומבצע אותן. יש לך סמכות מלאה — אין צורך באישור לקוח.`,
     `ענה קצר וענייני: פעולה + אישור. אל תסביר יותר מדי, אל תשאל שאלות מיותרות.`,
-    `כשמבקשים להחליף או לבטל תורים — קרא קודם ל-get_schedule כדי לאמת על איזה תור מדובר, אשר בקצרה מה אתה עומד לעשות, ובצע.`,
-    `אם פקודה דו-משמעית (למשל "תחליף את 13 ל-16" כשיש כמה תורים) — הראה את האפשרויות הרלוונטיות בקצרה ובקש הבהרה.`,
+    `יכולות שלך: לראות לוח (get_schedule), להזיז תור בודד לשעה חדשה (move_appointment), להחליף בין שני תורים (swap_appointments), לבטל (cancel_appointment), לקבוע תור חדש ללקוח (book_for_customer), לשלוח הודעה לכל לקוחות היום (send_to_today_customers), ולחפש לקוח (get_customer_info).`,
+    `הבחנה חשובה: "תזיז את X לשעה Y" = move_appointment (תור בודד). "תחליף בין X ל-Y" = swap_appointments (שני תורים). אל תציע החלפה כשמבקשים סתם להזיז.`,
+    `לפני הזזה/החלפה/ביטול — קרא ל-get_schedule כדי לאמת על איזה תור מדובר, אשר בקצרה, ובצע.`,
+    `לפני קביעת תור חדש — קרא ל-get_staff_and_services לקבלת מזהי ספר ושירות. אם הלקוח חדש בקש טלפון.`,
+    `אם פקודה דו-משמעית (למשל "תזיז את 13" כשיש כמה תורים ב-13) — הראה את האפשרויות הרלוונטיות בקצרה ובקש הבהרה.`,
     `כל ההודעות בעברית. עכשיו: ${now} (אסיה/ירושלים).`,
   ].join("\n");
 }
