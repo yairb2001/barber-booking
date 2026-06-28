@@ -547,10 +547,6 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
 // ── Appointment Block ─────────────────────────────────────────────────────────
 const LONG_PRESS_MS = 500; // hold this long to enter drag-to-move
 const LONG_PRESS_TOLERANCE_PX = 10; // movement before threshold cancels long-press (it's a scroll, not a hold)
-// After lifting the finger mid-drag we don't finalize immediately — we wait
-// this long for the finger to come back down so the user can release-and-regrab
-// to keep adjusting the position without being kicked out of drag mode.
-const DRAG_RELEASE_GRACE_MS = 600;
 
 type ApptBlockSwapState =
   | { kind: "none" }
@@ -4237,9 +4233,8 @@ export default function AdminCalendar() {
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
-      // A resumed drag ignores a release that never moved — otherwise the
-      // ghost would drop the instant the user taps, defeating the "continue
-      // adjusting" purpose. Keep drag mode active until a real slide happens.
+      // A parked/resumed drag ignores a release that never moved — so a stray
+      // tap after the finger lifts doesn't do anything. Keep drag mode active.
       if (dragResumedRef.current && !dragMovedRef.current) return;
       // Release is forgiving: if the finger ends over a gap (null target),
       // fall back to the last valid spot we tracked so the drag isn't lost.
@@ -4247,13 +4242,17 @@ export default function AdminCalendar() {
       // Suppress the synthetic grid click that fires right after this release
       // (otherwise it would drop a draft slot where the finger lifted).
       suppressNextGridClick.current = true;
-      // Don't finalize right away — give the finger a brief window to come back
-      // down and keep dragging. onDown clears this timer if they re-grab in time.
-      if (dragReleaseTimer.current) clearTimeout(dragReleaseTimer.current);
-      dragReleaseTimer.current = setTimeout(() => {
-        dragReleaseTimer.current = null;
-        finalizeMoveDrag(dropTarget); // no-op if isDragProcessed is already true
-      }, DRAG_RELEASE_GRACE_MS);
+      // Released without ever reaching a valid slot → cancel the drag entirely.
+      if (!dropTarget) { finalizeMoveDrag(null); return; }
+      // PARK the drag at the released position. We do NOT auto-advance to the
+      // confirmation card — the ghost + bottom ✓/✕ bar stay on screen and the
+      // user must explicitly press ✓ ("קבע ב-HH:MM") to confirm. Re-grabbing and
+      // sliding repositions; a stray tap is ignored by the guard above.
+      lastMoveTargetRef.current = dropTarget;
+      dragResumedRef.current = true;
+      dragMovedRef.current = false;
+      dragStartPt.current = null;
+      setDragMove(prev => prev ? { ...prev, dropTarget } : null);
     };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
@@ -4419,21 +4418,23 @@ export default function AdminCalendar() {
       setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
-      // A resumed drag ignores a release that never moved — keep drag mode
-      // active until a real slide happens (mirrors the appointment flow).
+      // A parked/resumed drag ignores a release that never moved — keep drag
+      // mode active until a real slide happens (mirrors the appointment flow).
       if (breakDragResumedRef.current && !breakDragMovedRef.current) return;
       // Forgiving release: fall back to the last valid spot if the finger
       // ends over a gap, so a sloppy release doesn't throw the break away.
       const dropTarget = adjustBreakDrop(computeDropTarget(e.clientX, e.clientY)) ?? lastBreakTargetRef.current;
       // Suppress the synthetic grid click that fires right after this release.
       suppressNextGridClick.current = true;
-      // Brief grace window: don't finalize yet — let the finger come back down
-      // and keep dragging. onDown clears this timer on a re-grab.
-      if (breakReleaseTimer.current) clearTimeout(breakReleaseTimer.current);
-      breakReleaseTimer.current = setTimeout(() => {
-        breakReleaseTimer.current = null;
-        finalizeBreakDrag(dropTarget);
-      }, DRAG_RELEASE_GRACE_MS);
+      // Released without ever reaching a valid slot → cancel the drag entirely.
+      if (!dropTarget) { finalizeBreakDrag(null); return; }
+      // PARK at the released position — do NOT auto-advance to the confirmation
+      // card. The bottom ✓/✕ bar stays; the user must press ✓ to confirm.
+      lastBreakTargetRef.current = dropTarget;
+      breakDragResumedRef.current = true;
+      breakDragMovedRef.current = false;
+      breakDragStartPt.current = null;
+      setBreakDrag(prev => prev ? { ...prev, dropTarget } : null);
     };
     window.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove, { passive: false });
@@ -4617,7 +4618,10 @@ export default function AdminCalendar() {
         </div>
 
         {/* Scrollable grid — vertical + horizontal on mobile */}
-        <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto">
+        {/* While dragging an appointment/break we hard-lock scrolling so the */}
+        {/* calendar can't slide out from under the finger mid-move.          */}
+        <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto"
+          style={(dragMove || breakDrag) ? { overflow: "hidden", touchAction: "none" } : undefined}>
           <TapGuardCtx.Provider value={tapGuardUntil}>
           <HHCtx.Provider value={hourHeight}>
           <HourRangeCtx.Provider value={{ start: calStart, end: calEnd }}>
