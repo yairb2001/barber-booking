@@ -1,6 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { enqueueMessage, sendMessage, applyTemplate, firstName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 
+// A waitlisted customer stays "waiting" after we notify them of a freed slot —
+// the slot might not have suited them and they may want a LATER one. To avoid
+// spamming them when several appointments are cancelled in quick succession, we
+// don't re-notify the same entry within this window.
+const RENOTIFY_THROTTLE_MS = 20 * 60 * 1000; // 20 minutes
+
 // ── Time preference helpers ───────────────────────────────────────────────────
 
 const TIME_PREF_RANGES: Record<string, [number, number]> = {
@@ -86,13 +92,20 @@ async function triggerWaitlist(opts: {
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
 
   // Find all "waiting" entries for this date that match either this specific
-  // staff member OR an "any barber" registration (staffId === null).
+  // staff member OR an "any barber" registration (staffId === null). We also
+  // skip anyone we already pinged within the throttle window, so a burst of
+  // cancellations doesn't fire several messages at the same person — they stay
+  // "waiting" and will be eligible again once the window passes.
+  const throttleSince = new Date(Date.now() - RENOTIFY_THROTTLE_MS);
   const entries = await prisma.waitlist.findMany({
     where: {
       businessId,
       date: { gte: dayStart, lt: dayEnd },
       status: "waiting",
-      OR: [{ staffId }, { staffId: null }],
+      AND: [
+        { OR: [{ staffId }, { staffId: null }] },
+        { OR: [{ notifiedAt: null }, { notifiedAt: { lt: throttleSince } }] },
+      ],
     },
     include: {
       customer: true,
@@ -148,12 +161,14 @@ export type WaitlistEntryForNotify = {
 };
 
 /**
- * ENQUEUES ONE waitlist member a "slot freed up" message and marks them
- * "notified". BAN-SAFETY: we do NOT send immediately — a freed slot can match
- * many waiting customers at once, which would blast the WhatsApp number. Instead
- * we enqueue with scheduledFor=now (high priority over staggered broadcasts) and
- * let the drip-queue cron (`/api/cron/drip-queue`) send them ~1/min per number.
- * "notified" therefore now means "queued to notify" — still prevents re-spam.
+ * Sends/enqueues ONE waitlist member a "slot freed up" message and stamps
+ * notifiedAt. The entry STAYS "waiting" — the slot may not have suited them, so
+ * they remain on the list and eligible for the next opening (throttled by
+ * RENOTIFY_THROTTLE_MS so a burst of cancellations doesn't spam them).
+ * BAN-SAFETY for bulk (day_open) sends: we don't send immediately — a reopened
+ * day can match many waiting customers at once, which would blast the WhatsApp
+ * number. Instead we enqueue with scheduledFor=now (high priority over staggered
+ * broadcasts) and let the drip-queue cron (`/api/cron/drip-queue`) send ~1/min.
  * Fire-and-forget (does not block the caller). Reused by both the live triggers
  * above and the daily booking-horizon cron.
  */
@@ -210,11 +225,13 @@ export function sendWaitlistEntryNotification(
     body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
   }
 
-  // Mark as notified so a repeat trigger doesn't re-message the same person.
+  // Stamp notifiedAt (used to throttle repeat pings) but KEEP the entry
+  // "waiting": the freed slot may not have suited them, so they stay on the
+  // waitlist and remain eligible for the next slot that opens up.
   const markNotified = () =>
     prisma.waitlist.update({
       where: { id: entry.id },
-      data: { status: "notified" },
+      data: { notifiedAt: new Date() },
     }).catch(console.error);
 
   if (immediate) {

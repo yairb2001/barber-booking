@@ -413,6 +413,10 @@ model Waitlist {
   isFlexible   Boolean  @default(false) @map("is_flexible")
   status              String   @default("waiting") // waiting, notified, booked, expired
   preferredTimeOfDay  String?  @map("preferred_time_of_day") // morning | afternoon | any
+  // Last time we messaged this customer about a freed slot. The entry stays
+  // "waiting" after a notification (they may want a LATER slot), so this is used
+  // to throttle repeat pings — we won't re-notify within RENOTIFY_THROTTLE.
+  notifiedAt   DateTime? @map("notified_at")
   createdAt    DateTime @default(now()) @map("created_at")
 
   business     Business @relation(fields: [businessId], references: [id])
