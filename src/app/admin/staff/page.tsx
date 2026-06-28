@@ -73,6 +73,7 @@ export default function AdminStaffPage() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [editingPhoneId, setEditingPhoneId] = useState<string | null>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
+  const [reordering, setReordering] = useState(false);
 
   async function load() {
     const [data, me] = await Promise.all([
@@ -124,6 +125,34 @@ export default function AdminStaffPage() {
     setSaving(false);
     setEditingPhoneId(null);
     setPhoneDraft("");
+    load();
+  }
+
+  // Reorder a barber up/down in the list. The order is stored in `sortOrder`
+  // and drives BOTH this list and the public booking page (/api/staff orders by
+  // sortOrder asc). We swap the row with its neighbour, then persist a clean
+  // 0..n sequence — robust even when every row still has the default sortOrder 0.
+  async function moveStaff(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= staff.length || reordering) return;
+    const reordered = [...staff];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setStaff(reordered);            // optimistic — show the new order immediately
+    setReordering(true);
+    // Persist position = array index. Only PATCH rows whose stored value changed.
+    await Promise.all(
+      reordered
+        .map((s, i) => ({ s, i }))
+        .filter(({ s, i }) => s.sortOrder !== i)
+        .map(({ s, i }) =>
+          fetch(`/api/admin/staff/${s.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sortOrder: i }),
+          }),
+        ),
+    );
+    setReordering(false);
     load();
   }
 
@@ -235,6 +264,9 @@ export default function AdminStaffPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">ספרים</h1>
           <p className="text-neutral-500 text-sm mt-1">{staff.length} ספרים רשומים</p>
+          {isOwner && staff.length > 1 && (
+            <p className="text-neutral-400 text-xs mt-1">↑↓ סדרו את הספרים — הסדר נשמר גם בעמוד קביעת התור</p>
+          )}
         </div>
         {isOwner && (
           <button
@@ -250,7 +282,7 @@ export default function AdminStaffPage() {
         <div className="text-center py-16 text-neutral-400">טוען...</div>
       ) : (
         <div className="space-y-3">
-          {visibleStaff.map((s) => (
+          {visibleStaff.map((s, i) => (
             <div
               key={s.id}
               className={`bg-white rounded-2xl border ${s.isAvailable ? "border-neutral-200" : "border-neutral-100 opacity-60"} p-4`}
@@ -297,6 +329,28 @@ export default function AdminStaffPage() {
 
               {/* ── Action buttons row ── */}
               <div className="flex flex-wrap gap-1.5">
+                {/* Reorder — position drives both this list and the public booking
+                    page. Owner only; barbers only ever see their own card. */}
+                {isOwner && staff.length > 1 && (
+                  <div className="flex items-center gap-1 mr-0.5">
+                    <button
+                      onClick={() => moveStaff(i, -1)}
+                      disabled={reordering || i === 0}
+                      title="העבר למעלה"
+                      className="text-xs w-7 h-7 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition disabled:opacity-30"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => moveStaff(i, 1)}
+                      disabled={reordering || i === visibleStaff.length - 1}
+                      title="העבר למטה"
+                      className="text-xs w-7 h-7 flex items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50 transition disabled:opacity-30"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                )}
                 {isOwner && (
                   <Link
                     href={`/admin/staff/${s.id}`}
