@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 // POST — create a customer manually (independent of booking flow)
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const name  = String(body.name  || "").trim();
-  const phone = String(body.phone || "").replace(/\s/g, "");
+  // Normalize to E.164 (972...) so pasted contacts (with "+", spaces, dashes, or
+  // invisible Unicode directional marks) don't break later phone-based lookups.
+  const phone = normalizeIsraeliPhone(String(body.phone || "")) || String(body.phone || "").replace(/\s/g, "");
 
   if (!name || !phone) {
     return NextResponse.json({ error: "name and phone required" }, { status: 400 });

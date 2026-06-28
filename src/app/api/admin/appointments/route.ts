@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
@@ -60,15 +61,19 @@ export async function POST(req: NextRequest) {
   const canBookForOthers = perms.isOwner || perms.canViewAllCalendars;
   const staffId = (!canBookForOthers && session?.staffId) ? session.staffId : body.staffId;
 
-  // Find or create customer
+  // Find or create customer. Normalize the phone to E.164 (972...) so a number
+  // pasted from the phone's contacts (with "+", spaces, dashes, or invisible
+  // Unicode directional marks) is stored cleanly — otherwise later phone-based
+  // lookups (swap replies, agent recognition, chat linking) silently miss it.
+  const customerPhone = normalizeIsraeliPhone(body.phone) || String(body.phone || "").trim();
   let customer = await prisma.customer.findUnique({
-    where: { businessId_phone: { businessId: business.id, phone: body.phone } },
+    where: { businessId_phone: { businessId: business.id, phone: customerPhone } },
   });
   if (!customer) {
     // For new customers, capture referral attribution (parity with /book/confirm flow)
     let referredById: string | null = null;
     if (body.referrerPhone && typeof body.referrerPhone === "string") {
-      const cleanPhone = body.referrerPhone.replace(/\s/g, "");
+      const cleanPhone = normalizeIsraeliPhone(body.referrerPhone) || body.referrerPhone.replace(/\s/g, "");
       const referrer = await prisma.customer.findUnique({
         where: { businessId_phone: { businessId: business.id, phone: cleanPhone } },
         select: { id: true },
@@ -78,7 +83,7 @@ export async function POST(req: NextRequest) {
     customer = await prisma.customer.create({
       data: {
         businessId: business.id,
-        phone: body.phone,
+        phone: customerPhone,
         name: body.customerName,
         referralSource: body.referralSource || null,
         referredById,

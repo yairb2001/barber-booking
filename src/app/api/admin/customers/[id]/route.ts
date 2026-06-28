@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwner } from "@/lib/session";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 // GET — full customer record + upcoming appointments + past appointments summary
 export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
@@ -84,7 +85,7 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
 
   const data: Record<string, unknown> = {};
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
-  if (typeof body.phone === "string" && body.phone.trim()) data.phone = body.phone.replace(/\s/g, "");
+  if (typeof body.phone === "string" && body.phone.trim()) data.phone = normalizeIsraeliPhone(body.phone) || body.phone.replace(/\s/g, "");
   if (typeof body.isBlocked === "boolean") data.isBlocked = body.isBlocked;
   if (body.referralSource !== undefined) data.referralSource = body.referralSource || null;
   if (body.notes !== undefined) {

@@ -195,34 +195,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "no business" }, { status: 404 });
   }
 
-  // ── 0. Agent move/swap reply routing ────────────────────────────────────────
-  // Before anything else: lazily expire stale agent-initiated swap requests
-  // (there is no cron — every inbound message drives expiry), then check whether
-  // THIS message is a barber approving/declining a swap, or a candidate customer
-  // answering a swap offer. If so it's a transactional reply — handle it and stop
-  // here so it never reaches the booking agent or the customer chat inbox.
+  // Lazily expire stale agent-initiated swap requests (there is no cron — every
+  // inbound message drives expiry) before we route or persist anything.
   await expireStaleAgentSwaps(biz.id).catch((e) => console.error("[swap expiry]", e));
-  try {
-    if (await handleStaffApprovalReply(biz.id, phone, text)) {
-      return NextResponse.json({ ok: true, handled: "swap_staff_reply" });
-    }
-    if (await handleCandidateReply(biz.id, phone, text)) {
-      return NextResponse.json({ ok: true, handled: "swap_candidate_reply" });
-    }
-    // Manual (admin-built) swap/move proposal — the barber created it from the
-    // calendar, so the agent never saw the outgoing offer. Intercept the yes/no
-    // here and execute deterministically instead of letting the context-less
-    // agent guess what "כן" means.
-    if (await handleAdminProposalReply(biz.id, phone, text)) {
-      return NextResponse.json({ ok: true, handled: "swap_admin_reply" });
-    }
-  } catch (e) {
-    console.error("[swap reply routing]", e);
-  }
 
-  // ── 1. Always persist the incoming message ──────────────────────────────────
-  // Even if the agent is off or escalated, we save the message so the admin can
-  // see it in the chat UI and reply manually.
+  // ── 1. Always persist the incoming message FIRST ────────────────────────────
+  // Even if the agent is off/escalated — and even if a swap/move reply handler
+  // below consumes this message — we save it so it shows in the chat UI. (Before,
+  // a "כן"/"לא" answer to a manual swap was eaten by the swap router and never
+  // appeared in the inbox, so the chat looked like the customer never replied.)
+  // Persisting first also means the dedup guard runs before the swap executor,
+  // so a Green API double-delivery can't run the same swap twice.
   let conv = await prisma.conversation.findFirst({
     where: { businessId: biz.id, phone },
     orderBy: { createdAt: "desc" },
@@ -272,6 +255,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ...(senderName && { whatsappName: senderName }),
     },
   });
+
+  // ── 1b. Agent move/swap reply routing ───────────────────────────────────────
+  // Now that the reply is saved to the chat, check whether THIS message is a
+  // barber approving/declining a swap, or a customer answering a swap/move offer.
+  // If so it's a transactional reply — handle it deterministically and stop here
+  // so it never reaches the booking agent. (The message itself is already in the
+  // inbox; only the agent run is skipped.)
+  try {
+    if (await handleStaffApprovalReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_staff_reply" });
+    }
+    if (await handleCandidateReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_candidate_reply" });
+    }
+    // Manual (admin-built) swap/move proposal — the barber created it from the
+    // calendar, so the agent never saw the outgoing offer. Intercept the yes/no
+    // here and execute deterministically instead of letting the context-less
+    // agent guess what "כן" means.
+    if (await handleAdminProposalReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "swap_admin_reply" });
+    }
+  } catch (e) {
+    console.error("[swap reply routing]", e);
+  }
 
   // ── 2. Check if agent should run ─────────────────────────────────────────────
   const agentConfig = await prisma.agentConfig.findUnique({
