@@ -376,6 +376,12 @@ function ConfirmPageContent() {
     { id: string; dateLabel: string; startTime: string; staffName: string; serviceName: string }[] | null
   >(null);
 
+  // After a successful booking, if the customer is on the waitlist for the same
+  // day, ask whether to remove them from it (booking made it redundant).
+  type BookedAppt = { id: string; staff: { name: string }; service: { name: string }; waitlistEntries?: { id: string; dateLabel: string }[] };
+  const [waitlistPrompt, setWaitlistPrompt] = useState<{ appointment: BookedAppt; entries: { id: string; dateLabel: string }[] } | null>(null);
+  const [waitlistRemoving, setWaitlistRemoving] = useState(false);
+
   const [otpSent,      setOtpSent]      = useState(false);
   const [otpCode,      setOtpCode]      = useState("");
   const [otpVerified,  setOtpVerified]  = useState(false);
@@ -624,18 +630,46 @@ function ConfirmPageContent() {
       const appointment = await res.json();
       // Persist customer details for future bookings
       try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
-      router.push(
-        publicHref(slug, `/book/confirm?success=true&appointmentId=${appointment.id}` +
-        `&staffId=${staffId}&serviceId=${serviceId}` +
-        `&staffName=${encodeURIComponent(appointment.staff.name)}` +
-        `&serviceName=${encodeURIComponent(appointment.service.name)}` +
-        `&date=${date}&time=${time}&price=${price}&duration=${duration}` +
-        `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`)
-      );
+      // On the waitlist for this same day? Ask whether to remove before moving on.
+      if (Array.isArray(appointment.waitlistEntries) && appointment.waitlistEntries.length > 0) {
+        setWaitlistPrompt({ appointment, entries: appointment.waitlistEntries });
+        setSubmitting(false);
+        return;
+      }
+      goToSuccess(appointment);
     } catch {
       setError("שגיאה בחיבור לשרת");
       setSubmitting(false);
     }
+  }
+
+  // Navigate to the success screen for a freshly-booked appointment.
+  function goToSuccess(appointment: BookedAppt) {
+    router.push(
+      publicHref(slug, `/book/confirm?success=true&appointmentId=${appointment.id}` +
+      `&staffId=${staffId}&serviceId=${serviceId}` +
+      `&staffName=${encodeURIComponent(appointment.staff.name)}` +
+      `&serviceName=${encodeURIComponent(appointment.service.name)}` +
+      `&date=${date}&time=${time}&price=${price}&duration=${duration}` +
+      `&phone=${encodeURIComponent(phone)}&customerName=${encodeURIComponent(name)}`)
+    );
+  }
+
+  // Resolve the "remove from waitlist?" prompt, then continue to the success page.
+  async function resolveWaitlist(remove: boolean) {
+    if (!waitlistPrompt) return;
+    const appt = waitlistPrompt.appointment;
+    if (remove) {
+      setWaitlistRemoving(true);
+      try {
+        await Promise.all(waitlistPrompt.entries.map(e =>
+          fetch(apiWithSlug(`/api/waitlist?id=${e.id}&phone=${encodeURIComponent(phone)}&token=${encodeURIComponent(otpToken)}`, slug), { method: "DELETE" })
+        ));
+      } catch { /* non-critical cleanup — proceed regardless */ }
+      setWaitlistRemoving(false);
+    }
+    setWaitlistPrompt(null);
+    goToSuccess(appt);
   }
 
   // ── Success screen ──────────────────────────────────────────────────────────
@@ -1080,6 +1114,32 @@ function ConfirmPageContent() {
               <button onClick={() => { if (!submitting) setExistingAppts(null); }} disabled={submitting}
                 className="w-full text-[13px] text-slate-400 py-2 disabled:opacity-40">
                 ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove-from-waitlist prompt (shown after a successful booking) */}
+      {waitlistPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-5">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+            <div className="text-3xl mb-2">✅</div>
+            <h3 className="text-[16px] font-bold text-slate-800 mb-1">התור נקבע!</h3>
+            <p className="text-[13px] text-slate-500 mb-5">
+              אתה עדיין רשום לרשימת ההמתנה ל{waitlistPrompt.entries[0]?.dateLabel}.
+              <br />
+              להסיר אותך מרשימת ההמתנה?
+            </p>
+            <div className="space-y-2">
+              <button onClick={() => resolveWaitlist(true)} disabled={waitlistRemoving}
+                className="w-full text-[14px] font-bold py-3 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
+                style={{ background: "var(--brand)" }}>
+                {waitlistRemoving ? "מסיר..." : "כן, הסר אותי מההמתנה"}
+              </button>
+              <button onClick={() => resolveWaitlist(false)} disabled={waitlistRemoving}
+                className="w-full text-[14px] font-semibold py-3 rounded-full text-slate-600 bg-slate-100 border border-slate-200 transition-all active:scale-[0.99] disabled:opacity-40">
+                לא, השאר אותי בהמתנה
               </button>
             </div>
           </div>

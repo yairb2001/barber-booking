@@ -380,5 +380,25 @@ export async function POST(request: NextRequest) {
   // frozen — otherwise the WhatsApp confirmation often never gets sent.
   await Promise.allSettled(notifyTasks);
 
-  return NextResponse.json(appointment, { status: 201 });
+  // If this customer is on the waitlist for the SAME day they just booked, that
+  // entry is now redundant — they got their appointment. Surface it so the UI
+  // can ask whether to remove them from the waitlist. (Waitlist entries for
+  // OTHER days are left alone — they may still want those.)
+  const sameDayWaitlist = await prisma.waitlist.findMany({
+    where: {
+      customerId: customer.id,
+      businessId: staff.businessId,
+      status: { in: ["waiting", "notified"] },
+      date: { gte: dateObj, lt: dayEnd },
+    },
+    select: { id: true, date: true },
+  });
+
+  return NextResponse.json({
+    ...appointment,
+    waitlistEntries: sameDayWaitlist.map(w => ({
+      id: w.id,
+      dateLabel: w.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }),
+    })),
+  }, { status: 201 });
 }
