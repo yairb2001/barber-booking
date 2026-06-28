@@ -376,6 +376,19 @@ export const DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE =
 מצטערים על אי הנוחות 🙏
 לקביעת תור חדש פשוט כתבו לנו כאן.`;
 
+// Sent when the CUSTOMER cancels their own appointment (web / WhatsApp). It's a
+// confirmation of an action they took — so the tone is "done ✅", not the
+// apologetic "we cancelled on you" of the staff-initiated template above.
+export const DEFAULT_APPOINTMENT_SELF_CANCELLED_TEMPLATE =
+`שלום {{name}} 👋
+
+התור שלך ב*{{business}}* בוטל בהצלחה ✅
+📅 {{date}}
+🕒 {{time}}
+
+נשמח לראותך בפעם הבאה 💈
+לקביעת תור חדש פשוט כתבו לנו כאן.`;
+
 export const DEFAULT_FIRST_BOOKING_TEMPLATE =
 `שלום {{name}} 👋
 
@@ -793,10 +806,16 @@ export function cancellationText(
     businessName: string;
     dateLabel: string;
     startTime: string;
+    /** true → the customer cancelled themselves → "בוטל בהצלחה" tone. */
+    bySelf?: boolean;
   },
   customTemplate?: string | null,
 ): string {
-  const tmpl = customTemplate || DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE;
+  const tmpl =
+    customTemplate ||
+    (params.bySelf
+      ? DEFAULT_APPOINTMENT_SELF_CANCELLED_TEMPLATE
+      : DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE);
   return applyTemplate(tmpl, {
     name:     firstName(params.customerName),
     business: params.businessName,

@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
           businessName: business.name,
           dateLabel,
           startTime: appt.startTime,
+          bySelf: true, // customer cancelled their own appointment → "בוטל בהצלחה"
         });
         await sendMessage({
           businessId:    appt.businessId,
