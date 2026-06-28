@@ -266,8 +266,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // appeared in the inbox, so the chat looked like the customer never replied.)
   // Persisting first also means the dedup guard runs before the swap executor,
   // so a Green API double-delivery can't run the same swap twice.
+  // Exclude the owner-agent thread (agentType="owner") — it's hidden from the chat
+  // inbox. If the owner has the personal agent OFF, his messages fall through to
+  // here and must land in a normal (visible) customer conversation, NOT get glued
+  // onto the hidden owner thread (which would make him "disappear" from chats).
   let conv = await prisma.conversation.findFirst({
-    where: { businessId: biz.id, phone },
+    where: { businessId: biz.id, phone, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
   });
   if (!conv) {
