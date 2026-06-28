@@ -302,7 +302,58 @@ export default function ChooseBarberPage() {
             <div key={i} className="animate-pulse" style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--card)" }} />
           ))
         ) : (
-          staff.map(member => {
+          <>
+            {/* ── "Any barber" card — same shape as a real barber, but its photo
+                 is a collage of the whole team and it leads to the shared
+                 (load-balanced) calendar. Only shown when there's more than one
+                 barber, since "doesn't matter" is meaningless with a single one.
+                 The collage cycles through the team's avatars so it always fills
+                 four cells regardless of how many barbers there are. ── */}
+            {staff.length > 1 && (() => {
+              const collage = Array.from({ length: 4 }, (_, i) => staff[i % staff.length]);
+              return (
+                <Link href={publicHref(slug, "/book/team-date")}
+                  className="relative overflow-hidden active:scale-[0.96] transition-transform block"
+                  style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--bg-alt)", boxShadow: "0 3px 12px rgba(0,0,0,0.1)" }}>
+
+                  {/* Collage of the team's photos (2×2) */}
+                  <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
+                    {collage.map((m, i) => (
+                      <div key={i} className="overflow-hidden" style={{ background: "var(--card)" }}>
+                        {m.avatarUrl ? (
+                          <img src={m.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-lg font-bold"
+                            style={{ color: "var(--text-muted)" }}>{m.name[0]}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="absolute inset-0"
+                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.28) 52%, rgba(0,0,0,0.12) 100%)" }} />
+
+                  {/* Badge — selling the benefit of "any barber": fastest slot */}
+                  <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-white"
+                    style={{ background: "var(--brand)" }}>הכי מהר</span>
+
+                  {/* Name */}
+                  <div className="absolute inset-x-0 z-10 px-2 text-center" style={{ bottom: 38 }}>
+                    <p className="font-bold text-[11px] text-white leading-tight"
+                      style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>לא משנה לי הספר</p>
+                    <p className="text-[9px] text-white/85 leading-tight truncate mt-0.5"
+                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>התור הקרוב ביותר</p>
+                  </div>
+
+                  {/* CTA → shared calendar of everyone */}
+                  <div className="absolute bottom-1.5 inset-x-2 z-10 flex items-center justify-center py-1.5"
+                    style={{ background: "var(--brand)", borderRadius: 10 }}>
+                    <span className="text-[10px] font-bold text-white">ליומן המשותף</span>
+                  </div>
+                </Link>
+              );
+            })()}
+
+            {staff.map(member => {
             const slot = getBarberSlot(member.id);
             const hasToday = slot?.dayLabel === "היום";
 
@@ -365,7 +416,8 @@ export default function ChooseBarberPage() {
                 )}
               </div>
             );
-          })
+          })}
+          </>
         )}
       </div>
     </div>
