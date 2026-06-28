@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
+import { getPreferredServiceId } from "@/lib/preferred-service";
 import {
   generateSlots,
   timeToMinutes,
@@ -39,6 +40,10 @@ export async function GET(request: Request) {
 
   // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
   const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
+
+  // Returning customer? Offer the service THEY usually book (e.g. cut+beard)
+  // instead of the generic base service. null for anonymous/new customers.
+  const preferredServiceId = await getPreferredServiceId(request, resolvedBusinessId);
 
   // Business-wide booking defaults: min lead time + how far ahead bookings open.
   const biz = resolvedBusinessId
@@ -88,7 +93,11 @@ export async function GET(request: Request) {
   const eligiblePoolStaff = poolStaff
     .map(s => {
       const offered = new Set(s.staffServices.map(ss => ss.serviceId));
-      const svc = visibleServices.find(v => offered.has(v.id));
+      // Prefer the returning customer's usual service if this barber offers it;
+      // otherwise fall back to the first visible service they provide (the base).
+      const svc =
+        (preferredServiceId && visibleServices.find(v => v.id === preferredServiceId && offered.has(v.id)))
+        || visibleServices.find(v => offered.has(v.id));
       if (!svc) return null;
       const ss = s.staffServices.find(x => x.serviceId === svc.id);
 
@@ -271,12 +280,13 @@ export async function GET(request: Request) {
   // Sort by absolute time
   allCandidates.sort((a, b) => a.timeMinutes - b.timeMinutes);
 
-  // For specific staff: return first 6 diverse slots (spaced at least 60 min apart)
+  // For specific staff: return first 6 diverse slots, spaced by this barber's
+  // own service duration (so a 30-min barber surfaces 10:00 / 10:30 / 11:00).
   if (staffIdFilter) {
     const selected = [];
     let lastTime = -999;
     for (const c of allCandidates) {
-      if (c.timeMinutes - lastTime >= 60) {
+      if (c.timeMinutes - lastTime >= c.duration) {
         selected.push(c);
         lastTime = c.timeMinutes;
         if (selected.length >= 6) break;
@@ -285,14 +295,15 @@ export async function GET(request: Request) {
     return NextResponse.json(selected);
   }
 
-  // For the home carousel: up to 5 slots per barber (spaced ≥60 min apart), sorted by time
+  // For the home carousel: up to 5 slots per barber, spaced by each barber's own
+  // service duration (so half-hour barbers surface :30 options), sorted by time.
   const perBarberSlots = new Map<string, number[]>(); // staffId → list of picked timeMinutes
   const selected: typeof allCandidates = [];
 
   for (const c of allCandidates) {
     const picked = perBarberSlots.get(c.staffId) || [];
     if (picked.length >= 5) continue;
-    const tooClose = picked.some((t) => Math.abs(c.timeMinutes - t) < 60);
+    const tooClose = picked.some((t) => Math.abs(c.timeMinutes - t) < c.duration);
     if (tooClose) continue;
     picked.push(c.timeMinutes);
     perBarberSlots.set(c.staffId, picked);

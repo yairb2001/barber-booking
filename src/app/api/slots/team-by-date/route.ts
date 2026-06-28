@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
+import { getPreferredServiceId } from "@/lib/preferred-service";
 import {
   generateSlots,
   timeToMinutes,
@@ -43,6 +44,9 @@ export async function GET(request: Request) {
 
   const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
 
+  // Returning customer? Offer the service they usually book (per barber, if offered).
+  const preferredServiceId = await getPreferredServiceId(request, resolvedBusinessId);
+
   const biz = resolvedBusinessId
     ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
     : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
@@ -77,7 +81,10 @@ export async function GET(request: Request) {
   const eligibleStaff: EligibleStaff[] = poolStaff
     .map(s => {
       const offered = new Set(s.staffServices.map(ss => ss.serviceId));
-      const svc = visibleServices.find(v => offered.has(v.id));
+      // Prefer the returning customer's usual service if this barber offers it.
+      const svc =
+        (preferredServiceId && visibleServices.find(v => v.id === preferredServiceId && offered.has(v.id)))
+        || visibleServices.find(v => offered.has(v.id));
       if (!svc) return null;
       const ss = s.staffServices.find(x => x.serviceId === svc.id);
 
@@ -235,7 +242,15 @@ export async function GET(request: Request) {
   }
 
   const distinctTimes = Array.from(byTime.keys()).sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
-  const assignCount = new Map<string, number>(); // staffId → times already given to them
+
+  // Smart load-balancing: seed each barber's counter with how many appointments
+  // they ALREADY have that day, so the day's offered times go first to the
+  // emptier barbers. A packed barber gets fewer of the day's slots → we actively
+  // spread demand across the team instead of a blind round-robin from zero.
+  const assignCount = new Map<string, number>(); // staffId → load (existing + assigned)
+  for (const staff of eligibleStaff) {
+    assignCount.set(staff.id, (apptsByKey.get(`${staff.id}|${dateStr}`) || []).length);
+  }
 
   const slots = distinctTimes.map(time => {
     const candidates = byTime.get(time)!;
