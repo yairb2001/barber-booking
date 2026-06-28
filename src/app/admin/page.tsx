@@ -2849,8 +2849,10 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               {waitlist.length === 0 && <p className="text-sm text-neutral-400 text-center py-4">אין ממתינים</p>}
               {waitlist.map(w => {
                 const timeLabel =
-                  w.preferredTimeOfDay === "morning"   ? "🌅 בוקר"   :
-                  w.preferredTimeOfDay === "afternoon"  ? "☀️ צהריים" : null;
+                  w.preferredTimeOfDay === "morning"   ? "🌅 בוקר 09:00–12:00"   :
+                  w.preferredTimeOfDay === "afternoon" ? "☀️ צהריים 12:00–17:00" :
+                  w.preferredTimeOfDay === "evening"   ? "🌙 ערב 17:00–20:00"    :
+                  w.preferredTimeOfDay === "any"       ? "🕐 כל שעה"             : null;
                 return (
                   <div key={w.id} className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-200 flex items-start gap-2">
                     <div className="flex-1 min-w-0">
