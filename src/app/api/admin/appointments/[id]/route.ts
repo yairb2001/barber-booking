@@ -37,6 +37,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Build update data
   const data: Record<string, unknown> = {};
   if (body.status    !== undefined) data.status    = body.status;
+  // Stamp cancelledAt when the appointment first moves to a cancelled status, so
+  // the notifications feed (which keys on cancelledAt) and any time-since logic work.
+  if (body.status !== undefined && CANCEL_STATUSES.has(body.status) && !CANCEL_STATUSES.has(before.status)) {
+    data.cancelledAt = new Date();
+  }
   if (body.staffNote !== undefined) data.staffNote = body.staffNote;
   if (body.note      !== undefined) data.note      = body.note;
   if (body.staffId   !== undefined) data.staffId   = body.staffId;

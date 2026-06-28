@@ -370,6 +370,12 @@ function ConfirmPageContent() {
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
 
+  // When the customer already has an upcoming appointment, the server stops and
+  // returns its details so we can ask: add another, or cancel-and-rebook?
+  const [existingAppts, setExistingAppts] = useState<
+    { id: string; dateLabel: string; startTime: string; staffName: string; serviceName: string }[] | null
+  >(null);
+
   const [otpSent,      setOtpSent]      = useState(false);
   const [otpCode,      setOtpCode]      = useState("");
   const [otpVerified,  setOtpVerified]  = useState(false);
@@ -574,11 +580,11 @@ function ConfirmPageContent() {
     setOtpVerifying(false);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(existingDecision?: "additional" | "cancel") {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
     if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
     if (!otpVerified) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
-    setSubmitting(true); setError("");
+    setSubmitting(true); setError(""); setExistingAppts(null);
     // Fold any selected products into the appointment note so the barber sees
     // the customer wants to buy them at the visit (paid in-shop).
     const productLines = products
@@ -599,10 +605,18 @@ function ConfirmPageContent() {
           referrerPhone: (!!friendSource && referralSource === friendSource && !referrerId && referrerPhone) ? referrerPhone : undefined,
           note: combinedNote || undefined,
           otpToken,
+          existingDecision,
         }),
       });
       if (!res.ok) {
         const data = await res.json();
+        // The customer already has an upcoming appointment — ask what to do
+        // instead of showing an error. They re-submit with their choice.
+        if (data.existingAppointment && Array.isArray(data.appointments)) {
+          setExistingAppts(data.appointments);
+          setSubmitting(false);
+          return;
+        }
         setError(data.error || "שגיאה בקביעת התור");
         setSubmitting(false);
         return;
@@ -1017,7 +1031,7 @@ function ConfirmPageContent() {
         )}
 
         {/* Submit */}
-        <button onClick={handleSubmit}
+        <button onClick={() => handleSubmit()}
           disabled={submitting || !phone || !nameValid || !otpVerified}
           className="w-full text-[14px] font-bold tracking-[0.15em] uppercase py-4 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
           style={{ background: "var(--brand)" }}>
@@ -1028,6 +1042,49 @@ function ConfirmPageContent() {
           <p className="text-center text-[11px] text-slate-400">נדרש אימות טלפון לפני קביעת התור</p>
         )}
       </div>
+
+      {/* Existing-appointment choice dialog */}
+      {existingAppts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-5"
+             onClick={() => { if (!submitting) setExistingAppts(null); }}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center"
+               onClick={(e) => e.stopPropagation()}>
+            <div className="text-3xl mb-2">📅</div>
+            <h3 className="text-[16px] font-bold text-slate-800 mb-1">כבר יש לך תור קיים</h3>
+            <p className="text-[13px] text-slate-500 mb-4">
+              {existingAppts.length === 1 ? "נמצא לך תור קרוב:" : "נמצאו לך תורים קרובים:"}
+            </p>
+            <div className="space-y-2 mb-5 text-right">
+              {existingAppts.map((a) => (
+                <div key={a.id} className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
+                  <p className="text-[13px] font-semibold text-slate-700">
+                    {a.dateLabel} בשעה {a.startTime}
+                  </p>
+                  <p className="text-[12px] text-slate-500">
+                    {a.serviceName}{a.staffName ? ` · ${a.staffName}` : ""}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <p className="text-[13px] text-slate-600 mb-4">מה תרצה לעשות?</p>
+            <div className="space-y-2">
+              <button onClick={() => handleSubmit("additional")} disabled={submitting}
+                className="w-full text-[14px] font-bold py-3 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
+                style={{ background: "var(--brand)" }}>
+                {submitting ? "קובע..." : "לקבוע תור נוסף ➕"}
+              </button>
+              <button onClick={() => handleSubmit("cancel")} disabled={submitting}
+                className="w-full text-[14px] font-semibold py-3 rounded-full text-red-600 bg-red-50 border border-red-200 transition-all active:scale-[0.99] disabled:opacity-40">
+                {submitting ? "מבטל וקובע..." : "לבטל את הקיים ולקבוע חדש 🔄"}
+              </button>
+              <button onClick={() => { if (!submitting) setExistingAppts(null); }} disabled={submitting}
+                className="w-full text-[13px] text-slate-400 py-2 disabled:opacity-40">
+                ביטול
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

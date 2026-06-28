@@ -39,13 +39,13 @@ function readSeenAt(settings: string | null): number {
 
 type FeedEvent = {
   id: string;
-  type: "booking" | "cancellation";
+  type: "booking" | "cancellation" | "waitlist";
   at: string;            // ISO timestamp the event happened
   customerName: string;
   staffName: string;
   serviceName: string;
   dateLabel: string;     // appointment date, friendly Hebrew
-  startTime: string;
+  startTime: string;     // empty for waitlist (no specific time)
   unread: boolean;
 };
 
@@ -128,6 +128,42 @@ export async function GET(req: NextRequest) {
         ...base,
       });
     }
+  }
+
+  // Waitlist registrations — a customer signed up to wait for a given day.
+  // Barbers see entries for themselves plus "any barber" (staffId null) sign-ups;
+  // the owner sees all.
+  const waitEntries = await prisma.waitlist.findMany({
+    where: {
+      businessId: session.businessId,
+      status: "waiting",
+      createdAt: { gte: since },
+      ...(staffScope ? { OR: [{ staffId: staffScope }, { staffId: null }] } : {}),
+    },
+    select: {
+      id: true,
+      date: true,
+      createdAt: true,
+      customer: { select: { name: true } },
+      staff:    { select: { name: true } },
+      service:  { select: { name: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+
+  for (const w of waitEntries) {
+    events.push({
+      id: `${w.id}:w`,
+      type: "waitlist",
+      at: w.createdAt.toISOString(),
+      unread: w.createdAt.getTime() > seenAt,
+      customerName: w.customer?.name ?? "לקוח",
+      staffName: w.staff?.name ?? "",
+      serviceName: w.service?.name ?? "",
+      dateLabel: apptDateLabel(w.date),
+      startTime: "",
+    });
   }
 
   events.sort((x, y) => Date.parse(y.at) - Date.parse(x.at));

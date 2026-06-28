@@ -4,6 +4,7 @@ import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
+import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -32,7 +33,11 @@ export async function POST(request: NextRequest) {
     referrerId,    // preferred: customer ID of the friend who referred (from autocomplete)
     note,          // optional customer note for this appointment
     otpToken,      // short-lived JWT from /api/otp/verify
-  } = body;
+    // When the customer already has an upcoming appointment we stop and ask them
+    // (in the UI) whether they want this as an EXTRA appointment ("additional")
+    // or to cancel the existing one(s) and book this instead ("cancel").
+    existingDecision, // undefined | "additional" | "cancel"
+  } = body as typeof body & { existingDecision?: "additional" | "cancel" };
 
   if (!staffId || !serviceId || !date || !startTime || !customerPhone || !customerName) {
     return NextResponse.json(
@@ -157,6 +162,59 @@ export async function POST(request: NextRequest) {
       { error: "הסלוט כבר תפוס, נסה שעה אחרת" },
       { status: 409 }
     );
+  }
+
+  // ── Existing-appointment guard ───────────────────────────────────────────────
+  // If this customer already has upcoming appointment(s), don't silently create a
+  // second one. The UI must ask: keep the existing AND add this ("additional"),
+  // or cancel the existing one(s) and book this instead ("cancel"). A brand-new
+  // customer (just created above) has none, so this is a no-op for them.
+  const nowUtc = new Date();
+  const todayMidnightUtc = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate()));
+  const upcomingAppts = await prisma.appointment.findMany({
+    where: {
+      customerId: customer.id,
+      businessId: staff.businessId,
+      status: { in: ["pending", "confirmed"] },
+      date: { gte: todayMidnightUtc },
+    },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
+    include: {
+      staff:   { select: { name: true } },
+      service: { select: { name: true } },
+    },
+  });
+
+  if (upcomingAppts.length > 0 && existingDecision !== "additional" && existingDecision !== "cancel") {
+    // Ask the customer what to do — the UI shows a choice dialog.
+    return NextResponse.json({
+      existingAppointment: true,
+      appointments: upcomingAppts.map(a => ({
+        id:          a.id,
+        dateLabel:   a.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }),
+        startTime:   a.startTime,
+        staffName:   a.staff?.name ?? "",
+        serviceName: a.service?.name ?? "",
+      })),
+    }, { status: 409 });
+  }
+
+  // Customer chose to cancel the existing appointment(s) and rebook → cancel them
+  // now (stamp cancelledAt so they surface in the admin notifications feed) and
+  // tell the waitlist their slots opened up.
+  if (existingDecision === "cancel" && upcomingAppts.length > 0) {
+    for (const a of upcomingAppts) {
+      await prisma.appointment.update({
+        where: { id: a.id },
+        data:  { status: "cancelled_by_customer", cancelledAt: new Date() },
+      });
+      await notifyWaitlistForCancellation({
+        businessId: staff.businessId,
+        staffId:    a.staffId,
+        date:       a.date,
+        startTime:  a.startTime,
+      }).catch(console.error);
+    }
   }
 
   // Create appointment

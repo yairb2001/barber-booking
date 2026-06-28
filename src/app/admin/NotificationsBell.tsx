@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 type FeedEvent = {
   id: string;
-  type: "booking" | "cancellation";
+  type: "booking" | "cancellation" | "waitlist";
   at: string;
   customerName: string;
   staffName: string;
@@ -33,12 +33,13 @@ export default function NotificationsBell() {
   const [hasUnread, setHasUnread] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
   const [loading, setLoading] = useState(true);
-  // Toasts that "pop up" on their own when a NEW cancellation arrives.
+  // Toasts that "pop up" on their own when a NEW cancellation or waitlist
+  // sign-up arrives.
   const [toasts, setToasts] = useState<FeedEvent[]>([]);
   const wrapRef = useRef<HTMLDivElement>(null);
-  // Cancellation ids we've already accounted for, so each one pops exactly once.
-  const knownCancelIds = useRef<Set<string>>(new Set());
-  // First poll only seeds the "known" set — we don't pop historical cancels.
+  // Event ids we've already accounted for, so each one pops exactly once.
+  const knownPopIds = useRef<Set<string>>(new Set());
+  // First poll only seeds the "known" set — we don't pop historical events.
   const seeded = useRef(false);
 
   const dismissToast = useCallback((id: string) => {
@@ -55,17 +56,17 @@ export default function NotificationsBell() {
       setHasUnread(!!data.hasUnread);
       setIsOwner(!!data.isOwner);
 
-      // Pop a toast for any cancellation we haven't seen before. On the very
-      // first load we just record the existing ones (no popping) so we don't
-      // spam the owner with old cancellations every time the page opens.
-      const cancels = evs.filter(e => e.type === "cancellation");
+      // Pop a toast for any cancellation or waitlist sign-up we haven't seen
+      // before. On the very first load we just record the existing ones (no
+      // popping) so we don't spam the owner with old events on every page open.
+      const poppable = evs.filter(e => e.type === "cancellation" || e.type === "waitlist");
       if (!seeded.current) {
-        cancels.forEach(c => knownCancelIds.current.add(c.id));
+        poppable.forEach(c => knownPopIds.current.add(c.id));
         seeded.current = true;
       } else {
-        const fresh = cancels.filter(c => !knownCancelIds.current.has(c.id));
+        const fresh = poppable.filter(c => !knownPopIds.current.has(c.id));
         if (fresh.length) {
-          fresh.forEach(c => knownCancelIds.current.add(c.id));
+          fresh.forEach(c => knownPopIds.current.add(c.id));
           setToasts(prev => [...fresh, ...prev].slice(0, 4));
           // Auto-dismiss each toast after 12s (owner can also close manually).
           fresh.forEach(c => setTimeout(() => dismissToast(c.id), 12000));
@@ -110,20 +111,23 @@ export default function NotificationsBell() {
       {/* ── Pop-up toasts: a cancellation just came in ── */}
       {toasts.length > 0 && (
         <div dir="rtl" className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[340px] max-w-[92vw] pointer-events-none">
-          {toasts.map(t => (
+          {toasts.map(t => {
+            const isWait = t.type === "waitlist";
+            const title = isWait
+              ? `${t.customerName} נרשם/ה לרשימת המתנה${isOwner && t.staffName ? ` אצל ${t.staffName}` : ""}`
+              : `${t.customerName} ביטל/ה תור${isOwner && t.staffName ? ` אצל ${t.staffName}` : ""}`;
+            return (
             <div
               key={t.id}
               onClick={() => dismissToast(t.id)}
-              className="pointer-events-auto cursor-pointer bg-white border border-red-200 rounded-2xl shadow-2xl px-4 py-3 flex gap-3 items-start ring-1 ring-red-500/10"
+              className={`pointer-events-auto cursor-pointer bg-white border rounded-2xl shadow-2xl px-4 py-3 flex gap-3 items-start ring-1 ${isWait ? "border-amber-200 ring-amber-500/10" : "border-red-200 ring-red-500/10"}`}
             >
-              <span className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-base font-bold">✕</span>
+              <span className={`mt-0.5 flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-base font-bold ${isWait ? "bg-amber-100 text-amber-600" : "bg-red-100 text-red-600"}`}>{isWait ? "⏳" : "✕"}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-neutral-900 leading-snug">
-                  {t.customerName} ביטל/ה תור{isOwner && t.staffName ? ` אצל ${t.staffName}` : ""}
-                </p>
+                <p className="text-[13px] font-bold text-neutral-900 leading-snug">{title}</p>
                 <p className="text-[12px] text-neutral-500 mt-0.5 leading-snug">
                   {t.serviceName && <span>{t.serviceName} · </span>}
-                  {t.dateLabel} בשעה <span dir="ltr">{t.startTime}</span>
+                  {t.dateLabel}{t.startTime ? <> בשעה <span dir="ltr">{t.startTime}</span></> : null}
                 </p>
               </div>
               <button
@@ -132,7 +136,8 @@ export default function NotificationsBell() {
                 className="flex-shrink-0 text-neutral-300 hover:text-neutral-500 text-lg leading-none"
               >×</button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -174,19 +179,23 @@ export default function NotificationsBell() {
             <ul className="divide-y divide-neutral-100">
               {events.map(e => {
                 const isCancel = e.type === "cancellation";
-                const main = isCancel
-                  ? (isOwner ? `${e.customerName} ביטל/ה תור${e.staffName ? ` אצל ${e.staffName}` : ""}` : `${e.customerName} ביטל/ה תור`)
-                  : (isOwner ? `${e.customerName} קבע/ה תור${e.staffName ? ` אצל ${e.staffName}` : ""}` : `${e.customerName} קבע/ה תור`);
+                const isWait   = e.type === "waitlist";
+                const verb = isCancel ? "ביטל/ה תור" : isWait ? "נרשם/ה לרשימת המתנה" : "קבע/ה תור";
+                const main = isOwner && e.staffName
+                  ? `${e.customerName} ${verb} אצל ${e.staffName}`
+                  : `${e.customerName} ${verb}`;
+                const icon = isCancel ? "✕" : isWait ? "⏳" : "📅";
+                const iconBg = isCancel ? "bg-red-100" : isWait ? "bg-amber-100" : "bg-teal-100";
                 return (
                   <li key={e.id} className={`px-4 py-3 flex gap-3 ${e.unread ? "bg-teal-50/60" : ""}`}>
-                    <span className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm ${isCancel ? "bg-red-100" : "bg-teal-100"}`}>
-                      {isCancel ? "✕" : "📅"}
+                    <span className={`mt-0.5 flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-sm ${iconBg}`}>
+                      {icon}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-semibold text-neutral-800 leading-snug">{main}</p>
                       <p className="text-[12px] text-neutral-500 mt-0.5 leading-snug">
                         {e.serviceName && <span>{e.serviceName} · </span>}
-                        {e.dateLabel} בשעה <span dir="ltr">{e.startTime}</span>
+                        {e.dateLabel}{e.startTime ? <> בשעה <span dir="ltr">{e.startTime}</span></> : null}
                       </p>
                       <p className="text-[10px] text-neutral-400 mt-1">{timeAgo(e.at)}</p>
                     </div>

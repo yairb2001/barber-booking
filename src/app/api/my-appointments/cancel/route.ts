@@ -91,7 +91,9 @@ export async function POST(req: NextRequest) {
 
   await prisma.appointment.update({
     where: { id: appt.id },
-    data: { status: "cancelled_by_customer" },
+    // cancelledAt is what the admin notifications feed keys on — without it the
+    // cancellation never surfaces in the bell/alerts list.
+    data: { status: "cancelled_by_customer", cancelledAt: new Date() },
   });
 
   const dateLabel = appt.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
