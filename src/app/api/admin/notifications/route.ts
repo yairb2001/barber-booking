@@ -133,10 +133,14 @@ export async function GET(req: NextRequest) {
   // Waitlist registrations — a customer signed up to wait for a given day.
   // Barbers see entries for themselves plus "any barber" (staffId null) sign-ups;
   // the owner sees all.
+  // NOTE: we do NOT filter by status here. The "registered to waitlist" event
+  // happened at createdAt regardless of what happened to the entry afterwards.
+  // If we filtered to status:"waiting", a customer who registered and was then
+  // notified (status → "notified") would silently disappear from the feed — the
+  // owner would never see that they signed up. So show all recent registrations.
   const waitEntries = await prisma.waitlist.findMany({
     where: {
       businessId: session.businessId,
-      status: "waiting",
       createdAt: { gte: since },
       ...(staffScope ? { OR: [{ staffId: staffScope }, { staffId: null }] } : {}),
     },
