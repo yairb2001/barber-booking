@@ -218,20 +218,31 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const ownerPhone = bizSettings.ownerLoginPhone
         ? normalizeIsraeliPhone(String(bizSettings.ownerLoginPhone))
         : null;
-      let isOwnerSender = !!ownerPhone && phone === ownerPhone;
-      if (!isOwnerSender) {
-        // Phone formats vary in the DB, so normalize each staff phone before compare.
-        const staffWithPhones = await prisma.staff.findMany({
-          where: { businessId: biz.id, isActive: true, phone: { not: null } },
-          select: { phone: true, role: true, canUseOwnerAgent: true },
-        });
-        isOwnerSender = staffWithPhones.some(
-          s => s.phone && normalizeIsraeliPhone(s.phone) === phone && (s.role === "owner" || s.canUseOwnerAgent)
-        );
-      }
+      // Find the sender's own staff record (phone formats vary, so normalize each).
+      // We need the id to scope the agent to this person's PERSONAL calendar.
+      const staffWithPhones = await prisma.staff.findMany({
+        where: { businessId: biz.id, isActive: true, phone: { not: null } },
+        select: { id: true, phone: true, role: true, canUseOwnerAgent: true },
+      });
+      const senderStaff = staffWithPhones.find(
+        s => s.phone && normalizeIsraeliPhone(s.phone) === phone
+      );
+      // Owner agent allowed if: matches ownerLoginPhone, OR is a staff member who is
+      // an owner / explicitly granted canUseOwnerAgent.
+      const isOwnerSender =
+        (!!ownerPhone && phone === ownerPhone) ||
+        (!!senderStaff && (senderStaff.role === "owner" || senderStaff.canUseOwnerAgent));
       if (isOwnerSender) {
         try {
-          await runOwnerAgent({ businessId: biz.id, phone, incomingText: text, senderName });
+          await runOwnerAgent({
+            businessId: biz.id,
+            phone,
+            incomingText: text,
+            senderName,
+            // Scope to the sender's own calendar. (Null only if the owner phone has
+            // no matching staff record — then the agent sees all calendars.)
+            staffId: senderStaff?.id ?? null,
+          });
         } catch (e) {
           console.error("[owner-agent]", e);
         }

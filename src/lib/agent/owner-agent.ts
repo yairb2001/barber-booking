@@ -138,7 +138,8 @@ const OWNER_TOOLS: Anthropic.Tool[] = [
 async function execOwnerTool(
   name: string,
   input: Record<string, unknown>,
-  businessId: string
+  businessId: string,
+  staffId: string | null
 ): Promise<string> {
   switch (name) {
     // ── Schedule for a day ──────────────────────────────────────────────────
@@ -149,6 +150,7 @@ async function execOwnerTool(
       const appts = await prisma.appointment.findMany({
         where: {
           businessId,
+          ...(staffId ? { staffId } : {}),
           date: { gte: dayStart, lte: dayEnd },
           status: { in: ACTIVE_STATUSES },
         },
@@ -185,6 +187,9 @@ async function execOwnerTool(
       ]);
       if (!a1 || a1.businessId !== businessId) return `שגיאה: תור ${id1} לא נמצא בעסק.`;
       if (!a2 || a2.businessId !== businessId) return `שגיאה: תור ${id2} לא נמצא בעסק.`;
+      if (staffId && (a1.staffId !== staffId || a2.staffId !== staffId)) {
+        return "שגיאה: אחד התורים אינו ביומן האישי שלך. אתה יכול להחליף רק בין תורים שלך.";
+      }
       if (!ACTIVE_STATUSES.includes(a1.status) || !ACTIVE_STATUSES.includes(a2.status)) {
         return "שגיאה: אחד התורים כבר מבוטל/הושלם — אי אפשר להחליף.";
       }
@@ -242,7 +247,7 @@ async function execOwnerTool(
     case "get_staff_and_services": {
       const [staff, services] = await Promise.all([
         prisma.staff.findMany({
-          where: { businessId, isActive: true },
+          where: { businessId, isActive: true, ...(staffId ? { id: staffId } : {}) },
           select: { id: true, name: true, role: true },
           orderBy: { sortOrder: "asc" },
         }),
@@ -271,6 +276,7 @@ async function execOwnerTool(
         include: { customer: true, staff: true, service: true },
       });
       if (!appt || appt.businessId !== businessId) return `שגיאה: תור ${id} לא נמצא בעסק.`;
+      if (staffId && appt.staffId !== staffId) return "שגיאה: התור אינו ביומן האישי שלך — אפשר להזיז רק תורים שלך.";
       if (!ACTIVE_STATUSES.includes(appt.status)) return "התור כבר אינו פעיל (מבוטל/הושלם).";
 
       const curDateIso = new Date(appt.date).toISOString().slice(0, 10);
@@ -333,7 +339,9 @@ async function execOwnerTool(
 
     // ── Book a new appointment for a customer ───────────────────────────────
     case "book_for_customer": {
-      const staffId = input.staff_id as string;
+      // When scoped to a personal calendar, always book on the owner's own staffId.
+      const reqStaffId = (input.staff_id as string) || "";
+      const effStaffId = staffId || reqStaffId;
       const serviceId = input.service_id as string;
       const date = input.date as string;
       const time = input.time as string;
@@ -341,11 +349,12 @@ async function execOwnerTool(
       const rawPhone = ((input.customer_phone as string) || "").trim();
       const force = input.force === true;
       if (!customerName) return "שגיאה: חסר שם לקוח.";
+      if (!effStaffId) return "שגיאה: חסר מזהה ספר. קרא ל-get_staff_and_services לקבלת מזהים.";
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) return "שגיאה: תאריך לא תקין (YYYY-MM-DD).";
       if (!/^\d{1,2}:\d{2}$/.test(time || "")) return "שגיאה: שעה לא תקינה (HH:MM).";
 
       const [staff, service] = await Promise.all([
-        prisma.staff.findFirst({ where: { id: staffId, businessId }, select: { id: true, name: true } }),
+        prisma.staff.findFirst({ where: { id: effStaffId, businessId }, select: { id: true, name: true } }),
         prisma.service.findUnique({ where: { id: serviceId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
       ]);
       if (!staff) return "שגיאה: ספר לא נמצא. קרא ל-get_staff_and_services לקבלת מזהים.";
@@ -353,8 +362,8 @@ async function execOwnerTool(
 
       // Availability guard (owner may override with force).
       if (!force) {
-        const dayAvail = await computeDayAvailability(businessId, date, staffId, serviceId);
-        const slots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
+        const dayAvail = await computeDayAvailability(businessId, date, effStaffId, serviceId);
+        const slots = dayAvail.find(s => s.staffId === effStaffId)?.slots ?? [];
         if (!slots.includes(time)) {
           return `שים לב: ${time} ב-${date} לא פנוי אצל ${staff.name} (יום סגור / מעבר לאופק / תפוס). אם בכל זאת לקבוע, קרא שוב עם force=true. אחרת קרא ל-get_schedule כדי לראות מה תפוס.`;
         }
@@ -394,7 +403,7 @@ async function execOwnerTool(
         });
       }
 
-      const eff = await resolveStaffService(staffId, serviceId, service.name, service.durationMinutes, service.price);
+      const eff = await resolveStaffService(effStaffId, serviceId, service.name, service.durationMinutes, service.price);
       const apptDate = new Date(`${date}T00:00:00.000Z`);
       const endTime = minutesToTime(timeToMinutes(time) + eff.duration);
 
@@ -402,7 +411,7 @@ async function execOwnerTool(
       try {
         appt = await prisma.appointment.create({
           data: {
-            businessId, customerId: customer.id, staffId, serviceId,
+            businessId, customerId: customer.id, staffId: effStaffId, serviceId,
             date: apptDate, startTime: time, endTime,
             status: "confirmed", price: eff.price,
             referralSource: "owner_agent", source: "admin",
@@ -438,6 +447,7 @@ async function execOwnerTool(
         include: { customer: true },
       });
       if (!appt || appt.businessId !== businessId) return `שגיאה: תור ${id} לא נמצא בעסק.`;
+      if (staffId && appt.staffId !== staffId) return "שגיאה: התור אינו ביומן האישי שלך — אפשר לבטל רק תורים שלך.";
       if (!ACTIVE_STATUSES.includes(appt.status)) return "התור כבר אינו פעיל (מבוטל/הושלם).";
 
       await prisma.appointment.update({
@@ -473,6 +483,7 @@ async function execOwnerTool(
       const appts = await prisma.appointment.findMany({
         where: {
           businessId,
+          ...(staffId ? { staffId } : {}),
           date: { gte: dayStart, lte: dayEnd },
           status: { in: ACTIVE_STATUSES },
         },
@@ -523,7 +534,11 @@ async function execOwnerTool(
         select: {
           id: true, name: true, phone: true,
           appointments: {
-            where: { date: { gte: new Date(`${getBusinessNow().date}T00:00:00.000Z`) }, status: { in: ACTIVE_STATUSES } },
+            where: {
+              date: { gte: new Date(`${getBusinessNow().date}T00:00:00.000Z`) },
+              status: { in: ACTIVE_STATUSES },
+              ...(staffId ? { staffId } : {}),
+            },
             orderBy: { date: "asc" },
             take: 3,
             include: { staff: { select: { name: true } }, service: { select: { name: true } } },
@@ -549,13 +564,21 @@ async function execOwnerTool(
 }
 
 // ── System prompt (hardcoded — not from DB) ───────────────────────────────────
-function ownerSystemPrompt(ownerName: string, businessName: string): string {
+function ownerSystemPrompt(
+  ownerName: string,
+  businessName: string,
+  scopedStaffName: string | null,
+): string {
   const now = new Date().toLocaleString("he-IL", {
     weekday: "long", year: "numeric", month: "long", day: "numeric",
     hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem",
   });
+  const scopeLine = scopedStaffName
+    ? `אתה מנהל אך ורק את היומן האישי של ${scopedStaffName} — התורים שלו כספר בלבד. get_schedule מראה רק את התורים שלו, וכל פעולה (הזזה/החלפה/ביטול/קביעה) מתבצעת רק בתוך היומן שלו. אל תתייחס לתורים של ספרים אחרים, ואל תזכיר אותם. כשקובעים תור — הוא תמיד אצל ${scopedStaffName}.`
+    : `יש לך גישה ליומן של כל הספרים בעסק.`;
   return [
-    `אתה העוזר האישי של ${ownerName}, בעל ${businessName}.`,
+    `אתה העוזר האישי של ${ownerName}, ב${businessName}.`,
+    scopeLine,
     `אתה מקבל ממנו פקודות ישירות בוואטסאפ ומבצע אותן. יש לך סמכות מלאה — אין צורך באישור לקוח.`,
     `ענה קצר וענייני: פעולה + אישור. אל תסביר יותר מדי, אל תשאל שאלות מיותרות.`,
     `יכולות שלך: לראות לוח (get_schedule), להזיז תור בודד לשעה חדשה (move_appointment), להחליף בין שני תורים (swap_appointments), לבטל (cancel_appointment), לקבוע תור חדש ללקוח (book_for_customer), לשלוח הודעה לכל לקוחות היום (send_to_today_customers), ולחפש לקוח (get_customer_info).`,
@@ -577,14 +600,23 @@ export async function runOwnerAgent(opts: {
   phone: string;
   incomingText: string;
   senderName?: string;
+  /** When set, the agent is scoped to this staff member's personal calendar only. */
+  staffId?: string | null;
 }): Promise<void> {
-  const { businessId, phone, incomingText, senderName } = opts;
+  const { businessId, phone, incomingText, senderName, staffId = null } = opts;
 
   const business = await prisma.business.findUnique({
     where: { id: businessId },
     select: { name: true },
   });
   const businessName = business?.name || "העסק";
+
+  // Resolve the scoped staff's display name (for the prompt), if scoped.
+  let scopedStaffName: string | null = null;
+  if (staffId) {
+    const s = await prisma.staff.findUnique({ where: { id: staffId }, select: { name: true } });
+    scopedStaffName = s?.name || null;
+  }
 
   // Own conversation thread (hidden from the customer inbox via agentType="owner").
   let conv = await prisma.conversation.findFirst({
@@ -620,7 +652,11 @@ export async function runOwnerAgent(opts: {
     .reverse()
     .map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content }));
 
-  const system = ownerSystemPrompt(firstName(senderName || "הבעלים"), businessName);
+  const system = ownerSystemPrompt(
+    firstName(senderName || scopedStaffName || "הבעלים"),
+    businessName,
+    scopedStaffName,
+  );
 
   // ── Agentic loop ────────────────────────────────────────────────────────────
   let assistantText = "";
@@ -643,7 +679,7 @@ export async function runOwnerAgent(opts: {
         if (block.type !== "tool_use") continue;
         let result: string;
         try {
-          result = await execOwnerTool(block.name, block.input as Record<string, unknown>, businessId);
+          result = await execOwnerTool(block.name, block.input as Record<string, unknown>, businessId, staffId);
         } catch (e) {
           console.error("[owner-agent] tool error", block.name, e);
           result = `שגיאה בביצוע ${block.name}.`;
