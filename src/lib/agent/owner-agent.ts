@@ -362,15 +362,27 @@ async function execOwnerTool(
 
       // Find or create the customer.
       const phone = rawPhone ? normalizeIsraeliPhone(rawPhone) : "";
-      let customer = null;
+      let customer: { id: string; name: string; phone: string } | null = null;
       if (phone) {
         const local = phone.replace(/^972/, "0");
-        customer = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone }, { phone: local }] } });
+        customer = await prisma.customer.findFirst({
+          where: { businessId, OR: [{ phone }, { phone: local }] },
+          select: { id: true, name: true, phone: true },
+        });
       }
       if (!customer) {
-        customer = await prisma.customer.findFirst({
-          where: { businessId, name: { equals: customerName, mode: "insensitive" } },
+        // Match by name (substring, so a first name finds "ניקה לובקובסקי" too).
+        const matches = await prisma.customer.findMany({
+          where: { businessId, name: { contains: customerName, mode: "insensitive" } },
+          select: { id: true, name: true, phone: true },
+          take: 6,
         });
+        if (matches.length === 1) {
+          customer = matches[0];
+        } else if (matches.length > 1) {
+          const list = matches.map(m => `${m.name} (${m.phone})`).join(", ");
+          return `יש כמה לקוחות שמתאימים ל-"${customerName}": ${list}. ציין טלפון מדויק (customer_phone) או שם מלא כדי שאדע למי לקבוע.`;
+        }
       }
       if (!customer) {
         if (!phone) {
@@ -378,6 +390,7 @@ async function execOwnerTool(
         }
         customer = await prisma.customer.create({
           data: { businessId, name: customerName, phone, referralSource: "owner_agent" },
+          select: { id: true, name: true, phone: true },
         });
       }
 
@@ -495,15 +508,18 @@ async function execOwnerTool(
     case "get_customer_info": {
       const q = (input.query as string)?.trim();
       if (!q) return "שגיאה: חיפוש ריק.";
+      // Only add the phone clause when the query actually has digits — otherwise
+      // `contains ""` matches EVERY customer and floods the result with noise.
+      const digits = q.replace(/\D/g, "");
       const customers = await prisma.customer.findMany({
         where: {
           businessId,
           OR: [
             { name: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q.replace(/\D/g, "") } },
+            ...(digits ? [{ phone: { contains: digits } }] : []),
           ],
         },
-        take: 5,
+        take: 8,
         select: {
           id: true, name: true, phone: true,
           appointments: {
@@ -545,7 +561,9 @@ function ownerSystemPrompt(ownerName: string, businessName: string): string {
     `יכולות שלך: לראות לוח (get_schedule), להזיז תור בודד לשעה חדשה (move_appointment), להחליף בין שני תורים (swap_appointments), לבטל (cancel_appointment), לקבוע תור חדש ללקוח (book_for_customer), לשלוח הודעה לכל לקוחות היום (send_to_today_customers), ולחפש לקוח (get_customer_info).`,
     `הבחנה חשובה: "תזיז את X לשעה Y" = move_appointment (תור בודד). "תחליף בין X ל-Y" = swap_appointments (שני תורים). אל תציע החלפה כשמבקשים סתם להזיז.`,
     `לפני הזזה/החלפה/ביטול — קרא ל-get_schedule כדי לאמת על איזה תור מדובר, אשר בקצרה, ובצע.`,
-    `לפני קביעת תור חדש — קרא ל-get_staff_and_services לקבלת מזהי ספר ושירות. אם הלקוח חדש בקש טלפון.`,
+    `קביעת תור ללקוח: כשנותנים לך שם (גם שם פרטי בלבד) — תמיד קרא קודם ל-get_customer_info עם השם כדי לאתר אותו. אם נמצא לקוח אחד — קבע לו (אל תבקש טלפון, הוא כבר רשום). אם נמצאו כמה עם אותו שם — שאל איזה (לפי שם משפחה/טלפון). רק אם באמת לא נמצא אף אחד — זו לקוחה/לקוח חדש, ואז בקש מספר טלפון.`,
+    `לקוח שמופיע בלוח התורים נמצא בהכרח גם במאגר הלקוחות — לעולם אל תאמר "לא קיים במערכת" על מישהו שיש לו תור. אם get_customer_info לא מצא — נסה שם פרטי בלבד, ואל תתבלבל בין "לוח" ל"מאגר".`,
+    `לפני הקביעה עצמה קרא ל-get_staff_and_services לקבלת מזהי ספר ושירות. אל תציף את הבעלים בשאלות — חפש בעצמך מה שאתה יכול, ושאל רק מה שחסר באמת.`,
     `אם פקודה דו-משמעית (למשל "תזיז את 13" כשיש כמה תורים ב-13) — הראה את האפשרויות הרלוונטיות בקצרה ובקש הבהרה.`,
     `כל ההודעות בעברית. עכשיו: ${now} (אסיה/ירושלים).`,
   ].join("\n");
