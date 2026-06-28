@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
     const end   = new Date(date); end.setHours(23, 59, 59, 999);
     where.date = { gte: start, lte: end };
   }
-  if (effectiveStaffId) where.staffId = effectiveStaffId;
+  // Scope to a barber, but ALSO include "any barber" registrations (staffId
+  // null) — those customers are waiting for this day regardless of who cuts, so
+  // they belong on the calendar badge/list. Without this they were invisible.
+  if (effectiveStaffId) where.OR = [{ staffId: effectiveStaffId }, { staffId: null }];
 
   const waitlist = await prisma.waitlist.findMany({
     where,

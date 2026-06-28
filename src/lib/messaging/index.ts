@@ -608,7 +608,8 @@ export const TEMPLATE_DEFS = {
     variables: [
       { key: "name",         label: "שם הלקוח" },
       { key: "business",     label: "שם העסק" },
-      { key: "slot",         label: "סוג הפתיחה (למשל: תור פנוי בבוקר / יום נפתח)" },
+      { key: "slot",         label: "סוג הפתיחה (למשל: תור פנוי בשעה 14:30 / יום נפתח)" },
+      { key: "time",         label: "שעת התור שהתפנה (ריק כשנפתח יום שלם)" },
       { key: "date",         label: "תאריך" },
       { key: "staff_line",   label: "שורת הספר (💈 אצל X) — ריקה אם 'כל ספר'" },
       { key: "service",      label: "שם השירות" },

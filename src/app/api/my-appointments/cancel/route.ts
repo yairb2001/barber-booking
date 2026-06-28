@@ -110,8 +110,10 @@ export async function POST(req: NextRequest) {
     }).catch(() => {});
   }
 
-  // Tell the waitlist a slot opened up.
-  notifyWaitlistForCancellation({
+  // Tell the waitlist a slot opened up. Awaited — the freed-slot message is sent
+  // immediately (not queued), so we must wait for it before the serverless
+  // function returns and gets frozen.
+  await notifyWaitlistForCancellation({
     businessId: appt.businessId,
     staffId:    appt.staffId,
     date:       appt.date,

@@ -478,8 +478,9 @@ async function execTool(
           }).catch(() => {});
         }
 
-        // Notify waitlist members — a slot just freed up
-        notifyWaitlistForCancellation({
+        // Notify waitlist members — a slot just freed up. Awaited so the
+        // immediate freed-slot message finishes sending before we return.
+        await notifyWaitlistForCancellation({
           businessId: appt.businessId,
           staffId:    appt.staffId,
           date:       appt.date,

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { enqueueMessage, applyTemplate, firstName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
+import { enqueueMessage, sendMessage, applyTemplate, firstName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 
 // ── Time preference helpers ───────────────────────────────────────────────────
 
@@ -77,12 +77,20 @@ async function triggerWaitlist(opts: {
   const business = await prisma.business.findUnique({ where: { id: businessId } });
   if (!business) return;
 
+  // Match the whole day as a RANGE, not an exact timestamp. Waitlist rows are
+  // stored at UTC midnight, but an appointment's `date` can carry a time-of-day
+  // (legacy rows) or drift by timezone — an exact-equality match would silently
+  // miss the waiting customers and no one would be notified.
+  const dayStart = new Date(date);
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
   // Find all "waiting" entries for this date that match either this specific
   // staff member OR an "any barber" registration (staffId === null).
   const entries = await prisma.waitlist.findMany({
     where: {
       businessId,
-      date,
+      date: { gte: dayStart, lt: dayEnd },
       status: "waiting",
       OR: [{ staffId }, { staffId: null }],
     },
@@ -95,6 +103,14 @@ async function triggerWaitlist(opts: {
 
   if (entries.length === 0) return;
 
+  // A cancellation frees ONE slot and is time-sensitive, so we SEND those
+  // immediately (and await them) rather than dropping them into the drip-queue
+  // — the queue is drained by a separate every-minute cron, so a queued
+  // freed-slot message would be delayed (or never sent if that cron is idle).
+  // Day-reopen can match many people at once, so it stays on the safe queue.
+  const immediate = triggerType === "cancellation";
+  const tasks: Promise<unknown>[] = [];
+
   for (const entry of entries) {
     const pref = entry.preferredTimeOfDay || "any";
 
@@ -103,8 +119,21 @@ async function triggerWaitlist(opts: {
       if (!matchesTimePreference(startTime, pref)) continue;
     }
 
-    void sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate);
+    tasks.push(
+      sendWaitlistEntryNotification(
+        business.name,
+        entry,
+        triggerType,
+        business.slug,
+        business.waitlistNotifyTemplate,
+        { freedTime: triggerType === "cancellation" ? startTime : undefined, immediate },
+      ),
+    );
   }
+
+  // Await so immediate sends actually complete before the (serverless) caller
+  // is frozen. Enqueue-only sends resolve instantly, so this is cheap.
+  await Promise.allSettled(tasks);
 }
 
 /** A waitlist row joined with the relations the message template needs. */
@@ -134,7 +163,14 @@ export function sendWaitlistEntryNotification(
   triggerType: "cancellation" | "day_open",
   slug?: string | null,
   customTemplate?: string | null,
+  opts?: {
+    /** Exact "HH:MM" of the freed slot (cancellations) → shown in the message. */
+    freedTime?: string;
+    /** true → send right now; false/undefined → enqueue for the drip-queue. */
+    immediate?: boolean;
+  },
 ) {
+  const { freedTime, immediate } = opts ?? {};
   const pref = entry.preferredTimeOfDay || "any";
   const prefLabel = TIME_PREF_LABELS[pref] ?? "";
   const staffName = entry.staff?.name ?? "";
@@ -149,14 +185,18 @@ export function sendWaitlistEntryNotification(
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
   const bookingLink = `${baseUrl}${slug ? `/${slug}` : ""}/book`;
 
-  // The opening phrase: "תור פנוי בבוקר" / "יום נפתח" (trigger + time window).
-  const slotLabel = `${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"}${prefLabel ? ` ${prefLabel}` : ""}`;
+  // The opening phrase. For a cancellation we now know the EXACT freed time, so
+  // say it ("תור פנוי בשעה 14:30") instead of the vague window ("תור פנוי בבוקר").
+  // Day-reopen has no single time, so it keeps the window label.
+  const timeLabel = freedTime ? `בשעה ${freedTime}` : prefLabel;
+  const slotLabel = `${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"}${timeLabel ? ` ${timeLabel}` : ""}`;
 
   // Render the owner's editable template (or the built-in default).
   let body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {
     name:         firstName(entry.customer.name),
     business:     businessName,
     slot:         slotLabel,
+    time:         freedTime ?? "",
     date:         dateLabel,
     staff_line:   staffName ? `💈 אצל ${staffName}\n` : "",
     service:      entry.service.name,
@@ -170,6 +210,25 @@ export function sendWaitlistEntryNotification(
     body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
   }
 
+  // Mark as notified so a repeat trigger doesn't re-message the same person.
+  const markNotified = () =>
+    prisma.waitlist.update({
+      where: { id: entry.id },
+      data: { status: "notified" },
+    }).catch(console.error);
+
+  if (immediate) {
+    // Time-sensitive freed slot → send now (awaited by the caller).
+    return sendMessage({
+      businessId: entry.businessId,
+      customerPhone: entry.customer.phone,
+      kind: "waitlist_notify",
+      body,
+    })
+      .then(markNotified)
+      .catch(console.error);
+  }
+
   return enqueueMessage({
     businessId: entry.businessId,
     customerPhone: entry.customer.phone,
@@ -177,12 +236,6 @@ export function sendWaitlistEntryNotification(
     body,
     scheduledFor: new Date(), // due now → drip cron sends it ahead of staggered broadcasts
   })
-    .then(() =>
-      // Mark as notified immediately so a repeat trigger doesn't re-enqueue.
-      prisma.waitlist.update({
-        where: { id: entry.id },
-        data: { status: "notified" },
-      }).catch(console.error)
-    )
+    .then(markNotified)
     .catch(console.error);
 }

@@ -186,9 +186,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }).catch(() => {});
     }
 
-    // 1) Tell the waitlist a slot opened up.
+    // 1) Tell the waitlist a slot opened up. Awaited — a freed-slot message is
+    // sent immediately (not queued), so the serverless function must wait for it
+    // to finish before returning, or it gets frozen mid-send.
     if (body.notifyWaitlist !== false) {
-      notifyWaitlistForCancellation({
+      await notifyWaitlistForCancellation({
         businessId: before.businessId,
         staffId:    before.staffId,
         date:       before.date,
