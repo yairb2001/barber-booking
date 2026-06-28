@@ -136,6 +136,7 @@ model Staff {
   sortOrder           Int      @default(0) @map("sort_order")
   canViewAllCalendars Boolean  @default(false) @map("can_view_all_calendars")
   canViewAllChats     Boolean  @default(false) @map("can_view_all_chats")
+  canUseOwnerAgent    Boolean  @default(false) @map("can_use_owner_agent")
   isActive            Boolean  @default(true) @map("is_active")
   createdAt     DateTime @default(now()) @map("created_at")
 

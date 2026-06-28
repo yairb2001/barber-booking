@@ -55,6 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       }),
       ...(body.canViewAllCalendars !== undefined && { canViewAllCalendars: !!body.canViewAllCalendars }),
       ...(body.canViewAllChats     !== undefined && { canViewAllChats:     !!body.canViewAllChats     }),
+      ...(body.canUseOwnerAgent     !== undefined && { canUseOwnerAgent:    !!body.canUseOwnerAgent    }),
     },
   });
   return NextResponse.json(staff);

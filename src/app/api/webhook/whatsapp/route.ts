@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
+import { runOwnerAgent } from "@/lib/agent/owner-agent";
 import {
   handleStaffApprovalReply,
   handleCandidateReply,
@@ -181,14 +182,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const instanceId = body.instanceData?.idInstance;
   const instanceIdStr = instanceId != null ? String(instanceId) : null;
   let biz = instanceIdStr
-    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true } })
+    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true, settings: true } })
     : null;
 
   // Fallback ONLY when no instance id was provided (legacy single-tenant webhook).
   // If an instance id WAS given but matched no business, do NOT guess — attaching
   // the message to an arbitrary tenant would mix data between businesses.
   if (!biz && !instanceIdStr) {
-    biz = await fallbackBusiness({ select: { id: true, tier: true } });
+    biz = await fallbackBusiness({ select: { id: true, tier: true, settings: true } });
   }
   if (!biz) {
     console.error("[webhook] no business found");
@@ -198,6 +199,48 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Lazily expire stale agent-initiated swap requests (there is no cron — every
   // inbound message drives expiry) before we route or persist anything.
   await expireStaleAgentSwaps(biz.id).catch((e) => console.error("[swap expiry]", e));
+
+  // ── Owner / staff personal-agent routing ────────────────────────────────────
+  // If the sender is the owner (Business.settings.ownerLoginPhone) or a staff
+  // member granted `canUseOwnerAgent`, route to the OWNER agent — admin commands
+  // like "swap the 13:00 with the 16:00" or "message all of today's customers" —
+  // instead of the customer booking agent. The owner agent keeps its own
+  // conversation (agentType="owner"), hidden from the customer inbox, so owner
+  // commands are NOT persisted as a customer thread below.
+  // Feature flag — owner agent is opt-in PER BUSINESS (off by default). Enabled
+  // only for businesses with `settings.ownerAgentEnabled === true` (currently just
+  // dominant) so we can refine it before rolling it out to other shops.
+  const bizSettings: Record<string, unknown> = (() => {
+    try { return biz.settings ? JSON.parse(biz.settings) : {}; } catch { return {}; }
+  })();
+  if (bizSettings.ownerAgentEnabled === true) {
+    try {
+      const ownerPhone = bizSettings.ownerLoginPhone
+        ? normalizeIsraeliPhone(String(bizSettings.ownerLoginPhone))
+        : null;
+      let isOwnerSender = !!ownerPhone && phone === ownerPhone;
+      if (!isOwnerSender) {
+        // Phone formats vary in the DB, so normalize each staff phone before compare.
+        const staffWithPhones = await prisma.staff.findMany({
+          where: { businessId: biz.id, isActive: true, phone: { not: null } },
+          select: { phone: true, role: true, canUseOwnerAgent: true },
+        });
+        isOwnerSender = staffWithPhones.some(
+          s => s.phone && normalizeIsraeliPhone(s.phone) === phone && (s.role === "owner" || s.canUseOwnerAgent)
+        );
+      }
+      if (isOwnerSender) {
+        try {
+          await runOwnerAgent({ businessId: biz.id, phone, incomingText: text, senderName });
+        } catch (e) {
+          console.error("[owner-agent]", e);
+        }
+        return NextResponse.json({ ok: true, handled: "owner_agent" });
+      }
+    } catch (e) {
+      console.error("[owner routing]", e);
+    }
+  }
 
   // ── 1. Always persist the incoming message FIRST ────────────────────────────
   // Even if the agent is off/escalated — and even if a swap/move reply handler

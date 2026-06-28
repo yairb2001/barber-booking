@@ -13,6 +13,8 @@ type StaffInfo = {
   settings: string | null;
   canViewAllCalendars: boolean;
   canViewAllChats: boolean;
+  canUseOwnerAgent: boolean;
+  role: string;
   schedules: { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null }[];
 };
 
@@ -91,6 +93,7 @@ export default function StaffSettingsPage() {
   // Permissions
   const [canViewAllCalendars, setCanViewAllCalendars] = useState(false);
   const [canViewAllChats,     setCanViewAllChats]     = useState(false);
+  const [canUseOwnerAgent,    setCanUseOwnerAgent]    = useState(false);
   const [permSaved, setPermSaved] = useState(false);
 
   // Tagline (short note shown under the barber's name in the booking screen)
@@ -123,6 +126,7 @@ export default function StaffSettingsPage() {
     } catch { /* ignore */ }
     setCanViewAllCalendars(!!data.canViewAllCalendars);
     setCanViewAllChats(!!data.canViewAllChats);
+    setCanUseOwnerAgent(!!data.canUseOwnerAgent);
     setTagline(data.tagline ?? "");
     setLoading(false);
   }
@@ -256,7 +260,7 @@ export default function StaffSettingsPage() {
     await fetch(`/api/admin/staff/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canViewAllCalendars, canViewAllChats }),
+      body: JSON.stringify({ canViewAllCalendars, canViewAllChats, canUseOwnerAgent }),
     });
     setSaving(false);
     setPermSaved(true);
@@ -712,6 +716,26 @@ export default function StaffSettingsPage() {
               <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canViewAllChats ? "right-1" : "right-6"}`} />
             </button>
           </div>
+
+          {/* canUseOwnerAgent toggle — owners always have access; this grants it to a barber */}
+          {staff.role !== "owner" && (
+            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-900">🤖 סוכן אישי בוואטסאפ</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  כשמופעל — {staff.name} יכול לשלוח פקודות ניהול לסוכן בוואטסאפ (להחליף תורים, לבטל,
+                  לשלוח הודעה לכל לקוחות היום). לבעלים יש גישה תמיד; הפעל בזהירות — זו סמכות מלאה.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCanUseOwnerAgent(v => !v)}
+                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canUseOwnerAgent ? "bg-teal-500" : "bg-neutral-300"}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canUseOwnerAgent ? "right-1" : "right-6"}`} />
+              </button>
+            </div>
+          )}
 
           <button onClick={savePermissions} disabled={saving}
             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${permSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>

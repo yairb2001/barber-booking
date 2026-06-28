@@ -42,7 +42,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
-  const where: Record<string, unknown> = { businessId: business.id };
+  // Hide owner-agent threads — those are the owner's private admin-command chats,
+  // not customer conversations that need handling.
+  const where: Record<string, unknown> = { businessId: business.id, agentType: { not: "owner" } };
 
   const convs = await prisma.conversation.findMany({
     where,
