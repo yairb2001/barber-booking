@@ -26,9 +26,15 @@ const SCAN_LIMIT = 200;
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
+  // Accept every auth style our cron endpoints use, so this can be wired into an
+  // existing external cron service regardless of how its other jobs authenticate:
+  //   • ?secret=<CRON_SECRET>            (query string)
+  //   • x-cron-secret: <CRON_SECRET>     (custom header)
+  //   • Authorization: Bearer <CRON_SECRET>  (what reminders-2h / automations use)
   const secret =
     searchParams.get("secret") ||
     req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     "";
 
   if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
