@@ -361,7 +361,7 @@ function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onL
   return (
     <div
       className={`no-touch-select absolute left-0.5 right-0.5 flex flex-col items-center justify-center ${veryShort ? "rounded-md" : "rounded-lg"} border border-amber-300 bg-amber-100 text-amber-700 overflow-hidden cursor-pointer hover:bg-amber-200/80 transition-colors z-10 ${isMoving ? "opacity-30" : ""}`}
-      style={{ top, height, touchAction: "none" }}
+      style={{ top, height, touchAction: isMoving ? "none" : "pan-y" }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
@@ -710,8 +710,12 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   }
 
   return (
+    // touchAction: allow vertical calendar scroll even when the finger starts on a
+    // block (pan-y); switch to "none" only once THIS block is actively dragged, so
+    // the drag captures movement instead of scrolling. The switch happens at
+    // long-press time — before any finger movement — so it's in place in time.
     <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
-      style={{ top, height, touchAction: "none", ...laneStyle, ...extraStyle }}
+      style={{ top, height, touchAction: isMoving ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
