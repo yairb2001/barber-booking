@@ -160,15 +160,15 @@ export default function ForBusinessPage() {
           style={{ background: "radial-gradient(ellipse at 50% 0%, rgba(212,175,55,0.10) 0%, transparent 55%)" }} />
 
         <div className="relative max-w-sm">
-          <Label text="AI · ניהול מספרות · וואצאפ" />
+          <Label text="AI · מערכת לספרים · וואצאפ" />
           <h1 className="font-bold leading-[1.08] text-white mb-3"
             style={{ fontSize: "clamp(2.2rem, 9vw, 4rem)", fontFamily: "var(--font-display)" }}>
             המספרה שלך<br />
             <span style={{ color: GOLD }}>פועלת 24/7.</span>
           </h1>
           <p className="text-zinc-400 text-[15px] leading-relaxed mb-6">
-            בוט וואצאפ שקובע תורים, מזיז, מחליף ומחזיר לקוחות —{" "}
-            <span className="text-white font-semibold">בזמן שאתה עסוק בעבודה האמיתית שלך.</span>
+            בזמן שאתה אוחז במספריים, הטלפון לא מפסיק לרטוט. מהיום מישהו אחר עונה —{" "}
+            <span className="text-white font-semibold">קובע, מזכיר וממלא ביטולים. ואתה פשוט מספר.</span>
           </p>
           <a href="#cta"
             className="inline-flex items-center gap-2 text-[14px] font-bold px-7 py-4 rounded-full text-black transition-transform hover:scale-105 active:scale-95"
@@ -247,7 +247,7 @@ export default function ForBusinessPage() {
             {
               icon: "🔄",
               title: "הביטול שבא בהפתעה",
-              body: "שעה לפני. \'לא מגיע\'. שעה ריקה. יש לקוחות שרצו אותה. לא ידעת. לא הספקת להגיד. כסף נשאר על הרצפה.",
+              body: "שעה לפני. \'לא מגיע\'. שעה ריקה באמצע היום. מישהו היה ממלא אותה בשמחה — אם רק היה יודע שהתפנתה.",
             },
           ].map(item => (
             <div key={item.title} className="p-5 rounded-2xl"
@@ -272,8 +272,8 @@ export default function ForBusinessPage() {
             <span style={{ color: WA }}>שלא מפספסת כלום.</span>
           </h2>
           <p className="text-zinc-400 text-[14px] leading-relaxed mb-8">
-            בוט וואצאפ חכם שפועל מסביב לשעון — קובע, מזיז, מזכיר ומחזיר.
-            <br /><span className="text-white">בלי שתעשה כלום.</span>
+            מערכת חכמה שיושבת על הוואצאפ שלך ועובדת מסביב לשעון — קובעת, מזכירה, ממלאת ביטולים ומחזירה לקוחות.
+            <br /><span className="text-white">בלי שתזיז אצבע.</span>
           </p>
           <div className="flex flex-wrap gap-2 justify-center">
             {["קביעת תורים 24/7", "הזזה אוטומטית", "תזכורות", "רשימת המתנה", "חזרת לקוחות", "ניהול הספר בוואצאפ"].map(f => (
@@ -393,6 +393,59 @@ export default function ForBusinessPage() {
 
       <Hr />
 
+      {/* ── VALUE / ROI ─────────────────────────────────────────────── */}
+      <section className="px-5 py-16 relative overflow-hidden" style={{ background: "#080808" }}>
+        <div className="absolute inset-0 pointer-events-none"
+          style={{ background: "radial-gradient(ellipse at center, rgba(212,175,55,0.06) 0%, transparent 65%)" }} />
+        <div className="relative max-w-md mx-auto">
+          <div className="text-center mb-8">
+            <Label text="כמה זה שווה לך" />
+            <h2 className="text-2xl font-bold text-white">
+              תעשה את החשבון.<br />
+              <span style={{ color: GOLD }}>הוא פשוט.</span>
+            </h2>
+          </div>
+
+          <div className="space-y-3">
+            {[
+              {
+                head: "לקוח אחד שחוזר",
+                money: "₪900+ בשנה",
+                body: "תספורת כל שלושה שבועות, שנה שלמה. הבוט מחזיר לך לא אחד — עשרות.",
+              },
+              {
+                head: "שעה ריקה שמתמלאת",
+                money: "₪1,600 בחודש",
+                body: "שעה אחת בשבוע שהייתה הולכת לאיבוד. רשימת ההמתנה ממלאת אותה לבד.",
+              },
+              {
+                head: "הזמן שחוזר אליך",
+                money: "3–4 שעות בשבוע",
+                body: "כל הניהול בוואצאפ — תיאומים, אישורים, הזזות. זמן לעוד לקוחות, או לעצמך.",
+              },
+            ].map(row => (
+              <div key={row.head} className="flex items-start gap-4 px-5 py-4 rounded-2xl"
+                style={{ background: "#111", border: "1px solid rgba(212,175,55,0.14)" }}>
+                <div className="flex-1">
+                  <h3 className="text-white font-semibold text-[14px] mb-1">{row.head}</h3>
+                  <p className="text-zinc-500 text-[12px] leading-relaxed">{row.body}</p>
+                </div>
+                <span className="text-[13px] font-bold whitespace-nowrap" style={{ color: GOLD, fontFamily: "var(--font-display)" }}>
+                  {row.money}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-center text-zinc-400 text-[14px] leading-relaxed mt-8">
+            כל אחד מהשלושה מחזיר יותר ממה שהמערכת עולה.<br />
+            <span className="text-white font-semibold">ואתה מקבל את שלושתם יחד.</span>
+          </p>
+        </div>
+      </section>
+
+      <Hr />
+
       {/* ── CTA ─────────────────────────────────────────────────────── */}
       <section id="cta" className="px-5 py-16 text-center">
         <div className="max-w-sm mx-auto">
@@ -432,7 +485,7 @@ export default function ForBusinessPage() {
                 type="submit"
                 className="w-full font-bold text-[14px] py-4 rounded-2xl text-black transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 style={{ background: GOLD }}>
-                שלחו לי פרטים →
+                אני רוצה יומן מלא →
               </button>
               <p className="text-zinc-700 text-[11px]">נחזור אליך תוך שעות ספורות</p>
 
