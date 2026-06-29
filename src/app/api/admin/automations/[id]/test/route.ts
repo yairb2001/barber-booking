@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireOwner, getRequestSession } from "@/lib/session";
-import { sendMessage } from "@/lib/messaging";
+import { sendMessage, formatBusinessName } from "@/lib/messaging";
 
 // POST /api/admin/automations/[id]/test
 // Body: { phone: string }  (defaults to business owner phone)
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // Sample variables
   const sample = {
     name:         "ישראל ישראלי",
-    business:     business.name,
+    business:     formatBusinessName(business.name),
     staff:        "הספר",
     service:      "תספורת",
     booking_url:  bookingLink,

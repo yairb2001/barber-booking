@@ -146,6 +146,12 @@ export default function MessagingPage() {
     }
   }
 
+  // Append a {{variable}} placeholder to the message (filled per recipient on send)
+  function insertToken(token: string) {
+    setMessage(m => m + token);
+    setResult(null);
+  }
+
   // Human-readable summary of current filter
   function filterSummary() {
     const who = staffId ? (allStaff.find(s => s.id === staffId)?.name || "ספר") : "כל הלקוחות";
@@ -321,14 +327,37 @@ export default function MessagingPage() {
               dir="rtl"
               className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none"
             />
+            {/* Variable chips — tap to insert a placeholder that's filled per recipient */}
             <div className="flex flex-wrap gap-1.5 mt-2">
-              <button
-                onClick={() => setMessage(m => m + "{{name}}")}
-                className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md font-mono transition"
-                title="הוסף שם לקוח">
-                {"{{name}}"}
-              </button>
-              <span className="text-xs text-neutral-400 self-center">← שם הלקוח יוחלף אוטומטית לכל נמען</span>
+              <VarChip token="{{name}}"         label="שם הלקוח"      onInsert={insertToken} />
+              <VarChip token="{{business}}"     label="שם העסק"       onInsert={insertToken} />
+              <VarChip token="{{booking_link}}" label="קישור לקביעת תור" onInsert={insertToken} />
+              {category === "upcoming" && (
+                <>
+                  <VarChip token="{{date}}"    label="תאריך התור"  onInsert={insertToken} />
+                  <VarChip token="{{time}}"    label="שעת התור"    onInsert={insertToken} />
+                  <VarChip token="{{service}}" label="שם השירות"   onInsert={insertToken} />
+                  <VarChip token="{{staff}}"   label="שם הספר"     onInsert={insertToken} />
+                </>
+              )}
+            </div>
+
+            {/* Helper notes under the composer */}
+            <div className="mt-3 space-y-1.5 text-[11px] leading-relaxed text-neutral-500">
+              <p>📌 הערכים בסוגריים מוחלפים אוטומטית לכל נמען.</p>
+              <p>
+                ✏️ <span className="font-medium text-neutral-700">הדגשה:</span> עטוף טקסט בכוכביות —{" "}
+                <span dir="ltr" className="font-mono">*טקסט*</span> יוצג <strong>מודגש</strong> בוואטסאפ.
+              </p>
+              {category === "upcoming" ? (
+                <p className="text-teal-600">
+                  💡 פרטי התור (תאריך, שעה, שירות, ספר) זמינים כי בחרת בקהל “ממתינים לתור”.
+                </p>
+              ) : (
+                <p className="text-amber-600">
+                  ⚠️ פרטי תור (תאריך/שעה/שירות) זמינים רק בקהל “ממתינים לתור”, שם לכל לקוח יש תור פעיל.
+                </p>
+              )}
             </div>
           </div>
 
@@ -422,6 +451,20 @@ export default function MessagingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Variable chip ──────────────────────────────────────────────────────────────
+function VarChip({ token, label, onInsert }: { token: string; label: string; onInsert: (t: string) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onInsert(token)}
+      title={`הוסף ${label}`}
+      className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md transition">
+      <span dir="ltr" className="font-mono">{token}</span>
+      <span className="text-neutral-400 mr-1">· {label}</span>
+    </button>
   );
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { applyTemplate, firstName } from "@/lib/messaging";
+import { applyTemplate, firstName, formatBusinessName } from "@/lib/messaging";
 import { getRequestSession, getSessionBusiness, scopedStaffId } from "@/lib/session";
 
 // ── Shared customer-filter helper (mirrors customers/route.ts logic) ──────────
@@ -122,6 +122,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, queued: 0, total: 0, etaMinutes: 0 });
   }
 
+  // Booking link for the {{booking_link}} variable (per-business slug path).
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const bookingLink = `${baseUrl}${business.slug ? `/${business.slug}` : ""}/book`;
+
+  // Appointment variables ({{date}} / {{time}} / {{service}} / {{staff}}) are
+  // only meaningful when EVERY recipient has an appointment "in the air" — i.e.
+  // the audience is the "ממתינים לתור" (upcoming) filter. For any other audience
+  // we leave them blank, so a message can't reference a non-existent appointment.
+  const isUpcomingAudience = new URLSearchParams(qs).has("upcoming");
+  const apptByCustomer = new Map<string, { date: string; time: string; service: string; staff: string }>();
+  if (isUpcomingAudience) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const appts = await prisma.appointment.findMany({
+      where: {
+        businessId: business.id,
+        customerId: { in: customers.map(c => c.id) },
+        date: { gte: today },
+        status: { notIn: ["cancelled_by_customer", "cancelled_by_staff"] },
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      include: { service: true, staff: true },
+    });
+    // Keep the EARLIEST upcoming appointment per customer.
+    for (const a of appts) {
+      if (apptByCustomer.has(a.customerId)) continue;
+      apptByCustomer.set(a.customerId, {
+        date:    a.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }),
+        time:    a.startTime,
+        service: a.service?.name ?? "",
+        staff:   a.staff?.name ?? "",
+      });
+    }
+  }
+
   // BAN-SAFETY: don't blast all messages at once (that gets the WhatsApp number
   // banned). Instead enqueue them into MessageLog with staggered `scheduledFor`
   // timestamps; the drip-queue cron (`/api/cron/drip-queue`) drains them at
@@ -133,11 +167,20 @@ export async function POST(req: NextRequest) {
   const rows = customers.map((customer, i) => {
     const jitterMs = Math.floor((Math.random() * 20 - 10) * 1000); // ±10s
     const scheduledFor = new Date(now + i * BROADCAST_INTERVAL_SEC * 1000 + jitterMs);
+    const ap = apptByCustomer.get(customer.id);
     return {
       businessId: business.id,
       customerPhone: customer.phone,
       kind: "broadcast",
-      body: applyTemplate(message, { name: firstName(customer.name) }),
+      body: applyTemplate(message, {
+        name:         firstName(customer.name),
+        business:     formatBusinessName(business.name),
+        booking_link: bookingLink,
+        date:         ap?.date ?? "",
+        time:         ap?.time ?? "",
+        service:      ap?.service ?? "",
+        staff:        ap?.staff ?? "",
+      }),
       status: "scheduled",
       scheduledFor,
     };

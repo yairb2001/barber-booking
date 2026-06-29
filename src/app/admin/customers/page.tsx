@@ -50,6 +50,7 @@ export default function CustomersPage() {
   const [q, setQ] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<{ id: string; name: string } | null>(null);
 
   const reload = () => {
     setLoading(true);
@@ -116,8 +117,12 @@ export default function CustomersPage() {
                     {new Date(c.createdAt).toLocaleDateString("he-IL")}
                   </td>
                   <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
-                    <div className="flex gap-3">
+                    <div className="flex gap-3 items-center">
                       <a href={`tel:${c.phone}`} className="text-xs text-neutral-500 hover:text-neutral-800">📞</a>
+                      <button
+                        onClick={() => setMessageTarget({ id: c.id, name: c.name })}
+                        title="שלח הודעה דרך המערכת"
+                        className="text-xs text-teal-600 hover:text-teal-800">✉️</button>
                       <a href={`https://wa.me/${c.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-500 hover:text-emerald-700">💬</a>
                     </div>
                   </td>
@@ -141,8 +146,87 @@ export default function CustomersPage() {
           onClose={() => setSelectedId(null)}
           onChanged={() => { reload(); }}
           onDeleted={() => { setSelectedId(null); reload(); }}
+          onSendMessage={(id, name) => setMessageTarget({ id, name })}
         />
       )}
+
+      {messageTarget && (
+        <SendMessageModal
+          customerId={messageTarget.id}
+          customerName={messageTarget.name}
+          onClose={() => setMessageTarget(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────────────────
+// Send a one-off WhatsApp message to a single customer (via the system)
+// ───────────────────────────────────────────────────────────
+function SendMessageModal({ customerId, customerName, onClose }: {
+  customerId: string;
+  customerName: string;
+  onClose: () => void;
+}) {
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [sent, setSent] = useState(false);
+
+  const send = async () => {
+    setErr(null);
+    if (!message.trim()) { setErr("יש להזין הודעה"); return; }
+    setSending(true);
+    const r = await fetch(`/api/admin/customers/${customerId}/message`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    setSending(false);
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setErr(j.error || "שגיאה בשליחה");
+      return;
+    }
+    setSent(true);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="text-lg font-bold">שליחת הודעה</h3>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700">✕</button>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">אל {customerName} • דרך WhatsApp של העסק</p>
+
+        {sent ? (
+          <div className="text-center py-6">
+            <div className="text-4xl mb-3">✅</div>
+            <p className="text-sm text-neutral-700 mb-5">ההודעה נשלחה</p>
+            <button onClick={onClose}
+              className="w-full bg-neutral-900 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-neutral-800">
+              סגור
+            </button>
+          </div>
+        ) : (
+          <>
+            <textarea value={message} onChange={e => setMessage(e.target.value)} rows={5} autoFocus
+              placeholder="כתוב את ההודעה כאן..."
+              className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            <p className="text-[11px] text-neutral-400 mt-1">טיפ: להדגשה עטוף טקסט בכוכביות — ‎*טקסט*</p>
+            {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg p-2 mt-2">{err}</div>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={onClose} className="flex-1 border border-neutral-200 rounded-xl py-2.5 text-sm hover:bg-neutral-50">ביטול</button>
+              <button onClick={send} disabled={sending}
+                className="flex-1 bg-teal-600 text-white rounded-xl py-2.5 text-sm font-medium hover:bg-teal-700 disabled:opacity-50">
+                {sending ? "שולח..." : "שלח הודעה"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -224,11 +308,12 @@ function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 // ───────────────────────────────────────────────────────────
 // Customer detail modal (view + edit + actions)
 // ───────────────────────────────────────────────────────────
-function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
+function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage }: {
   id: string;
   onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
+  onSendMessage: (id: string, name: string) => void;
 }) {
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -368,9 +453,13 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             className="flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl py-3 text-sm">
             <span>🔁</span> תור קבוע
           </button>
+          <button onClick={() => onSendMessage(detail.id, detail.name)}
+            className="flex items-center justify-center gap-2 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl py-3 text-sm">
+            <span>✉️</span> שלח הודעה מהמערכת
+          </button>
           <a href={`https://wa.me/${detail.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer"
             className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl py-3 text-sm">
-            <span>💬</span> הודעת WhatsApp
+            <span>💬</span> פתח ב-WhatsApp
           </a>
         </div>
 

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
@@ -307,7 +307,7 @@ export async function POST(request: NextRequest) {
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
       msgBody = applyTemplate(tmpl, {
         name:         firstName(customer.name),
-        business:     business.name,
+        business:     formatBusinessName(business.name),
         date:         dateLabel,
         time:         startTime,
         end_time:     endTime,
@@ -323,7 +323,7 @@ export async function POST(request: NextRequest) {
       // No custom template yet → still send the default first-booking message
       msgBody = applyTemplate(DEFAULT_FIRST_BOOKING_TEMPLATE, {
         name:         firstName(customer.name),
-        business:     business.name,
+        business:     formatBusinessName(business.name),
         date:         dateLabel,
         time:         startTime,
         end_time:     endTime,

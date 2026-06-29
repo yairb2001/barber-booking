@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { enqueueMessage, sendMessage, applyTemplate, firstName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
+import { enqueueMessage, sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 
 // A waitlisted customer stays "waiting" after we notify them of a freed slot —
 // the slot might not have suited them and they may want a LATER one. To avoid
@@ -209,7 +209,7 @@ export function sendWaitlistEntryNotification(
   // Render the owner's editable template (or the built-in default).
   let body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {
     name:         firstName(entry.customer.name),
-    business:     businessName,
+    business:     formatBusinessName(businessName),
     slot:         slotLabel,
     time:         freedTime ?? "",
     date:         dateLabel,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
       msgBody = applyTemplate(tmpl, {
         name:         firstName(appointment.customer.name),
-        business:     business.name,
+        business:     formatBusinessName(business.name),
         date:         dateLabel,
         time:         appointment.startTime,
         end_time:     appointment.endTime,
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
     const tmpl = business.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
     const walkInBody = applyTemplate(tmpl, {
       name:         firstName(appointment.customer.name),
-      business:     business.name,
+      business:     formatBusinessName(business.name),
       booking_link: bookingLink,
     });
     console.log("[walk-in] sending thank-you to", appointment.customer.phone);

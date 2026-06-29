@@ -12,6 +12,35 @@ export function firstName(fullName: string): string {
   return (fullName || "").trim().split(/\s+/)[0] || (fullName || "").trim();
 }
 
+/**
+ * Format a business name for display inside a message.
+ * If the name is written in Latin letters (English) with no Hebrew, render it
+ * UPPERCASE so it stands out (WhatsApp bold is subtle on lowercase Latin).
+ * Hebrew names are returned unchanged.
+ */
+export function formatBusinessName(name: string): string {
+  const n = (name || "").trim();
+  if (n && /[A-Za-z]/.test(n) && !/[\u0590-\u05FF]/.test(n)) return n.toUpperCase();
+  return n;
+}
+
+/**
+ * Fix WhatsApp bold that breaks when a Hebrew one/two-letter prefix is glued to
+ * the opening asterisk. WhatsApp renders *bold* only when the opening `*` sits
+ * at a word boundary, so "ב*דומיננט*" shows a literal `*` instead of bolding.
+ * We move the prefix INSIDE the asterisks: "ב*דומיננט*" → "*בדומיננט*", which is
+ * both grammatically correct Hebrew and renders as proper bold.
+ *
+ * Applied once at the send chokepoint so it fixes EVERY outgoing message
+ * (templates, agent replies, broadcasts) uniformly.
+ */
+export function normalizeWhatsAppBold(text: string): string {
+  return text.replace(
+    /(^|\s)([\u0590-\u05FF]{1,2})\*([^*\n]+?)\*/g,
+    (_m, pre: string, prefix: string, inner: string) => `${pre}*${prefix}${inner}*`,
+  );
+}
+
 /** Build provider from business config. Returns null if provider is "none". */
 export function providerForBusiness(business: {
   messagingProvider: string | null;
@@ -154,7 +183,7 @@ export function reminderVars(params: {
 }): Record<string, string> {
   return {
     name: firstName(params.customerName),
-    business: params.businessName,
+    business: formatBusinessName(params.businessName),
     staff: params.staffName,
     time: params.startTime,
     date: params.dateLabel,
@@ -257,7 +286,9 @@ export async function deliverMessageLog(
 
   // A template may ask to be delivered as several WhatsApp messages (split on a
   // line of "---"). Send each part in order; stop at the first failure.
-  const parts = splitMessageParts(log.body);
+  // normalizeWhatsAppBold() fixes Hebrew-prefix-glued bold (ב*שם* → *בשם*) for
+  // every outgoing message regardless of source.
+  const parts = splitMessageParts(normalizeWhatsAppBold(log.body));
   const sent: SendResult[] = [];
   for (const part of parts) {
     const r = await provider.sendText(log.customerPhone, part);
@@ -739,7 +770,7 @@ export function confirmationText(
   const tmpl = customTemplate || DEFAULT_CONFIRMATION_TEMPLATE;
   return applyTemplate(tmpl, {
     name:         firstName(params.customerName),
-    business:     params.businessName,
+    business:     formatBusinessName(params.businessName),
     date:         params.dateLabel,
     time:         params.startTime,
     end_time:     params.endTime,
@@ -772,7 +803,7 @@ export function swapProposalText(
   const tmpl = customTemplate || DEFAULT_SWAP_PROPOSAL_TEMPLATE;
   return applyTemplate(tmpl, {
     name:           firstName(params.candidateName),
-    business:       params.businessName,
+    business:       formatBusinessName(params.businessName),
     current_date:   params.candidateDateLabel,
     current_time:   params.candidateTime,
     proposed_date:  params.primaryDateLabel,
@@ -802,7 +833,7 @@ export function moveProposalText(
   const tmpl = customTemplate || DEFAULT_MOVE_PROPOSAL_TEMPLATE;
   return applyTemplate(tmpl, {
     name:           firstName(params.customerName),
-    business:       params.businessName,
+    business:       formatBusinessName(params.businessName),
     current_date:   params.currentDateLabel,
     current_time:   params.currentTime,
     proposed_date:  params.proposedDateLabel,
@@ -829,7 +860,7 @@ export function swapConfirmationText(
   const tmpl = customTemplate || DEFAULT_SWAP_CONFIRMATION_TEMPLATE;
   return applyTemplate(tmpl, {
     name:     firstName(params.customerName),
-    business: params.businessName,
+    business: formatBusinessName(params.businessName),
     date:     params.newDateLabel,
     time:     params.newTime,
     staff:    params.newStaffName,
@@ -855,7 +886,7 @@ export function appointmentMovedText(
   const tmpl = customTemplate || DEFAULT_APPOINTMENT_MOVED_TEMPLATE;
   return applyTemplate(tmpl, {
     name:     firstName(params.customerName),
-    business: params.businessName,
+    business: formatBusinessName(params.businessName),
     date:     params.newDateLabel,
     time:     params.newTime,
     staff:    params.newStaffName,
@@ -879,7 +910,7 @@ export function delayNotificationText(
   const tmpl = customTemplate || DEFAULT_DELAY_NOTIFICATION_TEMPLATE;
   return applyTemplate(tmpl, {
     name:          firstName(params.customerName),
-    business:      params.businessName,
+    business:      formatBusinessName(params.businessName),
     time:          params.appointmentTime,
     delay_minutes: String(params.delayMinutes),
   });
@@ -903,7 +934,7 @@ export function cancellationText(
       : DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE);
   return applyTemplate(tmpl, {
     name:     firstName(params.customerName),
-    business: params.businessName,
+    business: formatBusinessName(params.businessName),
     date:     params.dateLabel,
     time:     params.startTime,
   });
