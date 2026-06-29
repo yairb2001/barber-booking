@@ -294,7 +294,7 @@ function SummaryRow({ label, value, large, compact }: { label: string; value: Re
   return (
     <div className={`flex justify-between items-center px-5 ${compact ? "py-1.5" : "py-3.5"} border-b border-slate-100 last:border-0`}>
       <span className="text-[11px] font-semibold tracking-[0.15em] text-slate-400 uppercase">{label}</span>
-      <span className={large ? `${compact ? "text-[17px]" : "text-xl"} font-bold` : "text-[14px] font-medium text-slate-800"}
+      <span className={large ? `${compact ? "text-[17px]" : "text-xl"} font-bold` : "text-[13px] font-medium text-slate-700"}
         style={large ? { color: "var(--brand)" } : {}}>{value}</span>
     </div>
   );
