@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner, requireStaffInBusiness } from "@/lib/session";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
+  const guard = await requireStaffInBusiness(req, params.id);
+  if (guard) return guard;
   const staff = await prisma.staff.findUnique({
     where: { id: params.id },
     include: { schedules: true },
@@ -38,6 +40,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // Owner — full update
   const guard = requireOwner(req);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
   const staff = await prisma.staff.update({
     where: { id: params.id },
     data: {
@@ -64,6 +68,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwner(req);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
   const staffId = params.id;
 
   // Block if future confirmed appointments exist

@@ -11,11 +11,13 @@ export async function GET(req: NextRequest) {
 
   // Staff scoping: barbers only see their own recurring rules
   const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const where: Record<string, unknown> = {
+    businessId: session.businessId, // tenant isolation — never list other businesses' rules
     ...(customerId ? { customerId } : {}),
     ...(activeOnly ? { active: true } : {}),
   };
-  if (session && !session.isOwner && session.staffId) {
+  if (!session.isOwner && session.staffId) {
     where.staffId = session.staffId;
   }
 

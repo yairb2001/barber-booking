@@ -32,6 +32,10 @@ export async function POST(
     },
   });
   if (!appt) return NextResponse.json({ error: "תור לא נמצא" }, { status: 404 });
+  // Tenant isolation: never message a customer / send on another business's account.
+  if (appt.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+  }
 
   // Owner can notify for any appointment; a barber only for their own.
   const guard = requireOwnStaffOrOwner(req, appt.staffId);

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getSessionBusiness, getEffectivePermissions, requireOwnStaffOrOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, getEffectivePermissions, requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
 
 // GET /api/admin/staff/[id]/services — all services with whether this staff offers them
 // Returns: shared (owner-managed) services + this barber's own services.
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Tenant isolation: the target staff must belong to the caller's business.
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
   // Owner and own-self may always read. A sub-manager (barber with "view all
   // calendars") may also READ another barber's services — needed so booking
   // into that barber's calendar shows their custom service names/prices.
@@ -60,6 +63,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
   const session = getRequestSession(req);
   const body = await req.json();
   const action = body.action as string | undefined;

@@ -77,14 +77,21 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const body = await req.json();
 
+  // Tenant isolation: the entry must belong to the caller's business.
+  const business = await getSessionBusiness(req);
+  if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
+  const existing = await prisma.waitlist.findUnique({
+    where: { id: body.id },
+    select: { staffId: true, businessId: true },
+  });
+  if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (existing.businessId !== business.id) {
+    return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+  }
+
   // Staff scoping: barbers can only modify their own waitlist entries
   const session = getRequestSession(req);
   if (session && !session.isOwner && session.staffId) {
-    const existing = await prisma.waitlist.findUnique({
-      where: { id: body.id },
-      select: { staffId: true },
-    });
-    if (!existing) return NextResponse.json({ error: "not found" }, { status: 404 });
     if (existing.staffId !== session.staffId) {
       return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
     }

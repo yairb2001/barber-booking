@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwnerOrSubManager } from "@/lib/session";
+import { getRequestSession, requireOwnerOrSubManager } from "@/lib/session";
 
 /**
  * PATCH /api/admin/swap-proposals/[id]
@@ -31,6 +31,11 @@ export async function PATCH(
   const proposal = await prisma.swapProposal.findUnique({ where: { id: params.id } });
   if (!proposal) {
     return NextResponse.json({ error: "הצעה לא נמצאה" }, { status: 404 });
+  }
+  // Tenant isolation: the proposal must belong to the caller's business.
+  const session = getRequestSession(req)!;
+  if (proposal.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה להצעה זו" }, { status: 403 });
   }
 
   // Block actions on already-finalized proposals
@@ -78,7 +83,9 @@ export async function DELETE(
 ) {
   const guard = await requireOwnerOrSubManager(req);
   if (guard) return guard;
+  const session = getRequestSession(req)!;
 
-  await prisma.swapProposal.delete({ where: { id: params.id } });
+  const { count } = await prisma.swapProposal.deleteMany({ where: { id: params.id, businessId: session.businessId } });
+  if (count === 0) return NextResponse.json({ error: "הצעה לא נמצאה" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

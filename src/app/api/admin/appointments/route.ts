@@ -7,6 +7,9 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
+  // Tenant isolation: every admin read MUST be bound to the logged-in business.
+  // Without this, findMany() below returns appointments from ALL businesses.
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const { searchParams } = new URL(req.url);
   const date = searchParams.get("date");
   const staffIdParam = searchParams.get("staffId");
@@ -14,7 +17,7 @@ export async function GET(req: NextRequest) {
   const from = searchParams.get("from");
   const to   = searchParams.get("to");
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { businessId: session.businessId };
   if (from && to) {
     // Date range query — used by dashboard for monthly views
     where.date = {

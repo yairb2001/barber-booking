@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/auth";
-import { requireOwnStaffOrOwner } from "@/lib/session";
+import { requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  // Tenant isolation: never set a password on another business's staff (account takeover).
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
   const { password } = await req.json();
   if (!password || typeof password !== "string" || password.length < 4) {
     return NextResponse.json({ error: "סיסמה חייבת להיות לפחות 4 תווים" }, { status: 400 });

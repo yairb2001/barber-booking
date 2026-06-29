@@ -113,6 +113,32 @@ export async function requireOwnerOrSubManager(req: NextRequest): Promise<NextRe
   return null;
 }
 
+/**
+ * Tenant guard for /api/admin/staff/[id]/** routes.
+ *
+ * Loads the target staff by id and verifies it belongs to the CALLER's business.
+ * Returns a NextResponse (401/404/403) on failure, or null when the staff is in
+ * the caller's tenant. Several staff-scoped tables (StaffSchedule, StaffService,
+ * StaffScheduleOverride, PortfolioItem) carry NO businessId of their own — their
+ * isolation MUST be derived from the parent staff, which is what this checks.
+ */
+export async function requireStaffInBusiness(
+  req: NextRequest,
+  staffId: string,
+): Promise<NextResponse | null> {
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: { businessId: true },
+  });
+  if (!staff) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (staff.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה" }, { status: 403 });
+  }
+  return null;
+}
+
 export type EffectivePermissions = {
   isOwner: boolean;
   staffId?: string;

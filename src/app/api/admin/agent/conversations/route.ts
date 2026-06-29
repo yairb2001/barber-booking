@@ -61,10 +61,15 @@ export async function PATCH(req: NextRequest) {
   const { id, status } = await req.json();
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const conv = await prisma.conversation.update({
-    where: { id },
+  // Tenant isolation: only update a conversation owned by the caller's business.
+  const updated = await prisma.conversation.updateMany({
+    where: { id, businessId: biz.id },
     data: { status },
   });
+  if (updated.count === 0) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
 
+  const conv = await prisma.conversation.findUnique({ where: { id } });
   return NextResponse.json(conv);
 }

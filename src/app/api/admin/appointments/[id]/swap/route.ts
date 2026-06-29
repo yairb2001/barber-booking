@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwnerOrSubManager } from "@/lib/session";
+import { requireOwnerOrSubManager, getRequestSession } from "@/lib/session";
 import { sendMessage, swapProposalText, moveProposalText } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { timeToMinutes } from "@/lib/utils";
@@ -143,6 +143,11 @@ export async function POST(
     include: { customer: true, staff: true, service: true },
   });
   if (!primary) return NextResponse.json({ error: "התור לא נמצא" }, { status: 404 });
+  // Tenant isolation: never build/send proposals on another business's appointment.
+  const session = getRequestSession(req)!;
+  if (primary.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+  }
 
   // Validate "swap" candidates: existence, same business, active status
   const swapIds = candidates.filter((c): c is Extract<Candidate, { type: "swap" }> => c.type === "swap").map(c => c.appointmentId);

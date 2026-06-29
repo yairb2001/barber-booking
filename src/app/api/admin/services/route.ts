@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const services = await prisma.service.findMany({ orderBy: { sortOrder: "asc" } });
+  const services = await prisma.service.findMany({ where: { businessId: session.businessId }, orderBy: { sortOrder: "asc" } });
   return NextResponse.json(services);
 }
 

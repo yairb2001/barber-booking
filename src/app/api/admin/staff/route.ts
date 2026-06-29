@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getSessionBusiness, requireOwner } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 import { getBusinessNow } from "@/lib/utils";
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   // All authenticated users (owners + barbers) see all staff.
   // Barbers work in a shared calendar — they need all columns.
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   // Current business time (Israel timezone)
   const { date: todayStr, time: nowTime } = getBusinessNow();
   const todayDate = new Date(todayStr + "T00:00:00.000Z");
 
   const staff = await prisma.staff.findMany({
-    where: { isActive: true },
+    where: { isActive: true, businessId: session.businessId },
     include: {
       schedules: true,
       staffServices: { include: { service: true } },

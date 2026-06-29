@@ -26,6 +26,10 @@ export async function POST(
     include: { customer: true, staff: true, service: true },
   });
   if (!appt) return NextResponse.json({ error: "התור לא נמצא" }, { status: 404 });
+  // Tenant isolation: never message a customer / send on another business's account.
+  if (appt.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+  }
 
   const business = await prisma.business.findUnique({ where: { id: appt.businessId } });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 500 });

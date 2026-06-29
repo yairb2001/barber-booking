@@ -63,9 +63,17 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
+  const biz = await getSessionBusiness(req, { id: true });
+  if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const id = req.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  await prisma.agentFAQ.delete({ where: { id } });
+  // Tenant isolation: AgentFAQ has no businessId — scope via its agentConfig.
+  const deleted = await prisma.agentFAQ.deleteMany({
+    where: { id, agentConfig: { businessId: biz.id } },
+  });
+  if (deleted.count === 0) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   return NextResponse.json({ ok: true });
 }

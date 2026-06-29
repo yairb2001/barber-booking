@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForDayOpen } from "@/lib/waitlist-notify";
-import { requireOwnStaffOrOwner } from "@/lib/session";
+import { requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
 import { getDayOfWeekISO } from "@/lib/utils";
 
 /** Net available minutes = sum(slot durations) − sum(break durations). */
@@ -19,6 +19,8 @@ function netMinutesOf(slotsJson: string | null, breaksJson: string | null): numb
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
 
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
@@ -34,6 +36,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
 
   const body = await req.json();
   const dateStr = body.date.split("T")[0] + "T00:00:00.000Z"; // always UTC midnight

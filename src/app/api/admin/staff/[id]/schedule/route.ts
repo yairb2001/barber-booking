@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwnStaffOrOwner } from "@/lib/session";
+import { requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
 
 type BreakRange = { start: string; end: string };
 
@@ -21,6 +21,8 @@ function buildBreaksJson(day: { breaks?: BreakRange[]; breakStart?: string; brea
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
 
   const days: { dayOfWeek: number; isWorking: boolean; start: string; end: string; breaks?: BreakRange[]; breakStart?: string; breakEnd?: string }[] =
     await req.json();
@@ -44,6 +46,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
 
   const body: { dayOfWeek: number; isWorking?: boolean; slots?: BreakRange[]; breaks?: BreakRange[] } = await req.json();
   if (typeof body.dayOfWeek !== "number") {

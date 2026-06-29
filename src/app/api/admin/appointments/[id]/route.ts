@@ -27,7 +27,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   // appointment — same as the owner. Without that permission, a barber is
   // locked to their own bookings.
   const session = getRequestSession(req);
-  if (session && !session.isOwner && session.staffId && before.staffId !== session.staffId) {
+  // Tenant isolation: the appointment MUST belong to the caller's business.
+  // Without this, anyone could modify another business's appointment by id.
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (before.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
+  }
+  if (!session.isOwner && session.staffId && before.staffId !== session.staffId) {
     const perms = await getEffectivePermissions(req);
     if (!perms.canViewAllCalendars) {
       return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });

@@ -91,6 +91,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "no staff scope" }, { status: 400 });
   }
 
+  // Tenant isolation: the requested staff MUST belong to the caller's business,
+  // otherwise an owner could pass another business's staffId and read their stats.
+  const staffRow = await prisma.staff.findUnique({ where: { id: staffId }, select: { businessId: true } });
+  if (!staffRow || staffRow.businessId !== session.businessId) {
+    return NextResponse.json({ error: "no staff scope" }, { status: 403 });
+  }
+
   // Israel time ≈ UTC+2
   const nowIsrael = new Date(Date.now() + 2 * 60 * 60 * 1000);
 
@@ -127,6 +134,7 @@ export async function GET(req: NextRequest) {
   // All non-cancelled appointments for this barber from the earliest needed date
   const allRecentAppts = await prisma.appointment.findMany({
     where: {
+      businessId: session.businessId,
       staffId,
       status: { notIn: CANCELLED },
       date: { gte: earliest, lte: thisWeekRange.end },
@@ -161,7 +169,7 @@ export async function GET(req: NextRequest) {
   // ── Lifetime stats ────────────────────────────────────────────────────────
   const lifetimeRaw = await prisma.appointment.groupBy({
     by:     ["customerId"],
-    where:  { staffId, status: { notIn: CANCELLED } },
+    where:  { businessId: session.businessId, staffId, status: { notIn: CANCELLED } },
     _count: { _all: true },
   });
   const totalLifetime   = lifetimeRaw.reduce((s, r) => s + r._count._all, 0);
@@ -175,7 +183,7 @@ export async function GET(req: NextRequest) {
   // For each customer, find the date of their FIRST appointment with this barber
   const firstVisitPerCustomer = await prisma.appointment.groupBy({
     by:      ["customerId"],
-    where:   { staffId, status: { notIn: CANCELLED } },
+    where:   { businessId: session.businessId, staffId, status: { notIn: CANCELLED } },
     _min:    { date: true },
   });
 

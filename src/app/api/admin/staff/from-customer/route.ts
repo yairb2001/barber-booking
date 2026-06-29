@@ -13,11 +13,15 @@ export async function POST(req: NextRequest) {
   const { customerId } = await req.json();
   if (!customerId) return NextResponse.json({ error: "customerId required" }, { status: 400 });
 
-  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
-  if (!customer) return NextResponse.json({ error: "לקוח לא נמצא" }, { status: 404 });
-
   const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId } });
+  if (!customer) return NextResponse.json({ error: "לקוח לא נמצא" }, { status: 404 });
+  // Tenant isolation: never promote a customer from another business.
+  if (customer.businessId !== business.id) {
+    return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+  }
 
   // Check if phone already used by a staff member
   if (customer.phone) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner } from "@/lib/session";
 
 /**
  * GET /api/admin/swap-proposals
@@ -22,12 +22,13 @@ const OPEN_STATUSES = ["pending_response", "accepted_by_customer"];
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
+  const session = getRequestSession(req)!;
 
   const { searchParams } = new URL(req.url);
   const primaryAppointmentId = searchParams.get("primaryAppointmentId");
   const statusFilter = searchParams.get("status") || "open";
 
-  const where: Record<string, unknown> = {};
+  const where: Record<string, unknown> = { businessId: session.businessId };
   if (statusFilter === "open") {
     where.status = { in: OPEN_STATUSES };
   } else {

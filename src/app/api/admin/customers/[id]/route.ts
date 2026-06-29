@@ -21,8 +21,14 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
   });
   if (!customer) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Staff scoping: barbers can only view customers they've served
+  // Tenant isolation: never expose a customer from another business.
   const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (customer.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+  }
+
+  // Staff scoping: barbers can only view customers they've served
   if (session && !session.isOwner && session.staffId) {
     const hasAppt = await prisma.appointment.count({
       where: { customerId: id, staffId: session.staffId },
@@ -70,8 +76,16 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
 export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   const { id } = ctx.params;
 
-  // Staff scoping: barbers can only edit customers they've served
+  // Tenant isolation: verify the customer belongs to the caller's business.
   const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const target = await prisma.customer.findUnique({ where: { id }, select: { businessId: true } });
+  if (!target) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (target.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+  }
+
+  // Staff scoping: barbers can only edit customers they've served
   if (session && !session.isOwner && session.staffId) {
     const hasAppt = await prisma.appointment.count({
       where: { customerId: id, staffId: session.staffId },
@@ -102,6 +116,14 @@ export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) 
   if (guard) return guard;
 
   const { id } = ctx.params;
+
+  // Tenant isolation: never delete a customer from another business.
+  const session = getRequestSession(req)!;
+  const target = await prisma.customer.findUnique({ where: { id }, select: { businessId: true } });
+  if (!target) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (target.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+  }
 
   const apptCount = await prisma.appointment.count({ where: { customerId: id } });
   if (apptCount > 0) {

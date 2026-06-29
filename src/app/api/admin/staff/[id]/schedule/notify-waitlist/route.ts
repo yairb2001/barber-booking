@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForDayOpen } from "@/lib/waitlist-notify";
-import { requireOwnStaffOrOwner } from "@/lib/session";
+import { requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
 
 /**
  * POST /api/admin/staff/[id]/schedule/notify-waitlist
@@ -16,6 +16,8 @@ import { requireOwnStaffOrOwner } from "@/lib/session";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwnStaffOrOwner(req, params.id);
   if (guard) return guard;
+  const tenantGuard = await requireStaffInBusiness(req, params.id);
+  if (tenantGuard) return tenantGuard;
 
   const body = await req.json().catch(() => ({}));
   if (!body.date) {

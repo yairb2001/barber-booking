@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { requireOwner, getRequestSession } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 
 // POST /api/admin/automations/[id]/test
@@ -15,8 +15,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const { phone: rawPhone } = await req.json().catch(() => ({}));
 
+  const session = getRequestSession(req)!;
   const automation = await prisma.automation.findUnique({ where: { id: params.id } });
   if (!automation) return NextResponse.json({ error: "automation not found" }, { status: 404 });
+  // Tenant isolation: never test/send an automation belonging to another business.
+  if (automation.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה למשאב זה" }, { status: 403 });
+  }
 
   const business = await prisma.business.findUnique({ where: { id: automation.businessId } });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });

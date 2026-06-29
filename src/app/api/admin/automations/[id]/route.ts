@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,10 @@ export async function PATCH(
 ) {
   const guard = requireOwner(req);
   if (guard) return guard;
+  const session = getRequestSession(req)!;
+  // Tenant isolation: only touch an automation that belongs to the caller's business.
+  const owned = await prisma.automation.findFirst({ where: { id: params.id, businessId: session.businessId }, select: { id: true } });
+  if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
   const body = await req.json();
   const data: Record<string, unknown> = {};
 
@@ -36,6 +40,8 @@ export async function DELETE(
 ) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  await prisma.automation.delete({ where: { id: params.id } });
+  const session = getRequestSession(req)!;
+  const { count } = await prisma.automation.deleteMany({ where: { id: params.id, businessId: session.businessId } });
+  if (count === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

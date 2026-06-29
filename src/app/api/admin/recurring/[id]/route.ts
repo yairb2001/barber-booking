@@ -15,9 +15,13 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
   });
   if (!rule) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Staff scoping: barbers can only view their own rules
+  // Tenant isolation + staff scoping
   const session = getRequestSession(req);
-  if (session && !session.isOwner && session.staffId && rule.staffId !== session.staffId) {
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (rule.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
+  }
+  if (!session.isOwner && session.staffId && rule.staffId !== session.staffId) {
     return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
   }
 
@@ -35,9 +39,13 @@ export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) 
   const rule = await prisma.recurringAppointment.findUnique({ where: { id: ctx.params.id } });
   if (!rule) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  // Staff scoping: barbers can only delete their own rules
+  // Tenant isolation + staff scoping
   const session = getRequestSession(req);
-  if (session && !session.isOwner && session.staffId && rule.staffId !== session.staffId) {
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (rule.businessId !== session.businessId) {
+    return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
+  }
+  if (!session.isOwner && session.staffId && rule.staffId !== session.staffId) {
     return NextResponse.json({ error: "אין הרשאה לכלל זה" }, { status: 403 });
   }
 
