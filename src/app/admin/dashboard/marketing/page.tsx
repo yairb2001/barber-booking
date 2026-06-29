@@ -200,8 +200,8 @@ export default function MarketingDeepPage() {
                   <th className="text-center px-3 py-3 text-xs font-semibold text-neutral-500 uppercase tracking-wide">סה״כ</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-blue-500 uppercase tracking-wide">2+</th>
                   <th className="text-center px-3 py-3 text-xs font-semibold text-teal-500 uppercase tracking-wide">3+</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-amber-500 uppercase tracking-wide">10+</th>
-                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide">%קבועים</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-amber-500 uppercase tracking-wide hidden sm:table-cell">10+</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-neutral-400 uppercase tracking-wide hidden sm:table-cell">%קבועים</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50">
@@ -217,11 +217,11 @@ export default function MarketingDeepPage() {
                       {row.regulars.toLocaleString("he-IL")}
                       <span className="text-[10px] text-teal-400 block">{row.regularPct}%</span>
                     </td>
-                    <td className="px-3 py-3 text-center text-amber-700 font-semibold text-sm">
+                    <td className="px-3 py-3 text-center text-amber-700 font-semibold text-sm hidden sm:table-cell">
                       {row.loyal.toLocaleString("he-IL")}
                       <span className="text-[10px] text-amber-400 block">{row.loyalPct}%</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 hidden sm:table-cell">
                       <div className="flex items-center gap-2 min-w-[60px]">
                         <div className="flex-1 bg-neutral-100 rounded-full h-1.5 overflow-hidden">
                           <div className="h-full bg-teal-500 rounded-full" style={{ width: `${row.regularPct}%` }} />

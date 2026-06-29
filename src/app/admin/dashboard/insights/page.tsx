@@ -204,7 +204,7 @@ export default function MarketingInsightsPage() {
       ) : (
         <>
           {/* ── Summary cards ── */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
             <SummaryCard label="לקוחות בתקופה" value={data.totalCustomers} sub={data.periodLabel} />
             <SummaryCard label="לקוחות קבועים" value={data.totalRegulars} sub={`3+ ביקורים`} accent="text-emerald-600" />
             <SummaryCard label="% קבועים" value={`${data.regularsPct}%`} sub="מתוך כלל הלקוחות" accent={data.regularsPct >= 40 ? "text-emerald-600" : data.regularsPct >= 20 ? "text-amber-600" : "text-neutral-900"} />
@@ -271,10 +271,10 @@ function SummaryCard({ label, value, sub, accent }: {
   label: string; value: string | number; sub?: string; accent?: string;
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
-      <p className="text-xs text-neutral-500 mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${accent ?? "text-neutral-900"}`}>{value}</p>
-      {sub && <p className="text-xs text-neutral-400 mt-1">{sub}</p>}
+    <div className="bg-white rounded-2xl border border-neutral-200 p-3 sm:p-5">
+      <p className="text-[11px] sm:text-xs text-neutral-500 mb-1 leading-tight">{label}</p>
+      <p className={`text-2xl sm:text-3xl font-bold ${accent ?? "text-neutral-900"}`}>{value}</p>
+      {sub && <p className="text-[11px] sm:text-xs text-neutral-400 mt-1 leading-tight">{sub}</p>}
     </div>
   );
 }

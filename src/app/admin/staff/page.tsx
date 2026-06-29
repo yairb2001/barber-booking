@@ -480,8 +480,8 @@ export default function AdminStaffPage() {
 
       {/* Add Staff Modal */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowAdd(false)}>
-          <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAdd(false)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">ספר חדש</h3>
             <p className="text-xs text-neutral-500 mb-4 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
               💡 הספר יקבל סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span>
@@ -527,8 +527,8 @@ export default function AdminStaffPage() {
 
       {/* Set Password Modal */}
       {setPasswordFor && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setSetPasswordFor(null)}>
-          <div className="bg-white rounded-2xl p-6 w-80 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setSetPasswordFor(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-xs shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-1 text-lg">הגדרת סיסמה</h3>
             <p className="text-sm text-neutral-500 mb-4">
               {setPasswordFor.name}{setPasswordFor.phone ? ` (${setPasswordFor.phone})` : ""}
@@ -555,8 +555,8 @@ export default function AdminStaffPage() {
 
       {/* Schedule Modal */}
       {editingSchedule && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setEditingSchedule(null)}>
-          <div className="bg-white rounded-2xl p-6 w-[520px] shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setEditingSchedule(null)}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-[520px] shadow-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">
               לוח שנה – {staff.find((s) => s.id === editingSchedule)?.name}
             </h3>

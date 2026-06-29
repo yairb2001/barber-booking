@@ -130,9 +130,9 @@ export default function AdminProductsPage() {
       {loading ? (
         <div className="text-center py-16 text-neutral-400">טוען...</div>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {products.length === 0 && (
-            <div className="col-span-2 text-center py-16 text-neutral-400 bg-white rounded-2xl border border-neutral-200">
+            <div className="col-span-1 sm:col-span-2 text-center py-16 text-neutral-400 bg-white rounded-2xl border border-neutral-200">
               אין מוצרים עדיין
             </div>
           )}
@@ -170,8 +170,8 @@ export default function AdminProductsPage() {
       )}
 
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => { setShowAdd(false); setEditing(null); }}>
-          <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => { setShowAdd(false); setEditing(null); }}>
+          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-bold text-neutral-900 mb-5 text-lg">
               {editing ? "עריכת מוצר" : "מוצר חדש"}
             </h3>
