@@ -167,8 +167,8 @@ export default function ForBusinessPage() {
             <span style={{ color: GOLD }}>פועלת 24/7.</span>
           </h1>
           <p className="text-zinc-400 text-[15px] leading-relaxed mb-6">
-            בזמן שאתה אוחז במספריים, הטלפון לא מפסיק לרטוט. מהיום מישהו אחר עונה —{" "}
-            <span className="text-white font-semibold">קובע, מזכיר וממלא ביטולים. ואתה פשוט מספר.</span>
+            שאלות, תיאומים, ביטולים — הטלפון של המספרה לא מפסיק. מהיום מישהו אחר עונה על הכל:{" "}
+            <span className="text-white font-semibold">קובע, מזכיר וממלא ביטולים — ואתה חוזר לעבודה.</span>
           </p>
           <a href="#cta"
             className="inline-flex items-center gap-2 text-[14px] font-bold px-7 py-4 rounded-full text-black transition-transform hover:scale-105 active:scale-95"
@@ -176,7 +176,7 @@ export default function ForBusinessPage() {
             רוצה לראות איך זה עובד?
             <span>←</span>
           </a>
-          <p className="text-zinc-700 text-xs mt-3">15 דקות הדגמה · ללא התחייבות</p>
+          <p className="text-zinc-700 text-xs mt-3">לספר עצמאי או למספרה עם צוות · ללא התחייבות</p>
         </div>
 
         <WaPhone />
@@ -276,7 +276,7 @@ export default function ForBusinessPage() {
             <br /><span className="text-white">בלי שתזיז אצבע.</span>
           </p>
           <div className="flex flex-wrap gap-2 justify-center">
-            {["קביעת תורים 24/7", "הזזה אוטומטית", "תזכורות", "רשימת המתנה", "חזרת לקוחות", "ניהול הספר בוואצאפ"].map(f => (
+            {["קביעת תורים 24/7", "הזזה אוטומטית", "תזכורות", "רשימת המתנה", "חזרת לקוחות", "יומן לכל הספרים"].map(f => (
               <span key={f} className="text-[12px] px-3 py-1.5 rounded-full font-semibold"
                 style={{ background: "rgba(37,211,102,0.09)", color: WA, border: "1px solid rgba(37,211,102,0.2)" }}>
                 {f}
@@ -313,8 +313,8 @@ export default function ForBusinessPage() {
             },
             {
               icon: "📲",
-              title: "ניהול הספר בוואצאפ",
-              body: "היומן, הביטולים, ההחלפות — הכל מנוהל מהוואצאפ שלך. בלי לפתוח אפליקציה אחרת.",
+              title: "צוות שלם, יומן אחד",
+              body: "ספר אחד או עשרה — היומן של כל הספרים, הביטולים וההחלפות מנוהלים ממקום אחד. בלי בלגן.",
             },
           ].map(f => (
             <div key={f.title} className="p-5 rounded-2xl transition-colors"
