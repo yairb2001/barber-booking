@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 
 type TeamSlot = {
@@ -64,8 +65,12 @@ function BackArrow({ href }: { href: string }) {
 function TeamDatePageContent() {
   const slug = useSlug();
 
+  const searchParams = useSearchParams();
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
-  const [selectedDate, setSelectedDate] = useState<string>(() => formatDate(new Date()));
+  // Preselect a date when one is passed in the URL — lets "back" from the
+  // confirm screen (a cold deep-link with no history) restore the day the
+  // customer had picked, instead of snapping back to today.
+  const [selectedDate, setSelectedDate] = useState<string>(() => searchParams.get("date") || formatDate(new Date()));
   const [horizonDays, setHorizonDays] = useState(30);
   const [page, setPage] = useState(0);
   const [animDir, setAnimDir] = useState<"next" | "prev" | null>(null);
@@ -252,7 +257,7 @@ function TeamDatePageContent() {
           <div className="flex flex-col gap-2.5">
             {slots.map(s => (
               <Link key={`${s.time}-${s.staffId}`}
-                href={publicHref(slug, `/book/confirm?staffId=${s.staffId}&serviceId=${s.serviceId}&date=${selectedDate}&time=${s.time}`)}
+                href={publicHref(slug, `/book/confirm?staffId=${s.staffId}&serviceId=${s.serviceId}&date=${selectedDate}&time=${s.time}&from=team`)}
                 className="flex items-center justify-between rounded-2xl px-4 py-3 transition-all active:scale-[0.98]"
                 style={{ background: "var(--card)", border: "1.5px solid var(--divider)" }}>
                 <span dir="ltr" className="text-[17px] font-bold tracking-widest" style={{ color: "var(--brand)" }}>

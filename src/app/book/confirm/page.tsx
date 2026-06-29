@@ -338,11 +338,22 @@ function ConfirmPageContent() {
   const serviceId = searchParams.get("serviceId") || "";
   const date      = searchParams.get("date")      || "";
   const time      = searchParams.get("time")      || "";
+  // Where the user came from, so "back" returns to the RIGHT screen. Shortcuts
+  // (the shared team calendar, team-upcoming) jump straight to confirm with a
+  // specific barber's slot — without this marker, the cold-deep-link fallback
+  // would walk the user through that barber's own service/time funnel, which
+  // they never visited.
+  const from      = searchParams.get("from")      || "";
 
   // "Back" returns to the screen the user actually came from (home quick-slot,
-  // team-upcoming, the time grid, …). Falls back to the canonical time step for
-  // cold deep-links with no in-app history.
-  const onBack = useSmartBack(publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`));
+  // team calendar, the time grid, …). When there's in-app history we just
+  // router.back(); otherwise we fall back to the canonical previous screen for
+  // that origin — the shared calendar for team flows, else the time step.
+  const backFallback =
+    from === "team"
+      ? publicHref(slug, `/book/team-date${date ? `?date=${date}` : ""}`)
+      : publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`);
+  const onBack = useSmartBack(backFallback);
 
   const [staffInfo, setStaffInfo]     = useState<StaffInfo | null>(null);
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
@@ -775,7 +786,7 @@ function ConfirmPageContent() {
       <div className="sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"
         style={{ background: "rgba(255,255,255,0.97)" }}>
         <div className="flex items-center gap-3">
-          <Link href={publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`)} onClick={onBack}
+          <Link href={backFallback} onClick={onBack}
             className="w-9 h-9 flex items-center justify-center rounded-full bg-slate-100 border border-slate-200 flex-shrink-0">
             <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
