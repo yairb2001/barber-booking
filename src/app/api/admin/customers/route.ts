@@ -23,6 +23,21 @@ export async function POST(req: NextRequest) {
     where: { businessId_phone: { businessId: business.id, phone } },
   });
   if (existing) {
+    // A previously deleted customer with this phone → revive them instead of
+    // erroring on the unique (businessId, phone) constraint.
+    if (existing.deletedAt) {
+      const revived = await prisma.customer.update({
+        where: { id: existing.id },
+        data: {
+          deletedAt: null,
+          isBlocked: false,
+          name,
+          referralSource: body.referralSource || existing.referralSource || null,
+          notificationPrefs: body.notes ? JSON.stringify({ notes: String(body.notes) }) : existing.notificationPrefs,
+        },
+      });
+      return NextResponse.json(revived, { status: 200 });
+    }
     return NextResponse.json({ error: "לקוח עם מספר זה כבר קיים", customer: existing }, { status: 409 });
   }
 
@@ -89,7 +104,7 @@ export async function GET(req: NextRequest) {
     if (ids.length === 0) return NextResponse.json([]);
 
     const customers = await prisma.customer.findMany({
-      where: { businessId: business.id, isBlocked: false, id: { in: ids } },
+      where: { businessId: business.id, isBlocked: false, deletedAt: null, id: { in: ids } },
       orderBy: { name: "asc" },
       take: limit,
     });
@@ -100,6 +115,7 @@ export async function GET(req: NextRequest) {
   type WhereClause = {
     businessId: string;
     isBlocked: boolean;
+    deletedAt: null;
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lt?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
@@ -109,6 +125,7 @@ export async function GET(req: NextRequest) {
   const where: WhereClause = {
     businessId: business.id,
     isBlocked: false,
+    deletedAt: null,
   };
 
   // Staff filter (customers who have had appointments with a specific barber)

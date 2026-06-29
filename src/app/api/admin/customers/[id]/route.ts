@@ -110,7 +110,9 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   return NextResponse.json(customer);
 }
 
-// DELETE — hard delete customer (blocks if there are appointments)
+// DELETE — remove customer from the system while preserving appointment history.
+// If the customer has no appointments we hard-delete; otherwise we soft-delete
+// (mark deletedAt) so the past appointments keep their customer name via relation.
 export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) {
   const guard = requireOwner(req);
   if (guard) return guard;
@@ -125,16 +127,25 @@ export async function DELETE(req: NextRequest, ctx: { params: { id: string } }) 
     return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
   }
 
+  // Detach anything that would block a clean removal / keep them resurfacing.
+  // Other customers who were referred by this person → clear the link.
+  await prisma.customer.updateMany({ where: { referredById: id }, data: { referredById: null } });
+  // Drop waitlist entries and deactivate any recurring appointments.
+  await prisma.waitlist.deleteMany({ where: { customerId: id } });
+  await prisma.recurringAppointment.updateMany({ where: { customerId: id }, data: { active: false } });
+
   const apptCount = await prisma.appointment.count({ where: { customerId: id } });
   if (apptCount > 0) {
-    return NextResponse.json(
-      { error: `לא ניתן למחוק - ללקוח יש ${apptCount} תורים בהיסטוריה. אפשר לחסום אותו במקום.` },
-      { status: 400 }
-    );
+    // History exists — soft delete. The customer disappears from every list but
+    // the appointments (and their customer name) stay intact.
+    await prisma.customer.update({
+      where: { id },
+      data: { deletedAt: new Date(), isBlocked: true },
+    });
+    return NextResponse.json({ ok: true, soft: true });
   }
 
-  // Also clear waitlist entries
-  await prisma.waitlist.deleteMany({ where: { customerId: id } });
+  // No history — safe to hard delete.
   await prisma.customer.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

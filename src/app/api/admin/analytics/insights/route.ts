@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
   const customers = await prisma.customer.findMany({
     where: {
       businessId: bizId,
+      deletedAt: null,
       ...(fromDate ? { createdAt: { gte: fromDate } } : {}),
       ...(toDate   ? { createdAt: { lt:  toDate   } } : {}),
       ...(customerIds !== null ? { id: { in: customerIds } } : {}),

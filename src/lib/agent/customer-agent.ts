@@ -805,7 +805,7 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
   // most appointments (the real, active customer), then the most recent.
   const localPhone = phone.replace(/^972/, "0");
   const candidates = await prisma.customer.findMany({
-    where: { businessId, OR: [{ phone }, { phone: localPhone }] },
+    where: { businessId, deletedAt: null, OR: [{ phone }, { phone: localPhone }] },
     select: { id: true, name: true, createdAt: true },
   });
   if (!candidates.length) {

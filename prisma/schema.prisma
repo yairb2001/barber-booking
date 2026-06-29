@@ -244,6 +244,7 @@ model Customer {
   notificationPrefs String?   @map("notification_prefs") // JSON
   createdAt         DateTime  @default(now()) @map("created_at")
   lastVisitAt       DateTime? @map("last_visit_at")
+  deletedAt         DateTime? @map("deleted_at")
 
   business          Business   @relation(fields: [businessId], references: [id])
   referredBy        Customer?  @relation("CustomerReferral", fields: [referredById], references: [id])

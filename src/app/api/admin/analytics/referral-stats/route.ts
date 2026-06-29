@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
     where: {
       businessId: business.id,
       isBlocked: false,
+      deletedAt: null,
       ...(createdAtFilter ? { createdAt: createdAtFilter } : {}),
       ...(staffId ? { appointments: { some: { staffId } } } : {}),
     },

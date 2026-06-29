@@ -382,7 +382,7 @@ async function execOwnerTool(
       if (!customer) {
         // Match by name (substring, so a first name finds "ניקה לובקובסקי" too).
         const matches = await prisma.customer.findMany({
-          where: { businessId, name: { contains: customerName, mode: "insensitive" } },
+          where: { businessId, name: { contains: customerName, mode: "insensitive" }, deletedAt: null },
           select: { id: true, name: true, phone: true },
           take: 6,
         });
@@ -525,6 +525,7 @@ async function execOwnerTool(
       const customers = await prisma.customer.findMany({
         where: {
           businessId,
+          deletedAt: null,
           OR: [
             { name: { contains: q, mode: "insensitive" } },
             ...(digits ? [{ phone: { contains: digits } }] : []),

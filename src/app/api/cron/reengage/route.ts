@@ -63,6 +63,7 @@ export async function GET(req: NextRequest) {
       where: {
         businessId: business.id,
         isBlocked:  false,
+        deletedAt:  null,
         lastVisitAt: { gte: windowStart, lte: windowEnd },
       },
       select: { id: true, name: true, phone: true },

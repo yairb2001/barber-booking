@@ -39,7 +39,7 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
     if (ids.length === 0) return [];
 
     return prisma.customer.findMany({
-      where: { businessId: business.id, isBlocked: false, id: { in: ids } },
+      where: { businessId: business.id, isBlocked: false, deletedAt: null, id: { in: ids } },
       select: { id: true, name: true, phone: true },
     });
   }
@@ -48,12 +48,13 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
   type WhereClause = {
     businessId: string;
     isBlocked: boolean;
+    deletedAt: null;
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
   };
 
-  const where: WhereClause = { businessId: business.id, isBlocked: false };
+  const where: WhereClause = { businessId: business.id, isBlocked: false, deletedAt: null };
 
   if (staffId) where.appointments = { some: { staffId } };
 
@@ -167,6 +168,7 @@ export async function GET(req: NextRequest) {
     const myCustomers = await prisma.customer.findMany({
       where: {
         businessId: business.id,
+        deletedAt: null,
         appointments: { some: { staffId: barberScopeId } },
       },
       select: { phone: true },

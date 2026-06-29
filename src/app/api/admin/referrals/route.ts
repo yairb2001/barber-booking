@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   // All referred customers (those with a referrer set), newest first.
   const referred = await prisma.customer.findMany({
-    where: { businessId: session.businessId, referredById: { not: null } },
+    where: { businessId: session.businessId, referredById: { not: null }, deletedAt: null },
     select: { id: true, name: true, createdAt: true, referredById: true },
     orderBy: { createdAt: "desc" },
   });

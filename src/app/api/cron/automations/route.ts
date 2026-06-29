@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       where: {
         businessId: auto.businessId,
         isBlocked: false,
+        deletedAt: null,
         phone: { not: "" },
         lastVisitAt: { lte: cutoffDate, not: null },
       },

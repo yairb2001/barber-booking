@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
       businessId,
       name: { contains: q, mode: "insensitive" },
       isBlocked: false,
+      deletedAt: null,
     },
     select: { id: true, name: true },
     take: 8,

@@ -283,7 +283,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
   };
 
   const remove = async () => {
-    if (!confirm("למחוק את הלקוח לצמיתות? פעולה זו לא ניתנת לשחזור.")) return;
+    if (!confirm("למחוק את הלקוח מהמערכת? הוא ייעלם מרשימת הלקוחות, אבל היסטוריית התורים תישמר.")) return;
     setBusy(true);
     const r = await fetch(`/api/admin/customers/${id}`, { method: "DELETE" });
     setBusy(false);

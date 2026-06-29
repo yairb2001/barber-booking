@@ -125,6 +125,18 @@ export async function POST(request: NextRequest) {
         referredById: referredById ?? null,
       },
     });
+  } else if (customer.deletedAt) {
+    // A previously deleted customer is rebooking — revive them so the booking
+    // succeeds (the unique phone is still held by their soft-deleted record).
+    customer = await prisma.customer.update({
+      where: { id: customer.id },
+      data: {
+        deletedAt: null,
+        isBlocked: false,
+        name: customerName,
+        ...(referredById && !customer.referredById ? { referredById } : {}),
+      },
+    });
   } else if (referredById && !customer.referredById) {
     // Update referredById if not already set
     customer = await prisma.customer.update({
