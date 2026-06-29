@@ -2547,6 +2547,12 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   // ask the manager before messaging the waitlist (instead of auto-sending).
   const [notifyPrompt, setNotifyPrompt] = useState<{ count: number } | null>(null);
   const [notifying, setNotifying] = useState(false);
+  // Manual "quick message" to a single waiting customer (opens an inline box).
+  const [msgTarget, setMsgTarget] = useState<WaitlistEntry | null>(null);
+  const [msgText, setMsgText] = useState("");
+  const [msgSending, setMsgSending] = useState(false);
+  const [msgSentId, setMsgSentId] = useState<string | null>(null);
+  const [msgError, setMsgError] = useState("");
 
   useEffect(() => {
     // First check for a date-specific override, then fall back to weekly schedule
@@ -2716,6 +2722,43 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
     setWaitlist(prev => prev.filter(w => w.id !== id));
   }
 
+  // Send a manual WhatsApp message to a single waiting customer. Reuses the
+  // same endpoint as the appointment-card quick message (escalates the agent
+  // for 24h so the bot won't talk over the manager's reply).
+  function openMessage(w: WaitlistEntry) {
+    setMsgTarget(w);
+    setMsgText(`היי ${w.customer.name.split(" ")[0]}, `);
+    setMsgError("");
+  }
+  async function sendWaitlistMessage() {
+    if (!msgTarget || !msgText.trim()) return;
+    setMsgSending(true);
+    setMsgError("");
+    try {
+      const res = await fetch("/api/admin/chats/send-quick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: msgTarget.customer.phone,
+          customerName: msgTarget.customer.name,
+          message: msgText.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) { setMsgError(data.error || "שגיאה בשליחה"); }
+      else {
+        const id = msgTarget.id;
+        setMsgTarget(null);
+        setMsgText("");
+        setMsgSentId(id);
+        setTimeout(() => setMsgSentId(null), 3000);
+      }
+    } catch {
+      setMsgError("שגיאת חיבור");
+    }
+    setMsgSending(false);
+  }
+
   const dateLabel = new Date(date + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
 
   return (
@@ -2864,21 +2907,46 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                   w.preferredTimeOfDay === "evening"   ? "🌙 ערב 17:00–20:00"    :
                   w.preferredTimeOfDay === "any"       ? "🕐 כל שעה"             : null;
                 return (
-                  <div key={w.id} className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-200 flex items-start gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold">{w.customer.name}</p>
-                      <p className="text-xs text-neutral-500">{w.service.name}</p>
-                      <div className="flex gap-1.5 mt-1 flex-wrap">
-                        {timeLabel && (
-                          <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
-                        )}
-                        {w.isFlexible && (
-                          <span className="text-[11px] bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
-                        )}
+                  <div key={w.id} className="bg-neutral-50 rounded-xl px-3 py-2.5 border border-neutral-200">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold">{w.customer.name}</p>
+                        <p className="text-xs text-neutral-500">{w.service.name}</p>
+                        <div className="flex gap-1.5 mt-1 flex-wrap">
+                          {timeLabel && (
+                            <span className="text-[11px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md font-medium">{timeLabel}</span>
+                          )}
+                          {w.isFlexible && (
+                            <span className="text-[11px] bg-teal-100 text-teal-600 px-1.5 py-0.5 rounded-md">גמיש בתאריך</span>
+                          )}
+                          {msgSentId === w.id && (
+                            <span className="text-[11px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md font-medium">✓ נשלח</span>
+                          )}
+                        </div>
                       </div>
+                      <button onClick={() => (msgTarget?.id === w.id ? setMsgTarget(null) : openMessage(w))}
+                        title="שלח הודעה" className="text-neutral-400 hover:text-teal-600 text-sm mt-0.5">💬</button>
+                      <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700 text-sm mt-0.5">📞</a>
+                      <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs mt-0.5">✕</button>
                     </div>
-                    <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700 text-sm mt-0.5">📞</a>
-                    <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs mt-0.5">✕</button>
+
+                    {/* Inline quick-message box */}
+                    {msgTarget?.id === w.id && (
+                      <div className="mt-2.5 pt-2.5 border-t border-neutral-200 space-y-2">
+                        <textarea value={msgText} onChange={e => setMsgText(e.target.value)} rows={3} autoFocus
+                          placeholder="כתוב הודעה ללקוח..."
+                          className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                        {msgError && <p className="text-xs text-red-500">{msgError}</p>}
+                        <div className="flex gap-2">
+                          <button onClick={sendWaitlistMessage} disabled={msgSending || !msgText.trim()}
+                            className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold disabled:opacity-40">
+                            {msgSending ? "שולח..." : "שלח בוואטסאפ"}
+                          </button>
+                          <button onClick={() => { setMsgTarget(null); setMsgText(""); setMsgError(""); }}
+                            className="px-4 bg-neutral-100 text-neutral-600 py-2 rounded-xl text-sm">ביטול</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
