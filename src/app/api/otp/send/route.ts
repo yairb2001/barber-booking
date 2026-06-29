@@ -41,18 +41,34 @@ export async function POST(req: NextRequest) {
   const code = generateCode();
   const expiresAt = new Date(Date.now() + OTP_TTL_MINUTES * 60 * 1000);
 
-  await prisma.otpCode.create({
+  const created = await prisma.otpCode.create({
     data: { businessId: business.id, phone: normalized, code, expiresAt },
   });
 
-  // Send WhatsApp message
+  // Send WhatsApp message — check the result so a disconnected WhatsApp
+  // surfaces an error to the customer instead of silently "succeeding".
   const body = `קוד האימות שלך ב-${business.name} הוא: *${code}*\n\nהקוד תקף ל-${OTP_TTL_MINUTES} דקות.`;
-  await sendMessage({
+  const result = await sendMessage({
     businessId: business.id,
     customerPhone: normalized,
     kind: "otp",
     body,
   });
+
+  if (!result.ok) {
+    // Roll back the unused code so it doesn't count against the rate limit
+    await prisma.otpCode.delete({ where: { id: created.id } }).catch(() => {});
+    const isConfig = result.error === "provider_not_configured";
+    return NextResponse.json(
+      {
+        error: isConfig
+          ? "שירות ה-WhatsApp אינו מחובר כרגע. אנא נסה שוב מאוחר יותר או פנה לעסק."
+          : "שליחת קוד האימות נכשלה. בדוק את מספר הטלפון ונסה שוב.",
+        reason: result.error || "send_failed",
+      },
+      { status: 502 }
+    );
+  }
 
   return NextResponse.json({ ok: true });
 }
