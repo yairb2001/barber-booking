@@ -19,6 +19,12 @@ const HourRangeCtx = React.createContext({ start: DAY_START, end: DAY_END });
 // a finger that happens to rest on a block during a two-finger gesture doesn't
 // register as a tap and open its edit dialog. null when no provider is present.
 const TapGuardCtx = React.createContext<React.MutableRefObject<number> | null>(null);
+// Drag-active: true while ANY appointment/break is being dragged. Every block
+// reads this and switches its touch-action to "none" — otherwise, when the
+// dragged ghost passes over a NON-dragged block (which keeps pan-y), the browser
+// starts a scroll/pan gesture, fires pointercancel, and the drag dies mid-move
+// ("stuck", can't cross into other days/barbers, calendar still scrolls).
+const DragActiveCtx = React.createContext<boolean>(false);
 
 // Detects narrow viewports so draft blocks etc. can switch to a vertical
 // stacked layout instead of the squished horizontal pill that happens in
@@ -356,12 +362,13 @@ function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onL
   const lpFired = useRef(false);
   const lpMoved = useRef(false);
   const tapGuard = React.useContext(TapGuardCtx);
+  const dragActive = React.useContext(DragActiveCtx);
   const clearLP = () => { if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; } };
   const veryShort = height < 28;
   return (
     <div
       className={`no-touch-select absolute left-0.5 right-0.5 flex flex-col items-center justify-center ${veryShort ? "rounded-md" : "rounded-lg"} border border-amber-300 bg-amber-100 text-amber-700 overflow-hidden cursor-pointer hover:bg-amber-200/80 transition-colors z-10 ${isMoving ? "opacity-30" : ""}`}
-      style={{ top, height, touchAction: isMoving ? "none" : "pan-y" }}
+      style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y" }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
@@ -669,6 +676,9 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const lpMoved = useRef(false);
   // Shared gesture guard (pinch/zoom/swipe in progress on the grid).
   const tapGuard = React.useContext(TapGuardCtx);
+  // True while ANY drag is active → every block locks touch-action so the ghost
+  // passing over a sibling doesn't trigger a browser pan / pointercancel.
+  const dragActive = React.useContext(DragActiveCtx);
 
   function clearLP() {
     if (lpTimer.current) { clearTimeout(lpTimer.current); lpTimer.current = null; }
@@ -711,7 +721,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     // the drag captures movement instead of scrolling. The switch happens at
     // long-press time — before any finger movement — so it's in place in time.
     <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
-      style={{ top, height, touchAction: isMoving ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
+      style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
         e.stopPropagation();
@@ -4201,6 +4211,28 @@ export default function AdminCalendar() {
   // Global pointermove + pointerup listeners — only attached while dragging
   useEffect(() => {
     if (!dragMove) return;
+    // ── Edge auto-scroll ──────────────────────────────────────────────────
+    // Scroll is hard-locked while dragging (touch-action:none), so the finger
+    // can't pan to a day/barber column that's currently off-screen. Instead we
+    // auto-scroll the grid when the finger hovers near an edge — a rAF loop
+    // driven by the last pointer position, so it keeps scrolling even if the
+    // finger is held still at the edge.
+    let rafId = 0;
+    const ptr = { x: 0, y: 0, active: false };
+    const EDGE = 56;   // px from the edge that triggers scrolling
+    const SPEED = 14;  // px per frame at full strength
+    const tick = () => {
+      const el = gridRef.current;
+      if (el && ptr.active) {
+        const r = el.getBoundingClientRect();
+        if (ptr.x < r.left + EDGE) el.scrollLeft -= SPEED * Math.min(1, (r.left + EDGE - ptr.x) / EDGE);
+        else if (ptr.x > r.right - EDGE) el.scrollLeft += SPEED * Math.min(1, (ptr.x - (r.right - EDGE)) / EDGE);
+        if (ptr.y < r.top + EDGE) el.scrollTop -= SPEED * Math.min(1, (r.top + EDGE - ptr.y) / EDGE);
+        else if (ptr.y > r.bottom - EDGE) el.scrollTop += SPEED * Math.min(1, (ptr.y - (r.bottom - EDGE)) / EDGE);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
     // For a RESUMED drag the finger isn't down yet — record the touch-down
     // point so we can tell a real slide from a stray tap.
     const onDown = (e: PointerEvent) => {
@@ -4216,6 +4248,8 @@ export default function AdminCalendar() {
     const onMove = (e: PointerEvent) => {
       if (isDragProcessed.current) return; // already handled via button tap
       e.preventDefault();
+      // Feed the auto-scroll loop the live pointer position.
+      ptr.x = e.clientX; ptr.y = e.clientY; ptr.active = true;
       // Mark "moved" once the finger travels a meaningful distance from where
       // it touched down (only relevant for resumed drags; normal long-press
       // drags have no recorded start point and count as moved immediately).
@@ -4235,6 +4269,7 @@ export default function AdminCalendar() {
       setDragMove(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
+      ptr.active = false; // finger lifted → stop auto-scrolling
       // A parked/resumed drag ignores a release that never moved — so a stray
       // tap after the finger lifts doesn't do anything. Keep drag mode active.
       if (dragResumedRef.current && !dragMovedRef.current) return;
@@ -4265,6 +4300,7 @@ export default function AdminCalendar() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (rafId) cancelAnimationFrame(rafId);
       if (dragReleaseTimer.current) { clearTimeout(dragReleaseTimer.current); dragReleaseTimer.current = null; }
     };
   }, [dragMove !== null, computeDropTarget, finalizeMoveDrag]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4389,6 +4425,24 @@ export default function AdminCalendar() {
   // Global listeners while a break is being dragged.
   useEffect(() => {
     if (!breakDrag) return;
+    // Edge auto-scroll (mirrors the appointment drag): scroll is locked, so the
+    // finger reaches off-screen columns by hovering near an edge.
+    let rafId = 0;
+    const ptr = { x: 0, y: 0, active: false };
+    const EDGE = 56;
+    const SPEED = 14;
+    const tick = () => {
+      const el = gridRef.current;
+      if (el && ptr.active) {
+        const r = el.getBoundingClientRect();
+        if (ptr.x < r.left + EDGE) el.scrollLeft -= SPEED * Math.min(1, (r.left + EDGE - ptr.x) / EDGE);
+        else if (ptr.x > r.right - EDGE) el.scrollLeft += SPEED * Math.min(1, (ptr.x - (r.right - EDGE)) / EDGE);
+        if (ptr.y < r.top + EDGE) el.scrollTop -= SPEED * Math.min(1, (r.top + EDGE - ptr.y) / EDGE);
+        else if (ptr.y > r.bottom - EDGE) el.scrollTop += SPEED * Math.min(1, (ptr.y - (r.bottom - EDGE)) / EDGE);
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
     // For a RESUMED break drag the finger isn't down yet — record the
     // touch-down point so we can tell a real slide from a stray tap.
     const onDown = (e: PointerEvent) => {
@@ -4404,6 +4458,7 @@ export default function AdminCalendar() {
     const onMove = (e: PointerEvent) => {
       if (breakDragProcessed.current) return;
       e.preventDefault();
+      ptr.x = e.clientX; ptr.y = e.clientY; ptr.active = true;
       // Mark "moved" once the finger travels a meaningful distance (only
       // relevant for resumed drags; fresh long-press drags count as moved).
       if (breakDragStartPt.current) {
@@ -4420,6 +4475,7 @@ export default function AdminCalendar() {
       setBreakDrag(prev => prev ? { ...prev, pointerX: e.clientX, pointerY: e.clientY, dropTarget } : null);
     };
     const onUp = (e: PointerEvent) => {
+      ptr.active = false; // finger lifted → stop auto-scrolling
       // A parked/resumed drag ignores a release that never moved — keep drag
       // mode active until a real slide happens (mirrors the appointment flow).
       if (breakDragResumedRef.current && !breakDragMovedRef.current) return;
@@ -4447,6 +4503,7 @@ export default function AdminCalendar() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (rafId) cancelAnimationFrame(rafId);
       if (breakReleaseTimer.current) { clearTimeout(breakReleaseTimer.current); breakReleaseTimer.current = null; }
     };
   }, [breakDrag !== null, computeDropTarget, finalizeBreakDrag, adjustBreakDrop]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -4623,7 +4680,8 @@ export default function AdminCalendar() {
         {/* While dragging an appointment/break we hard-lock scrolling so the */}
         {/* calendar can't slide out from under the finger mid-move.          */}
         <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto"
-          style={(dragMove || breakDrag) ? { overflow: "hidden", touchAction: "none" } : undefined}>
+          style={(dragMove || breakDrag) ? { touchAction: "none", overscrollBehavior: "contain" } : undefined}>
+          <DragActiveCtx.Provider value={dragMove !== null || breakDrag !== null}>
           <TapGuardCtx.Provider value={tapGuardUntil}>
           <HHCtx.Provider value={hourHeight}>
           <HourRangeCtx.Provider value={{ start: calStart, end: calEnd }}>
@@ -4909,6 +4967,7 @@ export default function AdminCalendar() {
           </HourRangeCtx.Provider>
           </HHCtx.Provider>
           </TapGuardCtx.Provider>
+          </DragActiveCtx.Provider>
         </div>
       </div>
     );
