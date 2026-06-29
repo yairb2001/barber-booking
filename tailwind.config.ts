@@ -17,6 +17,16 @@ const config: Config = {
         rubik: ["var(--font-rubik)", "system-ui", "sans-serif"],
         assistant: ["var(--font-assistant)", "system-ui", "sans-serif"],
       },
+      keyframes: {
+        // Attention-grabbing alert flash for the "WhatsApp disconnected" banner.
+        "alert-blink": {
+          "0%, 100%": { backgroundColor: "rgb(220 38 38)" }, // red-600
+          "50%": { backgroundColor: "rgb(153 27 27)" },      // red-800
+        },
+      },
+      animation: {
+        "alert-blink": "alert-blink 1.1s steps(1, end) infinite",
+      },
     },
   },
   plugins: [],

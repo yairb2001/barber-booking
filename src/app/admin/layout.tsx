@@ -81,6 +81,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       .catch(() => setMe(null));
   }, [pathname]);
 
+  // Re-poll /api/admin/me on a 60s cadence (only when the tab is visible) so the
+  // "WhatsApp disconnected" banner surfaces on its own — no manual refresh. Paired
+  // with the live send-failure reconciliation, the alert appears within ~a minute.
+  useEffect(() => {
+    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      fetch("/api/admin/me")
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (!cancelled && data) setMe(data); })
+        .catch(() => {});
+    };
+    const id = setInterval(tick, 60000);
+    document.addEventListener("visibilitychange", tick);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", tick); };
+  }, [pathname]);
+
   // Gate: a freshly-signed-up owner who hasn't finished onboarding is sent to
   // the wizard. Barbers and onboarded owners are unaffected. The wizard itself
   // and the login page are excluded to avoid a redirect loop.
@@ -283,17 +301,22 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* WhatsApp disconnected banner — visible on every admin page.
             Barbers see the warning; owners also get a link to reconnect (QR). */}
         {me?.whatsappDown && (
-          <div className="shrink-0 bg-red-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
-            <span className="font-medium leading-tight">
-              🔴 הוואטסאפ מנותק — הלקוחות לא מקבלים מענה אוטומטי
+          <div className="shrink-0 animate-alert-blink text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm shadow-md">
+            <span className="font-bold leading-tight flex items-center gap-2">
+              <span className="animate-pulse text-base">🔴</span>
+              הוואטסאפ מנותק — הלקוחות לא מקבלים מענה אוטומטי
             </span>
-            {isOwner && (
+            {isOwner ? (
               <Link
                 href="/admin/settings?tab=whatsapp"
-                className="shrink-0 bg-white text-red-700 font-semibold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
+                className="shrink-0 bg-white text-red-700 font-bold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
               >
                 חבר מחדש ←
               </Link>
+            ) : (
+              <span className="shrink-0 text-xs font-medium opacity-90 whitespace-nowrap">
+                יש ליידע את המנהל
+              </span>
             )}
           </div>
         )}

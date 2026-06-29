@@ -57,7 +57,8 @@ export class GreenApiProvider implements MessagingProvider {
     if (!this.isConfigured()) return { ok: false, error: "not_configured" };
     const url = `https://api.green-api.com/waInstance${this.instanceId}/getStateInstance/${this.token}`;
     try {
-      const res = await fetch(url, { cache: "no-store" });
+      // Cap the wait — getState runs on the admin /me path, must never hang it.
+      const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
         return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };

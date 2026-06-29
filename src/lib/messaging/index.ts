@@ -173,11 +173,69 @@ type DeliverableLog = {
 
 /** Minimal shape of a Business needed to build a provider. */
 type ProviderBusiness = {
+  id: string;
   messagingProvider: string | null;
   whatsappNumber: string | null;
   greenApiInstanceId: string | null;
   greenApiToken: string | null;
 };
+
+// GreenAPI states that mean the bot truly can't send/receive → flip the banner.
+// Kept in sync with the watchdog cron (src/app/api/cron/whatsapp-health).
+const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
+
+/**
+ * Reconcile the persisted WhatsApp connection flags from a live send outcome,
+ * so the admin "WhatsApp disconnected" banner reacts within seconds instead of
+ * waiting up to 30m for the watchdog cron.
+ *
+ * - On a SUCCESSFUL send → clear any stale "down" flag (the line is clearly up).
+ * - On a FAILED send → ask GreenAPI for the authoritative state; only flip the
+ *   banner when it reports a genuine logged-out state (not a transient blip or a
+ *   plain mis-config), so we don't cry wolf on a one-off network error.
+ *
+ * Best-effort: never throws into the send path.
+ */
+async function reconcileWaState(
+  business: ProviderBusiness,
+  result: SendResult,
+): Promise<void> {
+  try {
+    if (result.ok) {
+      // Clear a previously-flagged outage. updateMany is a no-op when nothing
+      // is flagged, so there's no wasted write on the common healthy path.
+      await prisma.business.updateMany({
+        where: { id: business.id, waDownSince: { not: null } },
+        data: { waLiveState: "authorized", waDownSince: null, waCheckedAt: new Date() },
+      });
+      return;
+    }
+
+    // A missing/blank provider isn't a "disconnect" — that's a config issue and
+    // has its own messaging. Don't turn it into a red banner here.
+    if (result.error === "provider_not_configured") return;
+
+    const provider = providerForBusiness(business);
+    if (!(provider instanceof GreenApiProvider)) return;
+    const stateRes = await provider.getState();
+    if (!stateRes.ok || !stateRes.state) return; // couldn't confirm → leave as-is
+    if (!WA_DOWN_STATES.has(stateRes.state)) return; // not actually logged out
+
+    const now = new Date();
+    // Set waDownSince only on the first transition into a down state.
+    await prisma.business.updateMany({
+      where: { id: business.id, waDownSince: null },
+      data: { waLiveState: stateRes.state, waDownSince: now, waCheckedAt: now },
+    });
+    // Always refresh the live state label even if downSince was already set.
+    await prisma.business.update({
+      where: { id: business.id },
+      data: { waLiveState: stateRes.state, waCheckedAt: now },
+    });
+  } catch {
+    // Reconciliation is advisory — swallow any error so a send never fails here.
+  }
+}
 
 /**
  * Deliver an EXISTING MessageLog row: resolve the provider, send the text, and
@@ -220,6 +278,9 @@ export async function deliverMessageLog(
       sentAt: result.ok ? new Date() : null,
     },
   });
+
+  // Keep the admin "WhatsApp disconnected" banner in near-real-time sync.
+  await reconcileWaState(business, result);
 
   return result;
 }
