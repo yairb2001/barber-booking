@@ -95,10 +95,10 @@ export default function CustomersPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50">
-                <th className="text-right px-5 py-3 text-neutral-500 font-medium">שם</th>
-                <th className="text-right px-5 py-3 text-neutral-500 font-medium">טלפון</th>
-                <th className="text-right px-5 py-3 text-neutral-500 font-medium">תאריך הצטרפות</th>
-                <th className="px-5 py-3"></th>
+                <th className="text-right px-3 sm:px-5 py-3 text-neutral-500 font-medium">שם</th>
+                <th className="text-right px-3 sm:px-5 py-3 text-neutral-500 font-medium">טלפון</th>
+                <th className="text-right px-5 py-3 text-neutral-500 font-medium hidden sm:table-cell">תאריך הצטרפות</th>
+                <th className="px-3 sm:px-5 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-50">
@@ -108,22 +108,22 @@ export default function CustomersPage() {
                   onClick={() => setSelectedId(c.id)}
                   className={`hover:bg-neutral-50 cursor-pointer ${c.isBlocked ? "opacity-50" : ""}`}
                 >
-                  <td className="px-5 py-4 font-medium text-neutral-900">
+                  <td className="px-3 sm:px-5 py-4 font-medium text-neutral-900">
                     {c.name}
                     {c.isBlocked && <span className="mr-2 text-xs text-red-500">🚫 חסום</span>}
                   </td>
-                  <td className="px-5 py-4 text-neutral-600" dir="ltr">{c.phone}</td>
-                  <td className="px-5 py-4 text-neutral-400 text-xs">
+                  <td className="px-3 sm:px-5 py-4 text-neutral-600 whitespace-nowrap" dir="ltr">{c.phone}</td>
+                  <td className="px-5 py-4 text-neutral-400 text-xs hidden sm:table-cell">
                     {new Date(c.createdAt).toLocaleDateString("he-IL")}
                   </td>
-                  <td className="px-5 py-4" onClick={e => e.stopPropagation()}>
-                    <div className="flex gap-3 items-center">
-                      <a href={`tel:${c.phone}`} className="text-xs text-neutral-500 hover:text-neutral-800">📞</a>
+                  <td className="px-3 sm:px-5 py-4" onClick={e => e.stopPropagation()}>
+                    <div className="flex gap-2 sm:gap-3 items-center">
+                      <a href={`tel:${c.phone}`} className="text-base text-neutral-500 hover:text-neutral-800">📞</a>
                       <button
                         onClick={() => setMessageTarget({ id: c.id, name: c.name })}
                         title="שלח הודעה דרך המערכת"
-                        className="text-xs text-teal-600 hover:text-teal-800">✉️</button>
-                      <a href={`https://wa.me/${c.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-500 hover:text-emerald-700">💬</a>
+                        className="text-base text-teal-600 hover:text-teal-800">✉️</button>
+                      <a href={`https://wa.me/${c.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer" className="text-base text-emerald-500 hover:text-emerald-700">💬</a>
                     </div>
                   </td>
                 </tr>
