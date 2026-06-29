@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireOwner, getSessionBusiness } from "@/lib/session";
+import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
 
 // GET /api/admin/whatsapp/qr
-// Owner-only. Returns the GreenAPI instance state and, when the number is
-// disconnected, a fresh linking QR so the owner can re-scan from inside the
-// app instead of logging into the GreenAPI console.
+// Any authenticated admin (owner OR barber). Returns the GreenAPI instance
+// state and, when the number is disconnected, a fresh linking QR so whoever is
+// around — owner or any barber — can re-scan from inside the app instead of
+// logging into the GreenAPI console. Reconnecting WhatsApp isn't a sensitive
+// owner-only setting; it just restores the shared business line, so every
+// staff member who sees the blinking outage banner can fix it.
 //   { state, connected, type?, qr?, message? }
 // The QR rotates ~every 20s — the client polls this endpoint.
 export async function GET(req: NextRequest) {
-  const guard = requireOwner(req);
-  if (guard) return guard;
+  const session = getRequestSession(req);
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const business = await getSessionBusiness(req, {
     whatsappNumber: true,

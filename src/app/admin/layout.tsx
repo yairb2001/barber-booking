@@ -68,6 +68,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
   // No-op on the regular web browser.
   const { platform } = useNativeShell();
@@ -299,25 +300,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex flex-col flex-1 min-w-0 h-[100dvh] md:mr-52">
 
         {/* WhatsApp disconnected banner — visible on every admin page.
-            Barbers see the warning; owners also get a link to reconnect (QR). */}
+            EVERY staff member (owner OR barber) gets the reconnect button so
+            whoever is around can scan the QR and restore the shared line. */}
         {me?.whatsappDown && (
           <div className="shrink-0 animate-alert-blink text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm shadow-md">
             <span className="font-bold leading-tight flex items-center gap-2">
               <span className="animate-pulse text-base">🔴</span>
               הוואטסאפ מנותק — הלקוחות לא מקבלים מענה אוטומטי
             </span>
-            {isOwner ? (
-              <Link
-                href="/admin/settings?tab=whatsapp"
-                className="shrink-0 bg-white text-red-700 font-bold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
-              >
-                חבר מחדש ←
-              </Link>
-            ) : (
-              <span className="shrink-0 text-xs font-medium opacity-90 whitespace-nowrap">
-                יש ליידע את המנהל
-              </span>
-            )}
+            <button
+              onClick={() => setQrOpen(true)}
+              className="shrink-0 bg-white text-red-700 font-bold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
+            >
+              חבר מחדש ←
+            </button>
           </div>
         )}
 
@@ -339,6 +335,92 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         {/* Main content — fills all remaining height; bottom nav removed, navigation is via the ☰ hamburger */}
         <main className="flex-1 overflow-auto min-h-0">{children}</main>
+      </div>
+
+      {/* WhatsApp reconnect QR — available to every staff member from the banner */}
+      {qrOpen && <WhatsAppReconnectModal onClose={() => setQrOpen(false)} />}
+    </div>
+  );
+}
+
+// ── WhatsApp reconnect modal ─────────────────────────────────────────────────
+// Self-contained QR flow opened from the disconnected banner. Polls
+// /api/admin/whatsapp/qr (now open to owner AND barbers) and shows a fresh
+// linking QR that rotates ~every 20s. Anyone on staff can scan it from the
+// business phone to restore the shared WhatsApp line.
+type QrState = { state?: string; connected?: boolean; qr?: string; type?: string; error?: string };
+function WhatsAppReconnectModal({ onClose }: { onClose: () => void }) {
+  const [data, setData] = useState<QrState | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const res = await fetch("/api/admin/whatsapp/qr", { cache: "no-store" });
+        const d: QrState = await res.json();
+        if (cancelled) return;
+        setData(d);
+        setLoading(false);
+        if (!d.connected) timer = setTimeout(tick, 15000); // QR rotates — re-poll
+      } catch {
+        if (cancelled) return;
+        setData({ error: "network" });
+        setLoading(false);
+        timer = setTimeout(tick, 15000);
+      }
+    }
+    tick();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, []);
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
+        dir="rtl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">🔗</span>
+            <h2 className="font-bold text-neutral-800">חיבור WhatsApp מחדש</h2>
+          </div>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-xl leading-none">✕</button>
+        </div>
+
+        {data?.connected ? (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-5 text-center">
+            <div className="text-3xl mb-1">✓</div>
+            <p className="text-sm font-semibold text-emerald-800">ה-WhatsApp מחובר ופעיל</p>
+            <p className="text-[11px] text-emerald-600 mt-1">המספר מקושר — הודעות יישלחו כרגיל.</p>
+          </div>
+        ) : data?.qr ? (
+          <div className="text-center">
+            <div className="inline-block rounded-xl border border-neutral-200 p-3 bg-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={data.qr} alt="WhatsApp QR" width={240} height={240} className="block" />
+            </div>
+            <p className="text-sm font-medium text-neutral-700 mt-3">סרקו את הקוד מ-WhatsApp במכשיר העסק</p>
+            <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed">
+              WhatsApp ← הגדרות ← מכשירים מקושרים ← קישור מכשיר.
+              <br />הקוד מתחדש אוטומטית — אם פג, ימתין קוד חדש.
+            </p>
+          </div>
+        ) : data?.error ? (
+          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 text-center">
+            לא הצלחנו לטעון את החיבור ({data.error}). נסו שוב בעוד רגע או פנו למנהל.
+          </div>
+        ) : (
+          <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-sm text-slate-500 text-center">
+            {loading ? "טוען חיבור..." : "ממתין לחיבור..."}
+          </div>
+        )}
       </div>
     </div>
   );
