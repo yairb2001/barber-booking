@@ -245,7 +245,7 @@ export default function ChooseBarberPage() {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
               </span>
               <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-                התורים הקרובים
+                התורים הקרובים - כל הספרים
               </p>
             </div>
             <Link
@@ -281,7 +281,7 @@ export default function ChooseBarberPage() {
           {/* Divider */}
           <div className="mt-5 mb-1 flex items-center gap-3">
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[9px] tracking-[0.3em] uppercase" style={{ color: "#CBD5E1" }}>או בחר ספר</span>
+            <span className="text-[12px] font-bold tracking-[0.15em]" style={{ color: "var(--text-sec)" }}>או בחר ספר</span>
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
           </div>
         </div>
@@ -347,7 +347,7 @@ export default function ChooseBarberPage() {
                   {/* CTA → shared calendar of everyone */}
                   <div className="absolute bottom-1.5 inset-x-2 z-10 flex items-center justify-center py-1.5"
                     style={{ background: "var(--brand)", borderRadius: 10 }}>
-                    <span className="text-[10px] font-bold text-white">ליומן המשותף</span>
+                    <span className="text-[10px] font-bold text-white">כל הספרים</span>
                   </div>
                 </Link>
               );
