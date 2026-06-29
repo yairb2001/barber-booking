@@ -485,7 +485,7 @@ export default function ForBusinessPage() {
                 type="submit"
                 className="w-full font-bold text-[14px] py-4 rounded-2xl text-black transition-transform hover:scale-[1.02] active:scale-[0.98]"
                 style={{ background: GOLD }}>
-                אני רוצה יומן מלא →
+                אני רוצה שקט נפשי ויומן מלא →
               </button>
               <p className="text-zinc-700 text-[11px]">נחזור אליך תוך שעות ספורות</p>
 
