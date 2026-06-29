@@ -173,10 +173,11 @@ function LeaveWaitlistPrompt() {
 
 // ── Add to calendar (Google + Apple/.ics) ─────────────────────────────────────
 function AddToCalendar({
-  title, staffName, serviceName, date, time, durationMin, location,
+  title, staffName, serviceName, date, time, durationMin, location, dateLabel, price,
 }: {
   title: string; staffName: string; serviceName: string;
   date: string; time: string; durationMin: number; location: string;
+  dateLabel?: string; price?: string;
 }) {
   // Build tz-safe wall-clock timestamps from the appointment strings (no Date()
   // parsing → no device-timezone drift). Times are Israel local; we tag the
@@ -193,6 +194,10 @@ function AddToCalendar({
   const detailParts = [
     serviceName && `שירות: ${serviceName}`,
     staffName && `ספר: ${staffName}`,
+    dateLabel && `תאריך: ${dateLabel}`,
+    time && `שעה: ${time}`,
+    price && `מחיר: ₪${price}`,
+    location && `כתובת: ${location}`,
   ].filter(Boolean) as string[];
   const details = detailParts.join("\n");
 
@@ -285,11 +290,11 @@ function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playSt
 }
 
 // ── Row helper ─────────────────────────────────────────────────────────────────
-function SummaryRow({ label, value, large }: { label: string; value: React.ReactNode; large?: boolean }) {
+function SummaryRow({ label, value, large, compact }: { label: string; value: React.ReactNode; large?: boolean; compact?: boolean }) {
   return (
-    <div className="flex justify-between items-center px-5 py-3.5 border-b border-slate-100 last:border-0">
+    <div className={`flex justify-between items-center px-5 ${compact ? "py-1.5" : "py-3.5"} border-b border-slate-100 last:border-0`}>
       <span className="text-[11px] font-semibold tracking-[0.15em] text-slate-400 uppercase">{label}</span>
-      <span className={large ? "text-xl font-bold" : "text-[14px] font-medium text-slate-800"}
+      <span className={large ? `${compact ? "text-[17px]" : "text-xl"} font-bold` : "text-[14px] font-medium text-slate-800"}
         style={large ? { color: "var(--brand)" } : {}}>{value}</span>
     </div>
   );
@@ -724,11 +729,13 @@ function ConfirmPageContent() {
           </div>
 
           <AddToCalendar
-            title={`תור${businessName ? ` ב${businessName}` : ""}`}
+            title={`תור לתספורת${businessName ? ` ב${businessName.toUpperCase()}` : ""}`}
             staffName={searchParams.get("staffName") || ""}
             serviceName={searchParams.get("serviceName") || ""}
             date={successDate}
             time={successTime}
+            dateLabel={successDateLabel}
+            price={successPrice}
             durationMin={Number(searchParams.get("duration")) || 30}
             location={businessAddress}
           />
@@ -807,27 +814,30 @@ function ConfirmPageContent() {
         </div>
       </div>
 
-      <div className="px-4 pt-5 space-y-3">
+      <div className="px-4 pt-3 space-y-2.5">
 
-        {/* Summary card */}
+        {/* Summary card — compact so the form fits in roughly one screen */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="px-5 pt-4 pb-2">
+          <div className="px-5 pt-2 pb-0.5">
             <p className="text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase">סיכום התור</p>
           </div>
-          <SummaryRow label="ספר" value={staffInfo?.name || "..."} />
-          <SummaryRow label="שירות" value={serviceInfo?.name || "..."} />
-          <SummaryRow label="תאריך" value={dateLabel} />
-          <SummaryRow label="שעה" value={<span dir="ltr">{time}</span>} />
+          <SummaryRow label="ספר" value={staffInfo?.name || "..."} compact />
+          <SummaryRow label="שירות" value={serviceInfo?.name || "..."} compact />
+          <SummaryRow label="תאריך" value={dateLabel} compact />
+          <SummaryRow label="שעה" value={<span dir="ltr">{time}</span>} compact />
           {serviceInfo?.showDuration !== false && (
-            <SummaryRow label="משך" value={`${duration} דקות`} />
+            <SummaryRow label="משך" value={`${duration} דקות`} compact />
           )}
-          <SummaryRow label="מחיר" value={`₪${price}`} large />
+          <SummaryRow label="מחיר" value={`₪${price}`} large compact />
         </div>
 
         {/* Customer details */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-          <p className="text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase mb-4">פרטים אישיים</p>
-          <div className="space-y-3">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">👤</span>
+            <p className="text-[15px] font-bold text-slate-900">פרטים אישיים</p>
+          </div>
+          <div className="space-y-2.5">
             <div>
               <label className="text-[11px] font-semibold text-slate-500 block mb-1.5">טלפון</label>
               <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
