@@ -895,7 +895,14 @@ export default function Dashboard() {
     if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
     else setViewMonth(m => m + 1);
   }
-  const isCurrentMonth = viewYear === now.getFullYear() && viewMonth === now.getMonth();
+  // Month navigation: allow browsing BACK through history and FORWARD into
+  // already-booked future months (customers book ahead). Forward is capped at
+  // 12 months so the picker can't wander off into empty far-future ranges.
+  const viewIdx        = viewYear * 12 + viewMonth;
+  const nowIdx         = now.getFullYear() * 12 + now.getMonth();
+  const isCurrentMonth = viewIdx === nowIdx;
+  const isFutureMonth  = viewIdx > nowIdx;
+  const atMaxHorizon   = viewIdx - nowIdx >= 12;
   const isOwner = me?.isOwner ?? false;
   const isStaffScoped = !!selStaff || (!isOwner && !!me?.staffId);
 
@@ -937,8 +944,8 @@ export default function Dashboard() {
           <button onClick={prevMonth}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm">▶</button>
           <span className="font-semibold text-neutral-800 text-xs min-w-[7rem] text-center">{monthLabel}</span>
-          {/* ◀ on left = go to later month */}
-          <button onClick={nextMonth} disabled={isCurrentMonth}
+          {/* ◀ on left = go to later month (now allowed into the future, capped) */}
+          <button onClick={nextMonth} disabled={atMaxHorizon}
             className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm disabled:opacity-30">◀</button>
           {!isCurrentMonth && (
             <button onClick={() => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); }}
@@ -946,6 +953,17 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* ── Future-month forecast notice ── */}
+      {isFutureMonth && (
+        <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5">
+          <span className="text-base leading-none mt-0.5">🔮</span>
+          <p className="text-xs text-indigo-700 leading-relaxed">
+            <span className="font-semibold">חודש עתידי — תצוגת צפי.</span>{" "}
+            המספרים משקפים תורים שכבר נקבעו לחודש זה (מחזור צפוי, תורים מתוכננים ולקוחות חדשים שכבר קבעו). הם עוד יכולים להשתנות עד שהחודש יגיע.
+          </p>
+        </div>
+      )}
 
       {/* ── Barber filter + deep-dive link (owners) ── */}
       {isOwner ? (
@@ -995,38 +1013,44 @@ export default function Dashboard() {
           {/* ── 4 monthly stat cards ── */}
           <div className="grid grid-cols-2 gap-3">
             <StatCard
-              label="מחזור חודשי"
+              label={isFutureMonth ? "מחזור צפוי" : "מחזור חודשי"}
               value={`₪${a.totalRevenue.toLocaleString("he-IL")}`}
               color="text-slate-800"
+              badge={isFutureMonth ? "צפי" : undefined}
               sub={a.totalAppointments > 0 ? `ממוצע ₪${Math.round(a.totalRevenue / a.totalAppointments)} לתור` : undefined}
             />
             <StatCard
-              label="תורים החודש"
+              label={isFutureMonth ? "תורים שנקבעו" : "תורים החודש"}
               value={a.totalAppointments}
               color="text-neutral-900"
               sub={`תפוסה ${a.occupancyMonth}%`}
             />
             <StatCard
-              label="לקוחות החודש"
+              label={isFutureMonth ? "לקוחות שקבעו" : "לקוחות החודש"}
               value={a.uniqueCustomers}
               color="text-slate-800"
               sub={a.uniqueCustomers > 0 ? `ממוצע ${(a.totalAppointments / a.uniqueCustomers).toFixed(1)} תורים ללקוח` : undefined}
             />
             <StatCard
-              label={isStaffScoped ? "חדשים אצלך" : "לקוחות חדשים"}
+              label={isFutureMonth
+                ? (isStaffScoped ? "חדשים צפויים אצלך" : "לקוחות חדשים צפויים")
+                : (isStaffScoped ? "חדשים אצלך" : "לקוחות חדשים")}
               value={isStaffScoped ? a.newToStaff : a.newToBusiness}
               color="text-teal-600"
               onClick={() => openCustomerList("new")}
             />
-            <StatCard
-              label="ביקור שני החודש"
-              value={a.prevMonthCohort.returnedThisMonth}
-              color="text-emerald-600"
-              sub={a.prevMonthCohort.newInPrevMonth > 0
-                ? `${a.prevMonthCohort.rate}% מלקוחות חודש שעבר`
-                : undefined}
-              onClick={() => openCustomerList("returning")}
-            />
+            {/* Retrospective retention — only meaningful for the present/past. */}
+            {!isFutureMonth && (
+              <StatCard
+                label="ביקור שני החודש"
+                value={a.prevMonthCohort.returnedThisMonth}
+                color="text-emerald-600"
+                sub={a.prevMonthCohort.newInPrevMonth > 0
+                  ? `${a.prevMonthCohort.rate}% מלקוחות חודש שעבר`
+                  : undefined}
+                onClick={() => openCustomerList("returning")}
+              />
+            )}
           </div>
 
           {/* ── Per-barber simple cards (owners, no filter) ── */}
@@ -1072,8 +1096,8 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* ── Today snapshot — owners only, at bottom ── */}
-          {isOwner && (
+          {/* ── Today snapshot — owners only; hidden in a future-month view ── */}
+          {isOwner && !isFutureMonth && (
             <div className="border-t border-neutral-100 pt-4">
               <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2.5">⚡ היום</h2>
               <div className="grid grid-cols-2 gap-2.5">
