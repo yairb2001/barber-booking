@@ -16,6 +16,7 @@ export type MessageKind =
   | "post_every_visit"
   // Swap-flow messages
   | "swap_proposal"      // sent to candidate customers asking if they'd trade
+  | "swap_followup"      // 1-hour nudge when a candidate hasn't replied to a swap/move proposal
   | "swap_staff_request" // sent to a barber asking approval to bother a customer (agent flow)
   | "move_proposal"      // sent to a customer asking if they'd move to a free slot
   | "swap_confirmation"  // sent to both customers when admin approves the swap

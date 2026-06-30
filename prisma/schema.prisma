@@ -362,6 +362,7 @@ model SwapProposal {
   respondedAt            DateTime? @map("responded_at")
   approvedAt             DateTime? @map("approved_at")
   expiresAt              DateTime  @map("expires_at") // createdAt + 24h (admin) / +2h (agent)
+  reminderSentAt         DateTime? @map("reminder_sent_at") // set once the 1-hour nudge is sent
 
   business  Business     @relation(fields: [businessId], references: [id])
   primary   Appointment  @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
