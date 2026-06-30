@@ -337,6 +337,16 @@ async function execTool(
         const dayAvail = await computeDayAvailability(bizId, date, staffId, serviceId);
         const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
         if (!staffSlots.includes(startTime)) {
+          // Diagnostic: this is the "agent said free, booking says taken" path.
+          // Dump exactly what the guard saw so an intermittent rejection (e.g. the
+          // model attributing another barber's free slot to THIS barber, or a slot
+          // taken between the offer and the booking) is fully reconstructable.
+          console.warn(
+            `[agent] book guard REJECTED — biz=${bizId} reqStaff=${staffId}(${staff.name}) ` +
+            `serviceId=${serviceId} date=${date} startTime=${startTime} | ` +
+            `thisBarberSlots=[${staffSlots.join(",")}] | ` +
+            `allBarbers=${JSON.stringify(dayAvail.map(s => ({ id: s.staffId, name: s.name, slots: s.slots })))}`
+          );
           return `שגיאה: ${startTime} בתאריך ${date} לא פנוי אצל ${staff.name} (יום סגור, מעבר לאופק ההזמנות, או שהשעה נתפסה). אל תקבע את זה. קרא ל-get_available_slots לאותו יום או ל-find_next_available כדי לראות מה באמת פנוי, והצע ללקוח אפשרות תקפה — אצל ספר שפתוח באותו יום.`;
         }
 
