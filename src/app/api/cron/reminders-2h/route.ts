@@ -1,118 +1,99 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
-  sendMessage,
+  enqueueMessage,
   hasFeature,
   applyTemplate,
   DEFAULT_2H_TEMPLATE,
   reminderVars,
 } from "@/lib/messaging";
+import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 /**
- * Cron endpoint — should run every hour.
- * Sends a "2 hours before" reminder for appointments whose startTime falls in
- * the window [now + 1h50m, now + 2h10m], giving a ±10 min tolerance so every
- * appointment is covered exactly once per hourly run.
+ * 2-hour reminder SWEEP (optional, frequent).
  *
- * Scheduling:
- *   Vercel Pro:  add `{ "path": "/api/cron/reminders-2h", "schedule": "0 * * * *" }` to vercel.json
- *   Vercel Hobby / external: point any hourly HTTP scheduler to this URL with
- *     `Authorization: Bearer <CRON_SECRET>` header.
+ * The daily `/api/cron/reminders` scan already enqueues 2h reminders for
+ * appointments booked in advance. This endpoint exists to catch SAME-DAY
+ * bookings made *after* that morning scan: point an external scheduler at it
+ * every few minutes and it will enqueue any still-missing 2h reminder, with a
+ * precise `scheduledFor = appointmentInstant − 2h`. The drip-queue then sends
+ * it at the right minute (immediately, if the appointment is already <2h away).
  *
- * Authorization: `Authorization: Bearer <CRON_SECRET>` header.
+ * De-duplicated against existing `reminder_2h` logs, so it can safely overlap
+ * with the daily scan and with its own previous runs.
+ *
+ * Authorization: `Authorization: Bearer <CRON_SECRET>`, `?secret=`, or
+ * `x-cron-secret` header.
  */
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization");
-  const secret = process.env.CRON_SECRET;
-  if (secret && auth !== `Bearer ${secret}`) {
+  const { searchParams } = new URL(req.url);
+  const secret =
+    searchParams.get("secret") ||
+    req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
+  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const now = new Date();
+  const todayISO = getBusinessNow().date;
 
-  // Window: appointments starting between now+1h50m and now+2h10m
-  const windowStart = new Date(now.getTime() + (110) * 60 * 1000); // +1h50m
-  const windowEnd   = new Date(now.getTime() + (130) * 60 * 1000); // +2h10m
+  // Scan today's + tomorrow's appointments so an appointment booked late at
+  // night for early tomorrow is still covered. (De-dup keeps this cheap.)
+  const start = new Date(todayISO + "T00:00:00.000Z");
+  const end   = new Date(addDaysISO(todayISO, 1) + "T23:59:59.999Z");
 
-  // Convert to HH:MM strings for comparison with stored startTime
-  function toHHMM(d: Date): string {
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  }
-  const startTimeMin = toHHMM(windowStart);
-  const startTimeMax = toHHMM(windowEnd);
+  const appts = await prisma.appointment.findMany({
+    where: { status: "confirmed", date: { gte: start, lte: end } },
+    include: { customer: true, staff: true, service: true, business: true },
+  });
 
-  // Determine which date(s) the window covers
-  // If the window doesn't cross midnight we only need today; if it does, also tomorrow
-  const dates: Date[] = [];
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  dates.push(todayMidnight);
-  if (windowStart.getDate() !== windowEnd.getDate()) {
-    dates.push(new Date(windowEnd.getFullYear(), windowEnd.getMonth(), windowEnd.getDate()));
-  }
+  let enqueued = 0;
+  let skipped  = 0;
 
-  let sent = 0;
-  let skipped = 0;
-  const errors: string[] = [];
+  for (const appt of appts) {
+    if (!hasFeature(appt.business.features, "reminders"))    { skipped++; continue; }
+    if (!hasFeature(appt.business.features, "reminder_2h")) { skipped++; continue; }
 
-  for (const dateBase of dates) {
-    const dayStart = new Date(dateBase.getFullYear(), dateBase.getMonth(), dateBase.getDate(), 0, 0, 0);
-    const dayEnd   = new Date(dateBase.getFullYear(), dateBase.getMonth(), dateBase.getDate(), 23, 59, 59);
+    const instant = appointmentInstant(appt.date, appt.startTime);
+    // Only relevant while the appointment is still upcoming.
+    if (instant.getTime() <= now.getTime()) { skipped++; continue; }
 
-    const appts = await prisma.appointment.findMany({
-      where: {
-        status: "confirmed",
-        date: { gte: dayStart, lte: dayEnd },
-        startTime: { gte: startTimeMin, lte: startTimeMax },
-      },
-      include: { customer: true, staff: true, service: true, business: true },
+    const existing = await prisma.messageLog.findFirst({
+      where: { appointmentId: appt.id, kind: "reminder_2h", status: { not: "failed" } },
+      select: { id: true },
+    });
+    if (existing) { skipped++; continue; }
+
+    const dateLabel = appt.date.toLocaleDateString("he-IL", {
+      weekday: "long", day: "numeric", month: "long",
     });
 
-    for (const appt of appts) {
-      // Skip if already sent a 2h reminder for this appointment
-      const existing = await prisma.messageLog.findFirst({
-        where: {
-          appointmentId: appt.id,
-          kind: "reminder_2h",
-          status: { in: ["sent", "delivered", "read"] },
-        },
-      });
-      if (existing) { skipped++; continue; }
+    const template = appt.business.reminder2hTemplate || DEFAULT_2H_TEMPLATE;
+    const body = applyTemplate(template, reminderVars({
+      customerName: appt.customer.name,
+      businessName: appt.business.name,
+      staffName:    appt.staff.name,
+      startTime:    appt.startTime,
+      dateLabel,
+      address:      appt.business.address,
+    }));
 
-      if (!hasFeature(appt.business.features, "reminders")) { skipped++; continue; }
-      if (!hasFeature(appt.business.features, "reminder_2h")) { skipped++; continue; }
+    const scheduledFor = new Date(instant.getTime() - 2 * 60 * 60 * 1000);
 
-      const dateLabel = appt.date.toLocaleDateString("he-IL", {
-        weekday: "long", day: "numeric", month: "long",
-      });
-
-      const template = appt.business.reminder2hTemplate || DEFAULT_2H_TEMPLATE;
-      const body = applyTemplate(template, reminderVars({
-        customerName: appt.customer.name,
-        businessName: appt.business.name,
-        staffName:    appt.staff.name,
-        startTime:    appt.startTime,
-        dateLabel,
-        address:      appt.business.address,
-      }));
-
-      const result = await sendMessage({
-        businessId:    appt.businessId,
-        appointmentId: appt.id,
-        customerPhone: appt.customer.phone,
-        kind:  "reminder_2h",
-        body,
-      });
-
-      if (result.ok) sent++;
-      else errors.push(`${appt.id}: ${result.error}`);
-    }
+    await enqueueMessage({
+      businessId:    appt.businessId,
+      appointmentId: appt.id,
+      customerPhone: appt.customer.phone,
+      kind:  "reminder_2h",
+      body,
+      scheduledFor,
+    });
+    enqueued++;
   }
 
-  return NextResponse.json({
-    ok: true,
-    window: { from: startTimeMin, to: startTimeMax },
-    sent,
-    skipped,
-    errors: errors.length > 0 ? errors : undefined,
-  });
+  return NextResponse.json({ ok: true, enqueued, skipped });
 }

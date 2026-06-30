@@ -84,8 +84,9 @@ Helpers in `src/lib/session.ts`:
 
 | Path | Schedule | What |
 |---|---|---|
-| `/api/cron/reminders` | `0 7 * * *` | 24h reminder before appointment |
-| `/api/cron/reminders-2h` | hourly (configured separately?) | 2h reminder |
+| `/api/cron/reminders` | `0 1 * * *` | Daily scan — **enqueues** 24h (tomorrow) + 2h (today) reminders with precise `scheduledFor`. Does NOT send directly. |
+| `/api/cron/drip-queue` | **external, every minute** | Drains scheduled MessageLog rows at ~1/min/business (anti-ban). Wire via cron-job.org → `?secret=<CRON_SECRET>`. Required for reminders/broadcast/waitlist to actually go out. |
+| `/api/cron/reminders-2h` | external, every ~5 min (optional) | Sweep that catches **same-day** bookings made after the morning scan; enqueues missing 2h reminders. |
 | `/api/cron/report-daily` | `0 19 * * 0-5` | End-of-day owner summary |
 | `/api/cron/report-weekly` | `0 6 * * 0` | Weekly summary |
 | `/api/cron/report-monthly` | `0 6 1 * *` | Monthly summary |

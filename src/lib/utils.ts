@@ -91,6 +91,43 @@ export function getBusinessNow(): { date: string; time: string; minutes: number 
   return { date, time: hhmm, minutes: timeToMinutes(hhmm) };
 }
 
+/**
+ * Israel UTC offset (in minutes, e.g. +180 for IDT summer, +120 for IST winter)
+ * at a given absolute instant. Computed from the IANA tz database via Intl, so
+ * DST transitions are always correct without hard-coding dates.
+ */
+export function israelOffsetMinutesAt(at: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIMEZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(at);
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  const asIfUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return Math.round((asIfUtc - at.getTime()) / 60_000);
+}
+
+/**
+ * Convert an appointment's stored fields to its absolute instant (UTC Date).
+ *
+ * In this codebase `appointment.date` is UTC-midnight of the Israel CALENDAR day
+ * and `appointment.startTime` is the Israel-local wall-clock "HH:MM". This turns
+ * that pair into the true moment the appointment happens, correctly accounting
+ * for the Israel DST offset on that date.
+ */
+export function appointmentInstant(dateUtcMidnight: Date, hhmm: string): Date {
+  const [h, m] = hhmm.split(":").map(Number);
+  const y = dateUtcMidnight.getUTCFullYear();
+  const mo = dateUtcMidnight.getUTCMonth();
+  const d = dateUtcMidnight.getUTCDate();
+  // Guess: interpret the wall time as if it were UTC, then shift by the Israel
+  // offset at that moment so the result is the real UTC instant.
+  const guessUtcMs = Date.UTC(y, mo, d, h || 0, m || 0, 0);
+  const offsetMin = israelOffsetMinutesAt(new Date(guessUtcMs));
+  return new Date(guessUtcMs - offsetMin * 60_000);
+}
+
 /** Add n days to a YYYY-MM-DD string (UTC-safe). */
 export function addDaysISO(iso: string, n: number): string {
   const d = new Date(iso + "T00:00:00.000Z");
