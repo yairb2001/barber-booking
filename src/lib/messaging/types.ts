@@ -47,6 +47,7 @@ export type MessageStatus =
   | "sent"
   | "delivered"
   | "read"
+  | "skipped"  // claimed but not sent — the appointment was cancelled/removed before its reminder was due
   | "failed";
 
 export type SendResult = {

@@ -1,15 +1,31 @@
 /**
  * Drip-queue cron — drains scheduled WhatsApp messages at a human-safe pace.
  *
- * Both bulk paths (broadcast + waitlist) only ENQUEUE messages into MessageLog
- * with status "scheduled" + a `scheduledFor` time. This endpoint, called every
- * minute by an external cron service, sends at most RATE messages PER BUSINESS
- * per run (RATE=1 ⇒ ~1 message/minute per WhatsApp number) so the number is
- * never flagged for blasting. Broadcast and waitlist share the same queue, so
- * the per-number rate stays safe regardless of how many are pending.
+ * Both bulk paths (broadcast + waitlist) and the reminder scans only ENQUEUE
+ * messages into MessageLog with status "scheduled" + a `scheduledFor` time. This
+ * endpoint, hit frequently by an external cron service, sends each one at (or
+ * after) its target time — but never faster than one message per business per
+ * MIN_SEND_GAP, so the WhatsApp number is never flagged for blasting.
+ *
+ * ── Why a TIME gate, not just a per-run cap ─────────────────────────────────
+ * On Vercel Hobby only DAILY crons are allowed, so the every-minute trigger is
+ * an EXTERNAL scheduler (cron-job.org). External schedulers can misbehave: if
+ * the service is down for a while it may fire a *burst* of catch-up calls all at
+ * once. A per-run cap ("1 message per invocation") is defeated by a burst — 60
+ * rapid invocations would send 60 messages in seconds (exactly the flood we're
+ * preventing). So instead we gate on the *wall-clock time of the last actual
+ * send* per business: a business becomes eligible again only once MIN_SEND_GAP
+ * has elapsed since its last "sent" message. This caps the true send rate no
+ * matter how often — or how bunched — the endpoint is called.
+ *
+ * ── Reminders only fire if the appointment still exists ─────────────────────
+ * A reminder is enqueued up to 24h before it's due. If the customer cancels in
+ * between, the scheduled row must NOT be sent. Before delivering any
+ * appointment-bound reminder we re-check the appointment: if it's missing or in
+ * a cancelled state we mark the row "skipped" and send nothing.
  *
  * Secure with CRON_SECRET: GET /api/cron/drip-queue?secret=<CRON_SECRET>
- * (or header `x-cron-secret`).
+ * (or header `x-cron-secret`, or `Authorization: Bearer <CRON_SECRET>`).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -17,12 +33,28 @@ import { deliverMessageLog } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
-/** Max messages sent per business per cron run. With a 1/min external cron this
- *  yields ~1 message/minute per number — the slow-and-safe pace. */
+/** Minimum wall-clock gap between two sends for the SAME business. ~1/min keeps
+ *  the number safely under WhatsApp's blasting radar. Enforced against the last
+ *  message actually marked "sent", so it holds even under a burst of calls. */
+const MIN_SEND_GAP_MS = 60 * 1000;
+
+/** Messages per business per run (kept at 1 — the real throttle is the time
+ *  gate above; this just avoids sending two in a single invocation). */
 const RATE_PER_BUSINESS = 1;
 
 /** How many due rows to scan per run (across all businesses). */
 const SCAN_LIMIT = 200;
+
+/** Appointment-bound reminder kinds that must be re-validated before sending —
+ *  a reminder for a cancelled/removed appointment must never go out. */
+const APPOINTMENT_REMINDER_KINDS = new Set(["reminder_24h", "reminder_2h"]);
+
+/** Appointment statuses that mean "no longer a live appointment". */
+const CANCELLED_STATUSES = new Set([
+  "cancelled_by_customer",
+  "cancelled_by_staff",
+  "no_show",
+]);
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -50,21 +82,52 @@ export async function GET(req: NextRequest) {
     where: { status: "scheduled", scheduledFor: { lte: now } },
     orderBy: { scheduledFor: "asc" },
     take: SCAN_LIMIT,
-    select: { id: true, businessId: true, customerPhone: true, body: true },
+    select: {
+      id: true,
+      businessId: true,
+      customerPhone: true,
+      body: true,
+      kind: true,
+      appointmentId: true,
+    },
   });
 
   if (due.length === 0) {
-    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0 });
+    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0, skipped: 0, throttled: 0 });
   }
 
-  // Cap to RATE_PER_BUSINESS per business this run.
+  // ── Time gate: find each business's last actual send, exclude any business
+  // that sent within MIN_SEND_GAP_MS. This is what makes the throttle immune to
+  // bursty external-cron behaviour (the cause of the mass-send incident). ──────
+  const businessIds = Array.from(new Set(due.map((d) => d.businessId)));
+  const lastSends = await prisma.messageLog.findMany({
+    where: { businessId: { in: businessIds }, sentAt: { not: null } },
+    orderBy: { sentAt: "desc" },
+    distinct: ["businessId"],
+    select: { businessId: true, sentAt: true },
+  });
+  const lastSentByBusiness = new Map(
+    lastSends.map((r) => [r.businessId, r.sentAt as Date]),
+  );
+  const businessAllowed = (id: string) => {
+    const last = lastSentByBusiness.get(id);
+    return !last || now.getTime() - last.getTime() >= MIN_SEND_GAP_MS;
+  };
+
+  // Select at most RATE_PER_BUSINESS rows for each business that passed the gate.
   const perBusinessCount = new Map<string, number>();
+  let throttled = 0;
   const selected = due.filter((row) => {
+    if (!businessAllowed(row.businessId)) { throttled++; return false; }
     const c = perBusinessCount.get(row.businessId) || 0;
-    if (c >= RATE_PER_BUSINESS) return false;
+    if (c >= RATE_PER_BUSINESS) { throttled++; return false; }
     perBusinessCount.set(row.businessId, c + 1);
     return true;
   });
+
+  if (selected.length === 0) {
+    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0, skipped: 0, throttled });
+  }
 
   // Claim the selected rows so overlapping runs can't double-send: flip
   // "scheduled" → "sending" atomically; only rows we actually claimed proceed.
@@ -76,19 +139,66 @@ export async function GET(req: NextRequest) {
 
   // If nothing was claimed (another run beat us), exit cleanly.
   if (claim.count === 0) {
-    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0 });
+    return NextResponse.json({ ok: true, processed: 0, sent: 0, failed: 0, skipped: 0, throttled });
   }
 
   // Re-fetch the rows we now own (status "sending") to be safe.
   const claimed = await prisma.messageLog.findMany({
     where: { id: { in: selectedIds }, status: "sending" },
-    select: { id: true, businessId: true, customerPhone: true, body: true },
+    select: {
+      id: true,
+      businessId: true,
+      customerPhone: true,
+      body: true,
+      kind: true,
+      appointmentId: true,
+    },
   });
 
+  // ── Re-validate appointment-bound reminders: only send if the appointment is
+  // still live. A cancellation between enqueue and send must suppress it. ──────
+  const reminderApptIds = Array.from(
+    new Set(
+      claimed
+        .filter((r) => APPOINTMENT_REMINDER_KINDS.has(r.kind) && r.appointmentId)
+        .map((r) => r.appointmentId as string),
+    ),
+  );
+  const apptStatusById = new Map<string, string>();
+  if (reminderApptIds.length > 0) {
+    const appts = await prisma.appointment.findMany({
+      where: { id: { in: reminderApptIds } },
+      select: { id: true, status: true },
+    });
+    for (const a of appts) apptStatusById.set(a.id, a.status);
+  }
+
+  let skipped = 0;
+  const toDeliver: typeof claimed = [];
+  for (const row of claimed) {
+    if (APPOINTMENT_REMINDER_KINDS.has(row.kind) && row.appointmentId) {
+      const status = apptStatusById.get(row.appointmentId);
+      // Missing appointment (deleted) or a cancelled/no-show status → suppress.
+      if (!status || CANCELLED_STATUSES.has(status)) {
+        await prisma.messageLog.update({
+          where: { id: row.id },
+          data: { status: "skipped", error: "appointment_not_active" },
+        });
+        skipped++;
+        continue;
+      }
+    }
+    toDeliver.push(row);
+  }
+
+  if (toDeliver.length === 0) {
+    return NextResponse.json({ ok: true, processed: claimed.length, sent: 0, failed: 0, skipped, throttled });
+  }
+
   // Cache businesses (usually one per run).
-  const businessIds = Array.from(new Set(claimed.map((r) => r.businessId)));
+  const deliverBusinessIds = Array.from(new Set(toDeliver.map((r) => r.businessId)));
   const businesses = await prisma.business.findMany({
-    where: { id: { in: businessIds } },
+    where: { id: { in: deliverBusinessIds } },
     select: {
       id: true,
       messagingProvider: true,
@@ -100,7 +210,7 @@ export async function GET(req: NextRequest) {
   const businessById = new Map(businesses.map((b) => [b.id, b]));
 
   let sent = 0, failed = 0;
-  for (const row of claimed) {
+  for (const row of toDeliver) {
     const business = businessById.get(row.businessId);
     if (!business) {
       await prisma.messageLog.update({
@@ -123,5 +233,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, processed: claimed.length, sent, failed });
+  return NextResponse.json({ ok: true, processed: claimed.length, sent, failed, skipped, throttled });
 }
