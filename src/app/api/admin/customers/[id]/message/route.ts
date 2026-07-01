@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
-import { sendMessage } from "@/lib/messaging";
+import { sendProactiveMessage } from "@/lib/messaging";
 
 // POST /api/admin/customers/[id]/message
 // Body: { message: string }
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
   const customer = await prisma.customer.findUnique({
     where: { id },
-    select: { businessId: true, phone: true, isBlocked: true, deletedAt: true },
+    select: { businessId: true, phone: true, name: true, isBlocked: true, deletedAt: true },
   });
   if (!customer) return NextResponse.json({ error: "not found" }, { status: 404 });
 
@@ -44,11 +44,12 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
     return NextResponse.json({ error: "ללקוח אין מספר טלפון" }, { status: 400 });
   }
 
-  const result = await sendMessage({
+  const result = await sendProactiveMessage({
     businessId: customer.businessId,
     customerPhone: customer.phone,
     kind: "manual",
     body: String(message).trim(),
+    customerName: customer.name,
   });
 
   if (!result.ok) {

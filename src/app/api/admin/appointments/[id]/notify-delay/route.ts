@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
-import { sendMessage, delayNotificationText } from "@/lib/messaging";
+import { sendProactiveMessage, delayNotificationText } from "@/lib/messaging";
 
 /**
  * POST /api/admin/appointments/[id]/notify-delay
@@ -54,12 +54,13 @@ export async function POST(
     business.delayNotificationTemplate,
   );
 
-  const result = await sendMessage({
+  const result = await sendProactiveMessage({
     businessId:    business.id,
     appointmentId: appt.id,
     customerPhone: appt.customer.phone,
     kind:          "delay_notification",
     body:          text,
+    customerName:  appt.customer.name,
   });
 
   // Surface real send failures to the client (HTTP 502) instead of a silent 200.

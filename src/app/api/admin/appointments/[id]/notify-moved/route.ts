@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession } from "@/lib/session";
-import { sendMessage, appointmentMovedText } from "@/lib/messaging";
+import { sendProactiveMessage, appointmentMovedText } from "@/lib/messaging";
 
 /**
  * POST /api/admin/appointments/[id]/notify-moved
@@ -49,12 +49,13 @@ export async function POST(
     serviceName: appt.service.name,
   }, business.appointmentMovedTemplate);
 
-  const result = await sendMessage({
+  const result = await sendProactiveMessage({
     businessId: business.id,
     appointmentId: appt.id,
     customerPhone: appt.customer.phone,
     kind: "appointment_moved",
     body,
+    customerName: appt.customer.name,
   });
 
   return NextResponse.json(result);

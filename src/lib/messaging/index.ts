@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
+import { normalizeIsraeliPhone } from "./phone";
 
 /**
  * Extract the first name for use in the {{name}} variable.
@@ -371,6 +372,79 @@ export async function enqueueMessage(opts: {
       status: "scheduled",
       scheduledFor: opts.scheduledFor,
     },
+  });
+}
+
+/**
+ * Send a WhatsApp message that a human (owner/barber) initiated proactively —
+ * a one-off manual message from the customer database, a delay notice, an
+ * "appointment moved" notice, etc.
+ *
+ * Unlike raw sendMessage(), this also:
+ *   1. Records the message into the customer's Conversation (source "admin") so
+ *      it SHOWS UP in the chats inbox, and
+ *   2. Escalates the conversation (mutes the AI agent for 24h) so the agent
+ *      doesn't butt into a thread a human just took over — unless escalate:false.
+ *
+ * Use this for every owner/barber-initiated outbound message to a customer.
+ * Automated system messages (reminders, confirmations, OTP, broadcasts) keep
+ * using sendMessage() directly.
+ */
+export async function sendProactiveMessage(opts: {
+  businessId: string;
+  customerPhone: string;
+  body: string;
+  kind: MessageKind;
+  appointmentId?: string;
+  customerName?: string;
+  /** Mute the AI agent for 24h after sending. Default true. */
+  escalate?: boolean;
+}): Promise<SendResult> {
+  const escalate = opts.escalate !== false;
+  const normalized = normalizeIsraeliPhone(opts.customerPhone);
+
+  // Find (or create) the customer-facing conversation for this phone. Never glue
+  // onto the hidden owner thread (agentType "owner").
+  let conv = await prisma.conversation.findFirst({
+    where: { businessId: opts.businessId, phone: normalized, agentType: { not: "owner" } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!conv) {
+    conv = await prisma.conversation.create({
+      data: {
+        businessId: opts.businessId,
+        phone: normalized,
+        agentType: "customer",
+        status: "active",
+        lastMessageAt: new Date(),
+        ...(opts.customerName ? { whatsappName: opts.customerName } : {}),
+      },
+    });
+  }
+
+  await prisma.conversationMessage.create({
+    data: {
+      conversationId: conv.id,
+      role: "assistant",
+      source: "admin",
+      content: opts.body,
+    },
+  });
+  await prisma.conversation.update({
+    where: { id: conv.id },
+    data: {
+      lastMessageAt: new Date(),
+      lastReadAt: new Date(),
+      ...(escalate ? { escalatedAt: new Date() } : {}),
+    },
+  });
+
+  return sendMessage({
+    businessId: opts.businessId,
+    appointmentId: opts.appointmentId,
+    customerPhone: normalized,
+    kind: opts.kind,
+    body: opts.body,
   });
 }
 

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
-import { sendMessage, cancellationText } from "@/lib/messaging";
+import { sendProactiveMessage, cancellationText } from "@/lib/messaging";
 import { pushToOwner } from "@/lib/native/push";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
@@ -247,12 +247,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           dateLabel,
           startTime:    appointment.startTime,
         }, business.appointmentCancelledTemplate);
-        sendMessage({
+        sendProactiveMessage({
           businessId:    before.businessId,
           appointmentId: appointment.id,
           customerPhone: appointment.customer.phone,
           kind:          "appointment_cancelled",
           body:          cancelBody,
+          customerName:  appointment.customer.name,
         }).catch(err => console.error("cancellation send failed", err));
       }
     }
