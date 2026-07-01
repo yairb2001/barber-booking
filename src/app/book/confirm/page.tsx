@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { getStoredAttribution } from "@/lib/attribution";
 
 type StaffInfo = { id: string; name: string };
 type ServiceInfo = {
@@ -628,6 +629,8 @@ function ConfirmPageContent() {
           note: combinedNote || undefined,
           otpToken,
           existingDecision,
+          // Marketing attribution captured from the booking-link URL (?ref/?utm_*).
+          attribution: getStoredAttribution() || undefined,
         }),
       });
       if (!res.ok) {

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 
 type Staff = { id: string; name: string };
+
+type AdRow = { ad: string; total: number; returning: number };
 
 type ReferralRow = {
   source: string;
@@ -14,7 +16,13 @@ type ReferralRow = {
   regularPct: number;
   loyal: number;
   loyalPct: number;
+  ads?: AdRow[];
 };
+
+// Turn a free-text label ("שלט בחנות") into a clean URL tag ("שלט-בחנות").
+function slugifyRef(s: string): string {
+  return s.trim().replace(/\s+/g, "-").replace(/[?#&=]/g, "");
+}
 
 type Period = "all" | "month" | "custom";
 
@@ -49,6 +57,13 @@ export default function MarketingDeepPage() {
 
   const [rows, setRows]           = useState<ReferralRow[]>([]);
   const [loading, setLoading]     = useState(false);
+  const [expanded, setExpanded]   = useState<Set<string>>(new Set());
+
+  // Tracking-link builder
+  const [slug, setSlug]           = useState<string | null>(null);
+  const [linkName, setLinkName]   = useState("");
+  const [copied, setCopied]       = useState<string | null>(null);
+  const [showMeta, setShowMeta]   = useState(false);
 
   // Load role + staff
   useEffect(() => {
@@ -61,7 +76,34 @@ export default function MarketingDeepPage() {
       }
     }).catch(() => {});
     fetch("/api/admin/staff").then(r => r.json()).then(setAllStaff).catch(() => {});
+    fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).then(s => {
+      if (s && typeof s.slug === "string") setSlug(s.slug);
+    }).catch(() => {});
   }, []);
+
+  // Booking base URL for the tracking-link builder (uses the current origin).
+  const bookingBase = (() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}${slug ? `/${slug}` : ""}/book`;
+  })();
+  const refLink   = linkName.trim() ? `${bookingBase}?ref=${encodeURIComponent(slugifyRef(linkName))}` : "";
+  const metaTemplate = "utm_source=meta&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
+
+  function copy(text: string, key: string) {
+    if (!text) return;
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(c => (c === key ? null : c)), 1800);
+    }).catch(() => {});
+  }
+
+  function toggleExpand(source: string) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(source)) next.delete(source); else next.add(source);
+      return next;
+    });
+  }
 
   // Fetch stats whenever filters change
   useEffect(() => {
@@ -94,6 +136,67 @@ export default function MarketingDeepPage() {
         <h1 className="text-2xl font-bold text-neutral-900">📊 שיווק מעמיק</h1>
         <p className="text-neutral-500 text-sm mt-1">לקוחות לפי מקור הגעה ואחוז הפיכה ללקוח קבוע (3+ ביקורים)</p>
       </div>
+
+      {/* Tracking-link builder — owner only */}
+      {isOwner && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
+          <div>
+            <h2 className="font-semibold text-neutral-800 text-sm flex items-center gap-2">🔗 צור קישור מעקב</h2>
+            <p className="text-xs text-neutral-500 mt-1">
+              תן שם למקור (למשל: שלט בחנות, סטורי אינסטגרם) וקבל קישור ייעודי. מי שיזמין דרכו — נזהה שהגיע ממנו.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[180px]">
+              <label className="text-[11px] text-neutral-500 block mb-1">שם המקור</label>
+              <input
+                value={linkName}
+                onChange={e => setLinkName(e.target.value)}
+                placeholder="לדוגמה: שלט בחנות"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+            </div>
+            <button
+              onClick={() => copy(refLink, "ref")}
+              disabled={!refLink}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-teal-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-teal-700 transition">
+              {copied === "ref" ? "✓ הועתק" : "העתק קישור"}
+            </button>
+          </div>
+
+          {refLink && (
+            <div className="bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2 text-xs text-neutral-600 break-all" dir="ltr">
+              {refLink}
+            </div>
+          )}
+
+          {/* Meta one-time setup helper */}
+          <div className="border-t border-neutral-100 pt-3">
+            <button onClick={() => setShowMeta(v => !v)}
+              className="text-xs font-medium text-teal-700 hover:text-teal-800 flex items-center gap-1">
+              {showMeta ? "▼" : "◀"} רץ מודעות בפייסבוק/אינסטגרם? הגדרה חד-פעמית לזיהוי אוטומטי של המודעה
+            </button>
+            {showMeta && (
+              <div className="mt-3 space-y-2 text-xs text-neutral-600">
+                <p>
+                  במנהל המודעות של מטא, בשדה <b>&quot;פרמטרים של כתובת URL&quot;</b> של המודעה, הדבק את התבנית הבאה.
+                  מטא ימלא לבד את שם הקמפיין ושם המודעה — כך כל לקוח שיגיע ממודעה יזוהה אוטומטית, בלי לתייג ידנית.
+                </p>
+                <div className="flex items-stretch gap-2">
+                  <code className="flex-1 bg-neutral-900 text-neutral-100 rounded-lg px-3 py-2 break-all" dir="ltr">{metaTemplate}</code>
+                  <button onClick={() => copy(metaTemplate, "meta")}
+                    className="px-3 rounded-lg text-xs font-medium bg-neutral-200 text-neutral-700 hover:bg-neutral-300 transition shrink-0">
+                    {copied === "meta" ? "✓" : "העתק"}
+                  </button>
+                </div>
+                <p className="text-neutral-400">
+                  אחרי ההגדרה, כל קמפיין יופיע כאן כמקור נפרד, ותוכל לפתוח אותו כדי לראות איזו מודעה ספציפית הביאה כמה לקוחות.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
@@ -205,9 +308,20 @@ export default function MarketingDeepPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-50">
-                {rows.map((row, i) => (
-                  <tr key={row.source} className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/40"}>
-                    <td className="px-4 py-3 font-medium text-neutral-900 max-w-[120px] truncate">{row.source}</td>
+                {rows.map((row, i) => {
+                  const hasAds = !!row.ads && row.ads.length > 0;
+                  const isOpen = expanded.has(row.source);
+                  return (
+                  <Fragment key={row.source}>
+                  <tr onClick={() => hasAds && toggleExpand(row.source)}
+                    className={`${i % 2 === 0 ? "bg-white" : "bg-neutral-50/40"} ${hasAds ? "cursor-pointer hover:bg-teal-50/50" : ""}`}>
+                    <td className="px-4 py-3 font-medium text-neutral-900 max-w-[140px] truncate">
+                      <span className="flex items-center gap-1.5">
+                        {hasAds && <span className="text-teal-500 text-[10px]">{isOpen ? "▼" : "◀"}</span>}
+                        <span className="truncate">{row.source}</span>
+                        {hasAds && <span className="text-[10px] text-neutral-400 shrink-0">({row.ads!.length})</span>}
+                      </span>
+                    </td>
                     <td className="px-3 py-3 text-center text-neutral-600 text-sm">{row.total.toLocaleString("he-IL")}</td>
                     <td className="px-3 py-3 text-center text-blue-700 font-semibold text-sm">
                       {row.returning.toLocaleString("he-IL")}
@@ -235,7 +349,26 @@ export default function MarketingDeepPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+
+                  {/* Ad-level drill-down rows */}
+                  {isOpen && hasAds && row.ads!.map(ad => (
+                    <tr key={`${row.source}::${ad.ad}`} className="bg-teal-50/30">
+                      <td className="pr-8 pl-4 py-2 text-neutral-600 max-w-[140px] truncate">
+                        <span className="flex items-center gap-1.5 text-xs">
+                          <span className="text-neutral-300">↳</span>
+                          <span className="truncate">🎯 {ad.ad}</span>
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center text-neutral-500 text-xs">{ad.total.toLocaleString("he-IL")}</td>
+                      <td className="px-3 py-2 text-center text-blue-600 text-xs">{ad.returning.toLocaleString("he-IL")}</td>
+                      <td className="px-3 py-2"></td>
+                      <td className="px-3 py-2 hidden sm:table-cell"></td>
+                      <td className="px-4 py-2 hidden sm:table-cell"></td>
+                    </tr>
+                  ))}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

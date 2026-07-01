@@ -55,26 +55,38 @@ export async function GET(req: NextRequest) {
     },
     select: {
       referralSource: true,
+      utmContent: true,
       _count: { select: { appointments: { where: staffId ? { staffId } : undefined } } },
     },
   });
 
   // ── Group by referral source ──────────────────────────────────────────────────
-  const map = new Map<string, { total: number; returning: number; regulars: number; loyal: number }>();
+  // Each source also keeps a per-ad breakdown (from utm_content) so the dashboard
+  // can drill campaign → specific ad.
+  type Ads = Map<string, { total: number; returning: number }>;
+  const map = new Map<string, { total: number; returning: number; regulars: number; loyal: number; ads: Ads }>();
 
   for (const c of customers) {
     const src = c.referralSource?.trim() || "לא ידוע";
     const n = c._count.appointments;
-    const row = map.get(src) ?? { total: 0, returning: 0, regulars: 0, loyal: 0 };
+    const row = map.get(src) ?? { total: 0, returning: 0, regulars: 0, loyal: 0, ads: new Map() as Ads };
     row.total    += 1;
     if (n >= 2)  row.returning += 1;
     if (n >= 3)  row.regulars  += 1;
     if (n >= 10) row.loyal     += 1;
+    // Ad-level breakdown — only for customers that carry a specific ad name.
+    const ad = c.utmContent?.trim();
+    if (ad) {
+      const adRow = row.ads.get(ad) ?? { total: 0, returning: 0 };
+      adRow.total += 1;
+      if (n >= 2) adRow.returning += 1;
+      row.ads.set(ad, adRow);
+    }
     map.set(src, row);
   }
 
   const result = Array.from(map.entries())
-    .map(([source, { total, returning, regulars, loyal }]) => ({
+    .map(([source, { total, returning, regulars, loyal, ads }]) => ({
       source,
       total,
       returning,
@@ -83,6 +95,9 @@ export async function GET(req: NextRequest) {
       regularPct:   total > 0 ? Math.round((regulars  / total) * 100) : 0,
       loyal,
       loyalPct:     total > 0 ? Math.round((loyal     / total) * 100) : 0,
+      ads: Array.from(ads.entries())
+        .map(([ad, v]) => ({ ad, total: v.total, returning: v.returning }))
+        .sort((a, b) => b.total - a.total),
     }))
     .sort((a, b) => b.total - a.total);
 

@@ -6,6 +6,7 @@ import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug } from "@/lib/public-nav";
+import { captureAttribution } from "@/lib/attribution";
 
 export default function BookLayout({ children }: { children: React.ReactNode }) {
   // Start from the server-resolved theme so the first paint is correct
@@ -19,6 +20,9 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
   const [pixelId, setPixelId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Capture marketing attribution (?ref / ?utm_*) as soon as the visitor
+    // lands, before they navigate deeper into the flow (params drop off).
+    captureAttribution();
     fetch(apiWithSlug("/api/business", slug))
       .then(r => r.json())
       .then(biz => {

@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
     referrerId,    // preferred: customer ID of the friend who referred (from autocomplete)
     note,          // optional customer note for this appointment
     otpToken,      // short-lived JWT from /api/otp/verify
+    attribution,   // marketing attribution captured from the booking-link URL
+
     // When the customer already has an upcoming appointment we stop and ask them
     // (in the UI) whether they want this as an EXTRA appointment ("additional")
     // or to cancel the existing one(s) and book this instead ("cancel").
@@ -115,13 +117,26 @@ export async function POST(request: NextRequest) {
     if (referrerRecord) referredById = referrerRecord.id;
   }
 
+  // ── Marketing attribution ────────────────────────────────────────────────────
+  // Attribution captured from the booking-link URL (?ref / ?utm_*). Per product
+  // decision it OVERRIDES the manually-picked "מקור הגעה", and is only applied to
+  // brand-new customers (first-touch — "where did they originally come from").
+  const attr = (attribution && typeof attribution === "object")
+    ? attribution as { ref?: string; source?: string; campaign?: string; content?: string }
+    : {};
+  const attrDisplaySource = (attr.campaign || attr.ref || attr.source || "").toString().trim() || null;
+  const newCustomerSource = attrDisplaySource || (referralSource || null);
+
   if (!customer) {
     customer = await prisma.customer.create({
       data: {
         businessId: staff.businessId,
         phone: customerPhone,
         name: customerName,
-        referralSource,
+        referralSource: newCustomerSource,
+        utmSource:   (attr.source   || "").toString().trim() || null,
+        utmCampaign: (attr.campaign || "").toString().trim() || null,
+        utmContent:  (attr.content  || "").toString().trim() || null,
         referredById: referredById ?? null,
       },
     });

@@ -238,6 +238,12 @@ model Customer {
   phone             String
   name              String
   referralSource    String?   @map("referral_source")
+  // ── Marketing attribution (captured from the booking-link URL) ──
+  // referralSource holds the display source (campaign name or manual ?ref).
+  // These keep the raw UTM breakdown for campaign→ad drill-down in the dashboard.
+  utmSource         String?   @map("utm_source")     // platform: meta | google | ...
+  utmCampaign       String?   @map("utm_campaign")   // campaign name
+  utmContent        String?   @map("utm_content")    // specific ad name
   referredById      String?   @map("referred_by_id")
   isBlocked         Boolean   @default(false) @map("is_blocked")
   pushToken         String?   @map("push_token")

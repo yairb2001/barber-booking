@@ -7,11 +7,12 @@ export async function GET(req: NextRequest) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const business = await getSessionBusiness(req, { id: true, settings: true, bookingHorizonDays: true });
+  const business = await getSessionBusiness(req, { id: true, slug: true, settings: true, bookingHorizonDays: true });
   if (!business) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   return NextResponse.json({
     id: business.id,
+    slug: business.slug ?? null,
     settings: business.settings ?? null,
     bookingHorizonDays: business.bookingHorizonDays ?? 30,
   });
