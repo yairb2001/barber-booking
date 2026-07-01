@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
+// Never cache this list — it must always reflect current customers.
+export const dynamic = "force-dynamic";
+
 // POST — create a customer manually (independent of booking flow)
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -56,7 +59,10 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q             = searchParams.get("q") || "";
-  const limit         = Math.min(Number(searchParams.get("limit") || "30"), 2000);
+  // Default to "all" (up to 5000) so the list never silently truncates — even
+  // for older/cached frontends that don't pass an explicit limit. The customer
+  // base is small (hundreds), so returning everyone is cheap.
+  const limit         = Math.min(Number(searchParams.get("limit") || "5000"), 5000);
 
   // ── Legacy params (kept for backward compat) ──
   const inactiveWeeks = searchParams.get("inactive_weeks");
