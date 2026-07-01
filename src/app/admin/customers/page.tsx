@@ -54,7 +54,7 @@ export default function CustomersPage() {
 
   const reload = () => {
     setLoading(true);
-    fetch(`/api/admin/customers?q=${encodeURIComponent(q)}`)
+    fetch(`/api/admin/customers?limit=2000&q=${encodeURIComponent(q)}`)
       .then(r => r.json())
       .then(d => { setCustomers(d); setLoading(false); });
   };

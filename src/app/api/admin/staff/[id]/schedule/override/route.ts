@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForDayOpen } from "@/lib/waitlist-notify";
-import { requireOwnStaffOrOwner, requireStaffInBusiness } from "@/lib/session";
+import { requireStaffInBusiness } from "@/lib/session";
 import { getDayOfWeekISO } from "@/lib/utils";
 
 /** Net available minutes = sum(slot durations) − sum(break durations). */
@@ -17,8 +17,9 @@ function netMinutesOf(slotsJson: string | null, breaksJson: string | null): numb
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = requireOwnStaffOrOwner(req, params.id);
-  if (guard) return guard;
+  // Any staff in the same business may read/manage day breaks for any staff
+  // member (the calendar break modals need cross-staff access). Tenant isolation
+  // is still enforced via requireStaffInBusiness.
   const tenantGuard = await requireStaffInBusiness(req, params.id);
   if (tenantGuard) return tenantGuard;
 
@@ -34,8 +35,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const guard = requireOwnStaffOrOwner(req, params.id);
-  if (guard) return guard;
+  // Allow any staff in the same business to add/edit/delete day breaks for any
+  // staff member. Tenant isolation is still enforced via requireStaffInBusiness.
   const tenantGuard = await requireStaffInBusiness(req, params.id);
   if (tenantGuard) return tenantGuard;
 

@@ -6,7 +6,15 @@ export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const services = await prisma.service.findMany({ where: { businessId: session.businessId }, orderBy: { sortOrder: "asc" } });
+  const services = await prisma.service.findMany({
+    where: {
+      businessId: session.businessId,
+      // Hide the internal "שירות זמני" placeholder used to satisfy the FK for
+      // ad-hoc temporary services — it is plumbing, not a bookable service.
+      NOT: { name: "שירות זמני", isVisible: false },
+    },
+    orderBy: { sortOrder: "asc" },
+  });
   return NextResponse.json(services);
 }
 

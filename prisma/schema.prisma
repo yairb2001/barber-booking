@@ -270,6 +270,11 @@ model Appointment {
   endTime        String   @map("end_time")   // "15:00"
   status         String   @default("confirmed") // pending, confirmed, cancelled_by_customer, cancelled_by_staff, completed, no_show
   price          Float
+  // Ad-hoc "temporary service" (שירות זמני): when the barber picks a variable
+  // service in the calendar they type a free-text name here. The serviceId FK
+  // still points to a hidden per-business placeholder service so the relation
+  // stays valid; display code prefers customServiceName when present.
+  customServiceName String? @map("custom_service_name")
   note           String?
   staffNote      String?  @map("staff_note")
   referralSource String?  @map("referral_source")

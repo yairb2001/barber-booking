@@ -187,6 +187,7 @@ type Service = { id: string; name: string; price: number; durationMinutes: numbe
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
+  customServiceName?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
   service: { id: string; name: string; durationMinutes: number };
@@ -763,7 +764,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
           so the complete name fits (wrapping to up to `nameLines` lines); it is
           never cut off with an ellipsis. */}
       <FitName name={appt.customer.name} max={nameFont} min={7} maxLines={nameLines} />
-      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.service.name}</p>}
+      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.customServiceName || appt.service.name}</p>}
       {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
   );
@@ -776,6 +777,9 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   // fromGrid = opened by clicking a cell (staff + time pre-set)
   const fromGrid = !!staff;
   const [form, setForm] = useState({ staffId: staff?.id || "", serviceId: "", date, time, note: "" });
+  // Ad-hoc "temporary service" (שירות זמני): free-text name + price + duration
+  // the barber types on the fly instead of picking a predefined service.
+  const [customSvc, setCustomSvc] = useState({ name: "", price: "", duration: "30" });
   const [customerMode, setCustomerMode] = useState<"search" | "new">("search");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -843,14 +847,23 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const availableServices: Service[] = staffServices
     ?? services.filter(s => !s.ownerStaffId || s.ownerStaffId === form.staffId);
 
-  const selectedService = availableServices.find(s => s.id === form.serviceId);
-  const endTime = selectedService
+  const isCustomSvc = form.serviceId === "__custom__";
+  const customDurationNum = Number(customSvc.duration) || 0;
+  const selectedService: Service | undefined = isCustomSvc
+    ? { id: "__custom__", name: customSvc.name.trim() || "שירות זמני", price: Number(customSvc.price) || 0, durationMinutes: customDurationNum }
+    : availableServices.find(s => s.id === form.serviceId);
+  const endTime = selectedService && selectedService.durationMinutes > 0
     ? minToTime(toMin(form.time) + selectedService.durationMinutes) : "";
   // Which source (owner-renamable) opens the referrer field.
   const friendSource = pickFriendSource(referralOptions);
 
   async function save(override = false) {
     if (!form.staffId || !form.serviceId || !form.date || !form.time) return;
+    // Temporary service requires a name + a positive duration before it can be saved.
+    if (isCustomSvc && (!customSvc.name.trim() || customDurationNum <= 0)) {
+      setErrMsg("יש להזין שם ומשך זמן לשירות הזמני");
+      return;
+    }
     const phone = selectedCustomer?.phone || newCustomer.phone;
     const name = selectedCustomer?.name || newCustomer.name;
     if (!phone || !name) return;
@@ -862,6 +875,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        // For a temporary service there is no real serviceId — the backend
+        // creates/reuses a hidden placeholder and stores the free-text name.
+        serviceId: isCustomSvc ? undefined : form.serviceId,
+        customServiceName: isCustomSvc ? customSvc.name.trim() : undefined,
         startTime: form.time,
         phone,
         customerName: name,
@@ -996,7 +1013,39 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               <option value="">בחר שירות...</option>
               {availableServices
                 .map(s => <option key={s.id} value={s.id}>{s.name} – ₪{s.price} ({s.durationMinutes} דק׳)</option>)}
+              <option value="__custom__">✏️ שירות זמני (שם ומחיר משתנים)</option>
             </select>
+
+            {/* Temporary service — free-text name / price / duration */}
+            {isCustomSvc && (
+              <div className="mt-2 space-y-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                <input
+                  value={customSvc.name}
+                  onChange={e => setCustomSvc(p => ({ ...p, name: e.target.value }))}
+                  placeholder="שם השירות (למשל: תספורת + זקן מיוחד)"
+                  className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white" />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] text-neutral-500 block mb-1">מחיר (₪)</label>
+                    <input
+                      type="number" inputMode="numeric" min={0}
+                      value={customSvc.price}
+                      onChange={e => setCustomSvc(p => ({ ...p, price: e.target.value }))}
+                      placeholder="0"
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white" dir="ltr" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-neutral-500 block mb-1">משך (דק׳)</label>
+                    <input
+                      type="number" inputMode="numeric" min={5} step={5}
+                      value={customSvc.duration}
+                      onChange={e => setCustomSvc(p => ({ ...p, duration: e.target.value }))}
+                      placeholder="30"
+                      className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white" dir="ltr" />
+                  </div>
+                </div>
+              </div>
+            )}
             {endTime && <p className="text-xs text-neutral-400 mt-1">יסתיים בשעה {endTime}</p>}
           </div>
 
@@ -1677,7 +1726,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-neutral-100">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <h3 className="font-bold text-base text-neutral-900 truncate">{appt.service.name}</h3>
+            <h3 className="font-bold text-base text-neutral-900 truncate">{appt.customServiceName || appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -2239,7 +2288,7 @@ type CustomerHistory = {
   notes?: string | null;
   notificationPrefs?: string | null;
   totalVisits?: number;
-  past?: Array<{ id: string; date: string; startTime: string; status: string; staff?: { name: string } | null; service?: { name: string } | null }>;
+  past?: Array<{ id: string; date: string; startTime: string; status: string; customServiceName?: string | null; staff?: { name: string } | null; service?: { name: string } | null }>;
 };
 
 function CustomerHistoryModal({ customerId, customerName, onClose }:
@@ -2324,7 +2373,7 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
                   {past.slice(0, 30).map(a => (
                     <li key={a.id} className="flex items-center justify-between gap-2 text-xs border border-neutral-100 rounded-lg px-3 py-2">
                       <div className="min-w-0">
-                        <p className="font-medium text-neutral-800 truncate">{a.service?.name || "שירות"}</p>
+                        <p className="font-medium text-neutral-800 truncate">{a.customServiceName || a.service?.name || "שירות"}</p>
                         <p className="text-neutral-500">{a.staff?.name || "—"}</p>
                       </div>
                       <div className="text-left shrink-0">

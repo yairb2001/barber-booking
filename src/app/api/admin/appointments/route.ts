@@ -94,7 +94,39 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const service = await prisma.service.findUnique({ where: { id: body.serviceId } });
+  // ── Temporary / ad-hoc service (שירות זמני) ────────────────────────────────
+  // The barber typed a free-text service name + price + duration on the fly.
+  // The Appointment.serviceId FK is required, so we reuse (or lazily create) a
+  // single hidden placeholder Service per business to satisfy the relation, and
+  // store the real name on Appointment.customServiceName.
+  const customServiceName = typeof body.customServiceName === "string" && body.customServiceName.trim()
+    ? body.customServiceName.trim()
+    : null;
+
+  let serviceId: string = body.serviceId;
+  if (customServiceName) {
+    const PLACEHOLDER_NAME = "שירות זמני";
+    let placeholder = await prisma.service.findFirst({
+      where: { businessId: business.id, name: PLACEHOLDER_NAME, isVisible: false },
+      select: { id: true },
+    });
+    if (!placeholder) {
+      placeholder = await prisma.service.create({
+        data: {
+          businessId: business.id,
+          name: PLACEHOLDER_NAME,
+          price: 0,
+          durationMinutes: 30,
+          isVisible: false,
+          sortOrder: 9999,
+        },
+        select: { id: true },
+      });
+    }
+    serviceId = placeholder.id;
+  }
+
+  const service = await prisma.service.findUnique({ where: { id: serviceId } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });
 
   // Duration can come from request (custom) or fall back to the service default
@@ -141,7 +173,8 @@ export async function POST(req: NextRequest) {
       businessId: business.id,
       customerId: customer.id,
       staffId,
-      serviceId: body.serviceId,
+      serviceId,
+      customServiceName,
       date: dateObj,
       startTime: body.startTime,
       endTime,
@@ -200,7 +233,7 @@ export async function POST(req: NextRequest) {
         time:         appointment.startTime,
         end_time:     appointment.endTime,
         staff:        appointment.staff.name,
-        service:      appointment.service.name,
+        service:      appointment.customServiceName || appointment.service.name,
         price:        String(appointment.price),
         address_line: business.address ? `\n📍 ${business.address}` : "",
         cancel_link:  cancelLink,
@@ -212,7 +245,7 @@ export async function POST(req: NextRequest) {
         customerName: appointment.customer.name,
         businessName: business.name,
         staffName: appointment.staff.name,
-        serviceName: appointment.service.name,
+        serviceName: appointment.customServiceName || appointment.service.name,
         dateLabel,
         startTime: appointment.startTime,
         endTime: appointment.endTime,
