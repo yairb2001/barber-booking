@@ -19,7 +19,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
-import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
+import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 
@@ -46,7 +46,7 @@ const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_
 // in an active booking flow and the NEXT turn needs Sonnet. Availability tools
 // are included here because a follow-up turn (e.g. "can I switch to a different
 // barber?") requires Sonnet-level reasoning even though slot-listing itself doesn't.
-const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_available_slots", "find_next_available"]);
+const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_available_slots", "find_next_available", "find_parallel_slots"]);
 
 function pickInitialModel(
   incomingText: string,
@@ -96,6 +96,22 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
       type: "object" as const,
       properties: {
         staffId:   { type: "string", description: "מזהה ספר (אופציונלי)" },
+        serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "find_parallel_slots",
+    description:
+      "מחזיר אך ורק שעות שבהן כמה ספרים פנויים באותה שעה בדיוק — הבסיס היחיד לקביעה 'לבוא יחד, כל אחד אצל ספר אחר, במקביל' (למשל אב עם ילד, או שני חברים). " +
+      "חובה להשתמש בו בכל פעם שרוצים לקבוע לשני אנשים או יותר שמגיעים יחד. לעולם אל תרכיב צמד של ספר+שעה בעצמך מרשימת שעות רגילה — רק מה שהכלי הזה החזיר הוא צמד תקף. " +
+      "כל שעה שחוזרת כוללת את רשימת הספרים שפנויים בה עם המזהים שלהם; קבע כל אדם אצל אחד מהם. אם לא צוין תאריך — סורק קדימה ומחזיר את היום הקרוב שיש בו שעה מקבילה כזו.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        date:      { type: "string", description: "תאריך YYYY-MM-DD (אופציונלי — בלעדיו מוחזר היום הקרוב עם שעה מקבילה)" },
+        count:     { type: "number", description: "כמה ספרים צריכים להיות פנויים באותה שעה (מספר האנשים שמגיעים יחד). ברירת מחדל 2." },
         serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
       },
       required: [],
@@ -312,6 +328,42 @@ async function execTool(
         }
         console.warn(`[agent] find_next_available returned empty — biz=${bizId} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"} scanned=${MAX_SCAN_DAYS}d`);
         return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
+      }
+
+      // ── find_parallel_slots ──────────────────────────────────────────────────
+      // Group booking ("come together, each at a different barber"). Returns ONLY
+      // times where >= count barbers are genuinely free at the same slot, each
+      // tagged with its staffId. The model cannot fabricate a barber+time pair
+      // because the only pairs it ever sees are real overlaps.
+      case "find_parallel_slots": {
+        const { date: inDate, serviceId: inputServiceId } = input;
+        const count = Math.max(2, Number(input.count) || 2);
+        const fmt = (rows: { time: string; barbers: { staffId: string; name: string }[] }[]) =>
+          rows
+            .map(r => `${r.time}: ${r.barbers.map(b => `${b.name} [id: ${b.staffId}]`).join(" | ")}`)
+            .join("\n");
+        const guide = `\n\n⚠️ אלה השעות היחידות שבהן ${count} ספרים באמת פנויים יחד. קבע כל אדם אצל ספר אחר מתוך הרשומים לצד השעה, עם ה-staffId שלו. שעה שלא מופיעה כאן — אין בה ${count} ספרים פנויים, אל תציע אותה.`;
+        if (inDate) {
+          const rows = await computeParallelSlots(bizId, inDate as string, count, inputServiceId as string | undefined);
+          if (!rows.length) {
+            console.warn(`[agent] find_parallel_slots empty — biz=${bizId} date=${inDate} count=${count}`);
+            return `אין בתאריך ${inDate} שעה שבה ${count} ספרים פנויים יחד. אפשר להציע רצוף אצל אותו ספר, או לבדוק יום אחר.`;
+          }
+          return `שעות שבהן ${count} ספרים פנויים יחד בתאריך ${inDate}:\n${fmt(rows)}${guide}`;
+        }
+        const nowBiz = getBusinessNow();
+        const start = new Date(nowBiz.date + "T00:00:00.000Z");
+        const MAX_SCAN_DAYS = 30;
+        for (let d = 0; d < MAX_SCAN_DAYS; d++) {
+          const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
+          const ds = dObj.toISOString().slice(0, 10);
+          const rows = await computeParallelSlots(bizId, ds, count, inputServiceId as string | undefined);
+          if (rows.length) {
+            return `היום הקרוב שבו ${count} ספרים פנויים יחד הוא ${ds}:\n${fmt(rows)}${guide}`;
+          }
+        }
+        console.warn(`[agent] find_parallel_slots no day found — biz=${bizId} count=${count} scanned=${MAX_SCAN_DAYS}d`);
+        return `לא נמצא ב-${MAX_SCAN_DAYS} הימים הקרובים יום שבו ${count} ספרים פנויים יחד באותה שעה. אפשר להציע רצוף אצל אותו ספר.`;
       }
 
       // ── book_appointment ─────────────────────────────────────────────────────

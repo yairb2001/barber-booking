@@ -164,6 +164,39 @@ export async function computeDayAvailability(
 }
 
 /**
+ * Times on a given day where AT LEAST `count` different barbers are all free at
+ * the SAME slot — the only valid basis for a "come together, each at a different
+ * barber, in parallel" group booking. Built on top of computeDayAvailability so
+ * it inherits the exact same truth (schedule, horizon, lead-time, bookings).
+ *
+ * Why this exists as its own tool: when the agent tried to reason a parallel
+ * booking out of a multi-barber slot list, it fabricated a (barber, time) pair
+ * that was never free — promising a slot at a barber who had none. Here the ONLY
+ * data the model can get back is real overlaps, each tagged with its barbers'
+ * ids. There is nothing to misattribute.
+ */
+export async function computeParallelSlots(
+  bizId: string,
+  date: string,
+  count: number,
+  inputServiceId?: string,
+): Promise<{ time: string; barbers: { staffId: string; name: string }[] }[]> {
+  const byStaff = await computeDayAvailability(bizId, date, undefined, inputServiceId);
+  const byTime = new Map<string, { staffId: string; name: string }[]>();
+  for (const s of byStaff) {
+    for (const t of s.slots) {
+      const arr = byTime.get(t) ?? [];
+      arr.push({ staffId: s.staffId, name: s.name });
+      byTime.set(t, arr);
+    }
+  }
+  return Array.from(byTime.entries())
+    .filter(([, barbers]) => barbers.length >= count)
+    .sort(([a], [b]) => timeToMinutes(a) - timeToMinutes(b))
+    .map(([time, barbers]) => ({ time, barbers }));
+}
+
+/**
  * Resolve a barber's EFFECTIVE duration & price for a requested service,
  * honoring per-barber StaffService overrides and tolerating the duplicate
  * catalog problem (falls back to same-name, then same-duration service the
