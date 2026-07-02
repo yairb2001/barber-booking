@@ -20,6 +20,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
+import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 
@@ -59,7 +60,7 @@ function pickInitialModel(
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 
-const AGENT_TOOLS: Anthropic.Tool[] = [
+export const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_services",
     description: "מחזיר רשימת השירותים הזמינים עם מחיר ומשך בדקות. אם מועבר staffId — מחזיר את השמות, המחירים, המשך וההערות המותאמים של אותו ספר.",
@@ -218,7 +219,7 @@ const AGENT_TOOLS: Anthropic.Tool[] = [
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
-async function execTool(
+export async function execTool(
   name: string,
   input: Record<string, string>,
   bizId: string,
@@ -1039,7 +1040,7 @@ export async function runCustomerAgent(opts: {
   const [biz, agentConfig] = await Promise.all([
     prisma.business.findUnique({
       where: { id: businessId },
-      select: { id: true, name: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true },
+      select: { id: true, name: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, settings: true },
     }),
     prisma.agentConfig.findUnique({
       where: { businessId },
@@ -1147,7 +1148,30 @@ export async function runCustomerAgent(opts: {
   });
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
+  // Provider switch (A/B experiment): a business can point its agent at GPT via
+  // settings.aiProvider = "openai" (settings.openaiModel overrides the model,
+  // default "gpt-4o"). The Anthropic path in the else-branch below is the default
+  // and is left completely untouched — switching back to Claude is a flag flip.
   let assistantText = "";
+  let bizSettings: Record<string, unknown> = {};
+  if (biz.settings) { try { bizSettings = JSON.parse(biz.settings); } catch { /* malformed settings — use Claude default */ } }
+  const aiProvider = bizSettings.aiProvider === "openai" ? "openai" : "anthropic";
+
+  if (aiProvider === "openai") {
+    const openaiModel = typeof bizSettings.openaiModel === "string" ? bizSettings.openaiModel : "gpt-4o";
+    console.log(`[agent] provider=openai model=${openaiModel} biz=${businessId}`);
+    assistantText = await runOpenAiAgentLoop({
+      history,
+      // Claude uses a cache-segmented TextBlockParam[]; GPT wants one plain string.
+      systemPrompt: systemPrompt.map(b => b.text).join("\n\n"),
+      businessId,
+      conversationId: conversation.id,
+      phone,
+      model: openaiModel,
+      tools: AGENT_TOOLS,
+      execTool,
+    });
+  } else {
   let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName));
   // A reschedule legitimately chains many tools (check + slots + cancel +
   // services + staff + book), so keep enough headroom to also compose a reply.
@@ -1231,6 +1255,7 @@ export async function runCustomerAgent(opts: {
       if (block.type === "text") assistantText += block.text;
     }
   }
+  } // end Anthropic provider branch
 
   if (!assistantText.trim()) return;
 
