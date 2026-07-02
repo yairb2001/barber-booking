@@ -5,6 +5,7 @@ import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, ca
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { jwtVerify } from "jose";
 
 const SECRET = new TextEncoder().encode(
@@ -48,11 +49,17 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Canonicalize the phone to E.164 (972...) BEFORE any lookup/create/send, so
+  // we never open a second customer record for a number already stored in the
+  // other format (0... vs 972...). This is the single write-side guard that keeps
+  // the DB free of phone-format duplicates going forward.
+  const canonicalPhone = normalizeIsraeliPhone(customerPhone) || customerPhone;
+
   // Verify OTP token — required for all customer-facing bookings
   if (!otpToken) {
     return NextResponse.json({ error: "נדרש אימות זהות — שלח קוד אימות" }, { status: 401 });
   }
-  const tokenValid = await verifyOtpToken(otpToken, customerPhone);
+  const tokenValid = await verifyOtpToken(otpToken, canonicalPhone);
   if (!tokenValid) {
     return NextResponse.json({ error: "קוד אימות לא תקף — בקש קוד חדש" }, { status: 401 });
   }
@@ -86,13 +93,16 @@ export async function POST(request: NextRequest) {
   const business = await prisma.business.findUnique({ where: { id: staff.businessId } });
   const friendSource = getReferralFriendSource(business?.settings ?? null);
 
-  // Find or create customer
-  let customer = await prisma.customer.findUnique({
+  // Find or create customer. Match BOTH stored formats (0... and 972...) so an
+  // existing customer saved in the other format is found — never re-created as a
+  // duplicate. New records are always written in canonical 972 form (below).
+  const localPhone = canonicalPhone.startsWith("972")
+    ? "0" + canonicalPhone.slice(3)
+    : canonicalPhone;
+  let customer = await prisma.customer.findFirst({
     where: {
-      businessId_phone: {
-        businessId: staff.businessId,
-        phone: customerPhone,
-      },
+      businessId: staff.businessId,
+      OR: [{ phone: canonicalPhone }, { phone: localPhone }],
     },
   });
 
@@ -108,9 +118,9 @@ export async function POST(request: NextRequest) {
         select: { id: true, name: true, phone: true },
       });
     } else if (referrerPhone) {
-      // Legacy path: look up by phone
+      // Legacy path: look up by phone (canonicalize so 0.../972... both match)
       referrerRecord = await prisma.customer.findUnique({
-        where: { businessId_phone: { businessId: staff.businessId, phone: referrerPhone } },
+        where: { businessId_phone: { businessId: staff.businessId, phone: normalizeIsraeliPhone(referrerPhone) || referrerPhone } },
         select: { id: true, name: true, phone: true },
       });
     }
@@ -131,7 +141,7 @@ export async function POST(request: NextRequest) {
     customer = await prisma.customer.create({
       data: {
         businessId: staff.businessId,
-        phone: customerPhone,
+        phone: canonicalPhone,
         name: customerName,
         referralSource: newCustomerSource,
         utmSource:   (attr.source   || "").toString().trim() || null,
@@ -370,7 +380,7 @@ export async function POST(request: NextRequest) {
     notifyTasks.push(sendMessage({
       businessId: staff.businessId,
       appointmentId: appointment.id,
-      customerPhone,
+      customerPhone: canonicalPhone,
       kind: msgKind,
       body: msgBody,
     }).catch(err => console.error("confirmation send failed", err)));
