@@ -598,14 +598,27 @@ export default function HomePage() {
             </div>
           )}
 
-          {welcomeName && (
-            <div className="mb-3 px-5 py-2 rounded-full"
-              style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-              <p className="text-white text-[14px] font-semibold tracking-wide">
-                👋 ברוך הבא, {welcomeName}!
-              </p>
-            </div>
-          )}
+          <div className="mb-3 flex flex-col items-center gap-2">
+            {welcomeName && (
+              <div className="px-5 py-2 rounded-full"
+                style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
+                <p className="text-white text-[14px] font-semibold tracking-wide">
+                  👋 ברוך הבא, {welcomeName}!
+                </p>
+              </div>
+            )}
+            {/* Always available — even without a saved session. Tapping it lets a
+                returning customer log in once; the session cookie then comes back
+                so their next booking skips phone re-verification. */}
+            <Link href={publicHref(slug, "/book/my-appointments")}
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full active:scale-95 transition-transform"
+              style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
+              <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-white/90 text-[12px] font-semibold">התורים שלי</span>
+            </Link>
+          </div>
 
           <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"
             style={{ fontSize: "clamp(2rem,10vw,4.5rem)", textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
