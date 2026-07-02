@@ -11,7 +11,7 @@ export async function POST() {
   const response = NextResponse.json({ ok: true });
   response.cookies.set("bk_session", "", {
     httpOnly: true,
-    sameSite: "strict",
+    sameSite: "lax", // match how the cookie is set (verify / auto-token)
     maxAge: 0,
     path: "/",
   });

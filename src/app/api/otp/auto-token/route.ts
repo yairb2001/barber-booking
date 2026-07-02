@@ -78,7 +78,10 @@ export async function POST(req: NextRequest) {
   });
   response.cookies.set("bk_session", newSession, {
     httpOnly: true,
-    sameSite: "strict",
+    // "lax" so returning customers stay signed in across top-level navigations
+    // (e.g. reopening the shop from WhatsApp). Must match the value set in
+    // /api/otp/verify — see the note there.
+    sameSite: "lax",
     maxAge: 60 * 60 * 24 * 40, // 40 days
     path: "/",
     secure: process.env.NODE_ENV === "production",

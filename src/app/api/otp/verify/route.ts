@@ -75,7 +75,12 @@ export async function POST(req: NextRequest) {
   const response = NextResponse.json({ ok: true, token, customerName: existingCustomer?.name || null });
   response.cookies.set("bk_session", sessionToken, {
     httpOnly: true,
-    sameSite: "strict",
+    // "lax" (not "strict") so the cookie is sent on top-level navigations from
+    // external contexts — e.g. the customer opening the shop link from
+    // WhatsApp's in-app browser. With "strict" that first load looked
+    // cross-site, the session wasn't sent, and the booking flow forced a
+    // redundant WhatsApp re-verification. "lax" still blocks cross-site POST.
+    sameSite: "lax",
     maxAge: 60 * 60 * 24 * 40, // 40 days
     path: "/",
     secure: process.env.NODE_ENV === "production",
