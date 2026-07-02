@@ -69,7 +69,13 @@ export async function runOpenAiAgentLoop(opts: {
   execTool: ExecTool;
 }): Promise<string> {
   const { history, systemPrompt, businessId, conversationId, phone, model, execTool } = opts;
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Strip any non-printable-ASCII characters from the key. Copy-pasting a secret
+  // into a dashboard can silently inject invisible Unicode (e.g. U+2028 LINE
+  // SEPARATOR, char 8232) — and since the key goes into the Authorization HTTP
+  // header, Node's `new Headers()` throws "Cannot convert argument to a
+  // ByteString ... value greater than 255" and the whole turn dies in silence.
+  // API keys are pure printable ASCII, so this only ever removes garbage.
+  const apiKey = process.env.OPENAI_API_KEY?.replace(/[^\x21-\x7E]/g, "");
   if (!apiKey) {
     console.error("[agent:openai] OPENAI_API_KEY missing — cannot run GPT driver");
     return "";
