@@ -277,7 +277,7 @@ export async function requestAppointmentMove(opts: {
   if (!insistExactTime) {
     const sameNearest = nearestSlots(sameSlots, targetStartTime);
     if (sameNearest.length) {
-      return `השעה ${targetStartTime} תפוסה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה. אם הוא בוחר אחד מהם, קרא שוב ל-request_appointment_move עם השעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} (התפוס), קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
+      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה. אם הוא בוחר אחד מהם, קרא שוב ל-request_appointment_move עם השעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} (שלא פנוי), קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
     }
     if (allowOtherBarber) {
       const allAvail = await computeDayAvailability(bizId, targetDate, undefined, appt.serviceId);
@@ -287,13 +287,13 @@ export async function requestAppointmentMove(opts: {
         .filter(s => s.slots.length);
       if (otherFree.length) {
         const lines = otherFree.map(s => `${s.name}: ${s.slots.join(", ")}`).join(" | ");
-        return `השעה ${targetStartTime} תפוסה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה. אם הוא בוחר אחת, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.`;
+        return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה. אם הוא בוחר אחת, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. רק אם הוא מתעקש דווקא על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.`;
       }
     }
     // No free alternatives that day → still DON'T bother anyone. Offer another
     // day / barber. The swap flow only starts if the customer explicitly insists
     // on the exact taken time (insistExactTime=true).
-    return `אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). אל תפתח בקשת החלפה. הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או שאל אם בא לו אצל ספר אחר. רק אם הלקוח מתעקש דווקא על ${targetStartTime} ב-${hebDate(dateOnly(targetDate))}, קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
+    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). אל תפתח בקשת החלפה. הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או שאל אם בא לו אצל ספר אחר. רק אם הלקוח מתעקש דווקא על ${targetStartTime} ב-${hebDate(dateOnly(targetDate))}, קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
   }
 
   // ── Step 3: customer INSISTS on the exact taken time → bother another customer (with approval) ─
