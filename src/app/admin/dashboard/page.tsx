@@ -78,6 +78,16 @@ type Analytics = {
     isActive:        boolean;
     uniqueCustomers: number;
   }[];
+  productSales?: {
+    productId: string;
+    name:      string;
+    units:     number;
+    total:     number;
+  }[];
+  productSalesTotals?: {
+    units:   number;
+    revenue: number;
+  };
   weekly: {
     thisWeek: { appointments: number; revenue: number };
     lastWeek: { appointments: number; revenue: number };
@@ -550,6 +560,47 @@ function ServicePieChart({ data }: { data: Analytics["serviceBreakdown"] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── ProductSalesCard — product units/revenue, measured separately from turnover ─
+function ProductSalesCard({ rows, totals }: {
+  rows: NonNullable<Analytics["productSales"]>;
+  totals: Analytics["productSalesTotals"];
+}) {
+  const maxUnits = rows.reduce((m, r) => Math.max(m, r.units), 0);
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-neutral-800 text-sm">🛍️ מכירת מוצרים</h3>
+        <p className="text-xs text-neutral-400 mt-0.5">נמדד בנפרד — לא נכלל במחזור</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="bg-amber-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-amber-600">{totals?.units ?? 0}</p>
+          <p className="text-[11px] text-neutral-500 mt-0.5">יחידות שנמכרו</p>
+        </div>
+        <div className="bg-amber-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-amber-600">₪{Math.round(totals?.revenue ?? 0)}</p>
+          <p className="text-[11px] text-neutral-500 mt-0.5">שווי מכירות</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        {rows.map(r => (
+          <div key={r.productId}>
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-neutral-700 font-medium flex-1 truncate">{r.name}</span>
+              <span className="font-bold text-neutral-800">{r.units}</span>
+              <span className="text-neutral-400 text-xs w-16 text-left">₪{Math.round(r.total)}</span>
+            </div>
+            <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-400 rounded-full"
+                style={{ width: `${maxUnits > 0 ? (r.units / maxUnits) * 100 : 0}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1203,6 +1254,11 @@ export default function Dashboard() {
           {/* ── Service distribution pie ── */}
           {a.serviceBreakdown.length > 0 && (
             <ServicePieChart data={a.serviceBreakdown} />
+          )}
+
+          {/* ── Product sales — measured separately, NOT part of turnover ── */}
+          {a.productSales && a.productSales.length > 0 && (
+            <ProductSalesCard rows={a.productSales} totals={a.productSalesTotals} />
           )}
 
           {/* ── Deep data — owners only ── */}

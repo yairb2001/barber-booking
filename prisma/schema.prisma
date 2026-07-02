@@ -91,6 +91,7 @@ model Business {
   conversations  Conversation[]
   agentConfig    AgentConfig?
   swapProposals  SwapProposal[]
+  productSales   ProductSale[]
 
   @@map("businesses")
 }
@@ -305,6 +306,7 @@ model Appointment {
 
   swapsAsPrimary   SwapProposal[] @relation("SwapPrimary")
   swapsAsCandidate SwapProposal[] @relation("SwapCandidate")
+  productSales     ProductSale[]
 
   @@index([recurringId])
   @@map("appointments")
@@ -467,8 +469,34 @@ model Product {
   sortOrder   Int      @default(0) @map("sort_order")
 
   business    Business @relation(fields: [businessId], references: [id])
+  sales       ProductSale[]
 
   @@map("products")
+}
+
+// A product bought by a customer during an appointment. Attributed to the
+// appointment's barber (staffId denormalized). Intentionally SEPARATE from
+// appointment revenue — never summed into monthly turnover; surfaced only as
+// a standalone "which products sell / how many" data point in the dashboard.
+model ProductSale {
+  id            String   @id @default(uuid())
+  businessId    String   @map("business_id")
+  appointmentId String   @map("appointment_id")
+  productId     String   @map("product_id")
+  staffId       String   @map("staff_id")     // denormalized for per-barber stats
+  customerId    String?  @map("customer_id")   // denormalized (nullable) for reference
+  quantity      Int      @default(1)
+  unitPrice     Float    @map("unit_price")     // price snapshot at time of sale
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  business    Business    @relation(fields: [businessId], references: [id])
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@unique([appointmentId, productId])
+  @@index([businessId])
+  @@index([staffId])
+  @@map("product_sales")
 }
 
 // === אוטומציות ===

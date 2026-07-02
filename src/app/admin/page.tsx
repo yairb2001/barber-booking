@@ -1332,6 +1332,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [cancelNotifyCustomer, setCancelNotifyCustomer] = useState(true);
   const [cancelNotifyWaitlist, setCancelNotifyWaitlist] = useState(true);
 
+  // ── Product sales (קנה מוצר) ──────────────────────────────────────────────
+  // Barber logs which products the customer bought during this appointment.
+  // Attributed to the appointment's barber; kept SEPARATE from turnover.
+  type SoldItem = { productId: string; name: string; quantity: number; unitPrice: number };
+  const [showProducts, setShowProducts] = useState(false);
+  const [productCatalog, setProductCatalog] = useState<{ id: string; name: string; price: number }[]>([]);
+  const [soldItems, setSoldItems] = useState<SoldItem[]>([]);
+  const [savedSoldItems, setSavedSoldItems] = useState<SoldItem[]>([]);
+  const [savingProducts, setSavingProducts] = useState(false);
+
   // ── Inline single-field editing ──────────────────────────────────────────
   // Each pencil edits ONLY its own field (name / date / time / price) instead
   // of opening the full edit form.
@@ -1620,6 +1630,50 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }, [appt.id]);
 
   useEffect(() => { refreshProposals(); }, [refreshProposals]);
+
+  // Load this appointment's product sales + the product catalog for the picker.
+  useEffect(() => {
+    fetch(`/api/admin/appointments/${appt.id}/product-sales`)
+      .then(r => r.ok ? r.json() : { sales: [], products: [] })
+      .then(d => {
+        setProductCatalog(Array.isArray(d.products) ? d.products : []);
+        const sales: SoldItem[] = Array.isArray(d.sales) ? d.sales : [];
+        setSoldItems(sales);
+        setSavedSoldItems(sales);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appt.id]);
+
+  const productsDirty =
+    JSON.stringify(soldItems.map(s => [s.productId, s.quantity]).sort()) !==
+    JSON.stringify(savedSoldItems.map(s => [s.productId, s.quantity]).sort());
+
+  function addProduct(productId: string) {
+    if (!productId) return;
+    setSoldItems(prev => {
+      if (prev.some(p => p.productId === productId)) return prev;
+      const p = productCatalog.find(c => c.id === productId);
+      if (!p) return prev;
+      return [...prev, { productId: p.id, name: p.name, quantity: 1, unitPrice: p.price }];
+    });
+  }
+  function setQty(productId: string, qty: number) {
+    setSoldItems(prev => prev.map(p => p.productId === productId ? { ...p, quantity: Math.max(1, qty) } : p));
+  }
+  function removeProduct(productId: string) {
+    setSoldItems(prev => prev.filter(p => p.productId !== productId));
+  }
+  async function saveProducts() {
+    setSavingProducts(true);
+    await fetch(`/api/admin/appointments/${appt.id}/product-sales`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: soldItems.map(s => ({ productId: s.productId, quantity: s.quantity })) }),
+    });
+    setSavedSoldItems(soldItems);
+    setSavingProducts(false);
+  }
 
   const meta = STATUS_META[appt.status] || { label: appt.status, badgeClass: "bg-neutral-100 text-neutral-500" };
 
@@ -2021,6 +2075,59 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
               {savingNote ? "שומר..." : "שמור הערה"}
             </button>
+          )}
+        </div>
+
+        {/* Product sales — קנה מוצר */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <button type="button" onClick={() => setShowProducts(v => !v)}
+            className="w-full flex items-center justify-between text-right">
+            <span className="text-xs text-neutral-400">
+              🛍️ קנה מוצר{savedSoldItems.length > 0 ? ` (${savedSoldItems.reduce((s, i) => s + i.quantity, 0)})` : ""}
+            </span>
+            <span className="text-neutral-300 text-xs">{showProducts ? "▲" : "▼"}</span>
+          </button>
+
+          {showProducts && (
+            <div className="mt-2 space-y-2">
+              <select value=""
+                onChange={e => { addProduct(e.target.value); e.currentTarget.value = ""; }}
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300">
+                <option value="">+ הוסף מוצר שנקנה…</option>
+                {productCatalog
+                  .filter(c => !soldItems.some(s => s.productId === c.id))
+                  .map(c => <option key={c.id} value={c.id}>{c.name} — ₪{c.price}</option>)}
+              </select>
+
+              {productCatalog.length === 0 && (
+                <p className="text-xs text-neutral-400">אין מוצרים מוגדרים עדיין — הוסף אותם בעמוד ״מוצרים״.</p>
+              )}
+
+              {soldItems.map(item => (
+                <div key={item.productId} className="flex items-center gap-2 bg-amber-50/60 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                  <span className="flex-1 text-sm text-slate-700 truncate">{item.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onClick={() => setQty(item.productId, item.quantity - 1)}
+                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">−</button>
+                    <span className="w-5 text-center text-sm tabular-nums">{item.quantity}</span>
+                    <button type="button" onClick={() => setQty(item.productId, item.quantity + 1)}
+                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">+</button>
+                  </div>
+                  <button type="button" onClick={() => removeProduct(item.productId)}
+                    className="text-red-400 hover:text-red-600 text-xs shrink-0">הסר</button>
+                </div>
+              ))}
+
+              {productsDirty && (
+                <button onClick={saveProducts} disabled={savingProducts}
+                  className="w-full mt-1 bg-teal-600 text-white text-sm rounded-lg py-2 disabled:opacity-50">
+                  {savingProducts ? "שומר..." : "שמור מוצרים"}
+                </button>
+              )}
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                מכירות מוצרים נספרות בנפרד למדידה בלבד — אינן משפיעות על המחזור.
+              </p>
+            </div>
           )}
         </div>
 

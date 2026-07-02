@@ -128,6 +128,33 @@ export async function GET(req: NextRequest) {
     .map(([serviceId, v]) => ({ serviceId, name: v.name, count: v.count, revenue: v.revenue }))
     .sort((a, b) => b.count - a.count);
 
+  // ── Product sales breakdown ──────────────────────────────────────────────────
+  // Which products sold + how many units, in the period, respecting the staff
+  // scope. INTENTIONALLY separate from totalRevenue — this is a standalone data
+  // point (see ProductSale model) and is never folded into turnover figures.
+  const productSaleRows = await prisma.productSale.findMany({
+    where: {
+      businessId: bizId,
+      ...(effectiveStaffId ? { staffId: effectiveStaffId } : {}),
+      appointment: { date: { gte: fromDate, lte: toDate } },
+    },
+    select: { productId: true, quantity: true, unitPrice: true, product: { select: { name: true } } },
+  });
+  const prodMap = new Map<string, { name: string; units: number; total: number }>();
+  for (const s of productSaleRows) {
+    const v = prodMap.get(s.productId) ?? { name: s.product.name, units: 0, total: 0 };
+    v.units += s.quantity;
+    v.total += s.quantity * s.unitPrice;
+    prodMap.set(s.productId, v);
+  }
+  const productSales = Array.from(prodMap.entries())
+    .map(([productId, v]) => ({ productId, name: v.name, units: v.units, total: v.total }))
+    .sort((a, b) => b.units - a.units);
+  const productSalesTotals = {
+    units:   productSales.reduce((s, p) => s + p.units, 0),
+    revenue: productSales.reduce((s, p) => s + p.total, 0),
+  };
+
   // Unique customers with active appointments
   const periodCustMap = new Map<string, { referralSource: string | null }>();
   for (const a of activeAppts) {
@@ -222,6 +249,7 @@ export async function GET(req: NextRequest) {
       returnRate: { windowDays: returnWindowDays, cohortSize: 0, returned: 0, rate: 0 },
       dailyRevenue, staffSummary: [],
       serviceBreakdown, staffUniqueCustomers: [],
+      productSales, productSalesTotals,
     });
   }
 
@@ -522,6 +550,8 @@ export async function GET(req: NextRequest) {
     staffSummary,
     serviceBreakdown,
     staffUniqueCustomers,
+    productSales,
+    productSalesTotals,
     weekly,
   });
 }
