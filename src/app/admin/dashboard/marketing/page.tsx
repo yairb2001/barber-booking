@@ -81,10 +81,12 @@ export default function MarketingDeepPage() {
     }).catch(() => {});
   }, []);
 
-  // Booking base URL for the tracking-link builder (uses the current origin).
+  // Home-screen base URL for the tracking-link builder (uses the current origin).
+  // Points at the storefront home (not /book) so visitors land on the main page;
+  // attribution is captured there too (see src/app/page.tsx).
   const bookingBase = (() => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}${slug ? `/${slug}` : ""}/book`;
+    return `${origin}${slug ? `/${slug}` : ""}`;
   })();
   const refLink   = linkName.trim() ? `${bookingBase}?ref=${encodeURIComponent(slugifyRef(linkName))}` : "";
   const metaTemplate = "utm_source=meta&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";

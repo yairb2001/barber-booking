@@ -6,6 +6,7 @@ import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
+import { captureAttribution } from "@/lib/attribution";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -339,6 +340,10 @@ export default function HomePage() {
   const [welcomeName, setWelcomeName] = useState("");
   const [myUpcoming, setMyUpcoming] = useState<MyAppt[]>([]);
   const [referral, setReferral] = useState<{ referralCount: number; goal: number; giftLabel: string } | null>(null);
+
+  // First-touch attribution — capture ?ref / utm_* on the landing page too, so a
+  // tracking link can point at the home screen (not only the booking flow).
+  useEffect(() => { captureAttribution(); }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6);
