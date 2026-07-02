@@ -78,6 +78,11 @@ type Analytics = {
     isActive:        boolean;
     uniqueCustomers: number;
   }[];
+  weekly: {
+    thisWeek: { appointments: number; revenue: number };
+    lastWeek: { appointments: number; revenue: number };
+    history:  { weekLabel: string; appointments: number; revenue: number }[];
+  };
 };
 
 type Me    = { isOwner: boolean; staffId: string | null; staff: { id: string; name: string; role: string } | null };
@@ -826,6 +831,63 @@ function BarberGamifiedSection({ stats }: { stats: BarberStats }) {
   );
 }
 
+// ── OwnerWeeklySection — weekly numbers at the bottom of the owner dashboard ──
+function OwnerWeeklySection({ weekly }: { weekly: Analytics["weekly"] }) {
+  const { thisWeek, lastWeek, history } = weekly;
+  const apptDiff = thisWeek.appointments - lastWeek.appointments;
+  const revDiff  = thisWeek.revenue - lastWeek.revenue;
+  return (
+    <div className="border-t border-neutral-100 pt-4 space-y-4">
+      <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">📅 נתונים שבועיים (ראשון–שבת)</h2>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">תורים השבוע</p>
+          <p className="text-3xl font-black text-neutral-900">{thisWeek.appointments}</p>
+          {apptDiff !== 0 ? (
+            <p className={`text-xs font-semibold mt-1 ${apptDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
+              {apptDiff > 0 ? "↑" : "↓"} {Math.abs(apptDiff)} מהשבוע שעבר
+            </p>
+          ) : lastWeek.appointments > 0 ? (
+            <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
+          ) : null}
+          <p className="text-[10px] text-neutral-400 mt-0.5">שבוע שעבר: {lastWeek.appointments}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3">
+          <p className="text-[10px] text-neutral-500 uppercase tracking-wider mb-1">הכנסה השבוע</p>
+          <p className="text-2xl font-black text-neutral-900">₪{thisWeek.revenue.toLocaleString("he-IL")}</p>
+          {revDiff !== 0 ? (
+            <p className={`text-xs font-semibold mt-1 ${revDiff > 0 ? "text-emerald-600" : "text-red-500"}`}>
+              {revDiff > 0 ? "↑" : "↓"} ₪{Math.abs(revDiff).toLocaleString("he-IL")}
+            </p>
+          ) : lastWeek.revenue > 0 ? (
+            <p className="text-xs text-neutral-400 mt-1">= שבוע שעבר</p>
+          ) : null}
+          <p className="text-[10px] text-neutral-400 mt-0.5">שבוע שעבר: ₪{lastWeek.revenue.toLocaleString("he-IL")}</p>
+        </div>
+      </div>
+      {history.length > 0 && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-neutral-800">📊 מגמת 12 שבועות</h3>
+            <span className="text-xs text-neutral-400">הכנסות שבועיות</span>
+          </div>
+          <MiniBarChart
+            data={history}
+            currentIdx={history.length - 1}
+            labelKey={history.map(w => w.weekLabel)}
+            tooltipFn={i => history[i]?.weekLabel ?? ""}
+            color="bg-teal-500"
+          />
+          <div className="flex justify-between text-[9px] text-neutral-300 mt-2">
+            <span>{history[0]?.weekLabel}</span>
+            <span className="text-teal-600 font-semibold">שבוע זה</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── useDebounce — delays a value until the user stops changing it ─────────────
 function useDebounce<T>(value: T, delay = 500): T {
   const [debounced, setDebounced] = useState(value);
@@ -844,6 +906,9 @@ export default function Dashboard() {
   const [viewYear,   setViewYear]   = useState(now.getFullYear());
   const [viewMonth,  setViewMonth]  = useState(now.getMonth());
   const [selStaff,        setSelStaff]        = useState<string | null>(null);
+  // Monthly stats include future (already-booked) appointments by default; the
+  // owner can toggle this off to see only what has happened up to this moment.
+  const [includeFuture,   setIncludeFuture]   = useState(true);
   const [returnWindowDays, setReturnWindowDays] = useState(90);
   // Debounced — API is called only after slider stops moving (500ms)
   const debouncedWindowDays = useDebounce(returnWindowDays, 500);
@@ -881,11 +946,12 @@ export default function Dashboard() {
     setLoading(true);
     const params = new URLSearchParams({ from, to, returnWindowDays: String(debouncedWindowDays) });
     if (selStaff) params.set("staffId", selStaff);
+    if (!includeFuture) params.set("includeFuture", "false");
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, debouncedWindowDays]);
+  }, [from, to, selStaff, debouncedWindowDays, includeFuture]);
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -1010,6 +1076,31 @@ export default function Dashboard() {
         <div className="text-center py-16 text-red-400 text-sm">שגיאה בטעינת הנתונים</div>
       ) : (
         <>
+          {/* ── Future-appointments toggle (current month only) ── */}
+          {isCurrentMonth && (
+            <div className="flex items-center justify-between gap-3 bg-white rounded-xl border border-neutral-200 px-4 py-2.5">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-neutral-700">
+                  {includeFuture ? "כולל תורים עתידיים החודש" : "רק עד עכשיו"}
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  {includeFuture
+                    ? "המספרים כוללים תורים שכבר נקבעו להמשך החודש"
+                    : "המספרים משקפים רק תורים שכבר התקיימו עד הרגע"}
+                </p>
+              </div>
+              <button
+                onClick={() => setIncludeFuture(v => !v)}
+                role="switch"
+                aria-checked={includeFuture}
+                aria-label="כלול תורים עתידיים החודש"
+                className={`relative w-12 h-7 rounded-full transition shrink-0 ${includeFuture ? "bg-teal-600" : "bg-neutral-300"}`}
+              >
+                <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${includeFuture ? "right-1" : "left-1"}`} />
+              </button>
+            </div>
+          )}
+
           {/* ── 4 monthly stat cards ── */}
           <div className="grid grid-cols-2 gap-3">
             <StatCard
@@ -1117,6 +1208,11 @@ export default function Dashboard() {
           {/* ── Deep data — owners only ── */}
           {isOwner && !selStaff && (
             <DeepDataCard total={a.activityBreakdown.total} perStaff={a.staffUniqueCustomers} />
+          )}
+
+          {/* ── Weekly data at the bottom — owners only ── */}
+          {isOwner && a.weekly && (
+            <OwnerWeeklySection weekly={a.weekly} />
           )}
         </>
       )}

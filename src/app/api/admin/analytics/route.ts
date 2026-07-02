@@ -23,10 +23,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { computeOccupancy } from "@/lib/analytics/occupancy";
+import { appointmentInstant } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 const CANCELLED = new Set(["cancelled_by_customer", "cancelled_by_staff"]);
+
+const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני",
+                   "יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+
+// Sunday→Saturday week window, `offsetWeeks` from the base date (0 = current week).
+// Mirrors the barber-stats helper so owner + barber weekly numbers line up.
+function getWeekRangeUTC(offsetWeeks: number, base: Date) {
+  const day = base.getUTCDay(); // 0=Sunday
+  const sunday = new Date(base);
+  sunday.setUTCDate(base.getUTCDate() - day + offsetWeeks * 7);
+  sunday.setUTCHours(0, 0, 0, 0);
+  const saturday = new Date(sunday);
+  saturday.setUTCDate(sunday.getUTCDate() + 6);
+  saturday.setUTCHours(23, 59, 59, 999);
+  return { start: sunday, end: saturday };
+}
+
+function weekLabelHe(start: Date, end: Date) {
+  const sM = start.getUTCMonth(), eM = end.getUTCMonth();
+  const sD = start.getUTCDate(),  eD = end.getUTCDate();
+  return sM === eM
+    ? `${sD}–${eD} ${MONTHS_HE[sM]}`
+    : `${sD} ${MONTHS_HE[sM]}–${eD} ${MONTHS_HE[eM]}`;
+}
 
 export async function GET(req: NextRequest) {
   const biz = await getSessionBusiness(req, { id: true });
@@ -39,6 +64,9 @@ export async function GET(req: NextRequest) {
   const staffId          = searchParams.get("staffId") || null;
   const returnWindowDays = Math.min(Math.max(parseInt(searchParams.get("returnWindowDays") ?? "90", 10), 7), 365);
   const minVisits        = Math.min(Math.max(parseInt(searchParams.get("minVisits") ?? "2", 10), 2), 20);
+  // includeFuture (default true): when false, the period metrics ignore
+  // appointments that haven't happened yet — i.e. "data up to this moment".
+  const includeFuture    = (searchParams.get("includeFuture") ?? "true") !== "false";
 
   // Staff scoping: barbers only see analytics for their own data
   const session = getRequestSession(req);
@@ -51,6 +79,9 @@ export async function GET(req: NextRequest) {
 
   const fromDate = new Date(fromStr + "T00:00:00.000Z");
   const toDate   = new Date(toStr   + "T23:59:59.999Z");
+  const now      = new Date();
+  // Period end for occupancy: capped to "now" when the future toggle is off.
+  const occTo    = includeFuture ? toDate : new Date(Math.min(toDate.getTime(), now.getTime()));
   const sf       = effectiveStaffId ? { staffId: effectiveStaffId } : {};
   const cancelledArr = Array.from(CANCELLED);
 
@@ -67,14 +98,19 @@ export async function GET(req: NextRequest) {
     where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, ...sf },
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
-      serviceId: true,
+      startTime: true, serviceId: true,
       customer: { select: { id: true, referralSource: true } },
       staff:    { select: { id: true, name: true } },
       service:  { select: { id: true, name: true } },
     },
   });
 
-  const activeAppts = periodAll.filter(a => !CANCELLED.has(a.status));
+  // Every display metric below derives from activeAppts. When the future toggle
+  // is OFF we drop appointments whose real datetime is still ahead of now, so the
+  // numbers reflect only what has actually happened up to this moment.
+  const activeAppts = periodAll
+    .filter(a => !CANCELLED.has(a.status))
+    .filter(a => includeFuture || appointmentInstant(a.date, a.startTime).getTime() <= now.getTime());
 
   // Revenue = sum of ALL non-cancelled appointments (price is known at booking)
   const totalRevenue      = activeAppts.reduce((s, a) => s + a.price, 0);
@@ -139,15 +175,42 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // ── Weekly summary (this week, last week, 12-week trend) ────────────────────
+  // Anchored to "now" (not the month picker) and scoped by the active staff
+  // filter — powers the weekly section at the bottom of the owner dashboard.
+  // Computed BEFORE the empty-period early return so it's accurate even when the
+  // selected month has no appointments. Week base is Israel-shifted for Sun–Sat.
+  const weekBase = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+  const weekRanges = Array.from({ length: 12 }, (_, i) => getWeekRangeUTC(i - 11, weekBase));
+  const weekAppts = await prisma.appointment.findMany({
+    where: {
+      businessId: bizId,
+      status: { notIn: cancelledArr },
+      date: { gte: weekRanges[0].start, lte: weekRanges[11].end },
+      ...sf,
+    },
+    select: { date: true, price: true },
+  });
+  const sumWeek = (s: Date, e: Date) => {
+    const ap = weekAppts.filter(a => a.date >= s && a.date <= e);
+    return { appointments: ap.length, revenue: ap.reduce((x, a) => x + a.price, 0) };
+  };
+  const weekly = {
+    thisWeek: sumWeek(weekRanges[11].start, weekRanges[11].end),
+    lastWeek: sumWeek(weekRanges[10].start, weekRanges[10].end),
+    history: weekRanges.map(w => ({ weekLabel: weekLabelHe(w.start, w.end), ...sumWeek(w.start, w.end) })),
+  };
+
   if (periodCustIds.length === 0) {
     // Even with empty period, return today metrics + occupancy
     const [occToday, occMonth] = await Promise.all([
       computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
-      computeOccupancy({ businessId: bizId, from: fromDate,   to: toDate,   staffId: effectiveStaffId }),
+      computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
     ]);
     return NextResponse.json({
       totalRevenue, totalAppointments,
       uniqueCustomers: 0,
+      weekly,
       newCustomers: 0,           // legacy alias
       newToBusiness: 0,
       newToStaff: 0,
@@ -401,7 +464,7 @@ export async function GET(req: NextRequest) {
   // ── 8. Occupancy (today + period) ────────────────────────────────────────────
   const [occToday, occMonth] = await Promise.all([
     computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
-    computeOccupancy({ businessId: bizId, from: fromDate,   to: toDate,   staffId: effectiveStaffId }),
+    computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
   ]);
 
   // ── 9. Deep data — all-time unique customers per staff (owner view only) ──────
@@ -459,5 +522,6 @@ export async function GET(req: NextRequest) {
     staffSummary,
     serviceBreakdown,
     staffUniqueCustomers,
+    weekly,
   });
 }
