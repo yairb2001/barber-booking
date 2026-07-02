@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback } from "react";
 
 /**
  * Client-side multi-tenant navigation helpers for the PUBLIC storefront.
@@ -42,35 +42,28 @@ export function publicHref(slug: string | null, path: string): string {
 }
 
 /**
- * "Back" that returns the user to the screen they actually came from.
+ * "Back" that DETERMINISTICALLY returns the user to the canonical previous
+ * screen for the current page.
  *
- * The booking flow can be entered at many points via shortcuts (quick slots on
- * the home page, team-upcoming, etc.), so a hard-coded back link would walk the
- * user through screens they never visited. Instead we use the browser history:
- * when there is in-app history (Next.js tracks the position in
- * `window.history.state.idx`), `router.back()` lands on the real previous
- * screen. For a cold deep-link (no history — e.g. opened straight from a
- * WhatsApp link) we fall back to the canonical href so back is never a no-op.
+ * We deliberately do NOT use `router.back()` / `window.history.state.idx`.
+ * The booking flow is entered at many points via shortcuts (home quick-slots,
+ * team-upcoming, the "all upcoming" lists, …) that jump several screens ahead,
+ * and the browser history is unreliable on mobile Safari / PWA (idx is often
+ * stale or non-zero even for a shortcut jump). Relying on it made "back" walk
+ * the user through every funnel screen they never visited, or overshoot to the
+ * start. Since every caller already passes the correct canonical-previous href
+ * as `fallbackHref` (confirm maps it per entry-origin via the `from` param),
+ * we always navigate straight there — one screen up, every time.
  *
  * Returns an onClick handler; keep the `href` on the element too so
  * middle-click / SEO / no-JS still work.
  */
 export function useSmartBack(fallbackHref: string) {
   const router = useRouter();
-  const canGoBack = useRef(false);
-  useEffect(() => {
-    try {
-      const idx = (window.history.state?.idx ?? 0) as number;
-      canGoBack.current = idx > 0;
-    } catch {
-      canGoBack.current = false;
-    }
-  }, []);
   return useCallback(
     (e?: { preventDefault?: () => void }) => {
       e?.preventDefault?.();
-      if (canGoBack.current) router.back();
-      else router.push(fallbackHref);
+      router.push(fallbackHref);
     },
     [router, fallbackHref]
   );
