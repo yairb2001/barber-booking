@@ -353,12 +353,22 @@ function ConfirmPageContent() {
 
   // "Back" returns to the screen the user actually came from (home quick-slot,
   // team calendar, the time grid, …). When there's in-app history we just
-  // router.back(); otherwise we fall back to the canonical previous screen for
-  // that origin — the shared calendar for team flows, else the time step.
-  const backFallback =
-    from === "team"
-      ? publicHref(slug, `/book/team-date${date ? `?date=${date}` : ""}`)
-      : publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`);
+  // router.back(); otherwise (cold deep-link / PWA where history.idx === 0) we
+  // fall back to the canonical origin for THIS entry point. Every shortcut that
+  // jumps straight to confirm passes a `from` marker so this fallback lands on
+  // the real origin instead of dumping the user into the middle of the selection
+  // funnel (which made "back" walk through service/time screens never visited).
+  const backFallback = (() => {
+    switch (from) {
+      case "home":          return publicHref(slug, "/book");
+      case "service":       return publicHref(slug, `/book/service?staffId=${staffId}`);
+      case "upcoming":      return publicHref(slug, `/book/upcoming?staffId=${staffId}&serviceId=${serviceId}`);
+      case "team-upcoming": return publicHref(slug, "/book/team-upcoming");
+      case "team":          return publicHref(slug, `/book/team-date${date ? `?date=${date}` : ""}`);
+      // Default: the normal date/time funnel (reached via /book/time).
+      default:              return publicHref(slug, `/book/time?staffId=${staffId}&serviceId=${serviceId}`);
+    }
+  })();
   const onBack = useSmartBack(backFallback);
 
   const [staffInfo, setStaffInfo]     = useState<StaffInfo | null>(null);

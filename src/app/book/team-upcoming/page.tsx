@@ -86,7 +86,7 @@ function TeamUpcomingContent() {
           <div className="flex flex-col gap-2">
             {slots.map((s, i) => (
               <Link key={`${s.staffId}-${s.date}-${s.time}-${i}`}
-                href={publicHref(slug, `/book/confirm?staffId=${s.staffId}&serviceId=${s.serviceId}&date=${s.date}&time=${s.time}`)}
+                href={publicHref(slug, `/book/confirm?staffId=${s.staffId}&serviceId=${s.serviceId}&date=${s.date}&time=${s.time}&from=team-upcoming`)}
                 className="flex items-center gap-3 rounded-2xl px-3.5 py-3 transition-all active:scale-[0.98]"
                 style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
                 {/* Time + day/date */}

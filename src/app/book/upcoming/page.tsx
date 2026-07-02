@@ -112,7 +112,7 @@ function UpcomingPageContent() {
           <div className="flex flex-col gap-2">
             {upcoming.map((u, i) => (
               <Link key={`${u.date}-${u.time}-${i}`}
-                href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${u.date}&time=${u.time}`)}
+                href={publicHref(slug, `/book/confirm?staffId=${staffId}&serviceId=${serviceId}&date=${u.date}&time=${u.time}&from=upcoming`)}
                 className="flex items-center justify-between rounded-2xl px-4 py-3.5 transition-all active:scale-[0.98]"
                 style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}

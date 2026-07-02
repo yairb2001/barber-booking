@@ -240,7 +240,7 @@ function ChooseServicePageContent() {
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
-                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
+                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=service`)}
                 className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
                 style={{
                   background: "var(--card)",

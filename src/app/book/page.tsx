@@ -262,7 +262,7 @@ export default function ChooseBarberPage() {
           <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
-                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
+                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
                 className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
                 style={{
                   background: "var(--card)",
@@ -398,7 +398,7 @@ export default function ChooseBarberPage() {
                 {/* Slot / CTA */}
                 {slot ? (
                   <Link
-                    href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}`)}
+                    href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
                     className="absolute bottom-1.5 inset-x-2 z-10 flex flex-col items-center justify-center py-0.5 active:opacity-80 transition-opacity"
                     style={{ background: "var(--brand)", borderRadius: 10 }}>
                     <span className="text-[7px] font-medium text-white/75 leading-none mb-0.5">
