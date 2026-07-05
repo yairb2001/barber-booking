@@ -26,6 +26,14 @@ import { getBusinessNow } from "@/lib/utils";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
+  // Resilience: transient 429/5xx/"overloaded" responses are common under load
+  // and, left unretried, cause the agent to throw mid-loop and leave the
+  // customer with NO reply at all. Retry them with backoff.
+  maxRetries: 4,
+  // Bound each request well under the webhook's 60s maxDuration. The SDK default
+  // timeout is 10 MINUTES, so a single hung call would be killed by Vercel before
+  // our catch/owner-alert could run — a silent drop. 30s leaves budget to react.
+  timeout: 30_000,
 });
 
 // ── Model router ────────────────────────────────────────────────────────────

@@ -388,7 +388,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     await runCustomerAgent({ businessId: biz.id, phone, incomingText: text, alreadyPersisted: true });
   } catch (agentErr) {
+    // The agent failed to produce a reply (e.g. a transient Anthropic outage the
+    // retries couldn't ride out). Do NOT leave the customer in silence — alert
+    // the owner so a human can jump in, exactly the manual save that otherwise
+    // only happens if someone notices the chat.
     console.error("[agent] error:", agentErr);
+    pushToOwner(biz.id, {
+      title: `⚠️ הסוכן לא הצליח לענות ל${senderName || phone}`,
+      body: previewText(text),
+      data: { type: "chat", conversationId: conv.id, phone },
+    }).catch(() => {});
   }
 
   return NextResponse.json({ ok: true });
