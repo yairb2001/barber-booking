@@ -43,7 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 /**
  * DELETE /api/admin/super/businesses/[id]
  * Hard-delete a tenant. Guarded: never the platform's own business, and only
- * EMPTY shells (no staff / customers / appointments) — abandoned signups.
+ * businesses with NO real activity — no customers and no appointments. (Every
+ * signup auto-seeds one owner-barber + a starter service, so "no staff" is no
+ * longer the emptiness signal; real usage means customers or booked tourim.)
  */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSuperAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
@@ -52,29 +54,38 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: "אי אפשר למחוק את עסק הפלטפורמה" }, { status: 400 });
   }
 
-  const [staff, customers, appts] = await Promise.all([
-    prisma.staff.count({ where: { businessId: id } }),
+  const [customers, appts] = await Promise.all([
     prisma.customer.count({ where: { businessId: id } }),
     prisma.appointment.count({ where: { businessId: id } }),
   ]);
-  if (staff > 0 || customers > 0 || appts > 0) {
+  if (customers > 0 || appts > 0) {
     return NextResponse.json(
-      { error: "מחיקה מותרת רק לעסק ריק (בלי ספרים/לקוחות/תורים). השהה אותו במקום." },
+      { error: "מחיקה מותרת רק לעסק בלי לקוחות/תורים. השהה אותו במקום." },
       { status: 400 },
     );
   }
 
+  // Delete children before parents to satisfy FK constraints. Tables that depend
+  // on a customer or an appointment are empty here (guarded above), so we only
+  // need to clear staff/service scaffolding + content + conversations.
   await prisma.$transaction([
     prisma.conversationMessage.deleteMany({ where: { conversation: { businessId: id } } }),
     prisma.conversation.deleteMany({ where: { businessId: id } }),
+    prisma.agentFAQ.deleteMany({ where: { agentConfig: { businessId: id } } }),
+    prisma.agentConfig.deleteMany({ where: { businessId: id } }),
     prisma.messageLog.deleteMany({ where: { businessId: id } }),
     prisma.automation.deleteMany({ where: { businessId: id } }),
+    prisma.otpCode.deleteMany({ where: { businessId: id } }),
+    prisma.staffService.deleteMany({ where: { staff: { businessId: id } } }),
+    prisma.staffSchedule.deleteMany({ where: { staff: { businessId: id } } }),
+    prisma.staffScheduleOverride.deleteMany({ where: { staff: { businessId: id } } }),
+    prisma.portfolioItem.deleteMany({ where: { staff: { businessId: id } } }),
+    prisma.waitlist.deleteMany({ where: { businessId: id } }),
     prisma.story.deleteMany({ where: { businessId: id } }),
     prisma.announcement.deleteMany({ where: { businessId: id } }),
     prisma.product.deleteMany({ where: { businessId: id } }),
     prisma.service.deleteMany({ where: { businessId: id } }),
-    prisma.waitlist.deleteMany({ where: { businessId: id } }),
-    prisma.agentConfig.deleteMany({ where: { businessId: id } }),
+    prisma.staff.deleteMany({ where: { businessId: id } }),
     prisma.business.delete({ where: { id } }),
   ]);
   return NextResponse.json({ ok: true });
