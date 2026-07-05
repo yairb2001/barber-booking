@@ -20,33 +20,36 @@ export function generateSlots(
 ): string[] {
   const available: string[] = [];
 
+  // Merge breaks + booked appointments into one sorted list of "busy" intervals.
+  // Both block time AND re-anchor the grid (see the loop below).
+  const blockers = [
+    ...(breaks || []).map((b) => ({ start: timeToMinutes(b.start), end: timeToMinutes(b.end) })),
+    ...bookedSlots.map((b) => ({ start: timeToMinutes(b.startTime), end: timeToMinutes(b.endTime) })),
+  ].sort((a, b) => a.start - b.start);
+
   for (const slot of scheduleSlots) {
     let current = timeToMinutes(slot.start);
     const slotEnd = timeToMinutes(slot.end);
 
     while (current + durationMinutes <= slotEnd) {
-      const slotStart = minutesToTime(current);
-      const slotEndTime = minutesToTime(current + durationMinutes);
+      // Does the candidate [current, current+duration] overlap a busy interval?
+      const hit = blockers.find(
+        (b) => current < b.end && current + durationMinutes > b.start
+      );
 
-      // Check if in break
-      const inBreak = (breaks || []).some((b) => {
-        const bStart = timeToMinutes(b.start);
-        const bEnd = timeToMinutes(b.end);
-        return current < bEnd && current + durationMinutes > bStart;
-      });
-
-      // Check if overlaps with booked appointment
-      const isBooked = bookedSlots.some((b) => {
-        const bStart = timeToMinutes(b.startTime);
-        const bEnd = timeToMinutes(b.endTime);
-        return current < bEnd && current + durationMinutes > bStart;
-      });
-
-      if (!inBreak && !isBooked) {
-        available.push(slotStart);
+      if (hit) {
+        // RE-ANCHOR to the end of the blocking interval instead of stepping by a
+        // rigid `duration`. This is the fix for the "dead gap" bug: a 40-min
+        // appointment ending at 10:40 no longer forces the next slot to the rigid
+        // 11:00 grid mark — the next candidate opens exactly at 10:40. hit.end is
+        // always > current (the overlap test guarantees current < hit.end), so
+        // this always advances and can't loop forever.
+        current = hit.end;
+        continue;
       }
 
-      current += durationMinutes; // interval = service duration
+      available.push(minutesToTime(current));
+      current += durationMinutes; // free window: step by service duration
     }
   }
 
