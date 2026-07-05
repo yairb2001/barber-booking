@@ -60,7 +60,7 @@ export default function MarketingDeepPage() {
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
 
   // Tracking-link builder
-  const [slug, setSlug]           = useState<string | null>(null);
+  const [publicPath, setPublicPath] = useState<string>("/");
   const [linkName, setLinkName]   = useState("");
   const [copied, setCopied]       = useState<string | null>(null);
   const [showMeta, setShowMeta]   = useState(false);
@@ -107,15 +107,13 @@ export default function MarketingDeepPage() {
     fetch("/api/admin/me").then(r => r.ok ? r.json() : null).then(me => {
       if (!me) return;
       setIsOwner(me.isOwner ?? true);
+      if (typeof me.publicPath === "string") setPublicPath(me.publicPath);
       if (!me.isOwner && me.staffId) {
         setMyStaffId(me.staffId);
         setSelStaff(me.staffId);
       }
     }).catch(() => {});
     fetch("/api/admin/staff").then(r => r.json()).then(setAllStaff).catch(() => {});
-    fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).then(s => {
-      if (s && typeof s.slug === "string") setSlug(s.slug);
-    }).catch(() => {});
     loadAliases();
   }, []);
 
@@ -124,7 +122,7 @@ export default function MarketingDeepPage() {
   // attribution is captured there too (see src/app/page.tsx).
   const bookingBase = (() => {
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}${slug ? `/${slug}` : ""}`;
+    return `${origin}${publicPath && publicPath !== "/" ? publicPath : ""}`;
   })();
   const refLink   = linkName.trim() ? `${bookingBase}?ref=${encodeURIComponent(slugifyRef(linkName))}` : "";
   const metaTemplate = "utm_source=meta&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
