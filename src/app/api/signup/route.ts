@@ -12,22 +12,17 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
  * + settings.ownerLoginPhone) — matching the login model in
  * src/app/api/admin/auth/login/route.ts.
  *
- * The person who opens the shop is ALSO created as a working barber: their own
- * Staff row (role "owner"), a full weekly calendar, and a starter service —
- * so the storefront is bookable the moment signup finishes, with nothing to
- * configure first. The owner still logs in at the BUSINESS level (no staffId in
- * the session → sees every calendar), so this staff row never scopes them down.
+ * The owner is NOT seeded as a Staff row here. Instead, right after signup the
+ * owner is sent to the onboarding wizard (/admin/onboarding), where THEY set up
+ * their own barber profile, weekly calendar and first service — so those choices
+ * are configured in the flow, not silently hardcoded. The wizard pre-fills
+ * sensible defaults so it's mostly a confirm-and-continue.
  *
  * New businesses start on the BASIC tier with a 14-day trial and no WhatsApp
- * connected (whatsappStatus = "not_requested"). They can take bookings
- * immediately; WhatsApp reminders stay muted until GreenAPI is provisioned.
+ * connected (whatsappStatus = "not_requested"). They can take bookings once the
+ * wizard's barber+service steps are done; WhatsApp reminders stay muted until
+ * GreenAPI is provisioned.
  */
-
-// Default weekly hours for the freshly-seeded owner-barber (Israeli barbershop
-// baseline): Sun–Thu 09:00–20:00, Fri 09:00–14:00, Sat off. The owner tweaks
-// these in the calendar afterwards — this just makes the shop bookable at once.
-const FULL_DAY = JSON.stringify([{ start: "09:00", end: "20:00" }]);
-const FRIDAY = JSON.stringify([{ start: "09:00", end: "14:00" }]);
 
 function digits(s: string | null | undefined): string {
   return (s || "").replace(/\D/g, "");
@@ -100,58 +95,6 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true, slug: true },
     });
-
-    // Seed the signer as a working barber so the shop is bookable immediately:
-    // their own Staff row + a full weekly calendar + one starter service. We use
-    // the business name as the barber name (no personal name is collected at
-    // signup) — the owner renames it in the calendar. Best-effort: a failure
-    // here must not block the account from being created.
-    try {
-      const ownerStaff = await prisma.staff.create({
-        data: {
-          businessId: business.id,
-          name,
-          phone,
-          role: "owner",
-          isAvailable: true,
-          inQuickPool: true,
-          isActive: true,
-          canViewAllCalendars: true,
-          canViewAllChats: true,
-          sortOrder: 0,
-        },
-        select: { id: true },
-      });
-
-      await prisma.staffSchedule.createMany({
-        data: [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
-          staffId: ownerStaff.id,
-          dayOfWeek,
-          isWorking: dayOfWeek !== 6, // Saturday off
-          slots: dayOfWeek === 5 ? FRIDAY : FULL_DAY,
-          breaks: null,
-        })),
-      });
-
-      const service = await prisma.service.create({
-        data: {
-          businessId: business.id,
-          ownerStaffId: ownerStaff.id, // "their own" service
-          name: "תספורת",
-          price: 60,
-          durationMinutes: 30,
-          isVisible: true,
-          sortOrder: 0,
-        },
-        select: { id: true },
-      });
-
-      await prisma.staffService.create({
-        data: { staffId: ownerStaff.id, serviceId: service.id },
-      });
-    } catch (seedErr) {
-      console.error("signup: owner-barber seed failed", seedErr);
-    }
 
     await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}`);
 

@@ -43,9 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 /**
  * DELETE /api/admin/super/businesses/[id]
  * Hard-delete a tenant. Guarded: never the platform's own business, and only
- * businesses with NO real activity — no customers and no appointments. (Every
- * signup auto-seeds one owner-barber + a starter service, so "no staff" is no
- * longer the emptiness signal; real usage means customers or booked tourim.)
+ * businesses with NO real activity — no customers and no appointments. (Staff
+ * count isn't the emptiness signal: onboarding creates a barber + service
+ * before any bookings, so real usage means customers or booked tourim.)
  */
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   if (!isSuperAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });

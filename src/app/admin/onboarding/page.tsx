@@ -80,6 +80,11 @@ export default function OnboardingPage() {
             setPhone(biz.phone || "");
             setLogoUrl(biz.logoUrl || null);
             setCoverImageUrl(biz.coverImageUrl || null);
+            // Pre-fill the first-service + barber steps so they're mostly a
+            // confirm-and-continue: a fresh shop almost always starts with a
+            // plain haircut, and the person signing up is usually the barber.
+            setSvcName((s) => s || "תספורת");
+            setStaffPhone((p) => p || biz.phone || "");
             const s = biz.settings || {};
             if (s.themePreset && s.themePreset in THEMES) setThemePreset(s.themePreset);
             if (s.onboarding) {
