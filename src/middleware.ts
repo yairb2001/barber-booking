@@ -4,6 +4,20 @@ import { verifySession, COOKIE_NAME } from "@/lib/auth";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // Forward the visible pathname to Server Components so the root layout can
+  // resolve the CORRECT tenant's theme for the first paint (see server-theme.ts).
+  // Set on every request; the auth logic below only guards the /admin area.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", pathname);
+
+  // Everything outside the admin area is public (storefront pages + public APIs
+  // + crons). No session needed — just forward with the pathname header.
+  const isAdminArea =
+    pathname.startsWith("/admin") || pathname.startsWith("/api/admin");
+  if (!isAdminArea) {
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   // Public auth endpoints (no session required) — login flow + first-run setup
   const PUBLIC_AUTH_PATHS = new Set([
     "/api/admin/auth/login",
@@ -16,7 +30,7 @@ export async function middleware(req: NextRequest) {
     pathname === "/admin/login" ||
     PUBLIC_AUTH_PATHS.has(pathname)
   ) {
-    return NextResponse.next();
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
   const token = req.cookies.get(COOKIE_NAME)?.value;
@@ -32,7 +46,6 @@ export async function middleware(req: NextRequest) {
   }
 
   // Pass session info to API route handlers via request headers
-  const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-session-business-id", session.businessId);
   requestHeaders.set("x-session-role", session.role);
   if (session.staffId) {
@@ -44,8 +57,12 @@ export async function middleware(req: NextRequest) {
   return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
-// NOTE: /api/cron/* is intentionally NOT in the matcher so it bypasses auth
-// (Vercel Cron authenticates itself via CRON_SECRET header — see the endpoint).
+// Matcher runs middleware on all routes EXCEPT Next internals and static files
+// (so storefront pages get the x-pathname header for tenant theme resolution).
+// /api/cron/* still bypasses auth — it falls into the public branch above and
+// authenticates itself via CRON_SECRET at the endpoint.
 export const config = {
-  matcher: ["/admin/:path*", "/api/admin/:path*"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|fonts/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|avif|mp4|webm|woff|woff2|ttf|otf|css|js|map|txt|xml|json)$).*)",
+  ],
 };

@@ -110,6 +110,19 @@ const RESERVED_SLUGS = new Set([
 ]);
 
 /**
+ * Extract the tenant slug from a request PATHNAME (server-side mirror of the
+ * client `useSlug()`), e.g. "/dani/book/time" → "dani", "/book/time" → null,
+ * "/" → null. A reserved first segment (book/admin/api/…) means "root, no
+ * tenant". Used by the server layout to resolve the correct theme for the very
+ * first paint (the middleware forwards the visible pathname via `x-pathname`).
+ */
+export function tenantSlugFromPathname(pathname: string | null | undefined): string | null {
+  const first = (pathname || "").split("/").filter(Boolean)[0];
+  if (first && !RESERVED_SLUGS.has(first)) return first;
+  return null;
+}
+
+/**
  * Turn a free-form business name into a URL-safe, unique slug.
  *
  * - lowercases, keeps [a-z0-9-], collapses repeats/edges
