@@ -52,12 +52,16 @@ export async function GET(req: NextRequest) {
   // Resolve full theme palette from settings
   const theme = resolveTheme(business.settings);
 
-  // Extract heroVideoUrl from settings JSON
+  // Extract heroVideoUrl + whatsappPrefill from settings JSON
   let heroVideoUrl: string | null = null;
+  let whatsappPrefill: string | null = null;
   try {
     const settingsObj = business.settings ? JSON.parse(business.settings) : {};
     if (typeof settingsObj.heroVideoUrl === "string" && settingsObj.heroVideoUrl) {
       heroVideoUrl = settingsObj.heroVideoUrl;
+    }
+    if (typeof settingsObj.whatsappPrefill === "string" && settingsObj.whatsappPrefill.trim()) {
+      whatsappPrefill = settingsObj.whatsappPrefill.trim();
     }
   } catch { /* ignore */ }
 
@@ -82,5 +86,7 @@ export async function GET(req: NextRequest) {
     bgColor: theme.bg,
     // Hero video (optional)
     heroVideoUrl,
+    // Pre-filled "book via WhatsApp" message (optional)
+    whatsappPrefill,
   });
 }

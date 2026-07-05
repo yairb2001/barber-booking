@@ -423,6 +423,8 @@ export default function AdminSettingsPage() {
 
   // Hero video URL (stored in business.settings)
   const [heroVideoUrl, setHeroVideoUrl] = useState("");
+  // Pre-filled message for the "book via WhatsApp" link (stored in business.settings)
+  const [whatsappPrefill, setWhatsappPrefill] = useState("");
 
   // Calendar display hours
   const [calStartHour, setCalStartHour] = useState(8);
@@ -550,6 +552,8 @@ export default function AdminSettingsPage() {
         if (typeof settingsObj.calendarEndHour   === "number") setCalEndHour(settingsObj.calendarEndHour);
         // Hero video
         if (typeof settingsObj.heroVideoUrl === "string") setHeroVideoUrl(settingsObj.heroVideoUrl);
+        // WhatsApp pre-filled message
+        if (typeof settingsObj.whatsappPrefill === "string") setWhatsappPrefill(settingsObj.whatsappPrefill);
         // Barber permissions
         if (typeof settingsObj.barbersCanViewOthersCalendar === "boolean") setBarbersCanViewOthersCalendar(settingsObj.barbersCanViewOthersCalendar);
         if (typeof settingsObj.barbersCanAccessChats === "boolean") setBarbersCanAccessChats(settingsObj.barbersCanAccessChats);
@@ -660,7 +664,7 @@ export default function AdminSettingsPage() {
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, settings: { ...currentSettings, heroVideoUrl } }),
+      body: JSON.stringify({ ...form, settings: { ...currentSettings, heroVideoUrl, whatsappPrefill: whatsappPrefill.trim() } }),
     });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
@@ -1335,6 +1339,27 @@ export default function AdminSettingsPage() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── הודעת פתיחה בוואטסאפ ── */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">💬</span>
+                <h3 className="text-sm font-semibold text-neutral-900">הודעת פתיחה בוואטסאפ</h3>
+              </div>
+              <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+                כשלקוח לוחץ על &quot;קבע תור דרך הוואטסאפ&quot; בדף הבית, הטקסט הזה כבר יופיע לו כתוב מראש בהודעה — הוא רק צריך לשלוח.
+              </p>
+              <label className="text-xs text-neutral-500 block mb-1">ההודעה</label>
+              <textarea
+                value={whatsappPrefill}
+                onChange={e => setWhatsappPrefill(e.target.value)}
+                rows={2}
+                placeholder="לדוגמה: היי, אשמח לקבוע תור 🙏"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
+              <p className="text-[11px] text-neutral-400 mt-2 leading-relaxed">
+                השאר ריק כדי שהצ&apos;אט ייפתח בלי הודעה מוכנה מראש.
+              </p>
             </div>
 
             {/* ── Facebook / Meta Pixel (שיווק ורימרקטינג) ── */}
