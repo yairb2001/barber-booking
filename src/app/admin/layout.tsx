@@ -14,6 +14,7 @@ type NavItem = {
   barberOnly?: boolean;
   requiresChats?: boolean;  // only shown when business.chatsEnabled === true
   requiresReferral?: boolean; // only shown when the referral program is enabled
+  superOnly?: boolean; // only for the platform owner (super-admin)
 };
 
 // Pages that live "inside" Business Settings — the Settings nav item stays highlighted on these
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { href: "/admin/barber-settings",   label: "הגדרות שלי",     icon: "⚙️", barberOnly: true },
   { href: "/admin/settings",          label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
   { href: "/admin/preview",      label: "תצוגת לקוח",     icon: "👁️" },
+  { href: "/admin/super",        label: "פלטפורמה",       icon: "🛰️", superOnly: true },
 ];
 
 // Bottom nav (mobile)
@@ -65,7 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -148,6 +150,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (item.barberOnly && isOwner) return false;
     if (item.requiresChats && !showChats) return false;
     if (item.requiresReferral && !referralEnabled) return false;
+    if (item.superOnly && !me?.isSuperAdmin) return false;
     return true;
   });
   // Bottom nav: only show "שיחות" if feature enabled — otherwise drop in favor of fallback
@@ -173,6 +176,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const handleLogout = async () => {
     await fetch("/api/admin/auth/logout", { method: "POST" });
     window.location.href = "/admin/login";
+  };
+
+  const stopImpersonating = async () => {
+    await fetch("/api/admin/super/impersonate", { method: "DELETE" });
+    window.location.href = "/admin/super";
   };
 
   // Share / copy the public booking link so the owner can distribute it easily.
@@ -302,6 +310,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         {/* WhatsApp disconnected banner — visible on every admin page.
             EVERY staff member (owner OR barber) gets the reconnect button so
             whoever is around can scan the QR and restore the shared line. */}
+        {me?.impersonating && (
+          <div className="shrink-0 bg-blue-600 text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm">
+            <span className="font-bold leading-tight flex items-center gap-2"><span>👁️</span>מחובר כמנהל של עסק אחר (מצב צפייה)</span>
+            <button onClick={stopImpersonating} className="shrink-0 bg-white text-blue-700 font-bold rounded-lg px-3 py-1.5 hover:bg-blue-50 transition whitespace-nowrap">חזרה לפלטפורמה ←</button>
+          </div>
+        )}
         {me?.whatsappDown && (
           <div className="shrink-0 animate-alert-blink text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm shadow-md">
             <span className="font-bold leading-tight flex items-center gap-2">

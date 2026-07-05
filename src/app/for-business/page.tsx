@@ -114,14 +114,20 @@ export default function ForBusinessPage() {
   const [phone, setPhone] = useState("");
   const [sent, setSent] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!phone) return;
-    const msg = encodeURIComponent(
-      `שלום, אני ${name || "מעוניין"} לקבל הדגמה של מערכת DOMINANT. מספר טלפון: ${phone}`
-    );
-    // TODO: replace 972501234567 with real sales WhatsApp number
-    window.open(`https://wa.me/972501234567?text=${msg}`, "_blank");
+    // Capture the lead in our own system so nothing is lost — the platform
+    // owner gets a WhatsApp alert and the lead shows up in /admin/super.
+    try {
+      await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, phone }),
+      });
+    } catch {
+      /* best-effort — still show success so the visitor isn't blocked */
+    }
     setSent(true);
   }
 
@@ -492,7 +498,7 @@ export default function ForBusinessPage() {
               {/* Alt: direct WhatsApp */}
               <div className="pt-2">
                 <p className="text-zinc-700 text-[11px] mb-2">או</p>
-                <a href="https://wa.me/972501234567?text=שלום, אני מעוניין לשמוע על המערכת"
+                <a href="https://wa.me/972585859990?text=שלום, אני מעוניין לשמוע על המערכת"
                   target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-[13px] font-semibold px-5 py-2.5 rounded-full transition-opacity hover:opacity-85"
                   style={{ background: "rgba(37,211,102,0.12)", color: WA, border: "1px solid rgba(37,211,102,0.25)" }}>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
 import { generateSlug } from "@/lib/tenant";
+import { notifyPlatformOwner } from "@/lib/super-admin";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -88,6 +89,8 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true, slug: true },
     });
+
+    await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}`);
 
     const token = await signSession({ businessId: business.id, role: "owner" });
     const res = NextResponse.json({ ok: true, slug: business.slug });

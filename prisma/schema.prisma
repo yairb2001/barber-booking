@@ -69,6 +69,11 @@ model Business {
   trialEndsAt           DateTime?                           @map("trial_ends_at")
   onboardingCompletedAt DateTime?                           @map("onboarding_completed_at")
   whatsappStatus        String    @default("not_requested") @map("whatsapp_status") // not_requested | requested | connected
+  // ── Billing (managed from the super-admin dashboard) ──
+  monthlyPrice          Int?                                @map("monthly_price")   // ₪/month subscription
+  setupFee              Int?                                @map("setup_fee")       // one-time AI implementation fee (premium)
+  paidAt                DateTime?                           @map("paid_at")         // became a paying customer (null = trial/lead)
+  suspendedAt           DateTime?                           @map("suspended_at")    // access suspended (non-payment etc.)
   // ── Live WhatsApp connection monitor (whatsapp-health cron, every 30m) ──
   waLiveState           String?                             @map("wa_live_state")   // authorized | notAuthorized | blocked | yellowCard | sleepMode | starting | error
   waCheckedAt           DateTime?                           @map("wa_checked_at")   // last health check
@@ -657,4 +662,20 @@ model OtpCode {
 
   @@index([businessId, phone, code])
   @@map("otp_codes")
+}
+
+// ── SaaS sales pipeline ──────────────────────────────────────────────────────
+// Prospects captured from the /for-business landing page (and manual adds).
+// System-level (NOT tenant-scoped) — these are leads for the platform owner.
+model Lead {
+  id        String   @id @default(uuid())
+  name      String?
+  phone     String
+  source    String   @default("landing")  // landing | manual
+  status    String   @default("new")       // new | contacted | demo | won | lost
+  note      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt         @map("updated_at")
+
+  @@map("leads")
 }

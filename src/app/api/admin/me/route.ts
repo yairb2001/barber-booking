@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { getReferralConfig } from "@/lib/referral";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
+import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -91,6 +92,8 @@ export async function GET(req: NextRequest) {
     businessId: session.businessId,
     role: session.role,
     isOwner: session.isOwner,
+    isSuperAdmin: session.isOwner && session.businessId === SUPER_ADMIN_BUSINESS_ID,
+    impersonating: !!req.cookies.get("super_origin")?.value,
     staffId: session.staffId || null,
     staff,
     chatsEnabled: business?.chatsEnabled ?? false,
