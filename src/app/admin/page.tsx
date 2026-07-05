@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { pickFriendSource } from "@/lib/referral";
+import { useModalBack } from "@/lib/useModalBack";
 import NotificationsBell from "./NotificationsBell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -414,6 +415,7 @@ function BreakEditModal({ staffId, date, breakIdx, initial, onClose, onRefresh }
   onClose: () => void;
   onRefresh: () => void;
 }) {
+  useModalBack(true, onClose);
   const [name,  setName]  = useState(initial.name  || "הפסקה");
   const [start, setStart] = useState(initial.start);
   const [end,   setEnd]   = useState(initial.end);
@@ -774,6 +776,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
 function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved }:
   { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void }
 ) {
+  useModalBack(true, onClose);
   // fromGrid = opened by clicking a cell (staff + time pre-set)
   const fromGrid = !!staff;
   const [form, setForm] = useState({ staffId: staff?.id || "", serviceId: "", date, time, note: "" });
@@ -1230,6 +1233,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
 function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
   staffId: string; date: string; defaultTime: string; onClose: () => void; onSaved: () => void;
 }) {
+  useModalBack(true, onClose);
   const [start, setStart] = useState(defaultTime);
   const [end, setEnd] = useState(() => {
     const [h, m] = defaultTime.split(":").map(Number);
@@ -1323,6 +1327,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   onMarkSwap: (proposalId: string, action: "mark_accepted" | "mark_rejected" | "cancel") => Promise<void>;
   onApproveSwap: (proposalId: string) => Promise<void>;
 }) {
+  useModalBack(true, onClose);
   const [updating, setUpdating] = useState(false);
   const [staffNote, setStaffNote] = useState(appt.staffNote || "");
   const [savingNote, setSavingNote] = useState(false);
@@ -2401,6 +2406,7 @@ type CustomerHistory = {
 function CustomerHistoryModal({ customerId, customerName, onClose }:
   { customerId: string; customerName: string; onClose: () => void }
 ) {
+  useModalBack(true, onClose);
   const [data, setData] = useState<CustomerHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -2685,6 +2691,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
 
 // ── Day Panel (replaces DayMenu) ──────────────────────────────────────────────
 function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId: string; onClose: () => void; onRefresh: () => void }) {
+  useModalBack(true, onClose);
   const [tab, setTab] = useState<"hours" | "breaks" | "waitlist">("hours");
   const [hours, setHours] = useState({ isWorking: true, start: "09:00", end: "20:00" });
   const [breaks, setBreaks] = useState<{ start: string; end: string; recurring?: boolean }[]>([]);

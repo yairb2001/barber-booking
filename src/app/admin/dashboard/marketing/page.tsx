@@ -65,6 +65,43 @@ export default function MarketingDeepPage() {
   const [copied, setCopied]       = useState<string | null>(null);
   const [showMeta, setShowMeta]   = useState(false);
 
+  // Source-merge (alias) editor
+  const [aliasOpen, setAliasOpen]       = useState(false);
+  const [aliasSources, setAliasSources] = useState<{ source: string; count: number }[]>([]);
+  const [aliasMap, setAliasMap]         = useState<Record<string, string>>({});
+  const [aliasSaving, setAliasSaving]   = useState(false);
+  const [aliasSaved, setAliasSaved]     = useState(false);
+  const [statsReloadKey, setStatsReloadKey] = useState(0);
+
+  const loadAliases = () => {
+    // Endpoint is owner-guarded — a barber gets 403 and this quietly no-ops.
+    fetch("/api/admin/ref-aliases").then(r => r.ok ? r.json() : null).then(d => {
+      if (!d) return;
+      setAliasSources(Array.isArray(d.sources) ? d.sources : []);
+      setAliasMap(d.aliases && typeof d.aliases === "object" ? d.aliases : {});
+    }).catch(() => {});
+  };
+
+  const saveAliases = async () => {
+    setAliasSaving(true);
+    const clean: Record<string, string> = {};
+    for (const [k, v] of Object.entries(aliasMap)) {
+      const to = (v || "").trim();
+      if (to && to !== k) clean[k] = to;
+    }
+    const r = await fetch("/api/admin/ref-aliases", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ aliases: clean }),
+    }).catch(() => null);
+    setAliasSaving(false);
+    if (r && r.ok) {
+      setAliasSaved(true);
+      setTimeout(() => setAliasSaved(false), 1800);
+      setStatsReloadKey(k => k + 1); // re-fetch the table so merged sources collapse
+    }
+  };
+
   // Load role + staff
   useEffect(() => {
     fetch("/api/admin/me").then(r => r.ok ? r.json() : null).then(me => {
@@ -79,6 +116,7 @@ export default function MarketingDeepPage() {
     fetch("/api/admin/settings").then(r => r.ok ? r.json() : null).then(s => {
       if (s && typeof s.slug === "string") setSlug(s.slug);
     }).catch(() => {});
+    loadAliases();
   }, []);
 
   // Home-screen base URL for the tracking-link builder (uses the current origin).
@@ -117,7 +155,7 @@ export default function MarketingDeepPage() {
       .then(r => r.json())
       .then(data => { setRows(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [period, from, to, selStaff]);
+  }, [period, from, to, selStaff, statsReloadKey]);
 
   const totalCustomers  = rows.reduce((s, r) => s + r.total,     0);
   const totalReturning  = rows.reduce((s, r) => s + r.returning,  0);
@@ -197,6 +235,60 @@ export default function MarketingDeepPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Source-merge (alias) editor — owner only */}
+      {isOwner && aliasSources.length > 0 && (
+        <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
+          <button onClick={() => setAliasOpen(v => !v)}
+            className="w-full flex items-center justify-between text-right">
+            <span className="font-semibold text-neutral-800 text-sm flex items-center gap-2">
+              🔀 מיזוג מקורות
+            </span>
+            <span className="text-teal-600 text-xs">{aliasOpen ? "▲ סגור" : "▼ פתח"}</span>
+          </button>
+          <p className="text-xs text-neutral-500 -mt-1">
+            אותו ערוץ מופיע לפעמים בכמה שמות (למשל &quot;ig&quot; מקישור ו&quot;אינסטגרם&quot; מהטופס). כתוב ליד כל מקור לאיזה שם למזג אותו — מי שתשאיר ריק יישאר שורה נפרדת.
+          </p>
+
+          {aliasOpen && (
+            <div className="space-y-3">
+              {/* Suggestions for the "merge into" field */}
+              <datalist id="alias-suggestions">
+                {Array.from(new Set([
+                  ...aliasSources.map(s => s.source),
+                  ...Object.values(aliasMap).filter(Boolean),
+                ])).sort().map(name => <option key={name} value={name} />)}
+              </datalist>
+
+              <div className="space-y-2">
+                {aliasSources.map(({ source, count }) => (
+                  <div key={source} className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 min-w-[130px]">
+                      <span className="text-sm text-neutral-800 font-medium truncate max-w-[110px]">{source}</span>
+                      <span className="text-[10px] text-neutral-400 shrink-0">({count})</span>
+                    </div>
+                    <span className="text-neutral-300 text-xs">←</span>
+                    <input
+                      list="alias-suggestions"
+                      value={aliasMap[source] ?? ""}
+                      onChange={e => setAliasMap(m => ({ ...m, [source]: e.target.value }))}
+                      placeholder="מזג לתוך… (ריק = השאר בנפרד)"
+                      className="flex-1 min-w-[150px] border border-neutral-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <button onClick={saveAliases} disabled={aliasSaving}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-teal-600 text-white disabled:opacity-40 hover:bg-teal-700 transition">
+                  {aliasSaving ? "שומר…" : aliasSaved ? "✓ נשמר" : "שמור מיזוג"}
+                </button>
+                <span className="text-[11px] text-neutral-400">המיזוג לא מוחק דבר — אפשר לשנות בכל רגע.</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -27,8 +27,19 @@ export async function GET(req: NextRequest) {
   // Barbers are always scoped to themselves; owners can filter by staffId
   const staffId   = barberScope ?? (searchParams.get("staffId") || undefined);
 
-  const business = await getSessionBusiness(req, { id: true });
+  const business = await getSessionBusiness(req, { id: true, settings: true });
   if (!business) return NextResponse.json([]);
+
+  // Owner-defined source-merge map (Business.settings.refAliases): folds raw
+  // sources into a canonical label at read time. Non-destructive & retroactive.
+  // A raw source with no entry is left as-is (shows as its own row).
+  let refAliases: Record<string, string> = {};
+  try {
+    const s = business.settings ? JSON.parse(business.settings) : {};
+    if (s?.refAliases && typeof s.refAliases === "object" && !Array.isArray(s.refAliases)) {
+      refAliases = s.refAliases as Record<string, string>;
+    }
+  } catch { /* ignore malformed settings */ }
 
   // ── Date range for customer creation filter ──────────────────────────────────
   let createdAtFilter: { gte?: Date; lte?: Date } | undefined;
@@ -67,7 +78,8 @@ export async function GET(req: NextRequest) {
   const map = new Map<string, { total: number; returning: number; regulars: number; loyal: number; ads: Ads }>();
 
   for (const c of customers) {
-    const src = c.referralSource?.trim() || "לא ידוע";
+    const rawSrc = c.referralSource?.trim() || "לא ידוע";
+    const src = refAliases[rawSrc] || rawSrc;
     const n = c._count.appointments;
     const row = map.get(src) ?? { total: 0, returning: 0, regulars: 0, loyal: 0, ads: new Map() as Ads };
     row.total    += 1;

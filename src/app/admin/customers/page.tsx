@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useModalBack } from "@/lib/useModalBack";
 
 type Customer = {
   id: string;
@@ -173,6 +174,7 @@ function SendMessageModal({ customerId, customerName, onClose }: {
   const [sending, setSending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
+  useModalBack(true, onClose);
 
   const send = async () => {
     setErr(null);
@@ -241,6 +243,7 @@ function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  useModalBack(true, onClose);
 
   const save = async () => {
     setErr(null);
@@ -323,6 +326,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
   const [notesDraft, setNotesDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  useModalBack(true, onClose);
 
   const load = async () => {
     setLoading(true);
@@ -673,6 +677,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ created: number; skipped: number } | null>(null);
+  useModalBack(true, onClose);
 
   useEffect(() => {
     fetch("/api/admin/staff").then(r => r.json()).then((d: StaffItem[]) => {
