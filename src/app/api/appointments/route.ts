@@ -129,14 +129,22 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Marketing attribution ────────────────────────────────────────────────────
-  // Attribution captured from the booking-link URL (?ref / ?utm_*). Per product
-  // decision it OVERRIDES the manually-picked "מקור הגעה", and is only applied to
-  // brand-new customers (first-touch — "where did they originally come from").
+  // Two signals for "where did this customer come from", applied only to
+  // brand-new customers (first-touch):
+  //   1. manualSource — what the customer explicitly picked in "מאיפה הכרת אותנו?"
+  //      (empty when they didn't choose — the "בחר..." placeholder sends nothing).
+  //   2. attrDisplaySource — captured from the booking-link URL (?ref / ?utm_*).
+  // Per product decision the MANUAL pick WINS: a customer may have arrived via a
+  // friend but booked through the Google/ad link, so their explicit answer is the
+  // more truthful attribution. The URL ref is only the fallback when they didn't
+  // pick anything. The raw URL params are still recorded separately in the utm*
+  // columns below, so the ad-click data is never lost.
   const attr = (attribution && typeof attribution === "object")
     ? attribution as { ref?: string; source?: string; campaign?: string; content?: string }
     : {};
   const attrDisplaySource = (attr.campaign || attr.ref || attr.source || "").toString().trim() || null;
-  const newCustomerSource = attrDisplaySource || (referralSource || null);
+  const manualSource = (typeof referralSource === "string" ? referralSource.trim() : "") || null;
+  const newCustomerSource = manualSource || attrDisplaySource;
 
   if (!customer) {
     customer = await prisma.customer.create({
