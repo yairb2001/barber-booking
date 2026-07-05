@@ -1,7 +1,18 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
+
+/**
+ * Top-level URL segments that are REAL routes, not tenant slugs. When a public
+ * page's first path segment is one of these, there is no tenant → slug is null
+ * (legacy DOMINANT root behavior). Keeps `/book/*` (the root storefront) from
+ * being misread as a shop slug. Mirrors RESERVED_SLUGS in src/lib/tenant.ts.
+ */
+const ROOT_SEGMENTS = new Set([
+  "book", "admin", "api", "signup", "login", "for-business",
+  "fonts", "_next", "favicon.ico", "static", "public",
+]);
 
 /**
  * Client-side multi-tenant navigation helpers for the PUBLIC storefront.
@@ -15,8 +26,22 @@ import { useCallback } from "react";
 /** Read the tenant slug from the active route ([slug] segment). null = legacy root. */
 export function useSlug(): string | null {
   const params = useParams();
+  const pathname = usePathname();
+
+  // 1. Normal case: the page lives under the [slug] filesystem route, so Next
+  //    gives us the slug as a route param.
   const s = params?.slug;
-  return typeof s === "string" && s.length > 0 ? s : null;
+  if (typeof s === "string" && s.length > 0) return s;
+
+  // 2. Fallback-rewrite case: /<slug>/book/* was served by the root /book/*
+  //    pages (see next.config.mjs `fallback` rewrite), so there is NO [slug]
+  //    param. Recover the slug from the FIRST segment of the visible browser URL
+  //    (rewrites preserve the URL). A reserved first segment (e.g. "book" on the
+  //    legacy root /book/*) means "no tenant" → null, exactly as before.
+  const first = (pathname || "").split("/").filter(Boolean)[0];
+  if (first && !ROOT_SEGMENTS.has(first)) return first;
+
+  return null;
 }
 
 /**
