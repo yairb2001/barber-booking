@@ -80,21 +80,18 @@ async function generateFollowup(transcript: string, name: string | null): Promis
   }
 }
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const provided =
-    searchParams.get("secret") ||
-    req.headers.get("x-cron-secret") ||
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
-    "";
-  if (process.env.CRON_SECRET && provided !== process.env.CRON_SECRET) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
-
-  const now = new Date();
+/**
+ * Core scan, callable both from the standalone cron GET and — so it runs without
+ * any extra external job — from the every-minute drip-queue. Idempotent and
+ * safe to call often: quiet hours, the 1h minimum, and MessageLog dedup all gate
+ * the work, and the (expensive) LLM call only fires when a real nudge is due.
+ */
+export async function runAgentQuestionFollowup(
+  now: Date = new Date(),
+): Promise<{ ok: true; checked: number; sent: number; skipped: number } | { ok: true; skipped: "quiet_hours"; israelHour: number }> {
   const hour = israelHour(now);
   if (hour < SEND_FROM_HOUR || hour >= SEND_TO_HOUR) {
-    return NextResponse.json({ ok: true, skipped: "quiet_hours", israelHour: hour });
+    return { ok: true, skipped: "quiet_hours", israelHour: hour };
   }
 
   const quietBefore  = new Date(now.getTime() - MIN_QUIET_MS);
@@ -109,7 +106,7 @@ export async function GET(req: NextRequest) {
     select: { businessId: true },
   });
   const bizIds = agentConfigs.map(c => c.businessId);
-  if (!bizIds.length) return NextResponse.json({ ok: true, sent: 0 });
+  if (!bizIds.length) return { ok: true, checked: 0, sent: 0, skipped: 0 };
 
   const businesses = await prisma.business.findMany({
     where: { id: { in: bizIds } },
@@ -218,5 +215,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked, sent, skipped });
+  return { ok: true, checked, sent, skipped };
+}
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const provided =
+    searchParams.get("secret") ||
+    req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    "";
+  if (process.env.CRON_SECRET && provided !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  const result = await runAgentQuestionFollowup();
+  return NextResponse.json(result);
 }

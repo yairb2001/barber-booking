@@ -30,6 +30,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deliverMessageLog } from "@/lib/messaging";
+import { runAgentQuestionFollowup } from "@/app/api/cron/agent-question-followup/route";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,14 @@ const RATE_PER_BUSINESS = 1;
 
 /** How many due rows to scan per run (across all businesses). */
 const SCAN_LIMIT = 200;
+
+/** The every-minute drip trigger also drives the "agent asked a question and got
+ *  no reply" follow-up, so it needs no separate external cron. Scanning on every
+ *  single tick is wasteful, so gate it to at most once per this interval. The
+ *  timestamp lives in warm-instance memory — a best-effort throttle; a cold
+ *  start just scans a little sooner, which is harmless (the scan is idempotent). */
+const QUESTION_FOLLOWUP_EVERY_MS = 5 * 60 * 1000;
+let lastQuestionFollowupRun = 0;
 
 /** Appointment-bound reminder kinds that must be re-validated before sending —
  *  a reminder for a cancelled/removed appointment must never go out. */
@@ -230,6 +239,19 @@ export async function GET(req: NextRequest) {
         data: { status: "failed", error: err instanceof Error ? err.message : "send_error" },
       }).catch(() => {});
       failed++;
+    }
+  }
+
+  // Piggyback the question follow-up on this every-minute trigger (throttled),
+  // so it runs without a dedicated external cron. Never let it break the drip
+  // queue — the message delivery above is the critical path.
+  const nowMs = Date.now();
+  if (nowMs - lastQuestionFollowupRun >= QUESTION_FOLLOWUP_EVERY_MS) {
+    lastQuestionFollowupRun = nowMs;
+    try {
+      await runAgentQuestionFollowup();
+    } catch (err) {
+      console.error("[drip-queue] question-followup failed:", err);
     }
   }
 
