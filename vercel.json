@@ -33,6 +33,10 @@
       "schedule": "0 8 * * *"
     },
     {
+      "path": "/api/cron/agent-question-followup",
+      "schedule": "0 * * * *"
+    },
+    {
       "path": "/api/cron/swap-followup",
       "schedule": "0 9 * * *"
     },

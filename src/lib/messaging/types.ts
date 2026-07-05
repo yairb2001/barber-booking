@@ -10,6 +10,7 @@ export type MessageKind =
   | "manual"
   | "agent_reply"
   | "agent_followup"   // nudge sent when a chat went quiet without a booking
+  | "agent_question_followup" // fast nudge (~1h) when the agent asked a question and got no reply
   | "agent_escalation" // alert sent to a barber/owner when the agent hands a customer off
   | "reengage"
   | "post_first_visit"

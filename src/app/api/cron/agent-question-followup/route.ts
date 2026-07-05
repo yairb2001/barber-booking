@@ -1,16 +1,25 @@
 /**
- * Conversation follow-up cron.
- * Finds chats that went quiet WITHOUT ending in a booking and sends ONE warm,
- * natural nudge that drives the customer back toward booking a slot.
+ * Agent question follow-up cron.
  *
- * Guards: the AI agent must be enabled and the tier must include it. Skips chats
- * escalated to a human, chats already followed up, and customers who already
- * have an upcoming appointment. One follow-up per conversation (deduped via a
- * MessageLog of kind "agent_followup").
+ * SEPARATE from /api/cron/conversation-followup. That one is a slow, next-morning
+ * catch-all for chats that opened but never closed with a booking. THIS one is a
+ * fast (~1h) nudge for a specific case: the agent asked the customer a question
+ * and the customer went silent. We gently re-ask so the thread doesn't die on an
+ * open question.
  *
- * Owners can turn this off per-business with settings.agentFollowupEnabled=false.
+ * Trigger: the most recent message in the conversation is from the agent
+ * (role="assistant", source="agent") AND it reads like a question (contains "?"),
+ * and it's been 1–6h with no customer reply. Runs frequently (hourly) so it can
+ * react within a couple of hours.
  *
- * Secure with CRON_SECRET: GET /api/cron/conversation-followup?secret=<CRON_SECRET>
+ * Guards: agent enabled + tier includes it, not escalated to a human, quiet
+ * hours 09:00–21:00 Israel time, one nudge per conversation (deduped via
+ * MessageLog). To avoid double-messaging, dedup counts BOTH this kind and the
+ * slow "agent_followup" kind — a customer gets at most one of the two.
+ *
+ * Owners can turn this off per-business with settings.agentQuestionFollowupEnabled=false.
+ *
+ * Secure with CRON_SECRET: GET /api/cron/agent-question-followup?secret=<CRON_SECRET>
  */
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
@@ -23,16 +32,13 @@ export const dynamic = "force-dynamic";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
-const MIN_QUIET_MS = 60 * 60 * 1000;        // wait at least 1h after the last message
-// Look back far enough to carry an evening/overnight abandon into the next
-// morning: if quiet hours blocked the nudge last night, the morning run still
-// finds the chat (no follow-up was logged, so it's still a candidate). 36h
-// comfortably spans the ~12h quiet window plus a full day.
-const MAX_AGE_MS   = 36 * 60 * 60 * 1000;
+const MIN_QUIET_MS = 60 * 60 * 1000;        // wait at least 1h after the agent's question
+// Keep the window tight: a pending question is time-sensitive, so we only chase
+// it for a few hours. If it goes unanswered longer (e.g. overnight), the slow
+// conversation-followup picks it up the next morning with a generic nudge.
+const MAX_AGE_MS   = 6 * 60 * 60 * 1000;
 
-// Quiet hours: only nudge between 09:00–21:00 Israel time. This endpoint is
-// driven every couple of hours (cron-job.org), so without this guard a
-// follow-up could fire at 3am. Intl handles Israel DST automatically.
+// Quiet hours: only nudge between 09:00–21:00 Israel time. Intl handles DST.
 const SEND_FROM_HOUR = 9;
 const SEND_TO_HOUR   = 21;
 function israelHour(d: Date): number {
@@ -40,28 +46,28 @@ function israelHour(d: Date): number {
     timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false,
   }).formatToParts(d);
   const h = Number(parts.find(p => p.type === "hour")?.value ?? "0");
-  return h === 24 ? 0 : h; // some engines render midnight as "24"
+  return h === 24 ? 0 : h;
 }
 
 function fallbackFollowup(name: string | null): string {
   const hi = name ? `היי ${name}, ` : "היי, ";
-  return `${hi}ראיתי שהתחלנו ולא סגרנו תור — רוצה שאמצא לך שעה טובה?`;
+  return `${hi}רק מוודא שלא פספסת — עדיין מחכה לתשובה שלך כדי שנתקדם.`;
 }
 
-/** Write one short, contextual nudge from the conversation so far. */
+/** Write one short nudge that follows up on the agent's unanswered question. */
 async function generateFollowup(transcript: string, name: string | null): Promise<string> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 200,
       system:
-        "אתה נציג מספרה שמתכתב בוואטסאפ. הלקוח התחיל שיחה ולא סגר תור, ואתה שולח לו הודעת פולואפ אחת קצרה. " +
-        "כתוב משפט אחד חם וטבעי בעברית שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
+        "אתה נציג מספרה שמתכתב בוואטסאפ. שאלת את הלקוח שאלה והוא עוד לא ענה, ואתה שולח תזכורת אחת קצרה שממשיכה בדיוק מאותה שאלה. " +
+        "כתוב משפט אחד חם וטבעי בעברית שמזכיר בעדינות את השאלה שנשארה פתוחה ומזמין אותו לענות, בלי לחץ ובלי להישמע כמו בוט. " +
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
         (name ? `פנה ללקוח בשמו (${name}). ` : "") +
         "החזר רק את ההודעה עצמה, בלי הקדמות.",
       messages: [
-        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nכתוב הודעת פולואפ אחת.` },
+        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nכתוב תזכורת אחת קצרה על השאלה שנשארה פתוחה.` },
       ],
     });
     let text = "";
@@ -69,16 +75,12 @@ async function generateFollowup(transcript: string, name: string | null): Promis
     text = text.trim();
     return text || fallbackFollowup(name);
   } catch (e) {
-    console.error("[followup] LLM failed", e);
+    console.error("[question-followup] LLM failed", e);
     return fallbackFollowup(name);
   }
 }
 
 export async function GET(req: NextRequest) {
-  // Accept Vercel Cron's `Authorization: Bearer <CRON_SECRET>` header (this is
-  // what the daily schedule actually sends) as well as a manual ?secret= /
-  // x-cron-secret trigger. Without the Bearer branch the daily run 401'd and
-  // NO follow-up was ever sent.
   const { searchParams } = new URL(req.url);
   const provided =
     searchParams.get("secret") ||
@@ -90,7 +92,6 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  // Respect quiet hours regardless of how often the cron fires.
   const hour = israelHour(now);
   if (hour < SEND_FROM_HOUR || hour >= SEND_TO_HOUR) {
     return NextResponse.json({ ok: true, skipped: "quiet_hours", israelHour: hour });
@@ -99,8 +100,10 @@ export async function GET(req: NextRequest) {
   const quietBefore  = new Date(now.getTime() - MIN_QUIET_MS);
   const notOlderThan = new Date(now.getTime() - MAX_AGE_MS);
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // Dedup window: don't nudge if ANY follow-up (this kind or the slow one) went
+  // out in the last day and a half — keeps the two crons from double-messaging.
+  const dedupSince = new Date(now.getTime() - 36 * 60 * 60 * 1000);
 
-  // Businesses with the agent switched on.
   const agentConfigs = await prisma.agentConfig.findMany({
     where: { isEnabled: true },
     select: { businessId: true },
@@ -118,7 +121,7 @@ export async function GET(req: NextRequest) {
   for (const biz of businesses) {
     if (!tierHas(biz.tier, "aiAgent")) continue;
     const settings = (biz.settings as Record<string, unknown> | null) ?? {};
-    if (settings.agentFollowupEnabled === false) continue;
+    if (settings.agentQuestionFollowupEnabled === false) continue;
 
     const convos = await prisma.conversation.findMany({
       where: {
@@ -135,19 +138,41 @@ export async function GET(req: NextRequest) {
       const phone      = normalizeIsraeliPhone(convo.phone);
       const localPhone = phone.replace(/^972/, "0");
 
-      // Already nudged on this conversation? (deduped via MessageLog)
+      // The most recent turn must be the agent asking a question that the
+      // customer hasn't answered. Pull recent user/assistant messages and look
+      // at the newest one.
+      const msgs = await prisma.conversationMessage.findMany({
+        where:   { conversationId: convo.id, role: { in: ["user", "assistant"] } },
+        orderBy: { createdAt: "desc" },
+        take:    12,
+        select:  { role: true, source: true, content: true },
+      });
+      if (!msgs.length) { skipped++; continue; }
+
+      const last = msgs[0];
+      // Newest message must be from the AI agent (not the customer, not a human
+      // admin reply) and must read like a question.
+      const isAgentQuestion =
+        last.role === "assistant" &&
+        last.source === "agent" &&
+        last.content.includes("?");
+      if (!isAgentQuestion) { skipped++; continue; }
+      // Require a real two-way exchange (the customer said something earlier).
+      if (!msgs.some(m => m.role === "user")) { skipped++; continue; }
+
+      // Already nudged (either kind) recently? Don't double up.
       const already = await prisma.messageLog.findFirst({
         where: {
           businessId:    biz.id,
           customerPhone: { in: [phone, localPhone, convo.phone] },
-          kind:          { in: ["agent_followup", "agent_question_followup"] },
-          createdAt:     { gte: notOlderThan },
+          kind:          { in: ["agent_question_followup", "agent_followup"] },
+          createdAt:     { gte: dedupSince },
         },
         select: { id: true },
       });
       if (already) { skipped++; continue; }
 
-      // Customer already has an upcoming appointment → they booked, leave them be.
+      // Customer already has an upcoming appointment → they're sorted, leave them.
       const upcoming = await prisma.appointment.findFirst({
         where: {
           businessId: biz.id,
@@ -159,23 +184,11 @@ export async function GET(req: NextRequest) {
       });
       if (upcoming) { skipped++; continue; }
 
-      // Confirm there was a real two-way exchange, and gather context for the LLM.
-      const msgs = await prisma.conversationMessage.findMany({
-        where:   { conversationId: convo.id, role: { in: ["user", "assistant"] } },
-        orderBy: { createdAt: "desc" },
-        take:    12,
-        select:  { role: true, content: true },
-      });
-      const hasUser      = msgs.some(m => m.role === "user");
-      const hasAssistant = msgs.some(m => m.role === "assistant");
-      if (!hasUser || !hasAssistant) { skipped++; continue; }
-
-      const transcript = msgs
+      const transcript = [...msgs]
         .reverse()
         .map(m => `${m.role === "user" ? "לקוח" : "סוכן"}: ${m.content}`)
         .join("\n");
 
-      // Name: prefer the linked customer, fall back to the WhatsApp display name.
       let name: string | null = convo.whatsappName ? firstName(convo.whatsappName) : null;
       if (convo.customerId) {
         const c = await prisma.customer.findUnique({
@@ -194,12 +207,12 @@ export async function GET(req: NextRequest) {
         await sendMessage({
           businessId:    biz.id,
           customerPhone: phone,
-          kind:          "agent_followup",
+          kind:          "agent_question_followup",
           body:          followup,
         });
         sent++;
       } catch (e) {
-        console.error("[followup] send failed", phone, e);
+        console.error("[question-followup] send failed", phone, e);
         skipped++;
       }
     }
