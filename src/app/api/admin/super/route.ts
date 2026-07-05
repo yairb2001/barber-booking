@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
+import { getRootBusinessId } from "@/lib/tenant";
 
 /**
  * GET /api/admin/super
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [businesses, staffGroups, apptGroups, custGroups, msgMaxGroups, openLeads] =
+  const [businesses, staffGroups, apptGroups, custGroups, msgMaxGroups, openLeads, rootId] =
     await Promise.all([
       prisma.business.findMany({
         select: {
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
       prisma.customer.groupBy({ by: ["businessId"], _count: { _all: true } }),
       prisma.messageLog.groupBy({ by: ["businessId"], _max: { createdAt: true } }),
       prisma.lead.count({ where: { status: { in: ["new", "contacted", "demo"] } } }),
+      getRootBusinessId(),
     ]);
 
   const staffMap = new Map(staffGroups.map((g) => [g.businessId, g._count._all]));
@@ -62,6 +64,8 @@ export async function GET(req: NextRequest) {
       id: b.id,
       name: b.name,
       slug: b.slug,
+      publicPath: b.id === rootId ? "/" : `/${b.slug}`,
+      isRoot: b.id === rootId,
       tier: b.tier,
       ownerPhone: ownerPhone(b.settings, b.phone),
       monthlyPrice: b.monthlyPrice ?? null,

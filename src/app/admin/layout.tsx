@@ -67,7 +67,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean } | null>(null);
+  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
@@ -185,7 +185,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   // Share / copy the public booking link so the owner can distribute it easily.
   const handleShareLink = async () => {
-    const url = window.location.origin + "/";
+    const url = window.location.origin + (me?.publicPath || "/");
     const title = "DOMINANT — קביעת תור";
     // Prefer the native share sheet (mobile / installed app), fall back to clipboard.
     if (typeof navigator !== "undefined" && navigator.share) {
@@ -289,7 +289,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <span>{linkCopied ? "הקישור הועתק!" : "קישור העסק — שתף"}</span>
           </button>
           <Link
-            href="/"
+            href={me?.publicPath || "/"}
             onClick={() => setDrawerOpen(false)}
             className="block text-xs text-slate-500 hover:text-slate-700 transition"
           >

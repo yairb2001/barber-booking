@@ -4,6 +4,7 @@ import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { getReferralConfig } from "@/lib/referral";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
+import { getRootBusinessId } from "@/lib/tenant";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -88,8 +89,15 @@ export async function GET(req: NextRequest) {
   // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
   const perms = await getEffectivePermissions(req);
 
+  const rootBusinessId = await getRootBusinessId();
+  const isRootBusiness = session.businessId === rootBusinessId;
+  const slug = business?.slug ?? null;
+  const publicPath = isRootBusiness || !slug ? "/" : `/${slug}`;
+
   return NextResponse.json({
     businessId: session.businessId,
+    isRootBusiness,
+    publicPath,
     role: session.role,
     isOwner: session.isOwner,
     isSuperAdmin: session.isOwner && session.businessId === SUPER_ADMIN_BUSINESS_ID,

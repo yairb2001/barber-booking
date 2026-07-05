@@ -47,6 +47,21 @@ export async function fallbackBusiness(sel: any = {}): Promise<any> {
   return prisma.business.findFirst({ orderBy: { createdAt: "asc" }, ...sel });
 }
 
+/**
+ * The id of the ROOT/legacy business — the one served at the bare root URL (`/`).
+ * Same resolution as fallbackBusiness: ROOT_BUSINESS_SLUG env, else oldest install.
+ * Used to decide a business's canonical public path ("/" for root, "/<slug>" else).
+ */
+export async function getRootBusinessId(): Promise<string | null> {
+  const rootSlug = process.env.ROOT_BUSINESS_SLUG;
+  if (rootSlug) {
+    const b = await prisma.business.findUnique({ where: { slug: rootSlug }, select: { id: true } });
+    if (b) return b.id;
+  }
+  const b = await prisma.business.findFirst({ orderBy: { createdAt: "asc" }, select: { id: true } });
+  return b?.id ?? null;
+}
+
 /** Resolve only the business id (cheapest — selects id). Returns null if not found. */
 export async function resolveBusinessId(req: Request): Promise<string | null> {
   const { slug, businessId } = readParams(req);

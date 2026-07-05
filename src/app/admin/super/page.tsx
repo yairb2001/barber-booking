@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Biz = {
-  id: string; name: string; slug: string; tier: string; ownerPhone: string | null;
+  id: string; name: string; slug: string; publicPath: string; isRoot: boolean; tier: string; ownerPhone: string | null;
   monthlyPrice: number | null; setupFee: number | null;
   paidAt: string | null; suspendedAt: string | null;
   trialEndsAt: string | null; trialDaysLeft: number | null;
@@ -332,6 +332,7 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap gap-1.5">
+          <button onClick={() => { navigator.clipboard?.writeText(window.location.origin + b.publicPath); alert("הקישור הועתק:\n" + window.location.origin + b.publicPath); }} className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-200">🔗 קישור לקוחות{b.isRoot ? " (ראשי)" : ""}</button>
           <button onClick={() => setEditing(true)} className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-200">💰 מחיר/מסלול</button>
           {b.paying
             ? <button onClick={() => patch({ markPaid: false })} className="text-xs bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-200">בטל תשלום</button>
