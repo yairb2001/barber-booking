@@ -7,6 +7,8 @@ type Staff = { id: string; name: string };
 
 type AdRow = { ad: string; total: number; returning: number };
 
+type SourceCustomer = { id: string; name: string; phone: string; visits: number; createdAt: string };
+
 type ReferralRow = {
   source: string;
   total: number;
@@ -58,6 +60,10 @@ export default function MarketingDeepPage() {
   const [rows, setRows]           = useState<ReferralRow[]>([]);
   const [loading, setLoading]     = useState(false);
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
+
+  // Per-source customer lists (lazy-loaded when a row is opened, cached per source).
+  const [custBySource, setCustBySource] = useState<Record<string, SourceCustomer[]>>({});
+  const [custLoading, setCustLoading]   = useState<Set<string>>(new Set());
 
   // Tracking-link builder
   const [publicPath, setPublicPath] = useState<string>("/");
@@ -135,10 +141,27 @@ export default function MarketingDeepPage() {
     }).catch(() => {});
   }
 
+  function loadCustomers(source: string) {
+    // Cached already, or a load in flight → skip.
+    if (custBySource[source] || custLoading.has(source)) return;
+    setCustLoading(prev => new Set(prev).add(source));
+    const params = new URLSearchParams({ period, source });
+    if (period === "custom") { params.set("from", from); params.set("to", to); }
+    if (selStaff) params.set("staffId", selStaff);
+    fetch(`/api/admin/analytics/referral-customers?${params}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: SourceCustomer[]) => {
+        setCustBySource(prev => ({ ...prev, [source]: Array.isArray(data) ? data : [] }));
+      })
+      .catch(() => setCustBySource(prev => ({ ...prev, [source]: [] })))
+      .finally(() => setCustLoading(prev => { const n = new Set(prev); n.delete(source); return n; }));
+  }
+
   function toggleExpand(source: string) {
     setExpanded(prev => {
       const next = new Set(prev);
-      if (next.has(source)) next.delete(source); else next.add(source);
+      if (next.has(source)) next.delete(source);
+      else { next.add(source); loadCustomers(source); }
       return next;
     });
   }
@@ -146,6 +169,10 @@ export default function MarketingDeepPage() {
   // Fetch stats whenever filters change
   useEffect(() => {
     setLoading(true);
+    // Filters changed → the cached per-source customer lists no longer match. Reset.
+    setExpanded(new Set());
+    setCustBySource({});
+    setCustLoading(new Set());
     const params = new URLSearchParams({ period });
     if (period === "custom") { params.set("from", from); params.set("to", to); }
     if (selStaff) params.set("staffId", selStaff);
@@ -403,13 +430,15 @@ export default function MarketingDeepPage() {
                 {rows.map((row, i) => {
                   const hasAds = !!row.ads && row.ads.length > 0;
                   const isOpen = expanded.has(row.source);
+                  const custList = custBySource[row.source];
+                  const custLoad = custLoading.has(row.source);
                   return (
                   <Fragment key={row.source}>
-                  <tr onClick={() => hasAds && toggleExpand(row.source)}
-                    className={`${i % 2 === 0 ? "bg-white" : "bg-neutral-50/40"} ${hasAds ? "cursor-pointer hover:bg-teal-50/50" : ""}`}>
+                  <tr onClick={() => toggleExpand(row.source)}
+                    className={`${i % 2 === 0 ? "bg-white" : "bg-neutral-50/40"} cursor-pointer hover:bg-teal-50/50`}>
                     <td className="px-4 py-3 font-medium text-neutral-900 max-w-[140px] truncate">
                       <span className="flex items-center gap-1.5">
-                        {hasAds && <span className="text-teal-500 text-[10px]">{isOpen ? "▼" : "◀"}</span>}
+                        <span className="text-teal-500 text-[10px]">{isOpen ? "▼" : "◀"}</span>
                         <span className="truncate">{row.source}</span>
                         {hasAds && <span className="text-[10px] text-neutral-400 shrink-0">({row.ads!.length})</span>}
                       </span>
@@ -458,6 +487,36 @@ export default function MarketingDeepPage() {
                       <td className="px-4 py-2 hidden sm:table-cell"></td>
                     </tr>
                   ))}
+
+                  {/* Customer list for this source */}
+                  {isOpen && (
+                    <tr className="bg-neutral-50/60">
+                      <td colSpan={6} className="px-4 py-3">
+                        {custLoad && !custList ? (
+                          <p className="text-xs text-neutral-400 animate-pulse py-2">טוען לקוחות…</p>
+                        ) : custList && custList.length > 0 ? (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-neutral-400 mb-1">
+                              {custList.length.toLocaleString("he-IL")} לקוחות מ&quot;{row.source}&quot;
+                            </p>
+                            {custList.map(c => (
+                              <div key={c.id} className="flex items-center justify-between gap-2 bg-white border border-neutral-100 rounded-lg px-3 py-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm text-neutral-800 font-medium truncate">{c.name || "לקוח"}</p>
+                                  <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                                </div>
+                                <span className="text-[11px] text-teal-600 font-semibold shrink-0">
+                                  {c.visits.toLocaleString("he-IL")} ביקורים
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-neutral-400 py-2">אין לקוחות להצגה</p>
+                        )}
+                      </td>
+                    </tr>
+                  )}
                   </Fragment>
                   );
                 })}
