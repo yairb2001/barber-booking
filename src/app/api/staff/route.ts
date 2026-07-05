@@ -6,11 +6,12 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   // Resolve which business to scope to from ?slug= / ?businessId=
-  // (backward-compat: no param → findFirst)
-  const resolvedBusinessId = (await resolveBusinessId(req)) ?? undefined;
+  // (no param → root business). null = param supplied but unmatched → empty.
+  const resolvedBusinessId = await resolveBusinessId(req);
+  if (!resolvedBusinessId) return NextResponse.json([]);
 
   const staff = await prisma.staff.findMany({
-    where: { isAvailable: true, isActive: true, ...(resolvedBusinessId ? { businessId: resolvedBusinessId } : {}) },
+    where: { isAvailable: true, isActive: true, businessId: resolvedBusinessId },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,

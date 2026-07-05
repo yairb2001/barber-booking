@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
-import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
+import { resolveBusinessId } from "@/lib/tenant";
 import { getPreferredServiceId } from "@/lib/preferred-service";
 import {
   generateSlots,
@@ -38,23 +38,23 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffIdFilter = searchParams.get("staffId"); // optional: for specific barber
 
-  // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
-  const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
+  // Resolve businessId from ?slug= / ?businessId= (no param → root business).
+  // null = param supplied but unmatched → scope to nothing (no cross-tenant spill).
+  const resolvedBusinessId = await resolveBusinessId(request);
+  if (!resolvedBusinessId) return NextResponse.json([]);
 
   // Returning customer? Offer the service THEY usually book (e.g. cut+beard)
   // instead of the generic base service. null for anonymous/new customers.
   const preferredServiceId = await getPreferredServiceId(request, resolvedBusinessId);
 
   // Business-wide booking defaults: min lead time + how far ahead bookings open.
-  const biz = resolvedBusinessId
-    ? await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
-    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+  const biz = await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
   const bizHorizon = biz?.bookingHorizonDays ?? 30;
 
   // Get staff members in the quick pool
-  const bizScope = resolvedBusinessId ? { businessId: resolvedBusinessId } : {};
+  const bizScope = { businessId: resolvedBusinessId };
   const staffWhere = staffIdFilter
     ? { id: staffIdFilter, isAvailable: true, ...bizScope }
     : { inQuickPool: true, isAvailable: true, ...bizScope };

@@ -6,13 +6,17 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const staffId = searchParams.get("staffId");
 
-  // Resolve businessId from ?slug= / ?businessId= (backward-compat: → findFirst)
-  const resolvedBusinessId = (await resolveBusinessId(request)) ?? undefined;
+  // Resolve businessId from ?slug= / ?businessId= (no param → root business).
+  // null means a slug/businessId was supplied but matched nothing → scope to
+  // nothing so one tenant's invalid link never spills another tenant's data.
+  const resolvedBusinessId = await resolveBusinessId(request);
+  if (!resolvedBusinessId) return NextResponse.json([]);
 
   if (staffId) {
-    // Get services for a specific staff member
+    // Get services for a specific staff member (scoped to the resolved business
+    // so a staffId cannot pull services from a different tenant).
     const staffServices = await prisma.staffService.findMany({
-      where: { staffId },
+      where: { staffId, service: { businessId: resolvedBusinessId } },
       include: {
         service: {
           select: {
@@ -51,7 +55,7 @@ export async function GET(request: Request) {
 
   // Get all visible services (scoped to business)
   const services = await prisma.service.findMany({
-    where: { isVisible: true, ...(resolvedBusinessId ? { businessId: resolvedBusinessId } : {}) },
+    where: { isVisible: true, businessId: resolvedBusinessId },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,

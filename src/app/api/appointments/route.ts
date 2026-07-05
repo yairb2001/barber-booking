@@ -112,9 +112,10 @@ export async function POST(request: NextRequest) {
 
   if (friendSource && referralSource === friendSource) {
     if (referrerId) {
-      // Preferred path: look up by ID (from autocomplete selection)
-      referrerRecord = await prisma.customer.findUnique({
-        where: { id: referrerId },
+      // Preferred path: look up by ID (from autocomplete selection).
+      // Scope by businessId so a referrer ID can never resolve across tenants.
+      referrerRecord = await prisma.customer.findFirst({
+        where: { id: referrerId, businessId: staff.businessId },
         select: { id: true, name: true, phone: true },
       });
     } else if (referrerPhone) {
