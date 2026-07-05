@@ -282,8 +282,9 @@ export async function execTool(
         const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length) {
           console.warn(`[agent] get_available_slots returned empty — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
-          return `אין תורים פנויים בתאריך ${date}.`;
+          return `אין תורים פנויים ב${hebDayDate(date)} (${date}).`;
         }
+        const header = `${hebDayDate(date)} (${date}):`;
         const body = byStaff
           .map(s => `${s.name} [id: ${s.staffId}]: ${s.slots.join(", ")}`)
           .join("\n");
@@ -294,9 +295,9 @@ export async function execTool(
         // the invariant is that the offered/confirmed time must come from the line
         // of the barber you will actually book with.
         if (byStaff.length > 1) {
-          return `${body}\n\n⚠️ כל שורה היא ספר נפרד, והשעה שלצדו פנויה אך ורק אצלו. מותר לעבור בין ספרים כדי למצוא ללקוח שעה שמתאימה לו (למשל אם הוא רוצה מאוחר יותר ולספר הראשון אין) — אבל כל שעה שאתה מציע ומאשר חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל, ותקבע עם ה-staffId שלו. לעולם אל תציג שעה כפנויה אצל ספר אחד כשהיא פנויה רק אצל אחר.`;
+          return `${header}\n${body}\n\n⚠️ כל שורה היא ספר נפרד, והשעה שלצדו פנויה אך ורק אצלו. מותר לעבור בין ספרים כדי למצוא ללקוח שעה שמתאימה לו (למשל אם הוא רוצה מאוחר יותר ולספר הראשון אין) — אבל כל שעה שאתה מציע ומאשר חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל, ותקבע עם ה-staffId שלו. לעולם אל תציג שעה כפנויה אצל ספר אחד כשהיא פנויה רק אצל אחר.`;
         }
-        return body;
+        return `${header}\n${body}`;
       }
 
       // ── find_next_available ──────────────────────────────────────────────────
@@ -324,7 +325,7 @@ export async function execTool(
             const warn = byStaff.length > 1
               ? `\n\n⚠️ כל שורה היא ספר נפרד; השעה פנויה רק אצל הספר שלצדה. מותר לעבור בין ספרים כדי למצוא שעה שמתאימה ללקוח, אבל כל שעה שתציע ותקבע חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל.`
               : "";
-            return `התאריך הפנוי הקרוב ביותר הוא ${ds} (זו כל הזמינות באותו יום, בוקר עד ערב):\n${lines}${warn}`;
+            return `התאריך הפנוי הקרוב ביותר הוא ${hebDayDate(ds)} (${ds}) — זו כל הזמינות באותו יום, בוקר עד ערב:\n${lines}${warn}`;
           }
         }
         console.warn(`[agent] find_next_available returned empty — biz=${bizId} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"} scanned=${MAX_SCAN_DAYS}d`);
@@ -822,6 +823,17 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, join_waitlist, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
 }
 
+/** Format an ISO date (YYYY-MM-DD) as a Hebrew weekday + date, e.g.
+ *  "יום ראשון, 5 ביולי". Computed in code so the model never has to derive the
+ *  weekday from the date itself — it gets that wrong (calls a Sunday "Saturday",
+ *  or labels a date "tomorrow" when it isn't). Anchored at noon UTC so the
+ *  calendar day never shifts across the timezone boundary. */
+function hebDayDate(iso: string): string {
+  return new Date(`${iso}T12:00:00.000Z`).toLocaleDateString("he-IL", {
+    weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
+  });
+}
+
 function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
@@ -847,7 +859,7 @@ function buildSystemPrompt(params: {
   // Per-turn chunk (current time + who's chatting). Changes every minute and
   // per customer, so it must stay OUTSIDE the cached prefix.
   let dynamic =
-    `התאריך והשעה כרגע: ${params.now}. התחשב בשעה הנוכחית — אם כבר מאוחר אל תציע תור להיום, והצע אפשרויות טבעיות לפי היום בשבוע (למשל "מחר או בהמשך השבוע", ובסוף שבוע "ראשון הקרוב").`;
+    `התאריך והשעה כרגע: ${params.now} (אזור זמן ישראל). זו שעת האמת — התייחס אליה כפי שהיא. אל תגיד ללקוח מדעתך "היום כבר מאוחר" או "אין זמן היום": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שכבר עברו ולוקח בחשבון זמן הכנה. אם הלקוח מבקש היום — בדוק עם הכלי; אם חזרו שעות, הצע אותן כרגיל. רק אם לא חזרה אף שעה להיום, אמור בעדינות שלהיום כבר אין מקום והצע יום קרוב (מחר או בהמשך השבוע, ובסוף שבוע ראשון הקרוב).`;
   if (params.customerContext) dynamic += `\n${params.customerContext}`;
 
   return [
