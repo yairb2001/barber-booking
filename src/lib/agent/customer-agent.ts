@@ -46,6 +46,14 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
+// Signals that a booking negotiation is already underway anywhere in the recent
+// dialogue: an offered/discussed slot, a date/time on the table, or a
+// confirmation word. Checked across HISTORY — not just the current message —
+// because mid-flow replies like "כן", "16:00?" or "מאשר" carry no keyword yet
+// MUST run on the strong model. Left on Haiku, those turns fabricated
+// availability and even whole bookings that were never written to the DB.
+const BOOKING_FLOW = /מאשר|לקבוע|לבטל|להזיז|להעביר|לשנות|פנוי|נוח לך|השם המלא|איזה יום|איזה שעה|\d{1,2}:\d{2}|\d{1,2}[.\/]\d{1,2}/;
+
 // Mid-loop escalation: only write operations need Sonnet mid-turn.
 // Availability reads are excluded — Haiku handles "here are the slots" fine
 // and there's no point burning Sonnet just to format a list.
@@ -59,10 +67,16 @@ const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_availabl
 
 function pickInitialModel(
   incomingText: string,
-  recentToolNames: (string | null)[]
+  recentToolNames: (string | null)[],
+  recentMessages: string[] = []
 ): string {
   if (SMART_INTENT.test(incomingText)) return MODEL_SMART;
   if (recentToolNames.some(t => t && BOOKING_CONTEXT_TOOLS.has(t))) return MODEL_SMART;
+  // Sticky: if the recent dialogue shows a booking already in motion, stay on the
+  // strong model even when the current message is a bare "כן"/"מאשר". This breaks
+  // the vicious cycle where Haiku skips the tool, leaves no tool history, and the
+  // next turn stays on Haiku and fabricates a slot or a booking.
+  if (recentMessages.some(t => BOOKING_FLOW.test(t))) return MODEL_SMART;
   return MODEL_FAST;
 }
 
@@ -287,9 +301,17 @@ export async function execTool(
       // ── get_available_slots ──────────────────────────────────────────────────
       case "get_available_slots": {
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
-        const byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
+        let byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
+        // Guard against a spurious empty result: mid-booking re-checks have come
+        // back with "no slots" for a day that demonstrably still had free times
+        // (confirmed against the DB), then recovered seconds later. One retry
+        // costs a single extra read and rescues the booking; a genuinely full/off
+        // day just returns empty again.
         if (!byStaff.length) {
-          console.warn(`[agent] get_available_slots returned empty — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
+          byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
+        }
+        if (!byStaff.length) {
+          console.warn(`[agent] get_available_slots returned empty (after retry) — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
           return `אין תורים פנויים ב${hebDayDate(date)} (${date}).`;
         }
         const header = `${hebDayDate(date)} (${date}):`;
@@ -501,18 +523,30 @@ export async function execTool(
         });
         if (!customer) return "לא נמצא לקוח עם מספר זה במערכת.";
 
-        const now = new Date();
-        const appointments = await prisma.appointment.findMany({
+        // Appointment.date is stored at UTC midnight, so filtering `date >= now`
+        // (a mid-day timestamp) silently dropped EVERY same-day appointment — the
+        // agent then told customers their real, upcoming appointment "doesn't
+        // exist". Filter from the START of the business day, then drop only the
+        // same-day slots whose time has already passed.
+        const nowBiz = getBusinessNow();
+        const dayStart = new Date(`${nowBiz.date}T00:00:00.000Z`);
+        const found = await prisma.appointment.findMany({
           where: {
             customerId: customer.id,
             businessId: bizId,
-            date: { gte: now },
+            date: { gte: dayStart },
             status: { in: ["confirmed", "pending"] },
           },
           include: { staff: true, service: true },
-          orderBy: { date: "asc" },
-          take: 3,
+          orderBy: [{ date: "asc" }, { startTime: "asc" }],
+          take: 5,
         });
+        const appointments = found.filter(a => {
+          const apptDate = new Date(a.date).toISOString().slice(0, 10);
+          if (apptDate !== nowBiz.date) return true;
+          const [h, m] = a.startTime.split(":").map(Number);
+          return (h * 60 + m) >= nowBiz.minutes;
+        }).slice(0, 3);
 
         if (!appointments.length) return "לא נמצאו תורים קרובים ללקוח זה.";
         return appointments
@@ -937,8 +971,9 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
   // on the customer to ask it to look. Surface every confirmed/pending future
   // appointment right here in the context. This is a REAL booked appointment —
   // distinct from a waitlist entry (handled separately below).
-  const todayStart = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
-  const upcoming = await prisma.appointment.findMany({
+  const ctxNow = getBusinessNow();
+  const todayStart = new Date(`${ctxNow.date}T00:00:00.000Z`);
+  const upcomingRaw = await prisma.appointment.findMany({
     where: {
       customerId: customer.id,
       businessId,
@@ -953,6 +988,15 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
       staff:   { select: { name: true } },
       service: { select: { name: true } },
     },
+  });
+  // Drop today's appointments whose time already passed — a 16:30 slot at 17:10
+  // is NOT upcoming, and presenting it as one made the agent tell a customer he
+  // "has a תור today at 16:30" after it had already happened.
+  const upcoming = upcomingRaw.filter(a => {
+    const apptDate = new Date(a.date).toISOString().slice(0, 10);
+    if (apptDate !== ctxNow.date) return true;
+    const [h, m] = a.startTime.split(":").map(Number);
+    return (h * 60 + m) >= ctxNow.minutes;
   });
   if (upcoming.length) {
     const list = upcoming
@@ -1192,7 +1236,7 @@ export async function runCustomerAgent(opts: {
       execTool,
     });
   } else {
-  let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName));
+  let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName), history.map(h => h.content));
   // A reschedule legitimately chains many tools (check + slots + cancel +
   // services + staff + book), so keep enough headroom to also compose a reply.
   const MAX_ITERATIONS = 8;
