@@ -30,7 +30,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deliverMessageLog } from "@/lib/messaging";
-import { runAgentQuestionFollowup } from "@/app/api/cron/agent-question-followup/route";
+import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 
 export const dynamic = "force-dynamic";
 
