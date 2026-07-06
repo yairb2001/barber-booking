@@ -55,6 +55,7 @@ export async function GET(req: NextRequest) {
   // Extract heroVideoUrl + whatsappPrefill from settings JSON
   let heroVideoUrl: string | null = null;
   let whatsappPrefill: string | null = null;
+  let whatsappBubbleEnabled = true; // default ON when unset
   try {
     const settingsObj = business.settings ? JSON.parse(business.settings) : {};
     if (typeof settingsObj.heroVideoUrl === "string" && settingsObj.heroVideoUrl) {
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
     if (typeof settingsObj.whatsappPrefill === "string" && settingsObj.whatsappPrefill.trim()) {
       whatsappPrefill = settingsObj.whatsappPrefill.trim();
     }
+    whatsappBubbleEnabled = settingsObj.whatsappBubbleEnabled !== false;
   } catch { /* ignore */ }
 
   // Referral config the public booking flow needs. We expose ONLY the resolved
@@ -88,5 +90,7 @@ export async function GET(req: NextRequest) {
     heroVideoUrl,
     // Pre-filled "book via WhatsApp" message (optional)
     whatsappPrefill,
+    // Show the "book via WhatsApp" nudge bubble on the home page (default true)
+    whatsappBubbleEnabled,
   });
 }

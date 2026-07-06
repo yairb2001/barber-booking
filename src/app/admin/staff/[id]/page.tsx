@@ -230,12 +230,13 @@ export default function StaffSettingsPage() {
 
   async function saveSchedule() {
     setSaving(true);
-    await fetch(`/api/admin/staff/${id}/schedule`, {
+    const res = await fetch(`/api/admin/staff/${id}/schedule`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(schedule),
     });
     setSaving(false);
+    if (!res.ok) { alert("שמירת שעות העבודה נכשלה. נסה שוב."); return; }
     setScheduleSaved(true);
     setTimeout(() => setScheduleSaved(false), 2500);
   }

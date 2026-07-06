@@ -112,7 +112,7 @@ function parseSchedule(schedules: Schedule[]): DayConfig[] {
 }
 
 // ── Staff Schedule Editor ──────────────────────────────────────────────────────
-function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
+function StaffScheduleEditor({ staff, onSaved }: { staff: StaffMember; onSaved?: () => void }) {
   const [days, setDays] = useState<DayConfig[]>(() => parseSchedule(staff.schedules));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -136,11 +136,14 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
       try { return staff.settings ? JSON.parse(staff.settings) : {}; } catch { return {}; }
     })();
     const merged = { ...existing, ...patch };
-    await fetch(`/api/admin/staff/${staff.id}`, {
+    const res = await fetch(`/api/admin/staff/${staff.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ settings: merged }),
     });
-    setBookingSaving(false); setBookingSaved(true); setTimeout(() => setBookingSaved(false), 2500);
+    setBookingSaving(false);
+    if (!res.ok) { alert("שמירת הגדרות ההזמנה נכשלה. נסה שוב."); return; }
+    setBookingSaved(true); setTimeout(() => setBookingSaved(false), 2500);
+    onSaved?.();  // refresh parent so the editor re-reads fresh data on remount
   }
 
   function updateDay(dow: number, patch: Partial<DayConfig>) {
@@ -154,10 +157,13 @@ function StaffScheduleEditor({ staff }: { staff: StaffMember }) {
       dayOfWeek: dow, isWorking: d.isWorking, start: d.start, end: d.end,
       ...(d.hasBreak && d.breakStart && d.breakEnd ? { breakStart: d.breakStart, breakEnd: d.breakEnd } : {}),
     }));
-    await fetch(`/api/admin/staff/${staff.id}/schedule`, {
+    const res = await fetch(`/api/admin/staff/${staff.id}/schedule`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500);
+    setSaving(false);
+    if (!res.ok) { alert("שמירת שעות העבודה נכשלה. נסה שוב."); return; }
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
+    onSaved?.();  // refresh parent so a tab-switch back shows the saved values
   }
 
   return (
@@ -275,6 +281,11 @@ export default function AdminSettingsPage() {
   }, []);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
+  // Refetch staff (with schedules). Called after a per-barber schedule save so
+  // the Hours-tab editors re-read fresh data when remounted — otherwise a saved
+  // edit "disappears" when you switch tabs and come back (parent state was stale).
+  const reloadStaff = () =>
+    fetch("/api/admin/staff").then(r => r.json()).then(data => { setStaffList(data); setStaffLoading(false); });
   const [form, setForm] = useState<Business>(emptyBusiness);
   const [bizLoading, setBizLoading] = useState(true);
   // Tier + WhatsApp provisioning status (from /api/admin/me) — drives the
@@ -425,6 +436,8 @@ export default function AdminSettingsPage() {
   const [heroVideoUrl, setHeroVideoUrl] = useState("");
   // Pre-filled message for the "book via WhatsApp" link (stored in business.settings)
   const [whatsappPrefill, setWhatsappPrefill] = useState("");
+  // Show the "book via WhatsApp" nudge bubble on the customer home page (default ON)
+  const [whatsappBubbleEnabled, setWhatsappBubbleEnabled] = useState(true);
 
   // Calendar display hours
   const [calStartHour, setCalStartHour] = useState(8);
@@ -554,6 +567,8 @@ export default function AdminSettingsPage() {
         if (typeof settingsObj.heroVideoUrl === "string") setHeroVideoUrl(settingsObj.heroVideoUrl);
         // WhatsApp pre-filled message
         if (typeof settingsObj.whatsappPrefill === "string") setWhatsappPrefill(settingsObj.whatsappPrefill);
+        // WhatsApp nudge bubble toggle (default ON when unset)
+        setWhatsappBubbleEnabled(settingsObj.whatsappBubbleEnabled !== false);
         // Barber permissions
         if (typeof settingsObj.barbersCanViewOthersCalendar === "boolean") setBarbersCanViewOthersCalendar(settingsObj.barbersCanViewOthersCalendar);
         if (typeof settingsObj.barbersCanAccessChats === "boolean") setBarbersCanAccessChats(settingsObj.barbersCanAccessChats);
@@ -565,7 +580,7 @@ export default function AdminSettingsPage() {
       }
       setBizLoading(false);
     });
-    fetch("/api/admin/staff").then(r => r.json()).then(data => { setStaffList(data); setStaffLoading(false); });
+    reloadStaff();
     fetch("/api/admin/referral-sources").then(r => r.json()).then(setReferralSources);
     fetch("/api/admin/me").then(r => r.json()).then(me => {
       if (me?.tier) setTier(me.tier);
@@ -664,7 +679,7 @@ export default function AdminSettingsPage() {
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, settings: { ...currentSettings, heroVideoUrl, whatsappPrefill: whatsappPrefill.trim() } }),
+      body: JSON.stringify({ ...form, settings: { ...currentSettings, heroVideoUrl, whatsappPrefill: whatsappPrefill.trim(), whatsappBubbleEnabled } }),
     });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   }
@@ -1350,6 +1365,20 @@ export default function AdminSettingsPage() {
               <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
                 כשלקוח לוחץ על &quot;קבע תור דרך הוואטסאפ&quot; בדף הבית, הטקסט הזה כבר יופיע לו כתוב מראש בהודעה — הוא רק צריך לשלוח.
               </p>
+
+              {/* Toggle: show/hide the nudge bubble on the customer home page */}
+              <label className="flex items-center justify-between cursor-pointer mb-4 pb-4 border-b border-neutral-100">
+                <div>
+                  <p className="text-sm font-medium text-neutral-800">הצג בועה &quot;קבע תור דרך הוואטסאפ&quot;</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">בועה קופצת ליד כפתור הוואטסאפ בדף הבית שמזמינה לקבוע תור בצ&apos;אט.</p>
+                </div>
+                <button
+                  onClick={() => setWhatsappBubbleEnabled(v => !v)}
+                  className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${whatsappBubbleEnabled ? "bg-teal-600" : "bg-neutral-300"}`}>
+                  <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${whatsappBubbleEnabled ? "right-0.5" : "left-0.5"}`} />
+                </button>
+              </label>
+
               <label className="text-xs text-neutral-500 block mb-1">ההודעה</label>
               <textarea
                 value={whatsappPrefill}
@@ -1401,7 +1430,7 @@ export default function AdminSettingsPage() {
               הגדר שעות עבודה קבועות לכל ספר. לשינויים חד-פעמיים — לחץ על כותרת היום ביומן.
             </p>
             {staffList.map(staff => (
-              <StaffScheduleEditor key={staff.id} staff={staff} />
+              <StaffScheduleEditor key={staff.id} staff={staff} onSaved={reloadStaff} />
             ))}
           </div>
         )
