@@ -302,13 +302,28 @@ export async function execTool(
       case "get_available_slots": {
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
         let byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
-        // Guard against a spurious empty result: mid-booking re-checks have come
-        // back with "no slots" for a day that demonstrably still had free times
-        // (confirmed against the DB), then recovered seconds later. One retry
-        // costs a single extra read and rescues the booking; a genuinely full/off
-        // day just returns empty again.
+        // A specific barber coming back empty has bitten us: the agent offered
+        // slots for a day, the customer picked one, and the pre-book re-check then
+        // returned "no availability" for that SAME day — which still had free
+        // times when checked against the DB. Two guards:
+        //   1) retry once — rescues a spurious/transient empty read;
+        //   2) if a staffId was passed and it's STILL empty, make sure that id is
+        //      even real. A hallucinated/stale id yields an empty staff list that
+        //      is indistinguishable from "fully booked", so we'd wrongly tell the
+        //      customer there's no room. Surface it so the model re-fetches the
+        //      list instead.
         if (!byStaff.length) {
           byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
+        }
+        if (!byStaff.length && inputStaffId) {
+          const staffOk = await prisma.staff.findFirst({
+            where: { id: inputStaffId, businessId: bizId, isAvailable: true },
+            select: { id: true },
+          });
+          if (!staffOk) {
+            console.warn(`[agent] get_available_slots: unknown/unavailable staffId=${inputStaffId} biz=${bizId} date=${date}`);
+            return `לא זיהיתי את הספר הזה. קרא שוב ל-get_staff_list וקבע עם המזהה המדויק של הספר שהלקוח ביקש.`;
+          }
         }
         if (!byStaff.length) {
           console.warn(`[agent] get_available_slots returned empty (after retry) — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
