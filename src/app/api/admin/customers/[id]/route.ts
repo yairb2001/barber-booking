@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, requireOwner } from "@/lib/session";
+import { getRequestSession, requireOwner, barbersCanSeeAllCustomers } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 // GET — full customer record + upcoming appointments + past appointments summary
@@ -28,13 +28,17 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
   }
 
-  // Staff scoping: barbers can only view customers they've served
+  // Staff scoping: barbers can view only customers they've served UNLESS the
+  // owner enabled "barbers can view all customers" (default ON).
   if (session && !session.isOwner && session.staffId) {
-    const hasAppt = await prisma.appointment.count({
-      where: { customerId: id, staffId: session.staffId },
-    });
-    if (hasAppt === 0) {
-      return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+    const biz = await prisma.business.findUnique({ where: { id: session.businessId }, select: { settings: true } });
+    if (!barbersCanSeeAllCustomers(biz?.settings)) {
+      const hasAppt = await prisma.appointment.count({
+        where: { customerId: id, staffId: session.staffId },
+      });
+      if (hasAppt === 0) {
+        return NextResponse.json({ error: "אין הרשאה ללקוח זה" }, { status: 403 });
+      }
     }
   }
 

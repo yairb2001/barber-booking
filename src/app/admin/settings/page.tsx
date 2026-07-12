@@ -464,6 +464,8 @@ export default function AdminSettingsPage() {
   // Barber permissions
   const [barbersCanViewOthersCalendar, setBarbersCanViewOthersCalendar] = useState(false);
   const [barbersCanAccessChats, setBarbersCanAccessChats] = useState(false);
+  // Barbers can view + book for ALL shop customers (not only their own). Default ON.
+  const [barbersCanViewAllCustomers, setBarbersCanViewAllCustomers] = useState(true);
   const [barberPermsSaving, setBarberPermsSaving] = useState(false);
   const [barberPermsSaved, setBarberPermsSaved] = useState(false);
 
@@ -474,7 +476,7 @@ export default function AdminSettingsPage() {
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: { ...currentSettings, barbersCanViewOthersCalendar, barbersCanAccessChats } }),
+      body: JSON.stringify({ settings: { ...currentSettings, barbersCanViewOthersCalendar, barbersCanAccessChats, barbersCanViewAllCustomers } }),
     });
     setBarberPermsSaving(false);
     setBarberPermsSaved(true);
@@ -572,6 +574,7 @@ export default function AdminSettingsPage() {
         // Barber permissions
         if (typeof settingsObj.barbersCanViewOthersCalendar === "boolean") setBarbersCanViewOthersCalendar(settingsObj.barbersCanViewOthersCalendar);
         if (typeof settingsObj.barbersCanAccessChats === "boolean") setBarbersCanAccessChats(settingsObj.barbersCanAccessChats);
+        if (typeof settingsObj.barbersCanViewAllCustomers === "boolean") setBarbersCanViewAllCustomers(settingsObj.barbersCanViewAllCustomers);
         // Referral program ("חבר מביא חבר")
         setReferralEnabled(settingsObj.referralProgramEnabled !== false);
         if (Number(settingsObj.referralGoal) > 0) setReferralGoal(Math.round(Number(settingsObj.referralGoal)));
@@ -1229,6 +1232,18 @@ export default function AdminSettingsPage() {
                   <button onClick={() => setBarbersCanAccessChats(v => !v)}
                     className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${barbersCanAccessChats ? "bg-teal-600" : "bg-neutral-300"}`}>
                     <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${barbersCanAccessChats ? "right-0.5" : "left-0.5"}`} />
+                  </button>
+                </label>
+                <div className="border-t border-neutral-100" />
+                {/* Toggle: view + book for ALL shop customers */}
+                <label className="flex items-center justify-between cursor-pointer">
+                  <div>
+                    <p className="text-sm font-medium text-neutral-800">צפייה וקביעת תור לכל לקוחות המספרה</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">ספרים יוכלו לחפש ולקבוע תור לכל לקוח של העסק — לא רק ללקוחות שלהם</p>
+                  </div>
+                  <button onClick={() => setBarbersCanViewAllCustomers(v => !v)}
+                    className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${barbersCanViewAllCustomers ? "bg-teal-600" : "bg-neutral-300"}`}>
+                    <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${barbersCanViewAllCustomers ? "right-0.5" : "left-0.5"}`} />
                   </button>
                 </label>
               </div>

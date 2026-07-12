@@ -186,3 +186,17 @@ export async function getEffectivePermissions(req: NextRequest): Promise<Effecti
     canViewAllChats: !!staff?.canViewAllChats,
   };
 }
+
+/**
+ * Business-wide permission (stored in Business.settings JSON): may barbers
+ * view + book for ALL of the shop's customers, not only their own? Default ON.
+ * The owner turns this off in /admin/settings -> "הרשאות ספרים".
+ */
+export function barbersCanSeeAllCustomers(businessSettings: string | null | undefined): boolean {
+  try {
+    const s = businessSettings ? JSON.parse(businessSettings) : {};
+    return s.barbersCanViewAllCustomers !== false;
+  } catch {
+    return true;
+  }
+}

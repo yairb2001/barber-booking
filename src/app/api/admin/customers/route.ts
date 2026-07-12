@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession, getSessionBusiness } from "@/lib/session";
+import { getRequestSession, getSessionBusiness, barbersCanSeeAllCustomers } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 // Never cache this list — it must always reflect current customers.
@@ -75,14 +75,18 @@ export async function GET(req: NextRequest) {
   const inactiveDays  = searchParams.get("inactive_days") || "";// no visit for N+ days
   const newDays       = searchParams.get("new_days") || "";     // created in last N days
 
-  // Staff scoping: barbers only see their own customers
+  // Load the business first so we can honor the "barbers can view all
+  // customers" setting (default ON) before deciding whether to scope this barber.
   const session = getRequestSession(req);
-  if (session && !session.isOwner && session.staffId) {
-    staffId = session.staffId;
-  }
-
   const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json([]);
+
+  // Staff scoping: a barber is limited to their OWN customers only when the
+  // owner turned OFF "barbers can view all customers" (default ON). With it on,
+  // barbers can search/list every shop customer (so they can book for anyone).
+  if (session && !session.isOwner && session.staffId && !barbersCanSeeAllCustomers(business.settings)) {
+    staffId = session.staffId;
+  }
 
   // ── Upcoming appointments filter: find customer IDs with appointments in date range ──
   if (upcoming) {
