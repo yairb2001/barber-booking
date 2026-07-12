@@ -33,6 +33,7 @@ import {
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
+import { isLinkFirstEnabled, sendGreetingLink } from "@/lib/link-first";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -115,6 +116,24 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  // Optional-but-recommended webhook authentication. GreenAPI can attach a
+  // secret to every webhook call (instance setting: "Authorization token for
+  // webhooks"). When WHATSAPP_WEBHOOK_TOKEN is configured we REQUIRE it — this
+  // stops anyone from POSTing forged "incoming messages" (which would drive the
+  // AI agent to act as/for arbitrary customers and burn Anthropic + WhatsApp
+  // money). Left unset it stays open so the current live instance keeps working
+  // until the owner configures the token on both sides.
+  const expectedHook = process.env.WHATSAPP_WEBHOOK_TOKEN;
+  if (expectedHook) {
+    const provided =
+      new URL(req.url).searchParams.get("token") ||
+      req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+      "";
+    if (provided !== expectedHook) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+  }
+
   let body: GreenApiWebhook;
   try {
     body = await req.json();
@@ -209,14 +228,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const instanceId = body.instanceData?.idInstance;
   const instanceIdStr = instanceId != null ? String(instanceId) : null;
   let biz = instanceIdStr
-    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true, settings: true } })
+    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true, settings: true, slug: true } })
     : null;
 
   // Fallback ONLY when no instance id was provided (legacy single-tenant webhook).
   // If an instance id WAS given but matched no business, do NOT guess — attaching
   // the message to an arbitrary tenant would mix data between businesses.
   if (!biz && !instanceIdStr) {
-    biz = await fallbackBusiness({ select: { id: true, tier: true, settings: true } });
+    biz = await fallbackBusiness({ select: { id: true, tier: true, settings: true, slug: true } });
   }
   if (!biz) {
     console.error("[webhook] no business found");
@@ -301,6 +320,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { businessId: biz.id, phone, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
   });
+  // Whether THIS message opens a brand-new conversation (first contact). Used by
+  // link-first mode to greet + send the booking link instead of running the agent.
+  const isNewConversation = !conv;
   if (!conv) {
     conv = await prisma.conversation.create({
       data: {
@@ -409,6 +431,22 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
     return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
+  }
+
+  // ── Link-first mode (token saver, opt-in per business) ──────────────────────
+  // On the FIRST contact of a new conversation, reply with a fixed greeting +
+  // booking link instead of running the (paid) agent — 0 tokens. The agent takes
+  // over from the customer's NEXT message (the conversation now exists, so this
+  // branch won't fire again). A 30-min "didn't book / didn't reply" nudge is
+  // handled by runLinkNudges() (piggybacked on the drip-queue cron).
+  if (isNewConversation && isLinkFirstEnabled(biz.settings)) {
+    try {
+      await sendGreetingLink(biz, phone, senderName);
+      return NextResponse.json({ ok: true, handled: "link_first_greeting" });
+    } catch (e) {
+      // Never leave the customer hanging — fall through to the agent on failure.
+      console.error("[link-first] greeting failed:", e);
+    }
   }
 
   // A media/voice message is saved and visible now, but the agent can't read it —

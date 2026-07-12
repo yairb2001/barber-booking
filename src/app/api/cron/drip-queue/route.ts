@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deliverMessageLog } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
+import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 
 export const dynamic = "force-dynamic";
@@ -54,6 +55,10 @@ const SCAN_LIMIT = 200;
  *  start just scans a little sooner, which is harmless (the scan is idempotent). */
 const QUESTION_FOLLOWUP_EVERY_MS = 5 * 60 * 1000;
 let lastQuestionFollowupRun = 0;
+
+// Link-first 30-min nudge scan — cheap query, run every ~2 min.
+const LINK_NUDGE_EVERY_MS = 2 * 60 * 1000;
+let lastLinkNudgeRun = 0;
 
 /** Canary-check the shared Claude key (platform-level) at most this often. */
 const LLM_HEALTH_EVERY_MS = 15 * 60 * 1000;
@@ -257,6 +262,17 @@ export async function GET(req: NextRequest) {
       await runAgentQuestionFollowup();
     } catch (err) {
       console.error("[drip-queue] question-followup failed:", err);
+    }
+  }
+
+  // Piggyback the link-first 30-min nudge on the same trigger (throttled). Fixed
+  // text, 0 tokens — never let it break the drip queue (critical path above).
+  if (nowMs - lastLinkNudgeRun >= LINK_NUDGE_EVERY_MS) {
+    lastLinkNudgeRun = nowMs;
+    try {
+      await runLinkNudges();
+    } catch (err) {
+      console.error("[drip-queue] link-nudge failed:", err);
     }
   }
 

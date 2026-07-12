@@ -373,6 +373,27 @@ export default function AdminSettingsPage() {
   const [ownerAgentSaving, setOwnerAgentSaving] = useState(false);
   const [ownerAgentSaved, setOwnerAgentSaved] = useState(false);
 
+  // Link-first mode — on first contact, reply with a fixed greeting + booking
+  // link instead of the AI agent (saves tokens). Stored in settings.linkFirstEnabled.
+  const [linkFirstEnabled, setLinkFirstEnabled] = useState(false);
+  const [linkFirstSaving, setLinkFirstSaving] = useState(false);
+  const [linkFirstSaved, setLinkFirstSaved] = useState(false);
+
+  async function saveLinkFirstToggle(enabled: boolean) {
+    setLinkFirstSaving(true);
+    setLinkFirstSaved(false);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: { ...currentSettings, linkFirstEnabled: enabled } }),
+    });
+    setLinkFirstSaving(false);
+    setLinkFirstSaved(true);
+    setTimeout(() => setLinkFirstSaved(false), 2000);
+  }
+
   async function saveOwnerAgentToggles(next: { enabled?: boolean; selfEnabled?: boolean }) {
     setOwnerAgentSaving(true);
     setOwnerAgentSaved(false);
@@ -561,6 +582,8 @@ export default function AdminSettingsPage() {
         setOwnerLoginPhone(settingsObj.ownerLoginPhone || data.phone || "");
         // Owner personal WhatsApp agent switches
         setOwnerAgentEnabled(settingsObj.ownerAgentEnabled === true);
+        // Link-first customer flow
+        setLinkFirstEnabled(settingsObj.linkFirstEnabled === true);
         setOwnerAgentSelfEnabled(settingsObj.ownerAgentSelfDisabled !== true);
         // Calendar hours
         if (typeof settingsObj.calendarStartHour === "number") setCalStartHour(settingsObj.calendarStartHour);
@@ -1037,6 +1060,36 @@ export default function AdminSettingsPage() {
                     <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
                       ניהול גישות ←
                     </a>
+                  </div>
+                </div>
+
+                {/* ── Link-first mode (customer flow, token saver) ── */}
+                <div className="col-span-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <label className="text-sm text-neutral-800 font-semibold block">🔗 מצב &quot;קישור קודם&quot; (חיסכון בטוקנים)</label>
+                        <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
+                          בפנייה ראשונה של לקוח, במקום שהסוכן יענה — נשלחת אליו ברכה קבועה עם קישור לקביעת תור (בלי עלות).
+                          הסוכן נכנס לפעולה רק אם הלקוח מגיב. אחרי 30 דק&apos; בלי תגובה ובלי תור — נשלחת תזכורת קבועה אחת.
+                        </p>
+                      </div>
+                      {linkFirstSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}
+                    </div>
+                    <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200">
+                      <div>
+                        <p className="text-[13px] text-neutral-800 font-medium">הפעלה</p>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">דורש שהסוכן החכם יהיה פעיל. ניתן לכבות בכל רגע.</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={linkFirstSaving}
+                        onClick={() => { const v = !linkFirstEnabled; setLinkFirstEnabled(v); saveLinkFirstToggle(v); }}
+                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${linkFirstEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
+                      >
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${linkFirstEnabled ? "right-1" : "right-6"}`} />
+                      </button>
+                    </div>
                   </div>
                 </div>
 

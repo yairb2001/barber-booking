@@ -11,6 +11,8 @@ export type MessageKind =
   | "agent_reply"
   | "agent_followup"   // nudge sent when a chat went quiet without a booking
   | "agent_question_followup" // fast nudge (~1h) when the agent asked a question and got no reply
+  | "greeting_link"    // link-first: fixed greeting + booking link on first contact (0 tokens)
+  | "link_nudge"       // link-first: 30-min "didn't book / didn't reply" nudge (0 tokens)
   | "qa_report" // daily QA digest sent to the owner (not a customer)
   | "agent_escalation" // alert sent to a barber/owner when the agent hands a customer off
   | "reengage"
