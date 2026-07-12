@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { telHref } from "@/lib/messaging/phone";
 import { pickFriendSource } from "@/lib/referral";
 import { useModalBack } from "@/lib/useModalBack";
 import NotificationsBell from "./NotificationsBell";
@@ -1849,7 +1850,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
                 <button onClick={() => openInline("name")} title="ערוך שם לקוח"
                   className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
-                <a href={`tel:${dispPhone}`}
+                <a href={telHref(dispPhone)}
                   className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
                 <a href={`https://wa.me/${cleanPhone}`} target="_blank"
                   className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</a>
@@ -3089,7 +3090,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                       </div>
                       <button onClick={() => (msgTarget?.id === w.id ? setMsgTarget(null) : openMessage(w))}
                         title="שלח הודעה" className="text-neutral-400 hover:text-teal-600 text-sm mt-0.5">💬</button>
-                      <a href={`tel:${w.customer.phone}`} className="text-neutral-400 hover:text-neutral-700 text-sm mt-0.5">📞</a>
+                      <a href={telHref(w.customer.phone)} className="text-neutral-400 hover:text-neutral-700 text-sm mt-0.5">📞</a>
                       <button onClick={() => removeFromWaitlist(w.id)} className="text-red-300 hover:text-red-500 text-xs mt-0.5">✕</button>
                     </div>
 

@@ -15,3 +15,17 @@ export function normalizeIsraeliPhone(raw: string): string {
 export function toGreenChatId(phone: string): string {
   return normalizeIsraeliPhone(phone) + "@c.us";
 }
+
+/**
+ * Build a dialable `tel:` href from a stored phone. Numbers are stored as
+ * "0XXXXXXXXX" or "972XXXXXXXXX" (E.164 WITHOUT the "+"). A phone dialer needs
+ * the "+" on the country code — otherwise "972..." is dialed as a bogus local
+ * number and the call fails. Local "0..." numbers already dial correctly.
+ */
+export function telHref(phone: string | null | undefined): string {
+  const raw = (phone || "").trim();
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "tel:";
+  if (raw.startsWith("+") || digits.startsWith("972")) return `tel:+${digits}`;
+  return `tel:${digits}`;
+}

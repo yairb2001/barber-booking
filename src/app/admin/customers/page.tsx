@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { telHref } from "@/lib/messaging/phone";
 import { useModalBack } from "@/lib/useModalBack";
 
 type Customer = {
@@ -119,7 +120,7 @@ export default function CustomersPage() {
                   </td>
                   <td className="px-3 sm:px-5 py-4" onClick={e => e.stopPropagation()}>
                     <div className="flex gap-2 sm:gap-3 items-center">
-                      <a href={`tel:${c.phone}`} className="text-base text-neutral-500 hover:text-neutral-800">📞</a>
+                      <a href={telHref(c.phone)} className="text-base text-neutral-500 hover:text-neutral-800">📞</a>
                       <button
                         onClick={() => setMessageTarget({ id: c.id, name: c.name })}
                         title="שלח הודעה דרך המערכת"
@@ -449,7 +450,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
 
         {/* Quick action buttons */}
         <div className="p-5 grid grid-cols-2 gap-2 border-b border-neutral-100">
-          <a href={`tel:${detail.phone}`}
+          <a href={telHref(detail.phone)}
             className="flex items-center justify-center gap-2 bg-neutral-50 hover:bg-neutral-100 rounded-xl py-3 text-sm">
             <span>📞</span> חיוג מהיר
           </a>

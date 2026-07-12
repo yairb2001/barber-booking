@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { telHref } from "@/lib/messaging/phone";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
 import { type Theme } from "@/lib/themes";
@@ -566,7 +567,7 @@ export default function HomePage() {
               </a>
             )}
             {business?.phone && (
-              <a href={`tel:${business.phone}`}
+              <a href={telHref(business.phone)}
                 className="w-10 h-10 rounded-full flex items-center justify-center active:scale-90 transition-transform"
                 style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
                 <svg viewBox="0 0 24 24" className="w-[18px] h-[18px]" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
