@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { deliverMessageLog } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
+import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +54,10 @@ const SCAN_LIMIT = 200;
  *  start just scans a little sooner, which is harmless (the scan is idempotent). */
 const QUESTION_FOLLOWUP_EVERY_MS = 5 * 60 * 1000;
 let lastQuestionFollowupRun = 0;
+
+/** Canary-check the shared Claude key (platform-level) at most this often. */
+const LLM_HEALTH_EVERY_MS = 15 * 60 * 1000;
+let lastLlmHealthCheck = 0;
 
 /** Appointment-bound reminder kinds that must be re-validated before sending —
  *  a reminder for a cancelled/removed appointment must never go out. */
@@ -78,7 +83,7 @@ export async function GET(req: NextRequest) {
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
     "";
 
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -253,6 +258,13 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error("[drip-queue] question-followup failed:", err);
     }
+  }
+
+  // Platform LLM health canary (throttled), so a shared-key/credit outage is
+  // caught within minutes and the platform owner is alerted — never the tenants.
+  if (nowMs - lastLlmHealthCheck >= LLM_HEALTH_EVERY_MS) {
+    lastLlmHealthCheck = nowMs;
+    try { await checkAndRecordLlmHealth(); } catch (err) { console.error("[drip-queue] llm-health failed:", err); }
   }
 
   return NextResponse.json({ ok: true, processed: claimed.length, sent, failed, skipped, throttled });

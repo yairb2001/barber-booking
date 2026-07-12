@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
+import { getLlmHealth } from "@/lib/platform-health";
 
 /**
  * GET /api/admin/super
@@ -104,5 +105,7 @@ export async function GET(req: NextRequest) {
     },
   };
 
-  return NextResponse.json({ stats, businesses: rows });
+  const llmHealth = await getLlmHealth();
+
+  return NextResponse.json({ stats, businesses: rows, llmHealth });
 }

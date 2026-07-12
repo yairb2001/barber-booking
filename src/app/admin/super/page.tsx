@@ -44,6 +44,7 @@ export default function SuperAdminPage() {
   const [businesses, setBusinesses] = useState<Biz[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [forbidden, setForbidden] = useState(false);
+  const [llmHealth, setLlmHealth] = useState<{ ok: boolean; lastError: string | null; lastFailAt: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -53,7 +54,7 @@ export default function SuperAdminPage() {
     ]);
     if (sRes.status === 403) { setForbidden(true); setLoading(false); return; }
     const s = await sRes.json();
-    setStats(s.stats); setBusinesses(s.businesses);
+    setStats(s.stats); setBusinesses(s.businesses); setLlmHealth(s.llmHealth ?? null);
     if (lRes.ok) setLeads((await lRes.json()).leads);
     setLoading(false);
   }, []);
@@ -78,6 +79,14 @@ export default function SuperAdminPage() {
           <p className="text-sm text-slate-500">כל העסקים במערכת · לידים · הכנסות</p>
         </div>
       </div>
+
+      {llmHealth && !llmHealth.ok && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          🔴 <b>הסוכן לא מצליח להגיע ל-Claude</b> — כל הסוכנים של כל העסקים מושבתים.
+          {llmHealth.lastError ? <span className="block text-xs text-red-600 mt-0.5">{llmHealth.lastError}</span> : null}
+          <span className="block text-xs mt-1">בדוק קרדיט/מפתח ב-console.anthropic.com.</span>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 bg-slate-100 p-1 rounded-xl w-fit">
