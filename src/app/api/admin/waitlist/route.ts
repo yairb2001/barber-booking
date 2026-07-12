@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -49,12 +50,14 @@ export async function POST(req: NextRequest) {
     ? session.staffId
     : (body.staffId || null);
 
-  let customer = await prisma.customer.findUnique({
-    where: { businessId_phone: { businessId: business.id, phone: body.phone } },
+  const normPhone = normalizeIsraeliPhone(String(body.phone || "")) || String(body.phone || "").replace(/\D/g, "");
+  const localPhone = normPhone.startsWith("972") ? "0" + normPhone.slice(3) : normPhone;
+  let customer = await prisma.customer.findFirst({
+    where: { businessId: business.id, phone: { in: [normPhone, localPhone] } },
   });
   if (!customer) {
     customer = await prisma.customer.create({
-      data: { businessId: business.id, phone: body.phone, name: body.name || body.phone },
+      data: { businessId: business.id, phone: normPhone, name: body.name || normPhone },
     });
   }
 
