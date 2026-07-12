@@ -67,17 +67,15 @@ for (const c of convos) {
     for (const t of slotCalls) {
       const m = t.content.match(/(\d{4}-\d{2}-\d{2})/);
       if (!m) continue;
-      const d = m[1];
-      const empty = /אין תורים פנויים/.test(t.content);
-      const rec = byDate.get(d) || { empty: false, full: false };
-      if (empty) rec.empty = true; else rec.full = true;
-      byDate.set(d, rec);
+      const rec = byDate.get(m[1]) || { empty: false, hadSlots: false };
+      if (/אין תורים פנויים/.test(t.content)) rec.empty = true; else rec.hadSlots = true;
+      byDate.set(m[1], rec);
     }
     for (const [d, r] of byDate) {
-      if (r.empty && r.full) {
-        add({ sev: "🟠", type: "אין-מקום כוזב", conv: label(c),
-          evidence: `לתאריך ${d} התקבל גם "אין תורים פנויים" וגם שעות פנויות באותה שיחה (glitch)`,
-          klass: "code", fix: "ניסיון חוזר על תוצאה ריקה (כבר הוטמע) — לנטר שלא חוזר" });
+      if (r.empty && r.hadSlots) {
+        add({ sev: "🟠", type: "אין-מקום כוזב (לבדוק)", conv: label(c),
+          evidence: `לתאריך ${d} התקבל גם "אין תורים פנויים" וגם שעות פנויות — לבדוק אם glitch או ספר ספציפי מלא`,
+          klass: "code", fix: "צריך אחסון קלט-הכלי (staffId) כדי להבחין; glitch אמיתי נמשך דקות" });
       }
     }
 

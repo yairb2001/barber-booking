@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/waitlist-horizon",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/qa-review",
+      "schedule": "0 6 * * *"
     }
   ]
 }
