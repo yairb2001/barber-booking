@@ -7,8 +7,11 @@ export async function GET(req: NextRequest) {
   if (guard) return guard;
   const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json(null);
+  // Never ship the owner-login bcrypt hash to the browser — no UI needs it.
+  const { passwordHash: _pw, ...safeBusiness } = business;
+  void _pw;
   return NextResponse.json({
-    ...business,
+    ...safeBusiness,
     socialLinks: business.socialLinks ? JSON.parse(business.socialLinks) : {},
     settings: business.settings ? JSON.parse(business.settings) : {},
   });

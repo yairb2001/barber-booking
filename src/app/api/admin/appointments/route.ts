@@ -64,6 +64,14 @@ export async function POST(req: NextRequest) {
   const canBookForOthers = perms.isOwner || perms.canViewAllCalendars;
   const staffId = (!canBookForOthers && session?.staffId) ? session.staffId : body.staffId;
 
+  // The chosen staff must belong to THIS business (prevents referencing another
+  // tenant's staff via a body-supplied id).
+  const staffOwned = await prisma.staff.findFirst({
+    where: { id: staffId, businessId: business.id },
+    select: { id: true },
+  });
+  if (!staffOwned) return NextResponse.json({ error: "Staff not found" }, { status: 400 });
+
   // Find or create customer. Normalize the phone to E.164 (972...) so a number
   // pasted from the phone's contacts (with "+", spaces, dashes, or invisible
   // Unicode directional marks) is stored cleanly — otherwise later phone-based
@@ -126,7 +134,9 @@ export async function POST(req: NextRequest) {
     serviceId = placeholder.id;
   }
 
-  const service = await prisma.service.findUnique({ where: { id: serviceId } });
+  // Scope by businessId so a body-supplied serviceId can't reference another
+  // tenant's service (the placeholder path above is already business-scoped).
+  const service = await prisma.service.findFirst({ where: { id: serviceId, businessId: business.id } });
   if (!service) return NextResponse.json({ error: "Service not found" }, { status: 400 });
 
   // Duration can come from request (custom) or fall back to the service default

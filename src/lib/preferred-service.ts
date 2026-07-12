@@ -1,9 +1,7 @@
 import { jwtVerify } from "jose";
+import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
 /**
  * Resolve a returning customer's "usual service" from their booking history, so
@@ -27,7 +25,7 @@ export async function getPreferredServiceId(
   if (!m) return null;
 
   try {
-    const { payload } = await jwtVerify(decodeURIComponent(m[1]), SECRET);
+    const { payload } = await jwtVerify(decodeURIComponent(m[1]), authSecret());
     if (payload.type !== "customer_session" || payload.businessId !== businessId) return null;
 
     // Phone may be stored as 0... or 972... — try both forms.

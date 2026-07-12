@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getRequestSession } from "@/lib/session";
+import { getRequestSession, barbersCanSeeAllCustomers } from "@/lib/session";
 import { getReferralConfig } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,14 @@ export async function GET(req: NextRequest) {
     where: { id: session.businessId },
     select: { settings: true },
   });
+
+  // This tab exposes the whole shop's customer + referrer contact list. When the
+  // owner has turned OFF "barbers can see all customers", a barber must not get
+  // it here either (matches the scoping in /api/admin/customers).
+  if (!session.isOwner && !barbersCanSeeAllCustomers(business?.settings ?? null)) {
+    return NextResponse.json({ error: "פעולה זו זמינה למנהל ראשי בלבד" }, { status: 403 });
+  }
+
   const config = getReferralConfig(business?.settings ?? null);
 
   // All referred customers (those with a referrer set), newest first.

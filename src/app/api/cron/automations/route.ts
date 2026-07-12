@@ -13,13 +13,11 @@ import { sendMessage } from "@/lib/messaging";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  // Optional secret check
+  // Fail closed: require CRON_SECRET to be configured AND to match.
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") ?? "";
-    if (auth !== `Bearer ${secret}`)
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const auth = req.headers.get("authorization") ?? "";
+  if (!secret || auth !== `Bearer ${secret}`)
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const automations = await prisma.automation.findMany({
     where: { type: "reengage", active: true },

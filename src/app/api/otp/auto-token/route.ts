@@ -13,12 +13,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { authSecret } from "@/lib/jwt-secret";
 import { jwtVerify, SignJWT } from "jose";
 import { prisma } from "@/lib/prisma";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
 const OTP_TOKEN_TTL = 60 * 30; // 30 minutes — same as regular OTP
 
@@ -32,7 +30,7 @@ export async function POST(req: NextRequest) {
   let businessId: string;
 
   try {
-    const { payload } = await jwtVerify(sessionCookie, SECRET);
+    const { payload } = await jwtVerify(sessionCookie, authSecret());
     if (payload.type !== "customer_session") {
       return NextResponse.json({ error: "invalid session type" }, { status: 401 });
     }
@@ -47,14 +45,14 @@ export async function POST(req: NextRequest) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${OTP_TOKEN_TTL}s`)
-    .sign(SECRET);
+    .sign(authSecret());
 
   // Renew the session cookie (sliding window)
   const newSession = await new SignJWT({ phone, businessId, type: "customer_session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("40d")
-    .sign(SECRET);
+    .sign(authSecret());
 
   // Convert stored phone (972...) → display format (05...)
   const displayPhone = phone.startsWith("972") ? "0" + phone.slice(3) : phone;

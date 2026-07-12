@@ -12,15 +12,13 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { authSecret } from "@/lib/jwt-secret";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
 import { getReferralConfig } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
 export async function GET(req: NextRequest) {
   const sessionCookie = req.cookies.get("bk_session")?.value;
@@ -29,7 +27,7 @@ export async function GET(req: NextRequest) {
   let phone: string;
   let businessId: string;
   try {
-    const { payload } = await jwtVerify(sessionCookie, SECRET);
+    const { payload } = await jwtVerify(sessionCookie, authSecret());
     if (payload.type !== "customer_session") return NextResponse.json({ ok: false });
     phone = payload.phone as string;
     businessId = payload.businessId as string;

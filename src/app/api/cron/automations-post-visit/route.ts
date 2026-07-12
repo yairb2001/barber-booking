@@ -17,9 +17,10 @@
  * 3. Skip if a MessageLog with (appointmentId, kind) already exists.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
+import { assertCron } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,10 @@ function combineDateTime(date: Date, hhmm: string): Date {
   return d;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = assertCron(req);
+  if (guard) return guard;
+
   const now = new Date();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 

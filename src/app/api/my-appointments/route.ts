@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { fallbackBusiness } from "@/lib/tenant";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
 /**
  * GET /api/my-appointments?phone=...&token=...&businessId=...
@@ -34,7 +32,7 @@ export async function GET(req: NextRequest) {
   // Verify OTP token
   let tokenPayload: { phone?: unknown; businessId?: unknown; type?: unknown } = {};
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, authSecret());
     tokenPayload = payload as typeof tokenPayload;
   } catch {
     return NextResponse.json({ error: "פג תוקף הסשן — יש להתחבר מחדש" }, { status: 401 });

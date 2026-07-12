@@ -24,8 +24,9 @@ const TRANSIENT_STATES = new Set(["starting", "sleepMode"]);
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const secret =
-    searchParams.get("secret") || req.headers.get("x-cron-secret") || "";
-  if (process.env.CRON_SECRET && secret !== process.env.CRON_SECRET) {
+    searchParams.get("secret") || req.headers.get("x-cron-secret") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || ""; // Vercel Cron sends Bearer
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

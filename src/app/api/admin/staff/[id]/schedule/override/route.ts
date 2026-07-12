@@ -1,8 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForDayOpen } from "@/lib/waitlist-notify";
-import { requireStaffInBusiness } from "@/lib/session";
+import { requireStaffInBusiness, getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { getDayOfWeekISO } from "@/lib/utils";
+
+/**
+ * Guard for managing a staff member's day schedule/breaks.
+ * Tenant isolation (requireStaffInBusiness) PLUS: a regular barber may only
+ * touch their OWN day. Owners and sub-managers (canViewAllCalendars) may manage
+ * any staff's day — that's what the cross-staff calendar break modals need.
+ */
+async function guardManageStaffDay(req: NextRequest, staffId: string): Promise<NextResponse | null> {
+  const tenantGuard = await requireStaffInBusiness(req, staffId);
+  if (tenantGuard) return tenantGuard;
+  const session = getRequestSession(req);
+  if (session && !session.isOwner && session.staffId !== staffId) {
+    const perms = await getEffectivePermissions(req);
+    if (!perms.canViewAllCalendars) {
+      return NextResponse.json({ error: "אין הרשאה לנהל יומן של ספר אחר" }, { status: 403 });
+    }
+  }
+  return null;
+}
 
 /** Net available minutes = sum(slot durations) − sum(break durations). */
 function netMinutesOf(slotsJson: string | null, breaksJson: string | null): number {
@@ -17,11 +36,8 @@ function netMinutesOf(slotsJson: string | null, breaksJson: string | null): numb
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  // Any staff in the same business may read/manage day breaks for any staff
-  // member (the calendar break modals need cross-staff access). Tenant isolation
-  // is still enforced via requireStaffInBusiness.
-  const tenantGuard = await requireStaffInBusiness(req, params.id);
-  if (tenantGuard) return tenantGuard;
+  const guard = await guardManageStaffDay(req, params.id);
+  if (guard) return guard;
 
   const { searchParams } = new URL(req.url);
   const dateParam = searchParams.get("date");
@@ -35,10 +51,8 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  // Allow any staff in the same business to add/edit/delete day breaks for any
-  // staff member. Tenant isolation is still enforced via requireStaffInBusiness.
-  const tenantGuard = await requireStaffInBusiness(req, params.id);
-  if (tenantGuard) return tenantGuard;
+  const guard = await guardManageStaffDay(req, params.id);
+  if (guard) return guard;
 
   const body = await req.json();
   const dateStr = body.date.split("T")[0] + "T00:00:00.000Z"; // always UTC midnight

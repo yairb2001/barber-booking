@@ -6,12 +6,12 @@ import { resolveBusiness } from "@/lib/tenant";
 const OTP_TTL_MINUTES = 10;
 
 function generateCode(): string {
-  return String(Math.floor(1000 + Math.random() * 9000)); // 4-digit code
+  return String(Math.floor(100000 + Math.random() * 900000)); // 6-digit code
 }
 
 // POST /api/otp/send
 // Body: { phone: string, businessId?: string }
-// Creates a 4-digit OTP, stores it in DB, sends via WhatsApp, returns { ok: true }
+// Creates a 6-digit OTP, stores it in DB, sends via WhatsApp, returns { ok: true }
 export async function POST(req: NextRequest) {
   const { phone, businessId: reqBusinessId } = await req.json();
   if (!phone) return NextResponse.json({ error: "phone required" }, { status: 400 });

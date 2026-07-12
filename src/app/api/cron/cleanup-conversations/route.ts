@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { assertCron } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +9,10 @@ export const dynamic = "force-dynamic";
 // in the last 3 days. After that a returning customer starts a fresh chat (the
 // agent still recognizes them by phone — name/history/upcoming appointments are
 // reloaded from the customer record, only the old chat text is dropped).
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const guard = assertCron(req);
+  if (guard) return guard;
+
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 3);
 

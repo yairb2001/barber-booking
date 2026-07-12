@@ -57,8 +57,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "missing fields" }, { status: 400 });
   }
 
-  const service = await prisma.service.findUnique({ where: { id: body.serviceId } });
-  if (!service) return NextResponse.json({ error: "service not found" }, { status: 400 });
+  // Validate every foreign key belongs to THIS business. Without this a rule
+  // could reference another tenant's customer/staff/service — which the GET
+  // (include: customer/staff/service) would then disclose (name + phone).
+  const [customer, staff, service] = await Promise.all([
+    prisma.customer.findFirst({ where: { id: body.customerId, businessId: business.id }, select: { id: true } }),
+    prisma.staff.findFirst({ where: { id: body.staffId, businessId: business.id }, select: { id: true } }),
+    prisma.service.findFirst({ where: { id: body.serviceId, businessId: business.id }, select: { id: true } }),
+  ]);
+  if (!customer) return NextResponse.json({ error: "customer not found" }, { status: 400 });
+  if (!staff)    return NextResponse.json({ error: "staff not found" }, { status: 400 });
+  if (!service)  return NextResponse.json({ error: "service not found" }, { status: 400 });
 
   const freq = [1, 2, 4].includes(Number(body.frequencyWeeks)) ? Number(body.frequencyWeeks) : 1;
   const startDate = new Date(String(body.startDate).split("T")[0] + "T00:00:00.000Z");

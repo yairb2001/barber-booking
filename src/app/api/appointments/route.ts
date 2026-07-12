@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
@@ -8,19 +9,21 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { jwtVerify } from "jose";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
-async function verifyOtpToken(token: string, phone: string): Promise<boolean> {
+// Returns the businessId the OTP was verified for, or null if the token is
+// invalid / for a different phone. The caller MUST also check this businessId
+// matches the staff being booked — otherwise one OTP (verified on the
+// attacker's own phone at any shop) could book against any staff of any tenant.
+async function verifyOtpToken(token: string, phone: string): Promise<string | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET);
-    if (payload.type !== "otp") return false;
+    const { payload } = await jwtVerify(token, authSecret());
+    if (payload.type !== "otp") return null;
     // The phone in the token must match (after normalizing)
     const normalizedPhone = phone.replace(/\D/g, "").replace(/^0/, "972");
-    return payload.phone === normalizedPhone;
+    if (payload.phone !== normalizedPhone) return null;
+    return typeof payload.businessId === "string" ? payload.businessId : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -59,8 +62,8 @@ export async function POST(request: NextRequest) {
   if (!otpToken) {
     return NextResponse.json({ error: "נדרש אימות זהות — שלח קוד אימות" }, { status: 401 });
   }
-  const tokenValid = await verifyOtpToken(otpToken, canonicalPhone);
-  if (!tokenValid) {
+  const tokenBusinessId = await verifyOtpToken(otpToken, canonicalPhone);
+  if (!tokenBusinessId) {
     return NextResponse.json({ error: "קוד אימות לא תקף — בקש קוד חדש" }, { status: 401 });
   }
 
@@ -86,6 +89,12 @@ export async function POST(request: NextRequest) {
 
   if (!staff) {
     return NextResponse.json({ error: "Staff not found" }, { status: 404 });
+  }
+
+  // The OTP must have been verified for the SAME business the booking targets.
+  // Blocks using one shop's OTP (or the attacker's own) to book at another shop.
+  if (staff.businessId !== tokenBusinessId) {
+    return NextResponse.json({ error: "האימות אינו תואם לעסק" }, { status: 403 });
   }
 
   // Load the business early — we need its settings to resolve which referral

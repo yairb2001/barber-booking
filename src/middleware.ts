@@ -10,6 +10,14 @@ export async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set("x-pathname", pathname);
 
+  // Defense-in-depth: never let a CLIENT supply the session headers. They are
+  // authoritative identity, set below ONLY from the verified JWT. Stripping them
+  // up-front means even a future public route that reads getRequestSession()
+  // can't be spoofed by an injected x-session-* header.
+  requestHeaders.delete("x-session-business-id");
+  requestHeaders.delete("x-session-role");
+  requestHeaders.delete("x-session-staff-id");
+
   // Everything outside the admin area is public (storefront pages + public APIs
   // + crons). No session needed — just forward with the pathname header.
   const isAdminArea =

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
+import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { pushToOwner } from "@/lib/native/push";
 import { resolveBusiness } from "@/lib/tenant";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
-const SECRET = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "dev-secret-change-in-production-please-set-AUTH_SECRET-env"
-);
 
 /**
  * Public endpoint — customers join the waitlist.
@@ -31,13 +30,17 @@ export async function POST(request: Request) {
     : await resolveBusiness(request);
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
 
-  // Find or create customer
-  let customer = await prisma.customer.findUnique({
-    where: { businessId_phone: { businessId: biz.id, phone } },
+  // Find or create customer — normalize to E.164 (972...) so we never create a
+  // second record for a number the client sent as "0..." (or vice versa). Look
+  // up BOTH formats to catch any legacy record.
+  const normPhone = normalizeIsraeliPhone(phone) || String(phone || "").replace(/\D/g, "");
+  const localPhone = normPhone.startsWith("972") ? "0" + normPhone.slice(3) : normPhone;
+  let customer = await prisma.customer.findFirst({
+    where: { businessId: biz.id, phone: { in: [normPhone, localPhone] } },
   });
   if (!customer) {
     customer = await prisma.customer.create({
-      data: { businessId: biz.id, phone, name: name || phone },
+      data: { businessId: biz.id, phone: normPhone, name: name || normPhone },
     });
   }
 
@@ -113,7 +116,7 @@ export async function DELETE(request: Request) {
   // Verify OTP token
   let tokenPayload: { phone?: unknown; type?: unknown } = {};
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, authSecret());
     tokenPayload = payload as typeof tokenPayload;
   } catch {
     return NextResponse.json({ error: "פג תוקף הסשן — יש להתחבר מחדש" }, { status: 401 });
