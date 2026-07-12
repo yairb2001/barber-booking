@@ -148,6 +148,7 @@ export async function runOpenAiAgentLoop(opts: {
             content: result,
             toolName: tc.function.name,
             toolCallId: tc.id,
+            toolInput: tc.function.arguments || null,
           },
         });
       }

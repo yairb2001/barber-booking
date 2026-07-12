@@ -590,6 +590,7 @@ model ConversationMessage {
   content        String   // message text (or JSON for tool calls)
   toolName       String?  @map("tool_name")
   toolCallId     String?  @map("tool_call_id")
+  toolInput      String?  @map("tool_input")   // JSON of the tool's input args (e.g. which staffId was asked)
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation   Conversation @relation(fields: [conversationId], references: [id])
@@ -659,6 +660,7 @@ model OtpCode {
   code        String
   expiresAt   DateTime  @map("expires_at")
   usedAt      DateTime? @map("used_at")
+  attempts    Int       @default(0) // wrong-guess counter — locks the code after too many
   createdAt   DateTime  @default(now()) @map("created_at")
 
   @@index([businessId, phone, code])

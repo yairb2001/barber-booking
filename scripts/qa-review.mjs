@@ -45,7 +45,7 @@ for (const c of convos) {
     const msgs = await prisma.conversationMessage.findMany({
       where: { conversationId: c.id },
       orderBy: { createdAt: "asc" },
-      select: { role: true, source: true, content: true, toolName: true, createdAt: true },
+      select: { role: true, source: true, content: true, toolName: true, toolInput: true, createdAt: true },
     });
     if (!msgs.length) continue;
 
@@ -67,15 +67,23 @@ for (const c of convos) {
     for (const t of slotCalls) {
       const m = t.content.match(/(\d{4}-\d{2}-\d{2})/);
       if (!m) continue;
-      const rec = byDate.get(m[1]) || { empty: false, hadSlots: false };
-      if (/אין תורים פנויים/.test(t.content)) rec.empty = true; else rec.hadSlots = true;
+      let staff = "__unknown__", hasInput = false;
+      if (t.toolInput) { try { staff = JSON.parse(t.toolInput).staffId ?? "__any__"; hasInput = true; } catch {} }
+      const rec = byDate.get(m[1]) || { empty: new Set(), full: new Set(), missingInput: false };
+      if (/אין תורים פנויים/.test(t.content)) rec.empty.add(staff); else rec.full.add(staff);
+      if (!hasInput) rec.missingInput = true;
       byDate.set(m[1], rec);
     }
     for (const [d, r] of byDate) {
-      if (r.empty && r.hadSlots) {
+      const sameBarber = [...r.empty].some(s => s !== "__unknown__" && r.full.has(s));
+      if (sameBarber) {
+        add({ sev: "🟠", type: "אין-מקום כוזב", conv: label(c),
+          evidence: `לתאריך ${d} אותו ספר החזיר גם ריק וגם שעות — glitch מאומת`,
+          klass: "code", fix: "glitch אמיתי (Neon?) — ניסיון חוזר לא מספיק כי נמשך דקות" });
+      } else if (r.empty.size && r.full.size && r.missingInput) {
         add({ sev: "🟠", type: "אין-מקום כוזב (לבדוק)", conv: label(c),
-          evidence: `לתאריך ${d} התקבל גם "אין תורים פנויים" וגם שעות פנויות — לבדוק אם glitch או ספר ספציפי מלא`,
-          klass: "code", fix: "צריך אחסון קלט-הכלי (staffId) כדי להבחין; glitch אמיתי נמשך דקות" });
+          evidence: `לתאריך ${d} ריק מול מלא (קלט-הכלי לא נשמר) — לבדוק ידנית`,
+          klass: "code", fix: "מעכשיו קלט-הכלי נשמר → יאובחן ודאית בפעם הבאה" });
       }
     }
 

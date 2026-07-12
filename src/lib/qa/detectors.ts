@@ -47,7 +47,7 @@ export async function runQaDetectors(businessId: string, sinceDays = 1): Promise
       const msgs = await prisma.conversationMessage.findMany({
         where: { conversationId: c.id },
         orderBy: { createdAt: "asc" },
-        select: { role: true, source: true, content: true, toolName: true, createdAt: true },
+        select: { role: true, source: true, content: true, toolName: true, toolInput: true, createdAt: true },
       });
       if (!msgs.length) continue;
 
@@ -68,24 +68,33 @@ export async function runQaDetectors(businessId: string, sinceDays = 1): Promise
       // query flaking, not just a different barber being full). Multi-barber → skip
       // (that's the false positive we saw with אורי אנג'ל).
       const slotCalls = tools.filter(t => t.toolName === "get_available_slots" || t.toolName === "find_next_available");
-      const byDate = new Map<string, { empty: boolean; hadSlots: boolean }>();
+      // Group by date, tracking WHICH barber each empty/full result was for (from
+      // the stored tool input). Same barber empty+full on one date = a real glitch
+      // (confirmed). Different barbers = one full, one busy — not a glitch. When the
+      // input wasn't recorded (older messages) we can't tell → "verify".
+      const byDate = new Map<string, { empty: Set<string>; full: Set<string>; missingInput: boolean }>();
       for (const t of slotCalls) {
         const dm = t.content.match(/(\d{4}-\d{2}-\d{2})/);
         if (!dm) continue;
-        const rec = byDate.get(dm[1]) || { empty: false, hadSlots: false };
-        if (/אין תורים פנויים/.test(t.content)) rec.empty = true; else rec.hadSlots = true;
+        let staff = "__unknown__", hasInput = false;
+        if (t.toolInput) { try { staff = (JSON.parse(t.toolInput).staffId as string) ?? "__any__"; hasInput = true; } catch { /* ignore */ } }
+        const rec = byDate.get(dm[1]) || { empty: new Set<string>(), full: new Set<string>(), missingInput: false };
+        if (/אין תורים פנויים/.test(t.content)) rec.empty.add(staff); else rec.full.add(staff);
+        if (!hasInput) rec.missingInput = true;
         byDate.set(dm[1], rec);
       }
       for (const [d, r] of Array.from(byDate.entries())) {
-        // Same date came back both empty and with slots. This is EITHER a real
-        // glitch OR just a specific barber being full while another is free — the
-        // stored result can't tell them apart (it doesn't record which barber was
-        // asked). So it's a "verify" signal, not confirmed.
-        if (r.empty && r.hadSlots) {
+        const sameBarber = Array.from(r.empty).some(s => s !== "__unknown__" && r.full.has(s));
+        if (sameBarber) {
           findings.push({ severity: "medium", type: "אין-מקום כוזב", conversationId: c.id, who,
-            evidence: `לתאריך ${d} התקבל גם "אין תורים פנויים" וגם שעות פנויות באותה שיחה — לבדוק אם glitch`,
+            evidence: `לתאריך ${d} אותו ספר החזיר גם "אין תורים פנויים" וגם שעות — glitch מאומת`,
+            klass: "code", confidence: "confirmed" });
+        } else if (r.empty.size && r.full.size && r.missingInput) {
+          findings.push({ severity: "medium", type: "אין-מקום כוזב", conversationId: c.id, who,
+            evidence: `לתאריך ${d} התקבל גם ריק וגם שעות (קלט-הכלי לא נשמר — לבדוק ידנית)`,
             klass: "code", confidence: "likely" });
         }
+        // else: empty & full for DIFFERENT known barbers → not a glitch, skip.
       }
 
       // D2 — ghost "no appointment": check_appointment said none, but the customer had one

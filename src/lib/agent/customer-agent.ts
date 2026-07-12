@@ -577,9 +577,15 @@ export async function execTool(
       case "cancel_appointment": {
         const appt = await prisma.appointment.findUnique({
           where: { id: input.appointmentId },
-          include: { staff: true, service: true, customer: { select: { name: true } } },
+          include: { staff: true, service: true, customer: { select: { name: true, phone: true } } },
         });
         if (!appt || appt.businessId !== bizId) return "תור לא נמצא.";
+        // Ownership: the caller may only cancel their OWN appointment. Without
+        // this, anyone (esp. via a forged inbound webhook) could cancel any
+        // appointment by supplying its id. Same "not found" reply on mismatch so
+        // it isn't an existence oracle.
+        const callerNorm = normalizeIsraeliPhone(callerPhone);
+        if (!callerNorm || normalizeIsraeliPhone(appt.customer.phone) !== callerNorm) return "תור לא נמצא.";
         if (["cancelled_by_customer", "cancelled_by_staff"].includes(appt.status)) return "תור זה כבר בוטל.";
 
         await prisma.appointment.update({
@@ -1305,6 +1311,7 @@ export async function runCustomerAgent(opts: {
             content: result,
             toolName: block.name,
             toolCallId: block.id,
+            toolInput: JSON.stringify(block.input),
           },
         });
       }
