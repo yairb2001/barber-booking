@@ -42,6 +42,7 @@ const navItems: NavItem[] = [
   { href: "/admin/referrals",    label: "חבר מביא חבר",   icon: "🤝", requiresReferral: true },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
   { href: "/admin/agent",        label: "סוכן AI",        icon: "🤖", ownerOnly: true },
+  { href: "/admin/qa",           label: "בקרת איכות",     icon: "🔍", ownerOnly: true },
   { href: "/admin/staff",             label: "הפרופיל",        icon: "👤", barberOnly: true },
   { href: "/admin/barber-settings",   label: "הגדרות שלי",     icon: "⚙️", barberOnly: true },
   { href: "/admin/settings",          label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },

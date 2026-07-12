@@ -97,6 +97,7 @@ model Business {
   agentConfig    AgentConfig?
   swapProposals  SwapProposal[]
   productSales   ProductSale[]
+  qaSuggestions  QaSuggestion[]
 
   @@map("businesses")
 }
@@ -678,4 +679,25 @@ model Lead {
   updatedAt DateTime @updatedAt         @map("updated_at")
 
   @@map("leads")
+}
+
+model QaSuggestion {
+  id             String    @id @default(uuid())
+  businessId     String    @map("business_id")
+  type           String                              // finding type, e.g. "תור-רפאים"
+  klass          String                              // prompt | code | data | ops
+  severity       String    @default("medium")        // high | medium | low
+  title          String                              // short problem statement (Hebrew)
+  detail         String                              // evidence / explanation
+  conversationId String?   @map("conversation_id")   // link to the offending chat
+  proposedFix    String?   @map("proposed_fix")      // prompt: text to append; code/data: description
+  promptBefore   String?   @map("prompt_before")     // backup of systemPrompt before applying (for undo)
+  status         String    @default("pending")       // pending | applied | flagged | rejected
+  createdAt      DateTime  @default(now()) @map("created_at")
+  resolvedAt     DateTime? @map("resolved_at")
+
+  business  Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, status])
+  @@map("qa_suggestion")
 }
