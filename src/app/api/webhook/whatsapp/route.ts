@@ -76,6 +76,23 @@ function extractText(body: GreenApiWebhook): string | null {
   return null; // image, audio, sticker, etc. — ignore for now
 }
 
+/** A short Hebrew label for a non-text message, so media the agent can't read
+ *  still shows up in the chat inbox instead of vanishing. Returns null for types
+ *  we don't want to surface (reactions, unknown). */
+function mediaLabel(typeMessage: string | undefined): string | null {
+  switch (typeMessage) {
+    case "imageMessage":    return "📷 תמונה";
+    case "videoMessage":    return "🎥 סרטון";
+    case "audioMessage":    return "🎤 הודעה קולית";
+    case "documentMessage": return "📎 קובץ";
+    case "stickerMessage":  return "😀 סטיקר";
+    case "locationMessage": return "📍 מיקום";
+    case "contactMessage":  return "👤 איש קשר";
+    case "pollMessage":     return "📊 סקר";
+    default: return null;
+  }
+}
+
 /** Extract phone from chatId: "972501234567@c.us" → "972501234567" */
 function phoneFromChatId(chatId: string): string {
   return chatId.replace(/@.*$/, "");
@@ -127,7 +144,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // (Requires `outgoingMessageWebhook: "yes"` in the GreenAPI instance settings.)
   if (body.typeWebhook === "outgoingMessageReceived") {
     const outPhone = normalizeIsraeliPhone(phoneFromChatId(body.senderData?.chatId ?? ""));
-    const outText = extractText(body);
+    // Include media the owner sends from the phone (voice/image/etc.) as a
+    // placeholder — otherwise it neither shows in the inbox NOR mutes the agent,
+    // so the agent could barge into a chat the owner is already handling by voice.
+    const outText = extractText(body) ?? mediaLabel(body.messageData?.typeMessage);
     if (!outPhone || !outText?.trim()) {
       return NextResponse.json({ ok: true, skipped: "outgoing-empty" });
     }
@@ -167,7 +187,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const chatId = body.senderData?.chatId ?? "";
   const rawPhone = phoneFromChatId(chatId);
-  const text = extractText(body);
+  // Non-text messages (voice notes, images, ...) were dropped here silently — the
+  // message never reached the inbox and the agent never ran, so a customer who
+  // opened with a photo/voice got no answer at all. Surface a placeholder so it
+  // shows in chats; a human handles it (the agent can't read media).
+  const rawText = extractText(body);
+  const mediaPlaceholder = rawText === null ? mediaLabel(body.messageData?.typeMessage) : null;
+  const text = rawText ?? mediaPlaceholder;
+  const isNonText = rawText === null && text !== null;
   // WhatsApp display name as set by the sender — used in the chats UI as a
   // fallback when the customer is not yet in our DB.
   const senderName = (body.senderData?.senderName || body.senderData?.chatName || "").trim();
@@ -382,6 +409,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
     return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
+  }
+
+  // A media/voice message is saved and visible now, but the agent can't read it —
+  // route it to a human instead of running the model on a "📷 תמונה" placeholder.
+  if (isNonText) {
+    pushToOwner(biz.id, {
+      title: `📎 הודעת מדיה מ${senderName || phone}`,
+      body: previewText(text!),
+      data: { type: "chat", conversationId: conv.id, phone },
+    }).catch(() => {});
+    return NextResponse.json({ ok: true, media: true, saved: true });
   }
 
   // ── 3. Run agent — message is already persisted; agent will skip its own save ──
