@@ -167,10 +167,15 @@ export async function runLinkNudges(): Promise<{ checked: number; sent: number }
 
   let sent = 0;
   const seen = new Set<string>();
+  // Anti-blast: at most ONE proactive nudge per business per run. Others stay
+  // candidates for the next pass (~2 min later), so a backlog drips out slowly
+  // instead of firing a burst that WhatsApp could flag.
+  const nudgedBusinesses = new Set<string>();
   for (const g of greetings) {
     const key = `${g.businessId}|${g.customerPhone}`;
     if (seen.has(key)) continue; // one nudge per phone per run
     seen.add(key);
+    if (nudgedBusinesses.has(g.businessId)) continue;
 
     const biz = await prisma.business.findUnique({
       where: { id: g.businessId },
@@ -217,6 +222,7 @@ export async function runLinkNudges(): Promise<{ checked: number; sent: number }
     const link = await buildBookingLink(biz);
     const body = nudgeText(biz.settings, link, conv?.whatsappName ?? null);
     await sendFixedToConversation({ businessId: biz.id, phone, body, kind: "link_nudge", name: conv?.whatsappName });
+    nudgedBusinesses.add(biz.id);
     sent++;
   }
 
