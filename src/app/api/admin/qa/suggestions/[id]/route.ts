@@ -75,7 +75,22 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const before = cfg.systemPrompt;
-  const newPrompt = `${before}\n\n${sug.proposedFix.trim()}`;
+  const fix = sug.proposedFix.trim();
+
+  // Anti-bloat guard: don't append a rule that's already in the prompt verbatim
+  // (whitespace-normalized). Catches re-approving the same/copy-pasted rule.
+  // Semantic near-duplicates (a paraphrase of an existing rule) can't be caught
+  // deterministically — those are vetted when the suggestion is created, on the
+  // subscription. Here we mark it rejected so the redundant text never lands.
+  const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+  if (norm(before).includes(norm(fix))) {
+    const updated = await prisma.qaSuggestion.update({
+      where: { id: sug.id }, data: { status: "rejected", resolvedAt: new Date() },
+    });
+    return NextResponse.json({ ok: true, suggestion: updated, redundant: true });
+  }
+
+  const newPrompt = `${before}\n\n${fix}`;
   await prisma.agentConfig.update({
     where: { businessId: sug.businessId }, data: { systemPrompt: newPrompt },
   });
@@ -83,5 +98,12 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: sug.id },
     data: { status: "applied", promptBefore: before, resolvedAt: new Date() },
   });
-  return NextResponse.json({ ok: true, suggestion: updated, applied: true });
+  // Bloat signal: past this length the prompt is getting long enough that quality
+  // (not just cost) suffers — time for a consolidation pass.
+  const SHOULD_CONSOLIDATE_AT = 16000;
+  return NextResponse.json({
+    ok: true, suggestion: updated, applied: true,
+    promptLength: newPrompt.length,
+    shouldConsolidate: newPrompt.length > SHOULD_CONSOLIDATE_AT,
+  });
 }

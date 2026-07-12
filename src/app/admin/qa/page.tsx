@@ -34,6 +34,7 @@ export default function QaPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [consolidate, setConsolidate] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -42,6 +43,7 @@ export default function QaPage() {
       const d = await r.json();
       setPending(d.pending ?? []);
       setResolved(d.resolved ?? []);
+      setConsolidate(!!d.shouldConsolidate);
     } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -55,7 +57,8 @@ export default function QaPage() {
       });
       const d = await r.json();
       if (!r.ok) { setToast(d.error || "שגיאה"); return; }
-      if (d.applied) setToast("התיקון נכנס לפרומט ✅");
+      if (d.redundant) setToast("הכלל כבר קיים בפרומט — לא נוסף (מונע ניפוח)");
+      else if (d.applied) setToast("התיקון נכנס לפרומט ✅");
       else if (d.flagged) setToast("סומן למפתח 🛠️");
       else if (d.reverted) setToast("בוטל — הפרומט שוחזר");
       else if (action === "reject") setToast("נדחה");
@@ -72,6 +75,12 @@ export default function QaPage() {
           בעיות שסוכן ה-QA מצא בסוכן התורים. אשר תיקון — והוא נכנס.
         </p>
       </header>
+
+      {consolidate && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          ⚠️ הפרומט של הסוכן התארך. כדאי לבקש מקלוד קוד לעשות קונסולידציה (מיזוג כללים) כדי לשמור עליו רזה ומדויק.
+        </div>
+      )}
 
       {loading ? (
         <p className="text-neutral-400 text-sm">טוען…</p>

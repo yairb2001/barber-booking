@@ -23,5 +23,16 @@ export async function GET(req: NextRequest) {
     .sort((a, b) => (rank[a.severity] ?? 1) - (rank[b.severity] ?? 1));
   const resolved = rows.filter(r => r.status !== "pending");
 
-  return NextResponse.json({ pending, resolved });
+  // Prompt-bloat signal for the panel: how long the agent prompt is now, and
+  // whether it's grown enough to warrant a consolidation pass.
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: session.businessId }, select: { systemPrompt: true },
+  });
+  const promptLength = cfg?.systemPrompt?.length ?? 0;
+
+  return NextResponse.json({
+    pending, resolved,
+    promptLength,
+    shouldConsolidate: promptLength > 16000,
+  });
 }
