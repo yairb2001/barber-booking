@@ -12,6 +12,7 @@ type Config = {
   escalatePhone: string | null;
   maxIdleMinutes: number;
   requireSwapApproval: boolean;
+  allowSwapOffers: boolean;
   escalateAfterMessages: number;
   faqs: FAQ[];
 };
@@ -265,6 +266,33 @@ export default function AdminAgentPage() {
                 מומלץ 12-16. אם שיחה נמשכת מעבר לזה, הסוכן עוצר ומעביר את הלקוח לטיפול אנושי עם התראה.
               </span>
             </label>
+          </div>
+
+          {/* Offer swaps at all — master switch */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-neutral-800">הצעת החלפות תור</h2>
+                <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                  כשפעיל — אם לקוח מתעקש על שעה תפוסה, הסוכן יכול להציע לבדוק החלפה עם הלקוח שקבע.
+                  <br />
+                  כשכבוי — הסוכן לעולם לא מציע החלפה ולא מגלה שיש שם לקוח אחר; רק מציע זמן אחר או רשימת המתנה.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm text-neutral-500">{config.allowSwapOffers ? "פעיל" : "כבוי"}</span>
+                <button
+                  onClick={() => setConfig(c => c ? { ...c, allowSwapOffers: !c.allowSwapOffers } : c)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                    config.allowSwapOffers ? "bg-emerald-500" : "bg-neutral-300"
+                  }`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                    config.allowSwapOffers ? "-translate-x-7" : "-translate-x-1"
+                  }`} />
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* Swap approval */}

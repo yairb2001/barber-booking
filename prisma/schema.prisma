@@ -613,6 +613,11 @@ model AgentConfig {
   // swap to another customer. When false the agent contacts the candidate
   // customer directly, no barber approval needed.
   requireSwapApproval Boolean @default(true) @map("require_swap_approval")
+  // Master switch for the whole swap feature. When false the agent NEVER offers
+  // to swap a customer into a taken slot and never reveals that someone else
+  // holds it — it just steers to another time / barber / waitlist. Default true
+  // (preserves existing behaviour).
+  allowSwapOffers Boolean @default(true) @map("allow_swap_offers")
   // Hand a stuck conversation to a human after this many customer messages
   // without resolution. 0 = disabled (never auto-escalate on length).
   escalateAfterMessages Int @default(14) @map("escalate_after_messages")

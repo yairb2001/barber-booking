@@ -296,6 +296,18 @@ export async function requestAppointmentMove(opts: {
     return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). אל תפתח בקשת החלפה. הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או שאל אם בא לו אצל ספר אחר. רק אם הלקוח מתעקש דווקא על ${targetStartTime} ב-${hebDate(dateOnly(targetDate))}, קרא שוב ל-request_appointment_move עם insistExactTime=true כדי שאבדוק אפשרות להחליף עם לקוח אחר.`;
   }
 
+  // ── Master switch: swap offers disabled for this business ──────────────────
+  // Some shops never want the agent to bump another customer. When off, we don't
+  // even reveal that someone holds the slot — just steer to another time / barber
+  // / waitlist. Checked only here (the sole entry to the swap flow).
+  const swapCfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { allowSwapOffers: true },
+  });
+  if (swapCfg?.allowSwapOffers === false) {
+    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. אל תזכיר שיש שם לקוח אחר ואל תציע החלפה. הצע ללקוח יום או שעה אחרים (קרא ל-find_next_available או get_available_slots), או הצע להירשם לרשימת המתנה עם join_waitlist.`;
+  }
+
   // ── Step 3: customer INSISTS on the exact taken time → bother another customer (with approval) ─
   const candidates = await gatherCandidates(bizId, appt.staffId, dateOnly(targetDate), targetStartTime, appt.customerId);
   if (!candidates.length) {
