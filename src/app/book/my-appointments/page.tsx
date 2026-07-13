@@ -141,7 +141,7 @@ export default function MyAppointmentsPage() {
   }
 
   async function verifyLoginOtp() {
-    if (loginCode.replace(/\D/g, "").length < 6) { setLoginError("הזן את הקוד בן 6 הספרות"); return; }
+    if (loginCode.replace(/\D/g, "").length < 4) { setLoginError("הזן את הקוד בן 4 הספרות"); return; }
     setLoginBusy(true);
     setLoginError("");
     try {
@@ -259,7 +259,7 @@ export default function MyAppointmentsPage() {
             <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
               {loginStep === "phone"
                 ? "הזן את מספר הטלפון שאיתו קבעת — נשלח לך קוד אימות"
-                : `שלחנו קוד בן 6 ספרות ל-${loginPhone}`}
+                : `שלחנו קוד בן 4 ספרות ל-${loginPhone}`}
             </p>
           </div>
 
@@ -292,11 +292,11 @@ export default function MyAppointmentsPage() {
                   type="tel"
                   inputMode="numeric"
                   dir="ltr"
-                  maxLength={6}
+                  maxLength={4}
                   value={loginCode}
                   onChange={e => { setLoginCode(e.target.value.replace(/\D/g, "")); setLoginError(""); }}
                   onKeyDown={e => { if (e.key === "Enter") verifyLoginOtp(); }}
-                  placeholder="••••••"
+                  placeholder="••••"
                   className="w-full text-center text-[26px] font-extrabold tracking-[0.5em] rounded-2xl px-4 py-3.5 mb-3 outline-none"
                   style={{ background: "var(--card)", border: "1px solid var(--divider)", color: "var(--text-pri)" }}
                 />
