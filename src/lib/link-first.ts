@@ -54,9 +54,23 @@ export async function buildBookingLink(biz: { id: string; slug: string | null })
 
 // ── Message text (fixed defaults, owner-overridable) ──────────────────────────
 function applyVars(tpl: string, link: string, name: string | null): string {
-  return tpl
-    .replace(/\{\{\s*link\s*\}\}/g, link)
-    .replace(/\{\{\s*name\s*\}\}/g, name ? firstName(name) : "");
+  let out = tpl.replace(/\{\{\s*link\s*\}\}/g, link);
+  const first = name ? firstName(name) : "";
+  if (first) {
+    out = out.replace(/\{\{\s*name\s*\}\}/g, first);
+  } else {
+    // No name (a WhatsApp sender without a profile name). Remove the placeholder
+    // AND any tight wrapper the owner put around it — "(…)", "[…]", " -" — so we
+    // never render "היי ()" or "היי -". Then tidy the leftover spacing.
+    out = out
+      .replace(/[([{]\s*\{\{\s*name\s*\}\}\s*[)\]}]/g, "")
+      .replace(/[-–—]\s*\{\{\s*name\s*\}\}/g, "")
+      .replace(/\{\{\s*name\s*\}\}/g, "")
+      .replace(/[ \t]{2,}/g, " ")   // collapse double spaces
+      .replace(/[ \t]+([,.!?])/g, "$1") // drop space before punctuation
+      .replace(/[ \t]+\n/g, "\n");  // drop trailing spaces at line end
+  }
+  return out;
 }
 
 export function greetingText(settings: string | null | undefined, link: string, name: string | null): string {
