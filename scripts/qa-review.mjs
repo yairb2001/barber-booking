@@ -56,7 +56,7 @@ for (const c of convos) {
     // ── D1: phantom booking — agent said "I booked" but no successful book_appointment ran
     const confirmMsg = asst.find(m => CONFIRM.test(m.content));
     if (confirmMsg && !bookOk) {
-      add({ sev: "🔴", type: "תור-רפאים", conv: label(c),
+      add({ sev: "🔴", type: "תור-רפאים", conv: label(c), cid: c.id,
         evidence: `הסוכן כתב "${confirmMsg.content.slice(0, 80)}" אך לא רץ book_appointment מוצלח בשיחה`,
         klass: "code/prompt", fix: "לוודא שהמודל החזק מטפל בכל שלב קביעה + לא לאשר בלי ✅ מהכלי" });
     }
@@ -77,11 +77,11 @@ for (const c of convos) {
     for (const [d, r] of byDate) {
       const sameBarber = [...r.empty].some(s => s !== "__unknown__" && r.full.has(s));
       if (sameBarber) {
-        add({ sev: "🟠", type: "אין-מקום כוזב", conv: label(c),
+        add({ sev: "🟠", type: "אין-מקום כוזב", conv: label(c), cid: c.id,
           evidence: `לתאריך ${d} אותו ספר החזיר גם ריק וגם שעות — glitch מאומת`,
           klass: "code", fix: "glitch אמיתי (Neon?) — ניסיון חוזר לא מספיק כי נמשך דקות" });
       } else if (r.empty.size && r.full.size && r.missingInput) {
-        add({ sev: "🟠", type: "אין-מקום כוזב (לבדוק)", conv: label(c),
+        add({ sev: "🟠", type: "אין-מקום כוזב (לבדוק)", conv: label(c), cid: c.id,
           evidence: `לתאריך ${d} ריק מול מלא (קלט-הכלי לא נשמר) — לבדוק ידנית`,
           klass: "code", fix: "מעכשיו קלט-הכלי נשמר → יאובחן ודאית בפעם הבאה" });
       }
@@ -97,7 +97,7 @@ for (const c of convos) {
         select: { date: true, startTime: true },
       });
       if (appt) {
-        add({ sev: "🔴", type: "תור-קיים לא נמצא", conv: label(c),
+        add({ sev: "🔴", type: "תור-קיים לא נמצא", conv: label(c), cid: c.id,
           evidence: `check_appointment החזיר "לא נמצאו תורים" ב-${il(t.createdAt)}, אך ללקוח יש תור ${ilDate(appt.date)} ${appt.startTime}`,
           klass: "code", fix: "סינון date>=תחילת היום העסקי (כבר תוקן) — לנטר" });
         break;
@@ -110,7 +110,7 @@ for (const c of convos) {
       if (mt && /היום/.test(m.content)) {
         const apptMin = hm(mt[1]);
         if (apptMin < ilTimeMin(m.createdAt) - 5) {
-          add({ sev: "🟠", type: "תור-שעבר כעתידי", conv: label(c),
+          add({ sev: "🟠", type: "תור-שעבר כעתידי", conv: label(c), cid: c.id,
             evidence: `ב-${il(m.createdAt)} הסוכן אמר "יש לך תור היום ${mt[1]}" — אך השעה כבר עברה`,
             klass: "code", fix: "סינון תורים של היום שעברו מהקונטקסט (כבר תוקן) — לנטר" });
           break;
@@ -122,7 +122,7 @@ for (const c of convos) {
     const last = msgs[msgs.length - 1];
     const ageMin = (Date.now() - new Date(last.createdAt).getTime()) / 60000;
     if (last.role === "user" && !c.escalatedAt && ageMin > 20 && ageMin < DAYS * 24 * 60) {
-      add({ sev: "🟡", type: "לקוח-לא-נענה", conv: label(c),
+      add({ sev: "🟡", type: "לקוח-לא-נענה", conv: label(c), cid: c.id,
         evidence: `ההודעה האחרונה היא של הלקוח (${il(last.createdAt)}) ואין תגובת סוכן, השיחה לא הוסלמה`,
         klass: "code/ops", fix: "לבדוק אם ה-webhook/סוכן נכשל בתור הזה" });
     }
@@ -150,4 +150,31 @@ const counts = findings.reduce((a, f) => (a[f.type] = (a[f.type] || 0) + 1, a), 
 console.log("סיכום:", JSON.stringify(counts, null, 0));
 fs.writeFileSync("/tmp/qa-report.json", JSON.stringify({ window: { days: DAYS, since }, checked: convos.length, findings }, null, 2));
 console.log("JSON נשמר ב-/tmp/qa-report.json");
+
+// --save: mirror findings into the /admin/qa panel (deduped), same as the cron does.
+if (process.argv.includes("--save")) {
+  const sevMap = { "🔴": "high", "🟠": "medium", "🟡": "low" };
+  const dedupSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  let created = 0;
+  for (const fnd of findings) {
+    if (!fnd.cid) continue;
+    const exists = await prisma.qaSuggestion.findFirst({
+      where: { businessId: BIZ, conversationId: fnd.cid, type: fnd.type, createdAt: { gte: dedupSince } },
+      select: { id: true },
+    });
+    if (exists) continue;
+    await prisma.qaSuggestion.create({ data: {
+      businessId: BIZ,
+      type: fnd.type.replace(/ \(לבדוק\)$/, ""),
+      klass: fnd.klass.split("/")[0],
+      severity: sevMap[fnd.sev] || "medium",
+      title: fnd.evidence,
+      detail: `${fnd.conv}${/מאומת/.test(fnd.evidence) ? " · מאומת" : " · לבדוק"}`,
+      conversationId: fnd.cid,
+      proposedFix: null,
+    }});
+    created++;
+  }
+  console.log(`--save: נוצרו ${created} כרטיסים חדשים בפאנל (dedup דילג על השאר)`);
+}
 await prisma.$disconnect();

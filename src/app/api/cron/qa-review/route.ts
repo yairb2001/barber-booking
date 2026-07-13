@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   const businesses = await prisma.business.findMany({ select: { id: true, settings: true } });
-  const results: Array<{ businessId: string; findings: number; sent: boolean }> = [];
+  const results: Array<{ businessId: string; findings: number; fresh: number; sent: boolean }> = [];
 
   for (const biz of businesses) {
     let settings: Record<string, unknown> = {};
@@ -39,18 +39,54 @@ export async function GET(req: NextRequest) {
     if (settings.qaAgentEnabled !== true) continue;
 
     const findings = await runQaDetectors(biz.id, 1);
+
+    // Mirror findings into the approval panel (deduped), so the morning WhatsApp
+    // digest and /admin/qa stay in sync — the nudge says "open the panel", and
+    // the items are actually there. Dedup on (conversation, type) for 14 days so
+    // a still-active chat isn't re-added every morning, and items the owner
+    // already triaged don't reappear.
+    const dedupSince = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const freshFindings: typeof findings = [];
+    for (const fnd of findings) {
+      if (!fnd.conversationId) continue;
+      const existing = await prisma.qaSuggestion.findFirst({
+        where: { businessId: biz.id, conversationId: fnd.conversationId, type: fnd.type, createdAt: { gte: dedupSince } },
+        select: { id: true, status: true },
+      });
+      if (existing) {
+        // Already has a card. Only still-pending items are worth re-nudging;
+        // ones the owner already flagged/rejected must NOT reappear in the digest.
+        if (existing.status === "pending") freshFindings.push(fnd);
+        continue;
+      }
+      freshFindings.push(fnd);
+      await prisma.qaSuggestion.create({
+        data: {
+          businessId: biz.id,
+          type: fnd.type,
+          klass: fnd.klass,
+          severity: fnd.severity,
+          title: fnd.evidence,
+          detail: `${fnd.who}${fnd.confidence === "confirmed" ? " · מאומת" : " · לבדוק"}`,
+          conversationId: fnd.conversationId,
+          proposedFix: null,
+        },
+      });
+    }
+
     let sent = false;
-    // Only nudge when there's something to look at — no daily "all clear" noise.
-    if (findings.length) {
+    // Only nudge about things the owner hasn't handled yet — no re-nudging on
+    // items already flagged/rejected, and no daily "all clear" noise.
+    if (freshFindings.length) {
       const ownerPhone = settings.ownerLoginPhone
         ? normalizeIsraeliPhone(String(settings.ownerLoginPhone))
         : null;
       if (ownerPhone) {
-        const r = await sendMessage({ businessId: biz.id, customerPhone: ownerPhone, kind: "qa_report", body: formatDigest(findings) });
+        const r = await sendMessage({ businessId: biz.id, customerPhone: ownerPhone, kind: "qa_report", body: formatDigest(freshFindings) });
         sent = r.ok;
       }
     }
-    results.push({ businessId: biz.id, findings: findings.length, sent });
+    results.push({ businessId: biz.id, findings: findings.length, fresh: freshFindings.length, sent });
   }
 
   return NextResponse.json({ ok: true, results });
