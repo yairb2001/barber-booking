@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 import { tierHas } from "@/lib/tier";
+import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE } from "@/lib/link-first-defaults";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -394,6 +395,34 @@ export default function AdminSettingsPage() {
     setTimeout(() => setLinkFirstSaved(false), 2000);
   }
 
+  // Editable message texts for link-first mode ({{link}} / {{name}} placeholders).
+  const [linkGreetingText, setLinkGreetingText] = useState(DEFAULT_GREETING_TEMPLATE);
+  const [linkNudgeText, setLinkNudgeText] = useState(DEFAULT_NUDGE_TEMPLATE);
+  const [linkTextsSaving, setLinkTextsSaving] = useState(false);
+  const [linkTextsSaved, setLinkTextsSaved] = useState(false);
+
+  async function saveLinkFirstTexts() {
+    setLinkTextsSaving(true);
+    setLinkTextsSaved(false);
+    const bizData = await fetch("/api/admin/business").then(r => r.json());
+    const currentSettings = bizData.settings || {};
+    await fetch("/api/admin/business", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        settings: {
+          ...currentSettings,
+          // Persist an override only when the owner changed it from the default.
+          linkFirstGreeting: linkGreetingText.trim() === DEFAULT_GREETING_TEMPLATE.trim() ? undefined : linkGreetingText,
+          linkNudgeText: linkNudgeText.trim() === DEFAULT_NUDGE_TEMPLATE.trim() ? undefined : linkNudgeText,
+        },
+      }),
+    });
+    setLinkTextsSaving(false);
+    setLinkTextsSaved(true);
+    setTimeout(() => setLinkTextsSaved(false), 2000);
+  }
+
   async function saveOwnerAgentToggles(next: { enabled?: boolean; selfEnabled?: boolean }) {
     setOwnerAgentSaving(true);
     setOwnerAgentSaved(false);
@@ -584,6 +613,12 @@ export default function AdminSettingsPage() {
         setOwnerAgentEnabled(settingsObj.ownerAgentEnabled === true);
         // Link-first customer flow
         setLinkFirstEnabled(settingsObj.linkFirstEnabled === true);
+        if (typeof settingsObj.linkFirstGreeting === "string" && settingsObj.linkFirstGreeting.trim()) {
+          setLinkGreetingText(settingsObj.linkFirstGreeting);
+        }
+        if (typeof settingsObj.linkNudgeText === "string" && settingsObj.linkNudgeText.trim()) {
+          setLinkNudgeText(settingsObj.linkNudgeText);
+        }
         setOwnerAgentSelfEnabled(settingsObj.ownerAgentSelfDisabled !== true);
         // Calendar hours
         if (typeof settingsObj.calendarStartHour === "number") setCalStartHour(settingsObj.calendarStartHour);
@@ -1090,6 +1125,55 @@ export default function AdminSettingsPage() {
                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${linkFirstEnabled ? "right-1" : "right-6"}`} />
                       </button>
                     </div>
+
+                    {/* Editable message texts (only relevant when enabled) */}
+                    {linkFirstEnabled && (
+                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
+                        <p className="text-[11px] text-neutral-500 leading-relaxed">
+                          עריכת ההודעות. השאר את <code className="bg-neutral-200 rounded px-1">{"{{link}}"}</code> במקום שבו יופיע הקישור.
+                          אפשר גם <code className="bg-neutral-200 rounded px-1">{"{{name}}"}</code> לשם הלקוח.
+                        </p>
+                        <div>
+                          <label className="text-[12px] text-neutral-700 font-medium block mb-1">ברכה ראשונה (עם הקישור)</label>
+                          <textarea
+                            value={linkGreetingText}
+                            onChange={(e) => setLinkGreetingText(e.target.value)}
+                            rows={4}
+                            dir="rtl"
+                            className="w-full text-[13px] rounded-lg border border-neutral-300 bg-white p-2.5 focus:outline-none focus:border-teal-500 resize-y"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[12px] text-neutral-700 font-medium block mb-1">תזכורת אחרי 30 דק&apos; (חתירה למגע)</label>
+                          <textarea
+                            value={linkNudgeText}
+                            onChange={(e) => setLinkNudgeText(e.target.value)}
+                            rows={3}
+                            dir="rtl"
+                            className="w-full text-[13px] rounded-lg border border-neutral-300 bg-white p-2.5 focus:outline-none focus:border-teal-500 resize-y"
+                          />
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            disabled={linkTextsSaving}
+                            onClick={saveLinkFirstTexts}
+                            className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold transition disabled:opacity-50"
+                          >
+                            {linkTextsSaving ? "שומר..." : "שמור הודעות"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={linkTextsSaving}
+                            onClick={() => { setLinkGreetingText(DEFAULT_GREETING_TEMPLATE); setLinkNudgeText(DEFAULT_NUDGE_TEMPLATE); }}
+                            className="text-[12px] text-neutral-500 hover:text-neutral-700 transition"
+                          >
+                            שחזר ברירת מחדל
+                          </button>
+                          {linkTextsSaved && <span className="text-[11px] text-green-700 font-semibold">✓ נשמר</span>}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

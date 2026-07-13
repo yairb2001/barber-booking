@@ -20,6 +20,7 @@ import type { MessageKind } from "@/lib/messaging/types";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getRootBusinessId } from "@/lib/tenant";
 import { getBusinessNow } from "@/lib/utils";
+import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE } from "@/lib/link-first-defaults";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
 
@@ -60,19 +61,14 @@ function applyVars(tpl: string, link: string, name: string | null): string {
 
 export function greetingText(settings: string | null | undefined, link: string, name: string | null): string {
   const override = parseSettings(settings).linkFirstGreeting;
-  if (override && override.trim()) return applyVars(override, link, name);
-  const hi = name ? `היי ${firstName(name)}, ` : "היי, ";
-  return `${hi}כיף שפנית 🙂 הכי מהיר לתפוס תור דרך הקישור:
-${link}
-ואם נוח לך יותר, פשוט תכתוב לי כאן מתי בא לך ואני אקבע לך.`;
+  const tpl = override && override.trim() ? override : DEFAULT_GREETING_TEMPLATE;
+  return applyVars(tpl, link, name);
 }
 
 export function nudgeText(settings: string | null | undefined, link: string, name: string | null): string {
   const override = parseSettings(settings).linkNudgeText;
-  if (override && override.trim()) return applyVars(override, link, name);
-  const hi = name ? `היי ${firstName(name)}, ` : "היי, ";
-  return `${hi}רק מוודא שתפסת תור. מתי נוח לך שאקבע לך? אפשר גם ישר דרך הקישור:
-${link}`;
+  const tpl = override && override.trim() ? override : DEFAULT_NUDGE_TEMPLATE;
+  return applyVars(tpl, link, name);
 }
 
 // ── Send a fixed message into the customer conversation ───────────────────────
