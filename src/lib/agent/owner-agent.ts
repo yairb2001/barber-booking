@@ -17,6 +17,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, timeToMinutes, minutesToTime } from "@/lib/utils";
 import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
+import { SETUP_FIELDS, missingCoreFields, unansweredFields, type SetupConfig } from "@/lib/agent/setup-fields";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -130,6 +131,26 @@ const OWNER_TOOLS: Anthropic.Tool[] = [
         query: { type: "string", description: "שם או מספר טלפון לחיפוש" },
       },
       required: ["query"],
+    },
+  },
+  // ── Setup interview: configure the customer agent by asking the owner ──────
+  {
+    name: "get_setup_status",
+    description:
+      "מחזיר את מצב הגדרת הסוכן: אילו שדות כבר מולאו, ומהי השאלה הבאה שיש לשאול את הבעלים (עם הניסוח המדויק, האפשרויות וברירת המחדל). קרא לזה כשהבעלים מבקש להגדיר/לכוונן את הסוכן, או כדי לדעת מה עוד חסר. אל תמציא שאלות — קח אותן מכאן.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "save_setup_field",
+    description:
+      "שומר תשובה אחת של הבעלים לשדה הגדרה. קרא לזה אחרי כל תשובה. key חייב להיות מזהה שדה שחזר מ-get_setup_status; value היא התשובה של הבעלים (לשדה בחירה — אחת האפשרויות; לשדה כן/לא — 'כן' או 'לא'). מחזיר אישור והתקדמות.",
+    input_schema: {
+      type: "object",
+      properties: {
+        key:   { type: "string", description: "מזהה השדה (מ-get_setup_status)" },
+        value: { type: "string", description: "התשובה של הבעלים" },
+      },
+      required: ["key", "value"],
     },
   },
 ];
@@ -559,6 +580,66 @@ async function execOwnerTool(
         .join("\n\n");
     }
 
+    // ── Setup interview: current status + the next question to ask ───────────
+    case "get_setup_status": {
+      const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
+      let setup: SetupConfig = {};
+      if (cfg?.setupConfig) { try { setup = JSON.parse(cfg.setupConfig) as SetupConfig; } catch { setup = {}; } }
+      const answered = SETUP_FIELDS.filter(f => setup[f.key] !== undefined && setup[f.key] !== "");
+      const missing = missingCoreFields(setup);
+      const pending = unansweredFields(setup);
+      const coreTotal = SETUP_FIELDS.filter(f => f.core).length;
+      if (!pending.length) {
+        return `כל שדות ההגדרה מולאו (${answered.length}/${SETUP_FIELDS.length}). הסוכן מוגדר. אם הבעלים רוצה לשנות משהו — שאל מה, וקרא ל-save_setup_field עם השדה המתאים.`;
+      }
+      const next = pending[0];
+      const opts = next.options ? ` אפשרויות: ${next.options.join(" / ")}.` : "";
+      const def = next.default !== undefined ? ` ברירת מחדל: ${next.default === true ? "כן" : next.default === false ? "לא" : next.default}.` : "";
+      const readyLine = missing.length
+        ? `עוד ${missing.length} שדות ליבה עד שהסוכן מוכן לאוויר.`
+        : `כל שדות הליבה מולאו — הסוכן מוכן לאוויר; השאר לליטוש.`;
+      return [
+        `התקדמות: ${coreTotal - missing.length}/${coreTotal} שדות ליבה, ${answered.length}/${SETUP_FIELDS.length} סה"כ. ${readyLine}`,
+        `השאלה הבאה (key=${next.key}): "${next.question}".${opts}${def}`,
+        `שאל את הבעלים את השאלה במילים שלך; אחרי שהוא עונה קרא ל-save_setup_field עם key="${next.key}". שאלה אחת בכל פעם.`,
+      ].join("\n");
+    }
+
+    // ── Setup interview: persist one answer ─────────────────────────────────
+    case "save_setup_field": {
+      const key = String(input.key || "").trim();
+      const rawVal = String(input.value ?? "").trim();
+      const field = SETUP_FIELDS.find(f => f.key === key);
+      if (!field) return `שגיאה: שדה לא מוכר (${key}). קרא ל-get_setup_status לקבלת מזהי השדות.`;
+      if (!rawVal) return `שגיאה: לא התקבלה תשובה לשדה ${key}.`;
+      let value: string | boolean = rawVal;
+      if (field.type === "bool") {
+        if (/^(כן|yes|true|נכון)$/i.test(rawVal)) value = true;
+        else if (/^(לא|no|false)$/i.test(rawVal)) value = false;
+        else return `שגיאה: לשדה ${key} ענה 'כן' או 'לא' (התקבל: ${rawVal}).`;
+      } else if (field.type === "choice" && field.options) {
+        const match = field.options.find(o => o === rawVal || rawVal.includes(o) || o.includes(rawVal));
+        if (!match) return `שגיאה: לשדה ${key} בחר אחת מ: ${field.options.join(" / ")} (התקבל: ${rawVal}).`;
+        value = match;
+      }
+      const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
+      let setup: SetupConfig = {};
+      if (cfg?.setupConfig) { try { setup = JSON.parse(cfg.setupConfig) as SetupConfig; } catch { setup = {}; } }
+      setup[key] = value;
+      await prisma.agentConfig.upsert({
+        where: { businessId },
+        create: { businessId, setupConfig: JSON.stringify(setup) },
+        update: { setupConfig: JSON.stringify(setup) },
+      });
+      const missing = missingCoreFields(setup);
+      const pending = unansweredFields(setup);
+      const progress = missing.length
+        ? `נשארו ${missing.length} שדות ליבה.`
+        : pending.length ? `כל שדות הליבה מולאו — הסוכן מוכן לאוויר. עוד ${pending.length} שאלות רשות לליטוש.` : `כל השדות מולאו! ההגדרה הושלמה.`;
+      const shown = value === true ? "כן" : value === false ? "לא" : value;
+      return `נשמר ✅ (${field.group}: ${shown}). ${progress} קרא ל-get_setup_status לשאלה הבאה.`;
+    }
+
     default:
       return `שגיאה: כלי לא מוכר (${name}).`;
   }
@@ -591,6 +672,7 @@ function ownerSystemPrompt(
     `לקוח שמופיע בלוח התורים נמצא בהכרח גם במאגר הלקוחות — לעולם אל תאמר "לא קיים במערכת" על מישהו שיש לו תור. אם get_customer_info לא מצא — נסה שם פרטי בלבד, ואל תתבלבל בין "לוח" ל"מאגר".`,
     `לפני הקביעה עצמה קרא ל-get_staff_and_services לקבלת מזהי ספר ושירות. אל תציף את הבעלים בשאלות — חפש בעצמך מה שאתה יכול, ושאל רק מה שחסר באמת.`,
     `אם פקודה דו-משמעית (למשל "תזיז את 13" כשיש כמה תורים ב-13) — הראה את האפשרויות הרלוונטיות בקצרה ובקש הבהרה.`,
+    `הגדרת/אימון הסוכן: כשהבעלים מבקש "בוא נגדיר את הסוכן", "להגדיר", "לכוונן", או שואל מה עוד חסר — קרא ל-get_setup_status כדי לקבל את השאלה הבאה, שאל אותה שאלה אחת בכל פעם, ואחרי כל תשובה קרא ל-save_setup_field עם ה-key שחזר. אל תמציא שאלות — הן מגיעות מ-get_setup_status. הובל עם ברירת המחדל ("ברירת מחדל: X — מתאים?") כדי שיהיה מהיר. כששדות הליבה מולאו — עדכן שהסוכן מוכן לאוויר.`,
     `כל ההודעות בעברית. עכשיו: ${now} (אסיה/ירושלים).`,
   ].join("\n");
 }

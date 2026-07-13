@@ -21,6 +21,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
+import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 
@@ -901,6 +902,7 @@ function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
+  setupBlock?: string;
   faqs: Array<{ question: string; answer: string }>;
   now: string;
   customerContext?: string;
@@ -913,6 +915,13 @@ function buildSystemPrompt(params: {
   // iteration of the tool loop AND across turns/customers, so we cache it — the
   // 2nd..Nth call reads it at ~10% of the token cost (5-min cache TTL).
   let stable = body;
+  // Shop-specific layer compiled from the setup interview. Applied ONLY when this
+  // shop rides the shared brain (no hand-tuned override) — so hand-tuned shops
+  // like dominant stay byte-for-byte pristine, while onboarded shops get their
+  // interview answers folded in.
+  if (params.setupBlock && !params.customSystemPrompt?.trim()) {
+    stable += `\n\n${params.setupBlock}`;
+  }
   if (params.faqs.length) {
     stable +=
       "\n\nמידע שיעזור לך לענות:\n" +
@@ -1223,10 +1232,19 @@ export async function runCustomerAgent(opts: {
   const isFirstTurn = !history.some(m => m.role === "assistant");
   const customerContext = await loadCustomerContext(businessId, phone, isFirstTurn);
 
+  // Compile the shop's setup-interview answers into a prompt block (empty until
+  // the interview has run; ignored entirely when a hand-tuned override exists).
+  let setupBlock = "";
+  if (agentConfig?.setupConfig) {
+    try { setupBlock = compileSetupConfig(JSON.parse(agentConfig.setupConfig) as SetupConfig); }
+    catch { /* malformed setupConfig — fall back to no shop layer */ }
+  }
+
   const systemPrompt = buildSystemPrompt({
     agentName:         agentConfig?.agentName ?? "הסוכן",
     businessName:      biz.name,
     customSystemPrompt: agentConfig?.systemPrompt,
+    setupBlock,
     faqs:              agentConfig?.faqs ?? [],
     now:               new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }),
     customerContext,

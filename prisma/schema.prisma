@@ -621,6 +621,10 @@ model AgentConfig {
   // Hand a stuck conversation to a human after this many customer messages
   // without resolution. 0 = disabled (never auto-escalate on length).
   escalateAfterMessages Int @default(14) @map("escalate_after_messages")
+  // Structured answers from the self-configuring setup interview (JSON string).
+  // Compiled into a shop-specific prompt block by lib/agent/setup-fields.ts.
+  // Only the prompt-shaping fields live here; system toggles use their own cols.
+  setupConfig String? @map("setup_config")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
