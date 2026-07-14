@@ -41,7 +41,17 @@ export async function runQaDetectors(businessId: string, sinceDays = 1): Promise
     orderBy: { lastMessageAt: "desc" },
   });
 
+  // The owner testing their own agent from their own phone shouldn't be flagged
+  // as a customer-facing problem — skip their own conversations.
+  const bizRow = await prisma.business.findUnique({ where: { id: businessId }, select: { settings: true } });
+  let ownerPhone: string | null = null;
+  try {
+    const st = bizRow?.settings ? JSON.parse(bizRow.settings) : {};
+    if (st.ownerLoginPhone) ownerPhone = normalizeIsraeliPhone(String(st.ownerLoginPhone));
+  } catch { /* ignore */ }
+
   for (const c of convos) {
+    if (ownerPhone && normalizeIsraeliPhone(c.phone) === ownerPhone) continue;
     const who = `${c.whatsappName || "—"} (${c.phone})`;
     try {
       const msgs = await prisma.conversationMessage.findMany({

@@ -40,7 +40,13 @@ const convos = await prisma.conversation.findMany({
 const CONFIRM = /קבעתי לך|קבעתי אצל|רשמתי לך תור|התור שלך נקבע|נקבע בהצלחה|קבענו לך/;
 const label = (c) => `${c.whatsappName || "—"} (${c.phone}) [${c.id.slice(0, 8)}]`;
 
+// exclude the owner's own test conversations (matches the module)
+const ownerBiz = await prisma.business.findUnique({ where:{ id:BIZ }, select:{ settings:true } });
+let ownerPhone = null;
+try { const st = ownerBiz?.settings ? JSON.parse(ownerBiz.settings) : {}; if (st.ownerLoginPhone) ownerPhone = norm(st.ownerLoginPhone); } catch {}
+
 for (const c of convos) {
+  if (ownerPhone && norm(c.phone) === ownerPhone) continue;
   try {
     const msgs = await prisma.conversationMessage.findMany({
       where: { conversationId: c.id },

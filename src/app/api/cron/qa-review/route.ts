@@ -75,16 +75,15 @@ export async function GET(req: NextRequest) {
     }
 
     let sent = false;
-    // Only nudge about things the owner hasn't handled yet — no re-nudging on
-    // items already flagged/rejected, and no daily "all clear" noise.
-    if (freshFindings.length) {
-      const ownerPhone = settings.ownerLoginPhone
-        ? normalizeIsraeliPhone(String(settings.ownerLoginPhone))
-        : null;
-      if (ownerPhone) {
-        const r = await sendMessage({ businessId: biz.id, customerPhone: ownerPhone, kind: "qa_report", body: formatDigest(freshFindings) });
-        sent = r.ok;
-      }
+    // Send a short digest every day so the owner always knows the check ran —
+    // findings on a problem day, "✅ all clear" on a clean one. Only re-nudges
+    // about un-triaged items (freshFindings); already-handled ones stay silent.
+    const ownerPhone = settings.ownerLoginPhone
+      ? normalizeIsraeliPhone(String(settings.ownerLoginPhone))
+      : null;
+    if (ownerPhone) {
+      const r = await sendMessage({ businessId: biz.id, customerPhone: ownerPhone, kind: "qa_report", body: formatDigest(freshFindings) });
+      sent = r.ok;
     }
     results.push({ businessId: biz.id, findings: findings.length, fresh: freshFindings.length, sent });
   }
