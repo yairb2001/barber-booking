@@ -51,9 +51,13 @@ interface GreenApiWebhook {
   instanceData?: { idInstance: string | number };
   senderData?: {
     chatId: string;
+    // chatName / senderContactName reflect how the contact is SAVED IN THE
+    // BUSINESS OWNER'S PHONE BOOK — never use them to address the customer
+    // (a customer was once greeted by the owner's private contact label).
     chatName?: string;
     sender?: string;
-    senderName?: string;
+    senderName?: string;        // the sender's own WhatsApp profile name (pushname)
+    senderContactName?: string; // phonebook name on the instance — DO NOT use
   };
   messageData?: {
     typeMessage: string;
@@ -216,7 +220,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const isNonText = rawText === null && text !== null;
   // WhatsApp display name as set by the sender — used in the chats UI as a
   // fallback when the customer is not yet in our DB.
-  const senderName = (body.senderData?.senderName || body.senderData?.chatName || "").trim();
+  // ONLY the sender's own profile name (pushname). chatName/senderContactName
+  // mirror the owner's PHONE BOOK ("דוד ציוני" incident: a customer was greeted
+  // by the private label the owner saved him under) — never address a customer
+  // by a name he didn't present himself. Defense-in-depth: some GreenAPI
+  // versions copy the phonebook name into senderName too — when it matches
+  // senderContactName exactly, treat it as phonebook data and drop it.
+  const rawSenderName = (body.senderData?.senderName || "").trim();
+  const phonebookName = (body.senderData?.senderContactName || "").trim();
+  const senderName = phonebookName && rawSenderName === phonebookName ? "" : rawSenderName;
 
   if (!rawPhone || !text?.trim()) {
     return NextResponse.json({ ok: true, skipped: true });
