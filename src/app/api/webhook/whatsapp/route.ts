@@ -33,7 +33,7 @@ import {
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
-import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting } from "@/lib/link-first";
+import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent } from "@/lib/link-first";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -320,6 +320,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { businessId: biz.id, phone, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
   });
+  // Capture the conversation's last activity BEFORE this message is persisted
+  // (lastMessageAt is refreshed below) — the link-first trigger needs "how long
+  // was this thread quiet before the customer wrote NOW". null = fresh thread.
+  const prevLastMessageAt: Date | null = conv?.lastMessageAt ?? null;
   if (!conv) {
     conv = await prisma.conversation.create({
       data: {
@@ -431,16 +435,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Link-first mode (token saver, opt-in per business) ──────────────────────
-  // On a FRESH contact — no greeting sent to this phone within the re-greet
-  // window (settings.linkFirstRegreetDays, default 3) — reply with a fixed
-  // greeting + booking link instead of running the (paid) agent — 0 tokens. The
-  // agent takes over from the customer's NEXT message (a greeting now exists in
-  // the window, so this branch won't fire again until the cooldown passes). A
-  // 30-min "didn't book / didn't reply" nudge is handled by runLinkNudges().
-  if (isLinkFirstEnabled(biz.settings) && await shouldSendGreeting(biz.id, phone, biz.settings)) {
+  // Fires only on a FRESH contact: a new conversation, or a thread that was
+  // quiet past the re-greet window (measured from the LAST message regardless of
+  // sender — a reply to yesterday's follow-up is NOT fresh and goes to the
+  // agent). On a fresh contact a tiny intent check decides (owner's rule):
+  //   book  → fixed greeting + booking link, no agent run.
+  //   chat  → the agent answers naturally, then the greeting is sent right after.
+  //   other → a concrete non-booking request — no automation, agent handles it.
+  // A 30-min "didn't book / didn't reply" nudge is handled by runLinkNudges().
+  let sendGreetingAfterAgent = false;
+  if (
+    !isNonText &&
+    isLinkFirstEnabled(biz.settings) &&
+    await shouldSendGreeting(biz.id, phone, biz.settings, prevLastMessageAt)
+  ) {
     try {
-      await sendGreetingLink(biz, phone, senderName);
-      return NextResponse.json({ ok: true, handled: "link_first_greeting" });
+      const intent = await classifyFirstContactIntent(text);
+      if (intent === "book") {
+        await sendGreetingLink(biz, phone, senderName);
+        return NextResponse.json({ ok: true, handled: "link_first_greeting" });
+      }
+      if (intent === "chat") sendGreetingAfterAgent = true;
+      // intent === "other" → fall through to the agent, no automation.
     } catch (e) {
       // Never leave the customer hanging — fall through to the agent on failure.
       console.error("[link-first] greeting failed:", e);
@@ -472,6 +488,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
+  }
+
+  // Small-talk first contact ("chat" intent): after the agent's natural reply,
+  // send the booking-link automation too — the customer gets both the human
+  // answer and the fastest path to book (and the greeting_link log arms the
+  // 30-min nudge). Sent even if the agent errored, so the link isn't lost.
+  if (sendGreetingAfterAgent) {
+    try {
+      await sendGreetingLink(biz, phone, senderName);
+    } catch (e) {
+      console.error("[link-first] post-agent greeting failed:", e);
+    }
   }
 
   return NextResponse.json({ ok: true });

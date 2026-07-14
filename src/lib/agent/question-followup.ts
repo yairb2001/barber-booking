@@ -27,6 +27,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
+import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName } from "@/lib/agent/followup-shared";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -52,26 +53,36 @@ function fallbackFollowup(name: string | null): string {
   return `${hi}רק מוודא שלא פספסת — עדיין מחכה לתשובה שלך כדי שנתקדם.`;
 }
 
-/** Write one short nudge that follows up on the agent's unanswered question. */
-async function generateFollowup(transcript: string, name: string | null): Promise<string> {
+/**
+ * Write one short nudge that follows up on the agent's unanswered question — or
+ * decide to send NOTHING (returns null) when the customer already declined or
+ * the question is no longer relevant (e.g. it was about a time that passed).
+ */
+async function generateFollowup(transcript: string, name: string | null): Promise<string | null> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 200,
       system:
-        "אתה נציג מספרה שמתכתב בוואטסאפ. שאלת את הלקוח שאלה והוא עוד לא ענה, ואתה שולח תזכורת אחת קצרה שממשיכה בדיוק מאותה שאלה. " +
-        "כתוב משפט אחד חם וטבעי בעברית שמזכיר בעדינות את השאלה שנשארה פתוחה ומזמין אותו לענות, בלי לחץ ובלי להישמע כמו בוט. " +
+        "אתה נציג מספרה שמתכתב בוואטסאפ. שאלת את הלקוח שאלה והוא עוד לא ענה, ואתה שוקל לשלוח תזכורת אחת קצרה שממשיכה בדיוק מאותה שאלה. " +
+        nowLineIsrael() + " " +
+        "קודם כל תחליט אם בכלל נכון לשלוח: אם הלקוח כבר סירב/ויתר במפורש, או שהשאלה כבר לא רלוונטית (למשל דובר על שעה שכבר עברה) — החזר בדיוק את המילה SKIP ושום דבר אחר. " +
+        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי בעברית שמזכיר בעדינות את השאלה שנשארה פתוחה ומזמין אותו לענות, בלי לחץ ובלי להישמע כמו בוט. " +
+        "שים לב לשעה הנוכחית: אם השעה שדוברה כבר עברה — אל תציע אותה שוב; הצע לקבוע מחדש לזמן שנוח לו. " +
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
-        (name ? `פנה ללקוח בשמו (${name}). ` : "") +
-        "החזר רק את ההודעה עצמה, בלי הקדמות.",
+        (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
+        FOLLOWUP_HARD_RULES + " " +
+        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות.",
       messages: [
-        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nכתוב תזכורת אחת קצרה על השאלה שנשארה פתוחה.` },
+        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או תזכורת אחת קצרה על השאלה שנשארה פתוחה.` },
       ],
     });
     let text = "";
     for (const b of res.content) if (b.type === "text") text += b.text;
     text = text.trim();
-    return text || fallbackFollowup(name);
+    if (!text) return fallbackFollowup(name);
+    if (/^SKIP\b/i.test(text)) return null;
+    return text;
   } catch (e) {
     console.error("[question-followup] LLM failed", e);
     return fallbackFollowup(name);
@@ -178,16 +189,23 @@ export async function runAgentQuestionFollowup(
         .map(m => `${m.role === "user" ? "לקוח" : "סוכן"}: ${m.content}`)
         .join("\n");
 
-      let name: string | null = convo.whatsappName ? firstName(convo.whatsappName) : null;
-      if (convo.customerId) {
-        const c = await prisma.customer.findUnique({
-          where:  { id: convo.customerId },
-          select: { name: true },
-        });
-        if (c?.name) name = firstName(c.name);
-      }
+      // Registered customer name (by link OR by phone) wins over the WhatsApp
+      // display name; never use a phone-like "name" (better no name at all).
+      let name: string | null =
+        convo.whatsappName && !isPhoneLikeName(convo.whatsappName)
+          ? firstName(convo.whatsappName)
+          : null;
+      const registered = convo.customerId
+        ? await prisma.customer.findUnique({ where: { id: convo.customerId }, select: { name: true } })
+        : await prisma.customer.findFirst({
+            where: { businessId: biz.id, deletedAt: null, OR: [{ phone }, { phone: localPhone }] },
+            select: { name: true },
+          });
+      if (registered?.name && !isPhoneLikeName(registered.name)) name = firstName(registered.name);
 
       const followup = await generateFollowup(transcript, name);
+      // Model decided the reminder would hurt (declined / no longer relevant).
+      if (followup === null) { skipped++; continue; }
 
       try {
         await prisma.conversationMessage.create({

@@ -44,6 +44,13 @@ const MODEL_FAST  = "claude-haiku-4-5";
 const MODEL_SMART = "claude-sonnet-4-6";
 const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 
+// Context window: the agent only "remembers" the last 24h of a conversation.
+// Conversation rows live for days (cleanup needs 3 fully-quiet days), so without
+// this cutoff a returning customer got last week's context glued onto today's
+// request, and the "stuck agent" alarm counted lifetime messages. A fresh day =
+// a fresh conversation (the customer record still supplies name/appointments).
+const CONTEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
 
@@ -928,6 +935,17 @@ function buildSystemPrompt(params: {
       params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n");
   }
 
+  // Hard guardrails — appended in CODE so they hold for EVERY business, even one
+  // with a hand-tuned custom prompt. Born from a real incident where a follow-up
+  // invented a "first-visit discount code" to win back a customer who declined
+  // on price.
+  stable +=
+    "\n\nחוקים קשיחים שאסור להפר בשום מצב: " +
+    "אסור להמציא או להציע הנחות, מבצעים, קודי קופון, מחירים מיוחדים או הטבות מכל סוג — גם אם הלקוח אומר שיקר לו. " +
+    "המחירים היחידים שקיימים הם אלה שמחזירים הכלים או שכתובים בהנחיות האלה. " +
+    "אם ללקוח יקר — הבן אותו בחום והשאר דלת פתוחה, בלי להציע שום פיצוי. " +
+    "אסור להבטיח דבר בשם העסק שלא כתוב בהנחיות או שלא חזר מהכלים.";
+
   // Per-turn chunk (current time + who's chatting). Changes every minute and
   // per customer, so it must stay OUTSIDE the cached prefix.
   let dynamic =
@@ -1172,8 +1190,16 @@ export async function runCustomerAgent(opts: {
   // and tell the customer someone will follow up. 0 = disabled.
   const escalateThreshold = agentConfig?.escalateAfterMessages ?? 0;
   if (escalateThreshold > 0) {
+    // Count only the last 24h — a conversation row lives for days (cleanup needs
+    // 3 full quiet days), so a lifetime count made chatty REGULARS trip the
+    // "agent stuck" alarm after a week of normal use (real incident: 39 msgs
+    // accumulated over days). "Stuck" means many messages in a SHORT window.
     const userMsgCount = await prisma.conversationMessage.count({
-      where: { conversationId: conversation.id, role: "user" },
+      where: {
+        conversationId: conversation.id,
+        role: "user",
+        createdAt: { gte: new Date(Date.now() - CONTEXT_WINDOW_MS) },
+      },
     });
     if (userMsgCount >= escalateThreshold) {
       await escalateToHuman({
@@ -1194,9 +1220,16 @@ export async function runCustomerAgent(opts: {
 
   // ── Load recent dialogue ───────────────────────────────────────────────────────
   // Load the MOST RECENT user/assistant turns (not the oldest!) — tool rows are
-  // internal and would otherwise crowd out real turns. Reverse to chronological.
+  // internal and would otherwise crowd out real turns. Only the last 24h
+  // (CONTEXT_WINDOW_MS): older exchanges are a different visit/topic, and gluing
+  // them on confused the agent and skewed follow-ups. Reverse to chronological.
+  const historySince = new Date(Date.now() - CONTEXT_WINDOW_MS);
   const history = await prisma.conversationMessage.findMany({
-    where: { conversationId: conversation.id, role: { in: ["user", "assistant"] } },
+    where: {
+      conversationId: conversation.id,
+      role: { in: ["user", "assistant"] },
+      createdAt: { gte: historySince },
+    },
     orderBy: { createdAt: "desc" },
     take: MAX_HISTORY,
     select: { role: true, content: true },
@@ -1218,8 +1251,9 @@ export async function runCustomerAgent(opts: {
   while (messages.length && messages[0].role !== "user") messages.shift();
 
   // Recent tool activity → lets the router detect a booking already in progress.
+  // Same 24h window as the dialogue: last week's booking isn't "in progress".
   const recentToolRows = await prisma.conversationMessage.findMany({
-    where: { conversationId: conversation.id, role: "tool" },
+    where: { conversationId: conversation.id, role: "tool", createdAt: { gte: historySince } },
     orderBy: { createdAt: "desc" },
     take: 4,
     select: { toolName: true },

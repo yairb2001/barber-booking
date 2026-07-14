@@ -21,6 +21,32 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getRootBusinessId } from "@/lib/tenant";
 import { getBusinessNow } from "@/lib/utils";
 import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE, DEFAULT_REGREET_DAYS } from "@/lib/link-first-defaults";
+import { isPhoneLikeName } from "@/lib/agent/followup-shared";
+
+/**
+ * Resolve the name to address the customer with (owner's rule):
+ *   1. the REGISTERED customer name (they told us who they are),
+ *   2. else the WhatsApp profile name,
+ *   3. else NO name at all — and never a phone-like "name" (some profiles have
+ *      no name and the pushname arrives as the raw number; addressing a customer
+ *      by their phone number happened once and looked terrible).
+ */
+async function resolveCustomerName(
+  businessId: string,
+  phone: string,
+  whatsappName?: string | null,
+): Promise<string | null> {
+  const normalized = normalizeIsraeliPhone(phone) || phone;
+  const localPhone = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
+  const customer = await prisma.customer.findFirst({
+    where: { businessId, deletedAt: null, OR: [{ phone: normalized }, { phone: localPhone }] },
+    select: { name: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (customer?.name && !isPhoneLikeName(customer.name)) return customer.name;
+  if (whatsappName && !isPhoneLikeName(whatsappName)) return whatsappName;
+  return null;
+}
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
 
@@ -48,24 +74,80 @@ export function regreetDays(settings: string | null | undefined): number {
 
 /**
  * Should this incoming message get the fixed greeting (vs. the AI agent)?
- * YES when no greeting was sent to this phone within the re-greet window — i.e.
- * a genuinely fresh contact. Based on the greeting_link MessageLog (which the
- * 3-day conversation cleanup does NOT delete), so the cooldown is honored even
- * across cleaned-up conversations and is independent of that window.
+ * The rule (set by the owner): the greeting fires ONLY on a FRESH contact —
+ *   (a) a brand-new conversation, or
+ *   (b) the thread was quiet for at least the re-greet window, measured from the
+ *       LAST message in the conversation regardless of who sent it
+ *       (prevLastMessageAt is captured BEFORE the incoming message is persisted).
+ * A customer replying to yesterday's follow-up is NOT fresh — the agent answers.
+ *
+ * Defense-in-depth: also require no greeting_link within the window. The
+ * MessageLog survives the 3-day conversation cleanup, so a wiped thread can't
+ * cause a re-greet inside the cooldown.
  */
 export async function shouldSendGreeting(
   businessId: string,
   phone: string,
   settings: string | null | undefined,
+  prevLastMessageAt: Date | null,
 ): Promise<boolean> {
   const days = regreetDays(settings);
+  const windowMs = days * 24 * 60 * 60 * 1000;
+
+  // Active thread — someone said something within the window → not fresh.
+  if (prevLastMessageAt && Date.now() - prevLastMessageAt.getTime() < windowMs) {
+    return false;
+  }
+
   const normalized = normalizeIsraeliPhone(phone) || phone;
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const since = new Date(Date.now() - windowMs);
   const recent = await prisma.messageLog.findFirst({
     where: { businessId, customerPhone: normalized, kind: "greeting_link", createdAt: { gte: since } },
     select: { id: true },
   });
   return !recent;
+}
+
+// ── First-contact intent (what does the fresh message actually want?) ────────
+export type FirstContactIntent = "book" | "chat" | "other";
+
+/**
+ * Classify a FRESH contact's first message so the automation is sent only when
+ * it fits (owner's rule):
+ *   book  → wants to schedule → send the greeting+link, no agent.
+ *   chat  → greeting/small talk, no concrete request → agent replies naturally,
+ *           then the automation is sent right after.
+ *   other → a concrete NON-booking request (cancel, move, question, complaint)
+ *           → NO automation; the agent handles it.
+ * One tiny Haiku call (~a few dozen tokens) — still far cheaper than running the
+ * full agent on every first contact. Falls back to "book" on error so the
+ * customer at least gets the link instead of silence.
+ */
+export async function classifyFirstContactIntent(text: string): Promise<FirstContactIntent> {
+  try {
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
+    const res = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 5,
+      system:
+        "סווג את ההודעה הראשונה של לקוח למספרה לקטגוריה אחת בדיוק. " +
+        "ענה במילה אחת בלבד: " +
+        "book = רוצה לקבוע תור / שואל על זמינות או תור פנוי. " +
+        "chat = ברכה או סמול-טוק בלי בקשה קונקרטית (היי, מה קורה, בוקר טוב). " +
+        "other = כל בקשה קונקרטית אחרת שאינה קביעת תור חדש: ביטול, הזזה/שינוי תור, שאלה על מחיר/שעות/כתובת, תלונה, או כל דבר אחר.",
+      messages: [{ role: "user", content: text.slice(0, 500) }],
+    });
+    let out = "";
+    for (const b of res.content) if (b.type === "text") out += b.text;
+    const word = out.trim().toLowerCase();
+    if (word.startsWith("chat")) return "chat";
+    if (word.startsWith("other")) return "other";
+    return "book";
+  } catch (e) {
+    console.error("[link-first] intent classification failed:", e);
+    return "book";
+  }
 }
 
 // ── Booking link ─────────────────────────────────────────────────────────────
@@ -158,10 +240,12 @@ async function sendFixedToConversation(opts: {
 }
 
 /** First-contact greeting + booking link. Called from the webhook. */
-export async function sendGreetingLink(biz: { id: string; slug: string | null; settings: string | null }, phone: string, name?: string | null): Promise<void> {
+export async function sendGreetingLink(biz: { id: string; slug: string | null; settings: string | null }, phone: string, whatsappName?: string | null): Promise<void> {
   const link = await buildBookingLink(biz);
-  const body = greetingText(biz.settings, link, name ?? null);
-  await sendFixedToConversation({ businessId: biz.id, phone, body, kind: "greeting_link", name });
+  // Registered name → WhatsApp name → none (never a phone-like string).
+  const name = await resolveCustomerName(biz.id, phone, whatsappName);
+  const body = greetingText(biz.settings, link, name);
+  await sendFixedToConversation({ businessId: biz.id, phone, body, kind: "greeting_link", name: whatsappName });
 }
 
 // ── 30-min "didn't book / didn't reply" nudge ────────────────────────────────
@@ -258,7 +342,9 @@ export async function runLinkNudges(): Promise<{ checked: number; sent: number }
     if (upcoming) continue;
 
     const link = await buildBookingLink(biz);
-    const body = nudgeText(biz.settings, link, conv?.whatsappName ?? null);
+    // Registered name → WhatsApp name → none (never a phone-like string).
+    const name = await resolveCustomerName(biz.id, phone, conv?.whatsappName);
+    const body = nudgeText(biz.settings, link, name);
     await sendFixedToConversation({ businessId: biz.id, phone, body, kind: "link_nudge", name: conv?.whatsappName });
     nudgedBusinesses.add(biz.id);
     sent++;

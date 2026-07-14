@@ -18,6 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
+import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName } from "@/lib/agent/followup-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +26,15 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const MIN_QUIET_MS = 60 * 60 * 1000;        // wait at least 1h after the last message
 // Look back far enough to carry an evening/overnight abandon into the next
-// morning: if quiet hours blocked the nudge last night, the morning run still
-// finds the chat (no follow-up was logged, so it's still a candidate). 36h
-// comfortably spans the ~12h quiet window plus a full day.
-const MAX_AGE_MS   = 36 * 60 * 60 * 1000;
+// morning (quiet hours blocked the nudge last night → the morning run still
+// finds the chat), but no further: a follow-up on a 2-day-old chat reads as
+// stale and irrelevant (real incident). 24h covers the overnight carry.
+const MAX_AGE_MS   = 24 * 60 * 60 * 1000;
+
+// If the link-first 30-min nudge ("הסתדרת עם האתר?") went unanswered, the next
+// follow-up is our THIRD outbound message — space it at least this far from the
+// nudge (quiet hours then naturally push an evening slot to next morning).
+const AFTER_LINK_NUDGE_GAP_MS = 6 * 60 * 60 * 1000;
 
 // Quiet hours: only nudge between 09:00–21:00 Israel time. This endpoint is
 // driven every couple of hours (cron-job.org), so without this guard a
@@ -48,26 +54,49 @@ function fallbackFollowup(name: string | null): string {
   return `${hi}ראיתי שהתחלנו ולא סגרנו תור — רוצה שאמצא לך שעה טובה?`;
 }
 
-/** Write one short, contextual nudge from the conversation so far. */
-async function generateFollowup(transcript: string, name: string | null): Promise<string> {
+/**
+ * Write one short, contextual nudge from the conversation so far — or decide to
+ * send NOTHING (returns null). The model must skip when the customer explicitly
+ * declined/closed ("יקר לי, אוותר", "לא מעוניין", "תודה" as a goodbye) — chasing
+ * after a clear "no" burns goodwill. It also gets the current time so it never
+ * treats a slot that already passed as still on the table (offer to REBOOK
+ * instead), plus the hard no-invented-discounts rules.
+ */
+async function generateFollowup(
+  transcript: string,
+  name: string | null,
+  opts?: { isThirdTouch?: boolean },
+): Promise<string | null> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 200,
       system:
-        "אתה נציג מספרה שמתכתב בוואטסאפ. הלקוח התחיל שיחה ולא סגר תור, ואתה שולח לו הודעת פולואפ אחת קצרה. " +
-        "כתוב משפט אחד חם וטבעי בעברית שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
+        "אתה נציג מספרה שמתכתב בוואטסאפ. הלקוח התחיל שיחה ולא סגר תור, ואתה שוקל לשלוח לו הודעת פולואפ אחת קצרה. " +
+        nowLineIsrael() + " " +
+        "קודם כל תחליט אם בכלל נכון לשלוח: " +
+        "אם הלקוח סירב במפורש, ויתר, אמר שיקר לו וסגר, אמר שלא מעוניין, או שהשיחה הסתיימה בצורה מנומסת וסופית — החזר בדיוק את המילה SKIP ושום דבר אחר. " +
+        "אם השיחה כבר לא רלוונטית (למשל דובר על תור לזמן שכבר עבר מזמן והלקוח נעלם) והפולואפ ירגיש מנותק — החזר SKIP. " +
+        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי בעברית שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
+        "שים לב לשעה הנוכחית: אם השעה או היום שדוברו בשיחה כבר עברו — אל תציע אותם שוב; הצע לקבוע מחדש לזמן שנוח לו. " +
+        (opts?.isThirdTouch
+          ? "דע שזו כבר הפנייה השלישית מצדנו בלי מענה — לכן תהיה עדין במיוחד, בלי שום תחושת רדיפה, נימה קלילה של 'כשנוח לך, אנחנו כאן'. "
+          : "") +
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
-        (name ? `פנה ללקוח בשמו (${name}). ` : "") +
-        "החזר רק את ההודעה עצמה, בלי הקדמות.",
+        (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
+        FOLLOWUP_HARD_RULES + " " +
+        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות.",
       messages: [
-        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nכתוב הודעת פולואפ אחת.` },
+        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או הודעת פולואפ אחת.` },
       ],
     });
     let text = "";
     for (const b of res.content) if (b.type === "text") text += b.text;
     text = text.trim();
-    return text || fallbackFollowup(name);
+    if (!text) return fallbackFollowup(name);
+    // The model decided a follow-up would do more harm than good.
+    if (/^SKIP\b/i.test(text)) return null;
+    return text;
   } catch (e) {
     console.error("[followup] LLM failed", e);
     return fallbackFollowup(name);
@@ -147,6 +176,25 @@ export async function GET(req: NextRequest) {
       });
       if (already) { skipped++; continue; }
 
+      // Link-first nudge pacing: if the fixed 30-min nudge was already sent and
+      // the customer hasn't answered it, this follow-up is our THIRD message —
+      // hold off until at least 6h after the nudge (evenings roll to morning via
+      // the quiet-hours gate above).
+      const lastLinkNudge = await prisma.messageLog.findFirst({
+        where: {
+          businessId:    biz.id,
+          customerPhone: { in: [phone, localPhone, convo.phone] },
+          kind:          "link_nudge",
+        },
+        orderBy: { createdAt: "desc" },
+        select:  { createdAt: true },
+      });
+      const isThirdTouch = !!lastLinkNudge;
+      if (lastLinkNudge && now.getTime() - lastLinkNudge.createdAt.getTime() < AFTER_LINK_NUDGE_GAP_MS) {
+        skipped++;
+        continue;
+      }
+
       // Customer already has an upcoming appointment → they booked, leave them be.
       const upcoming = await prisma.appointment.findFirst({
         where: {
@@ -175,17 +223,25 @@ export async function GET(req: NextRequest) {
         .map(m => `${m.role === "user" ? "לקוח" : "סוכן"}: ${m.content}`)
         .join("\n");
 
-      // Name: prefer the linked customer, fall back to the WhatsApp display name.
-      let name: string | null = convo.whatsappName ? firstName(convo.whatsappName) : null;
-      if (convo.customerId) {
-        const c = await prisma.customer.findUnique({
-          where:  { id: convo.customerId },
-          select: { name: true },
-        });
-        if (c?.name) name = firstName(c.name);
-      }
+      // Name resolution: registered customer name (by link OR by phone) wins,
+      // then the WhatsApp display name — but NEVER a phone-like "name" (some
+      // profiles have no name and the pushname arrives as the number; addressing
+      // a customer by their phone number is worse than no name at all).
+      let name: string | null =
+        convo.whatsappName && !isPhoneLikeName(convo.whatsappName)
+          ? firstName(convo.whatsappName)
+          : null;
+      const registered = convo.customerId
+        ? await prisma.customer.findUnique({ where: { id: convo.customerId }, select: { name: true } })
+        : await prisma.customer.findFirst({
+            where: { businessId: biz.id, deletedAt: null, OR: [{ phone }, { phone: localPhone }] },
+            select: { name: true },
+          });
+      if (registered?.name && !isPhoneLikeName(registered.name)) name = firstName(registered.name);
 
-      const followup = await generateFollowup(transcript, name);
+      const followup = await generateFollowup(transcript, name, { isThirdTouch });
+      // Model decided a follow-up would hurt (explicit decline / stale context).
+      if (followup === null) { skipped++; continue; }
 
       try {
         await prisma.conversationMessage.create({
