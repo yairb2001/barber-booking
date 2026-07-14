@@ -33,7 +33,7 @@ import {
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
-import { isLinkFirstEnabled, sendGreetingLink } from "@/lib/link-first";
+import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting } from "@/lib/link-first";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -320,9 +320,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { businessId: biz.id, phone, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
   });
-  // Whether THIS message opens a brand-new conversation (first contact). Used by
-  // link-first mode to greet + send the booking link instead of running the agent.
-  const isNewConversation = !conv;
   if (!conv) {
     conv = await prisma.conversation.create({
       data: {
@@ -434,12 +431,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── Link-first mode (token saver, opt-in per business) ──────────────────────
-  // On the FIRST contact of a new conversation, reply with a fixed greeting +
-  // booking link instead of running the (paid) agent — 0 tokens. The agent takes
-  // over from the customer's NEXT message (the conversation now exists, so this
-  // branch won't fire again). A 30-min "didn't book / didn't reply" nudge is
-  // handled by runLinkNudges() (piggybacked on the drip-queue cron).
-  if (isNewConversation && isLinkFirstEnabled(biz.settings)) {
+  // On a FRESH contact — no greeting sent to this phone within the re-greet
+  // window (settings.linkFirstRegreetDays, default 3) — reply with a fixed
+  // greeting + booking link instead of running the (paid) agent — 0 tokens. The
+  // agent takes over from the customer's NEXT message (a greeting now exists in
+  // the window, so this branch won't fire again until the cooldown passes). A
+  // 30-min "didn't book / didn't reply" nudge is handled by runLinkNudges().
+  if (isLinkFirstEnabled(biz.settings) && await shouldSendGreeting(biz.id, phone, biz.settings)) {
     try {
       await sendGreetingLink(biz, phone, senderName);
       return NextResponse.json({ ok: true, handled: "link_first_greeting" });

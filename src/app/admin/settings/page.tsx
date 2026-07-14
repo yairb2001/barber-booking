@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 import { tierHas } from "@/lib/tier";
-import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE } from "@/lib/link-first-defaults";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -366,85 +365,9 @@ export default function AdminSettingsPage() {
     setTimeout(() => setOwnerPhoneSaved(false), 2000);
   }
 
-  // Owner personal WhatsApp agent — master switch (everyone) + owner self switch.
-  // Stored in Business.settings: `ownerAgentEnabled` (global) and
-  // `ownerAgentSelfDisabled` (opt-out for the owner only).
-  const [ownerAgentEnabled, setOwnerAgentEnabled] = useState(false);
-  const [ownerAgentSelfEnabled, setOwnerAgentSelfEnabled] = useState(true);
-  const [ownerAgentSaving, setOwnerAgentSaving] = useState(false);
-  const [ownerAgentSaved, setOwnerAgentSaved] = useState(false);
-
-  // Link-first mode — on first contact, reply with a fixed greeting + booking
-  // link instead of the AI agent (saves tokens). Stored in settings.linkFirstEnabled.
-  const [linkFirstEnabled, setLinkFirstEnabled] = useState(false);
-  const [linkFirstSaving, setLinkFirstSaving] = useState(false);
-  const [linkFirstSaved, setLinkFirstSaved] = useState(false);
-
-  async function saveLinkFirstToggle(enabled: boolean) {
-    setLinkFirstSaving(true);
-    setLinkFirstSaved(false);
-    const bizData = await fetch("/api/admin/business").then(r => r.json());
-    const currentSettings = bizData.settings || {};
-    await fetch("/api/admin/business", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: { ...currentSettings, linkFirstEnabled: enabled } }),
-    });
-    setLinkFirstSaving(false);
-    setLinkFirstSaved(true);
-    setTimeout(() => setLinkFirstSaved(false), 2000);
-  }
-
-  // Editable message texts for link-first mode ({{link}} / {{name}} placeholders).
-  const [linkGreetingText, setLinkGreetingText] = useState(DEFAULT_GREETING_TEMPLATE);
-  const [linkNudgeText, setLinkNudgeText] = useState(DEFAULT_NUDGE_TEMPLATE);
-  const [linkTextsSaving, setLinkTextsSaving] = useState(false);
-  const [linkTextsSaved, setLinkTextsSaved] = useState(false);
-
-  async function saveLinkFirstTexts() {
-    setLinkTextsSaving(true);
-    setLinkTextsSaved(false);
-    const bizData = await fetch("/api/admin/business").then(r => r.json());
-    const currentSettings = bizData.settings || {};
-    await fetch("/api/admin/business", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        settings: {
-          ...currentSettings,
-          // Persist an override only when the owner changed it from the default.
-          linkFirstGreeting: linkGreetingText.trim() === DEFAULT_GREETING_TEMPLATE.trim() ? undefined : linkGreetingText,
-          linkNudgeText: linkNudgeText.trim() === DEFAULT_NUDGE_TEMPLATE.trim() ? undefined : linkNudgeText,
-        },
-      }),
-    });
-    setLinkTextsSaving(false);
-    setLinkTextsSaved(true);
-    setTimeout(() => setLinkTextsSaved(false), 2000);
-  }
-
-  async function saveOwnerAgentToggles(next: { enabled?: boolean; selfEnabled?: boolean }) {
-    setOwnerAgentSaving(true);
-    setOwnerAgentSaved(false);
-    const enabled = next.enabled ?? ownerAgentEnabled;
-    const selfEnabled = next.selfEnabled ?? ownerAgentSelfEnabled;
-    const bizData = await fetch("/api/admin/business").then(r => r.json());
-    const currentSettings = bizData.settings || {};
-    await fetch("/api/admin/business", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        settings: {
-          ...currentSettings,
-          ownerAgentEnabled: enabled,
-          ownerAgentSelfDisabled: !selfEnabled,
-        },
-      }),
-    });
-    setOwnerAgentSaving(false);
-    setOwnerAgentSaved(true);
-    setTimeout(() => setOwnerAgentSaved(false), 2000);
-  }
+  // NOTE: agent behaviour settings (link-first mode + personal owner agent) were
+  // moved to the Agent page (/admin/agent → AgentBehaviorSettings). They are no
+  // longer configured here.
 
   // ── Change password ──
   const [oldPassword, setOldPassword] = useState("");
@@ -609,17 +532,6 @@ export default function AdminSettingsPage() {
         setThemeId(resolvedTheme);
         // Owner login phone — falls back to public phone if not set
         setOwnerLoginPhone(settingsObj.ownerLoginPhone || data.phone || "");
-        // Owner personal WhatsApp agent switches
-        setOwnerAgentEnabled(settingsObj.ownerAgentEnabled === true);
-        // Link-first customer flow
-        setLinkFirstEnabled(settingsObj.linkFirstEnabled === true);
-        if (typeof settingsObj.linkFirstGreeting === "string" && settingsObj.linkFirstGreeting.trim()) {
-          setLinkGreetingText(settingsObj.linkFirstGreeting);
-        }
-        if (typeof settingsObj.linkNudgeText === "string" && settingsObj.linkNudgeText.trim()) {
-          setLinkNudgeText(settingsObj.linkNudgeText);
-        }
-        setOwnerAgentSelfEnabled(settingsObj.ownerAgentSelfDisabled !== true);
         // Calendar hours
         if (typeof settingsObj.calendarStartHour === "number") setCalStartHour(settingsObj.calendarStartHour);
         if (typeof settingsObj.calendarEndHour   === "number") setCalEndHour(settingsObj.calendarEndHour);
@@ -1042,138 +954,6 @@ export default function AdminSettingsPage() {
                         {pwSaving ? "מחליף..." : "החלף סיסמה"}
                       </button>
                     </div>
-                  </div>
-                </div>
-
-                {/* ── Owner personal WhatsApp agent ── */}
-                <div className="col-span-2 mb-2 p-4 rounded-xl bg-slate-50 border border-slate-200">
-                  <div className="flex items-start justify-between gap-3 mb-1">
-                    <div>
-                      <label className="text-sm text-neutral-800 font-semibold block">🤖 סוכן אישי בוואטסאפ</label>
-                      <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
-                        מאפשר לשלוח פקודות ניהול לסוכן ישירות בוואטסאפ — להזיז ולהחליף תורים, לבטל,
-                        לקבוע ללקוח, ולשלוח הודעה לכל לקוחות היום. סמכות מלאה, ללא אישור לקוח.
-                      </p>
-                    </div>
-                    {ownerAgentSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}
-                  </div>
-
-                  {/* Master switch — turns the agent off for EVERYONE in the business */}
-                  <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200">
-                    <div>
-                      <p className="text-[13px] text-neutral-800 font-medium">הפעלה כללית</p>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">כיבוי כאן מבטל את הסוכן האישי לכולם — גם לך וגם למנהלי המשנה.</p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={ownerAgentSaving}
-                      onClick={() => { const v = !ownerAgentEnabled; setOwnerAgentEnabled(v); saveOwnerAgentToggles({ enabled: v }); }}
-                      className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${ownerAgentEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ownerAgentEnabled ? "right-1" : "right-6"}`} />
-                    </button>
-                  </div>
-
-                  {/* Owner self switch — turns it off for the owner only */}
-                  <div className={`flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200 ${ownerAgentEnabled ? "" : "opacity-40 pointer-events-none"}`}>
-                    <div>
-                      <p className="text-[13px] text-neutral-800 font-medium">הפעלה עבורי</p>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">כיבוי כאן מבטל את הסוכן עבורך בלבד; מנהלי משנה עם הרשאה ימשיכו להשתמש.</p>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={ownerAgentSaving || !ownerAgentEnabled}
-                      onClick={() => { const v = !ownerAgentSelfEnabled; setOwnerAgentSelfEnabled(v); saveOwnerAgentToggles({ selfEnabled: v }); }}
-                      className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${ownerAgentSelfEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
-                    >
-                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ownerAgentSelfEnabled ? "right-1" : "right-6"}`} />
-                    </button>
-                  </div>
-
-                  <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
-                    <span className="text-[12px] text-neutral-700">👥 הרשאה למנהלי משנה (פר ספר)</span>
-                    <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
-                      ניהול גישות ←
-                    </a>
-                  </div>
-                </div>
-
-                {/* ── Link-first mode (customer flow, token saver) ── */}
-                <div className="col-span-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <label className="text-sm text-neutral-800 font-semibold block">🔗 מצב &quot;קישור קודם&quot; (חיסכון בטוקנים)</label>
-                        <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
-                          בפנייה ראשונה של לקוח, במקום שהסוכן יענה — נשלחת אליו ברכה קבועה עם קישור לקביעת תור (בלי עלות).
-                          הסוכן נכנס לפעולה רק אם הלקוח מגיב. אחרי 30 דק&apos; בלי תגובה ובלי תור — נשלחת תזכורת קבועה אחת.
-                        </p>
-                      </div>
-                      {linkFirstSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}
-                    </div>
-                    <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200">
-                      <div>
-                        <p className="text-[13px] text-neutral-800 font-medium">הפעלה</p>
-                        <p className="text-[11px] text-neutral-500 mt-0.5">דורש שהסוכן החכם יהיה פעיל. ניתן לכבות בכל רגע.</p>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={linkFirstSaving}
-                        onClick={() => { const v = !linkFirstEnabled; setLinkFirstEnabled(v); saveLinkFirstToggle(v); }}
-                        className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${linkFirstEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
-                      >
-                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${linkFirstEnabled ? "right-1" : "right-6"}`} />
-                      </button>
-                    </div>
-
-                    {/* Editable message texts (only relevant when enabled) */}
-                    {linkFirstEnabled && (
-                      <div className="mt-3 pt-3 border-t border-slate-200 space-y-3">
-                        <p className="text-[11px] text-neutral-500 leading-relaxed">
-                          עריכת ההודעות. השאר את <code className="bg-neutral-200 rounded px-1">{"{{link}}"}</code> במקום שבו יופיע הקישור.
-                          אפשר גם <code className="bg-neutral-200 rounded px-1">{"{{name}}"}</code> לשם הלקוח.
-                        </p>
-                        <div>
-                          <label className="text-[12px] text-neutral-700 font-medium block mb-1">ברכה ראשונה (עם הקישור)</label>
-                          <textarea
-                            value={linkGreetingText}
-                            onChange={(e) => setLinkGreetingText(e.target.value)}
-                            rows={4}
-                            dir="rtl"
-                            className="w-full text-[13px] rounded-lg border border-neutral-300 bg-white p-2.5 focus:outline-none focus:border-teal-500 resize-y"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[12px] text-neutral-700 font-medium block mb-1">תזכורת אחרי 30 דק&apos; (חתירה למגע)</label>
-                          <textarea
-                            value={linkNudgeText}
-                            onChange={(e) => setLinkNudgeText(e.target.value)}
-                            rows={3}
-                            dir="rtl"
-                            className="w-full text-[13px] rounded-lg border border-neutral-300 bg-white p-2.5 focus:outline-none focus:border-teal-500 resize-y"
-                          />
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            disabled={linkTextsSaving}
-                            onClick={saveLinkFirstTexts}
-                            className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[13px] font-semibold transition disabled:opacity-50"
-                          >
-                            {linkTextsSaving ? "שומר..." : "שמור הודעות"}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={linkTextsSaving}
-                            onClick={() => { setLinkGreetingText(DEFAULT_GREETING_TEMPLATE); setLinkNudgeText(DEFAULT_NUDGE_TEMPLATE); }}
-                            className="text-[12px] text-neutral-500 hover:text-neutral-700 transition"
-                          >
-                            שחזר ברירת מחדל
-                          </button>
-                          {linkTextsSaved && <span className="text-[11px] text-green-700 font-semibold">✓ נשמר</span>}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 

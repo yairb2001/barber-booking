@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AgentBehaviorSettings from "./AgentBehaviorSettings";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
 type Config = {
@@ -210,6 +211,10 @@ export default function AdminAgentPage() {
       {/* ── CONFIG TAB ─────────────────────────────────────────────────────────── */}
       {tab === "config" && (
         <div className="space-y-6 max-w-2xl">
+
+          {/* Agent behaviour — link-first mode + personal owner agent (moved here
+              from general settings so all agent settings live in one place). */}
+          <AgentBehaviorSettings />
 
           {/* Basic settings */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">

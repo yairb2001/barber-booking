@@ -20,15 +20,16 @@ import type { MessageKind } from "@/lib/messaging/types";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getRootBusinessId } from "@/lib/tenant";
 import { getBusinessNow } from "@/lib/utils";
-import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE } from "@/lib/link-first-defaults";
+import { DEFAULT_GREETING_TEMPLATE, DEFAULT_NUDGE_TEMPLATE, DEFAULT_REGREET_DAYS } from "@/lib/link-first-defaults";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
 
 // ── Settings ─────────────────────────────────────────────────────────────────
 type LinkFirstSettings = {
   linkFirstEnabled?: boolean;
-  linkFirstGreeting?: string; // optional override, supports {{link}} / {{name}}
-  linkNudgeText?: string;     // optional override, supports {{link}} / {{name}}
+  linkFirstGreeting?: string;   // optional override, supports {{link}} / {{name}}
+  linkNudgeText?: string;       // optional override, supports {{link}} / {{name}}
+  linkFirstRegreetDays?: number; // re-send the greeting only if no greeting in the last N days
 };
 
 function parseSettings(settings: string | null | undefined): LinkFirstSettings {
@@ -38,6 +39,33 @@ function parseSettings(settings: string | null | undefined): LinkFirstSettings {
 
 export function isLinkFirstEnabled(settings: string | null | undefined): boolean {
   return parseSettings(settings).linkFirstEnabled === true;
+}
+
+export function regreetDays(settings: string | null | undefined): number {
+  const v = parseSettings(settings).linkFirstRegreetDays;
+  return typeof v === "number" && v >= 0 ? v : DEFAULT_REGREET_DAYS;
+}
+
+/**
+ * Should this incoming message get the fixed greeting (vs. the AI agent)?
+ * YES when no greeting was sent to this phone within the re-greet window — i.e.
+ * a genuinely fresh contact. Based on the greeting_link MessageLog (which the
+ * 3-day conversation cleanup does NOT delete), so the cooldown is honored even
+ * across cleaned-up conversations and is independent of that window.
+ */
+export async function shouldSendGreeting(
+  businessId: string,
+  phone: string,
+  settings: string | null | undefined,
+): Promise<boolean> {
+  const days = regreetDays(settings);
+  const normalized = normalizeIsraeliPhone(phone) || phone;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const recent = await prisma.messageLog.findFirst({
+    where: { businessId, customerPhone: normalized, kind: "greeting_link", createdAt: { gte: since } },
+    select: { id: true },
+  });
+  return !recent;
 }
 
 // ── Booking link ─────────────────────────────────────────────────────────────

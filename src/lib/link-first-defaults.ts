@@ -15,3 +15,6 @@ export const DEFAULT_GREETING_TEMPLATE =
 export const DEFAULT_NUDGE_TEMPLATE =
 `היי, רק מוודא שתפסת תור. מתי נוח לך שאקבע לך? אפשר גם ישר דרך הקישור:
 {{link}}`;
+
+/** Default cooldown (days) before a returning contact is greeted again. */
+export const DEFAULT_REGREET_DAYS = 3;
