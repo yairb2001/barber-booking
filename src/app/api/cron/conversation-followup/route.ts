@@ -77,7 +77,8 @@ async function generateFollowup(
         "קודם כל תחליט אם בכלל נכון לשלוח: " +
         "אם הלקוח סירב במפורש, ויתר, אמר שיקר לו וסגר, אמר שלא מעוניין, או שהשיחה הסתיימה בצורה מנומסת וסופית — החזר בדיוק את המילה SKIP ושום דבר אחר. " +
         "אם השיחה כבר לא רלוונטית (למשל דובר על תור לזמן שכבר עבר מזמן והלקוח נעלם) והפולואפ ירגיש מנותק — החזר SKIP. " +
-        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי בעברית שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
+        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
+        "כתוב בשפה שבה הלקוח כותב: לקוח שכתב בעברית מקבל עברית; לקוח שכתב באנגלית או שפה אחרת מקבל את אותה שפה. " +
         "שים לב לשעה הנוכחית: אם השעה או היום שדוברו בשיחה כבר עברו — אל תציע אותם שוב; הצע לקבוע מחדש לזמן שנוח לו. " +
         (opts?.isThirdTouch
           ? "דע שזו כבר הפנייה השלישית מצדנו בלי מענה — לכן תהיה עדין במיוחד, בלי שום תחושת רדיפה, נימה קלילה של 'כשנוח לך, אנחנו כאן'. "
@@ -195,13 +196,18 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Customer already has an upcoming appointment → they booked, leave them be.
+      // Customer already booked → leave them be. Checks BOTH an upcoming
+      // appointment AND any appointment created in the lookback window (a
+      // same-day visit that already ended still means "he booked").
       const upcoming = await prisma.appointment.findFirst({
         where: {
           businessId: biz.id,
-          date:       { gte: startOfToday },
           status:     { notIn: ["cancelled_by_customer", "cancelled_by_staff"] },
           customer:   { is: { OR: [{ phone }, { phone: localPhone }] } },
+          OR: [
+            { date: { gte: startOfToday } },
+            { createdAt: { gte: notOlderThan } },
+          ],
         },
         select: { id: true },
       });

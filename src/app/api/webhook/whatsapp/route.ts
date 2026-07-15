@@ -33,7 +33,7 @@ import {
 import { pushToOwner } from "@/lib/native/push";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
-import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent } from "@/lib/link-first";
+import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent, isNonHebrewMessage } from "@/lib/link-first";
 
 /** Build a short preview of the incoming message for a push notification. */
 function previewText(text: string): string {
@@ -459,6 +459,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (
     !isNonText &&
     isLinkFirstEnabled(biz.settings) &&
+    // The fixed greeting/nudge are Hebrew-only — a customer writing in another
+    // language goes straight to the agent, which answers in THEIR language.
+    !isNonHebrewMessage(text) &&
     await shouldSendGreeting(biz.id, phone, biz.settings, prevLastMessageAt)
   ) {
     try {

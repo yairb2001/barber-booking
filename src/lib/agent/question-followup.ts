@@ -67,7 +67,8 @@ async function generateFollowup(transcript: string, name: string | null): Promis
         "אתה נציג מספרה שמתכתב בוואטסאפ. שאלת את הלקוח שאלה והוא עוד לא ענה, ואתה שוקל לשלוח תזכורת אחת קצרה שממשיכה בדיוק מאותה שאלה. " +
         nowLineIsrael() + " " +
         "קודם כל תחליט אם בכלל נכון לשלוח: אם הלקוח כבר סירב/ויתר במפורש, או שהשאלה כבר לא רלוונטית (למשל דובר על שעה שכבר עברה) — החזר בדיוק את המילה SKIP ושום דבר אחר. " +
-        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי בעברית שמזכיר בעדינות את השאלה שנשארה פתוחה ומזמין אותו לענות, בלי לחץ ובלי להישמע כמו בוט. " +
+        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי שמזכיר בעדינות את השאלה שנשארה פתוחה ומזמין אותו לענות, בלי לחץ ובלי להישמע כמו בוט. " +
+        "כתוב בשפה שבה הלקוח כותב: לקוח שכתב בעברית מקבל עברית; לקוח שכתב באנגלית או שפה אחרת מקבל את אותה שפה. " +
         "שים לב לשעה הנוכחית: אם השעה שדוברה כבר עברה — אל תציע אותה שוב; הצע לקבוע מחדש לזמן שנוח לו. " +
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
         (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
@@ -172,13 +173,36 @@ export async function runAgentQuestionFollowup(
       });
       if (already) { skipped++; continue; }
 
-      // Customer already has an upcoming appointment → they're sorted, leave them.
+      // Link-first pacing: the fixed greeting/nudge end with a question mark, so
+      // without this guard we'd chase them after just 1h — the owner's rule is
+      // that after the automation + its 30-min nudge, the NEXT touch waits ≥6h
+      // (real incident: nudge 10:30 → question-followup 11:30). Applies to any
+      // automation sent in the last 6h, answered or not — if the customer DID
+      // reply, the newest message is theirs and this candidate is filtered
+      // earlier anyway.
+      const recentAutomation = await prisma.messageLog.findFirst({
+        where: {
+          businessId:    biz.id,
+          customerPhone: { in: [phone, localPhone, convo.phone] },
+          kind:          { in: ["greeting_link", "link_nudge"] },
+          createdAt:     { gte: new Date(now.getTime() - 6 * 60 * 60 * 1000) },
+        },
+        select: { id: true },
+      });
+      if (recentAutomation) { skipped++; continue; }
+
+      // Customer already booked → they're sorted, leave them. Checks BOTH an
+      // upcoming appointment AND any appointment created since yesterday (a
+      // same-day visit that already ended still means "he booked — don't chase").
       const upcoming = await prisma.appointment.findFirst({
         where: {
           businessId: biz.id,
-          date:       { gte: startOfToday },
           status:     { notIn: ["cancelled_by_customer", "cancelled_by_staff"] },
           customer:   { is: { OR: [{ phone }, { phone: localPhone }] } },
+          OR: [
+            { date: { gte: startOfToday } },
+            { createdAt: { gte: notOlderThan } },
+          ],
         },
         select: { id: true },
       });

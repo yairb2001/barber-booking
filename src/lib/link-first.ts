@@ -100,6 +100,26 @@ export async function shouldSendGreeting(
   }
 
   const normalized = normalizeIsraeliPhone(phone) || phone;
+  const localPhone = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
+
+  // A customer with an UPCOMING appointment — or one who visited in the last few
+  // days — is mid-relationship, not a cold lead. Their messages are operational
+  // ("אני 5 דק מגיע", "תודה, היה מעולה") and pitching them a booking link is
+  // exactly the tone-deaf reply the owner flagged (real incident: אור יוסופון
+  // announced he's arriving in 5 minutes and got the automation). The AGENT
+  // handles them — it sees their appointment in its context.
+  const RECENT_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const recentOrUpcoming = await prisma.appointment.findFirst({
+    where: {
+      businessId,
+      date: { gte: new Date(Date.now() - RECENT_DAYS_MS) },
+      status: { notIn: ["cancelled_by_customer", "cancelled_by_staff"] },
+      customer: { phone: { in: [normalized, localPhone] } },
+    },
+    select: { id: true },
+  });
+  if (recentOrUpcoming) return false;
+
   const since = new Date(Date.now() - windowMs);
   const recent = await prisma.messageLog.findFirst({
     where: { businessId, customerPhone: normalized, kind: "greeting_link", createdAt: { gte: since } },
@@ -110,6 +130,18 @@ export async function shouldSendGreeting(
 
 // ── First-contact intent (what does the fresh message actually want?) ────────
 export type FirstContactIntent = "book" | "chat" | "other";
+
+/**
+ * True when the message is written in a language other than Hebrew (has letters,
+ * none of them Hebrew). The fixed greeting/nudge are Hebrew-only, so a customer
+ * writing in English must go to the AGENT, which mirrors their language (real
+ * incident: an English "do you have any openings?" got the Hebrew automation).
+ */
+export function isNonHebrewMessage(text: string): boolean {
+  const hasHebrew = /[א-ת]/.test(text);
+  const hasLetters = /[a-zA-Zа-яА-Я؀-ۿ]/.test(text);
+  return hasLetters && !hasHebrew;
+}
 
 /**
  * Classify a FRESH contact's first message so the automation is sent only when
@@ -133,9 +165,12 @@ export async function classifyFirstContactIntent(text: string): Promise<FirstCon
       system:
         "סווג את ההודעה הראשונה של לקוח למספרה לקטגוריה אחת בדיוק. " +
         "ענה במילה אחת בלבד: " +
-        "book = רוצה לקבוע תור / שואל על זמינות או תור פנוי. " +
-        "chat = ברכה או סמול-טוק בלי בקשה קונקרטית (היי, מה קורה, בוקר טוב). " +
-        "other = כל בקשה קונקרטית אחרת שאינה קביעת תור חדש: ביטול, הזזה/שינוי תור, שאלה על מחיר/שעות/כתובת, תלונה, או כל דבר אחר.",
+        "book = רוצה לקבוע תור חדש / שואל על זמינות או תור פנוי. " +
+        "chat = ברכה או סמול-טוק בלבד, בלי שום תוכן נוסף (היי, מה קורה, בוקר טוב). " +
+        "other = כל דבר אחר. כולל: הודעה תפעולית על תור קיים (אני בדרך, אני מגיע עוד 5 דקות, אני מאחר, הגעתי), " +
+        "תודה או פידבק אחרי ביקור (תודה, היה מעולה), ביטול, הזזה/שינוי/דחיית תור, שאלה על מחיר/שעות/כתובת, תלונה, " +
+        "בקשה לדבר עם מישהו, או כל בקשה שאינה קביעת תור חדש. " +
+        "אם יש ספק בין book ל-other — בחר other.",
       messages: [{ role: "user", content: text.slice(0, 500) }],
     });
     let out = "";
@@ -329,13 +364,17 @@ export async function runLinkNudges(): Promise<{ checked: number; sent: number }
       if (reply) continue;
     }
 
-    // Did they BOOK? Any upcoming (today or later, non-cancelled) appointment.
+    // Did they BOOK? Any upcoming appointment OR any appointment created after
+    // the greeting (covers a same-day slot that already ended by nudge time).
     const upcoming = await prisma.appointment.findFirst({
       where: {
         businessId: biz.id,
-        date: { gte: todayDate },
         status: { notIn: CANCELLED },
         customer: { phone: { in: [phone, localPhone] } },
+        OR: [
+          { date: { gte: todayDate } },
+          { createdAt: { gte: g.createdAt } },
+        ],
       },
       select: { id: true },
     });
