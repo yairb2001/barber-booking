@@ -29,6 +29,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getBusinessNow } from "@/lib/utils";
 import { deliverMessageLog } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
@@ -46,7 +47,7 @@ const MIN_SEND_GAP_MS = 60 * 1000;
 const RATE_PER_BUSINESS = 1;
 
 /** How many due rows to scan per run (across all businesses). */
-const SCAN_LIMIT = 200;
+const SCAN_LIMIT = 800;
 
 /** The every-minute drip trigger also drives the "agent asked a question and got
  *  no reply" follow-up, so it needs no separate external cron. Scanning on every
@@ -93,6 +94,16 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
+
+  // Deep-night throttle (00:00–06:00 Israel): only run the real drain every
+  // 15 minutes so the DB can auto-suspend between runs and stop billing overnight
+  // compute. OTP + booking confirmations are sent IMMEDIATELY at booking time (not
+  // through this queue), so they are never delayed by this. Returns BEFORE any DB
+  // query, so a skipped minute does not wake the database.
+  const { minutes: israelMinutes } = getBusinessNow();
+  if (israelMinutes < 6 * 60 && israelMinutes % 15 !== 0) {
+    return NextResponse.json({ ok: true, skipped: "night-throttle" });
+  }
 
   // Pull due scheduled messages, oldest scheduledFor first (FIFO + priority:
   // waitlist enqueues with scheduledFor=now, broadcast staggers into the future,
