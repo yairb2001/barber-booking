@@ -199,6 +199,7 @@ type DeliverableLog = {
   id: string;
   customerPhone: string;
   body: string;
+  kind: string;
 };
 
 /** Minimal shape of a Business needed to build a provider. */
@@ -272,6 +273,45 @@ async function reconcileWaState(
  * update the row to "sent"/"failed". Shared by sendMessage() (immediate path)
  * and the drip-queue cron (deferred path). Does not create a new log row.
  */
+/**
+ * Mirror an agent/owner-initiated free message into the customer's conversation
+ * thread (role="assistant", source="agent"), so the WhatsApp agent has context
+ * when the customer replies (otherwise it sees a bare "כן" with no history and
+ * stalls). Called from deliverMessageLog at ACTUAL delivery time — so the record
+ * reflects what really went out and when, not what was merely scheduled.
+ *
+ * Uses the SAME conversation the webhook uses (agentType != "owner", matched by
+ * normalized phone), creating it if the customer has never chatted. Best-effort:
+ * never throws into the send path.
+ */
+async function mirrorAgentMessageToConversation(
+  businessId: string,
+  customerPhone: string,
+  body: string,
+): Promise<void> {
+  try {
+    const phone = normalizeIsraeliPhone(customerPhone);
+    if (!phone) return;
+    let conv = await prisma.conversation.findFirst({
+      where: { businessId, phone, agentType: { not: "owner" } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true },
+    });
+    if (!conv) {
+      conv = await prisma.conversation.create({
+        data: { businessId, phone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+        select: { id: true },
+      });
+    }
+    await prisma.conversationMessage.create({
+      data: { conversationId: conv.id, role: "assistant", source: "agent", content: body },
+    });
+    await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
+  } catch (e) {
+    console.error("[mirrorAgentMessageToConversation]", e);
+  }
+}
+
 export async function deliverMessageLog(
   log: DeliverableLog,
   business: ProviderBusiness,
@@ -310,6 +350,12 @@ export async function deliverMessageLog(
       sentAt: result.ok ? new Date() : null,
     },
   });
+
+  // Mirror agent/owner free messages into the conversation thread at real send
+  // time, so a later customer reply reaches the agent WITH context (Part 1).
+  if (result.ok && log.kind === "agent_broadcast") {
+    await mirrorAgentMessageToConversation(business.id, log.customerPhone, log.body);
+  }
 
   // Keep the admin "WhatsApp disconnected" banner in near-real-time sync.
   await reconcileWaState(business, result);

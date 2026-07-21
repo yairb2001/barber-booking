@@ -598,7 +598,7 @@ export async function execOwnerTool(
         return {
           businessId,
           customerPhone: phone,
-          kind: "broadcast",
+          kind: "agent_broadcast",
           body: message.replace(/\{name\}/g, firstName(name)),
           status: "scheduled",
           scheduledFor: new Date(now + i * INTERVAL_SEC * 1000 + jitterMs),
@@ -676,7 +676,7 @@ export async function execOwnerTool(
       }
       const c = withPhone[0];
       const res = await sendMessage({
-        businessId, customerPhone: c.phone as string, kind: "manual",
+        businessId, customerPhone: c.phone as string, kind: "agent_broadcast",
         body: message.replace(/\{name\}/g, firstName(c.name)),
       });
       return res.ok ? `נשלח ל${c.name} (${c.phone}).` : `שליחה ל${c.name} נכשלה.`;
@@ -713,7 +713,7 @@ export async function execOwnerTool(
       const rows = Array.from(resolved.entries()).map(([phone, name], i) => ({
         businessId,
         customerPhone: phone,
-        kind: "broadcast",
+        kind: "agent_broadcast",
         body: message.replace(/\{name\}/g, firstName(name)),
         status: "scheduled",
         scheduledFor: new Date(now + i * INTERVAL_SEC * 1000 + Math.floor((Math.random() * 20 - 10) * 1000)),
