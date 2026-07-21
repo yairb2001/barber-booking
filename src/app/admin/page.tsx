@@ -640,7 +640,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   lane?: { lane: number; lanes: number };
 }) {
   const hh = React.useContext(HHCtx);
-  const top = apptTop(appt.startTime, hh);
+  // Appointments must anchor to the SAME calendar start hour as the grid, hour
+  // labels and breaks — otherwise changing the display start (e.g. 8→7) shifts
+  // everything except appointments, so breaks visually land on top of appts.
+  const { start: calStart } = React.useContext(HourRangeCtx);
+  const top = apptTop(appt.startTime, hh, calStart);
   const height = apptH(appt.startTime, appt.endTime, hh);
   // When this appointment overlaps others, share the column width so they sit
   // beside each other instead of stacking. Otherwise use the full column.
@@ -4961,7 +4965,7 @@ export default function AdminCalendar() {
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
                         {/* Break drag drop-ghost */}
                         {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === date && (() => {
-                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight);
+                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight, calStart);
                           const ghostH = (breakDrag.durationMin / 60) * hourHeight;
                           return (
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
@@ -4988,7 +4992,7 @@ export default function AdminCalendar() {
                         )}
                         {/* Drag-to-MOVE drop ghost — shows where the appointment will land */}
                         {isDropTarget && dragMove && (() => {
-                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight);
+                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight, calStart);
                           const ghostH = apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight);
                           return (
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
@@ -5092,7 +5096,7 @@ export default function AdminCalendar() {
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
                         {/* Break drag drop-ghost */}
                         {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === d && (() => {
-                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight);
+                          const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight, calStart);
                           const ghostH = (breakDrag.durationMin / 60) * hourHeight;
                           return (
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
@@ -5125,7 +5129,7 @@ export default function AdminCalendar() {
                         )}
                         {/* Drag-to-MOVE drop ghost */}
                         {isDropTarget && dragMove && (() => {
-                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight);
+                          const ghostTop = apptTop(dragMove.dropTarget!.startTime, hourHeight, calStart);
                           const ghostH = apptH(dragMove.appt.startTime, dragMove.appt.endTime, hourHeight);
                           return (
                             <div className="absolute left-0.5 right-0.5 rounded-lg border-2 border-dashed pointer-events-none z-30"
@@ -5226,7 +5230,7 @@ export default function AdminCalendar() {
         c.kind === "move" && c.staffId === staffId && c.date === dateStr
     );
     return slots.map(slot => {
-      const top = apptTop(slot.startTime, hourHeight);
+      const top = apptTop(slot.startTime, hourHeight, calStart);
       const height = (swapPrimaryDuration / 60) * hourHeight;
       return (
         <div key={`move-${slot.startTime}`}
