@@ -622,11 +622,13 @@ export async function handleCandidateReply(
     return true;
   }
 
-  // ans === "yes" → execute the swap.
-  await prisma.swapProposal.update({
-    where: { id: proposal.id },
+  // ans === "yes" → claim the row ATOMICALLY (see handleAdminProposalReply):
+  // two racing "yes" replies must not both reach the money-path.
+  const claim = await prisma.swapProposal.updateMany({
+    where: { id: proposal.id, status: "pending_response" },
     data: { status: "accepted_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
   });
+  if (claim.count === 0) return true; // a concurrent reply already claimed it
   const result = await executeApprovedProposal(proposal.id);
   if (!result.ok) {
     // Couldn't execute (slot changed under us) — apologize + try the next one.
@@ -672,10 +674,16 @@ export async function handleAdminProposalReply(
   // Find a manual (admin) proposal awaiting THIS customer's answer. For a swap
   // the responder is the candidate; for a move it's the primary customer. We do
   // NOT match a swap by its primary's phone — the primary was never messaged.
+  // Include just-expired proposals too: the lazy-expiry sweep runs BEFORE this
+  // handler on the same webhook, so a "כן" that arrives minutes past the 24h
+  // window would otherwise match nothing and leak to the booking agent. Matching
+  // a recently-expired (still-unanswered) row lets us send the "offer lapsed"
+  // courtesy and consume the reply. respondedAt=null excludes already-answered.
   const proposal = await prisma.swapProposal.findFirst({
     where: {
       businessId: bizId,
-      status: "pending_response",
+      status: { in: ["pending_response", "expired"] },
+      respondedAt: null,
       initiatedBy: "admin",
       OR: [
         { candidate: { customer: { OR: [{ phone }, { phone: local }] } } },
@@ -690,6 +698,11 @@ export async function handleAdminProposalReply(
     },
   });
   if (!proposal) return false;
+  // Only honor a RECENT lapse — ignore an ancient expired row so it can't hijack
+  // an unrelated "כן" days later.
+  if (proposal.status === "expired" && Date.now() - proposal.expiresAt.getTime() > 24 * 60 * 60 * 1000) {
+    return false;
+  }
 
   // Always answer the person who actually received the offer. For move+cancel
   // that's the PRIMARY customer; for swap it's the CANDIDATE.
@@ -751,11 +764,15 @@ export async function handleAdminProposalReply(
     return true;
   }
 
-  // ans === "yes" → execute deterministically via the shared money-path.
-  await prisma.swapProposal.update({
-    where: { id: proposal.id },
+  // ans === "yes" → claim the row ATOMICALLY before executing, so two "yes"
+  // replies racing through concurrent webhook invocations can't both reach the
+  // money-path (which for a swap would trade the appointments twice). Only the
+  // update that flips it out of pending_response wins.
+  const claim = await prisma.swapProposal.updateMany({
+    where: { id: proposal.id, status: "pending_response" },
     data: { status: "accepted_by_customer", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
   });
+  if (claim.count === 0) return true; // a concurrent reply already claimed it
   const result = await executeApprovedProposal(proposal.id);
   if (!result.ok) {
     // Slot changed under us (e.g. someone cancelled/booked) — apologize cleanly.

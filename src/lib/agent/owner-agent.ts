@@ -1006,11 +1006,14 @@ export async function execOwnerTool(
 
       if (!customerPhone) return "שגיאה: ללקוח אין מספר טלפון לשליחת הבקשה.";
 
-      // One open request per appointment — supersede any live prior request.
+      // One open OWNER request per appointment — supersede a prior owner request.
+      // Scoped to initiatedBy="admin" so we never silently clobber a live AGENT
+      // swap flow (which has its own candidate-queue teardown) mid-negotiation.
       await prisma.swapProposal.updateMany({
         where: {
           primaryAppointmentId: appt.id,
-          status: { in: ["pending_response", "pending_staff_approval", "queued_next", "accepted_by_customer"] },
+          initiatedBy: "admin",
+          status: { in: ["pending_response", "accepted_by_customer"] },
         },
         data: { status: "superseded" },
       });
