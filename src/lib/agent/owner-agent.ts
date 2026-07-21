@@ -41,11 +41,12 @@ export const OWNER_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_schedule",
     description:
-      "מחזיר את לוח התורים ליום נתון (ברירת מחדל: היום). כולל שם לקוח, שירות, ספר, שעה, ומזהה התור (appointment ID) שצריך לפעולות אחרות. השתמש בזה תמיד לפני החלפה/ביטול כדי לאמת על איזה תור מדובר.",
+      "מחזיר את לוח התורים ליום נתון (ברירת מחדל: היום), או לטווח ימים. כולל שם לקוח, שירות, ספר, שעה, ומזהה התור (appointment ID) שצריך לפעולות אחרות. השתמש בזה תמיד לפני החלפה/ביטול כדי לאמת על איזה תור מדובר.",
     input_schema: {
       type: "object",
       properties: {
-        date: { type: "string", description: "תאריך בפורמט YYYY-MM-DD. אם לא צוין — היום." },
+        date: { type: "string", description: "תאריך התחלה בפורמט YYYY-MM-DD. אם לא צוין — היום." },
+        days: { type: "number", description: "כמה ימים להציג מהתאריך והלאה (ברירת מחדל 1; למשל 7 = שבוע). מקסימום 14." },
       },
     },
   },
@@ -136,6 +137,55 @@ export const OWNER_TOOLS: Anthropic.Tool[] = [
       required: ["query"],
     },
   },
+  {
+    name: "send_to_customer",
+    description:
+      "שולח הודעת WhatsApp מיידית ללקוח ספציפי אחד. מזהה את הלקוח לפי שם או טלפון. אם יש כמה לקוחות עם אותו שם — הכלי יחזיר את הרשימה ותצטרך לציין טלפון מדויק. השתמש בזה כשמבקשים 'תשלח ל<שם> הודעה'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        customer: { type: "string", description: "שם או טלפון של הלקוח" },
+        message: { type: "string", description: "תוכן ההודעה. אפשר {name} לשם הפרטי." },
+      },
+      required: ["customer", "message"],
+    },
+  },
+  {
+    name: "send_to_customers",
+    description:
+      "שולח הודעת WhatsApp לרשימת לקוחות ספציפיים שתבחר (מערך של שמות ו/או טלפונים). ההודעות נשלחות בהדרגה (כדקה בין הודעה להודעה) כדי לא לחסום את המספר. מחזיר כמה נשלחו ומי לא זוהה. אפשר {name} בתוך ההודעה לשם הפרטי.",
+    input_schema: {
+      type: "object",
+      properties: {
+        customers: { type: "array", items: { type: "string" }, description: "שמות או טלפונים של הלקוחות" },
+        message: { type: "string", description: "תוכן ההודעה. {name} יוחלף בשם הפרטי." },
+      },
+      required: ["customers", "message"],
+    },
+  },
+  {
+    name: "get_business_stats",
+    description:
+      "מחזיר סיכום ביצועים לתקופה: מספר תורים, הכנסה משוערת (סכום מחירי התורים שלא בוטלו), ופילוח לפי ספר. period = today | week | month (ברירת מחדל: today). week = 7 הימים האחרונים, month = 30 הימים האחרונים.",
+    input_schema: {
+      type: "object",
+      properties: {
+        period: { type: "string", description: "today | week | month" },
+      },
+    },
+  },
+  {
+    name: "get_customer_history",
+    description:
+      "מחזיר היסטוריית לקוח: מספר ביקורים שהיו, תאריך ביקור אחרון, סכום כולל ששילם, והתורים הקרובים. חפש לפי שם או טלפון.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "שם או טלפון של הלקוח" },
+      },
+      required: ["query"],
+    },
+  },
   // ── Setup interview: configure the customer agent by asking the owner ──────
   {
     name: "get_setup_status",
@@ -170,14 +220,16 @@ export async function execOwnerTool(
   switch (name) {
     // ── Schedule for a day ──────────────────────────────────────────────────
     case "get_schedule": {
-      const dateIso = (input.date as string) || getBusinessNow().date;
-      const dayStart = new Date(`${dateIso}T00:00:00.000Z`);
-      const dayEnd = new Date(`${dateIso}T23:59:59.999Z`);
+      const startIso = (input.date as string) || getBusinessNow().date;
+      const days = Math.max(1, Math.min(14, Math.round(Number(input.days) || 1)));
+      const rangeStart = new Date(`${startIso}T00:00:00.000Z`);
+      const rangeEnd = new Date(rangeStart);
+      rangeEnd.setUTCDate(rangeEnd.getUTCDate() + days); // exclusive end
       const appts = await prisma.appointment.findMany({
         where: {
           businessId,
           ...(staffId ? { staffId } : {}),
-          date: { gte: dayStart, lte: dayEnd },
+          date: { gte: rangeStart, lt: rangeEnd },
           status: { in: ACTIVE_STATUSES },
         },
         include: {
@@ -185,14 +237,30 @@ export async function execOwnerTool(
           staff: { select: { name: true } },
           service: { select: { name: true } },
         },
-        orderBy: { startTime: "asc" },
+        orderBy: [{ date: "asc" }, { startTime: "asc" }],
       });
-      if (!appts.length) return `אין תורים פעילים ב-${hebDayLabel(dateIso)} (${dateIso}).`;
-      const lines = appts.map(
-        a =>
-          `${a.startTime}–${a.endTime} | ${a.customer.name} | ${a.service.name} | ${a.staff.name} | id=${a.id}`
+      if (!appts.length) {
+        return days === 1
+          ? `אין תורים פעילים ב-${hebDayLabel(startIso)} (${startIso}).`
+          : `אין תורים פעילים ב-${days} הימים החל מ-${startIso}.`;
+      }
+      if (days === 1) {
+        const lines = appts.map(
+          a => `${a.startTime}–${a.endTime} | ${a.customer.name} | ${a.service.name} | ${a.staff.name} | id=${a.id}`
+        );
+        return `לוח ${hebDayLabel(startIso)} (${startIso}) — ${appts.length} תורים:\n${lines.join("\n")}`;
+      }
+      // Multi-day: group by date.
+      const byDay = new Map<string, string[]>();
+      for (const a of appts) {
+        const d = new Date(a.date).toISOString().slice(0, 10);
+        if (!byDay.has(d)) byDay.set(d, []);
+        byDay.get(d)!.push(`  ${a.startTime}–${a.endTime} | ${a.customer.name} | ${a.service.name} | ${a.staff.name} | id=${a.id}`);
+      }
+      const sections = Array.from(byDay.entries()).map(
+        ([d, lines]) => `${hebDayLabel(d)} (${d}) — ${lines.length}:\n${lines.join("\n")}`
       );
-      return `לוח ${hebDayLabel(dateIso)} (${dateIso}) — ${appts.length} תורים:\n${lines.join("\n")}`;
+      return `לוח ${days} ימים מ-${startIso} — ${appts.length} תורים:\n\n${sections.join("\n\n")}`;
     }
 
     // ── Swap two appointments' times ────────────────────────────────────────
@@ -583,6 +651,158 @@ export async function execOwnerTool(
           return `${c.name} | ${c.phone ?? "ללא טלפון"}\n${upcoming}`;
         })
         .join("\n\n");
+    }
+
+    // ── Send a WhatsApp to ONE specific customer ────────────────────────────
+    case "send_to_customer": {
+      const query = String(input.customer || "").trim();
+      const message = String(input.message || "").trim();
+      if (!query) return "שגיאה: לא צוין לקוח.";
+      if (!message) return "שגיאה: ההודעה ריקה.";
+      const digits = query.replace(/\D/g, "");
+      const matches = await prisma.customer.findMany({
+        where: { businessId, OR: [
+          { name: { contains: query, mode: "insensitive" } },
+          ...(digits ? [{ phone: { contains: digits } }] : []),
+        ] },
+        select: { id: true, name: true, phone: true },
+        take: 8,
+      });
+      const withPhone = matches.filter(m => m.phone);
+      if (!withPhone.length) return `לא נמצא לקוח עם טלפון התואם ל-"${query}".`;
+      if (withPhone.length > 1) {
+        const list = withPhone.map(m => `${m.name} (${m.phone})`).join(", ");
+        return `יש כמה לקוחות שמתאימים ל-"${query}": ${list}. ציין טלפון מדויק כדי שאדע למי לשלוח.`;
+      }
+      const c = withPhone[0];
+      const res = await sendMessage({
+        businessId, customerPhone: c.phone as string, kind: "manual",
+        body: message.replace(/\{name\}/g, firstName(c.name)),
+      });
+      return res.ok ? `נשלח ל${c.name} (${c.phone}).` : `שליחה ל${c.name} נכשלה.`;
+    }
+
+    // ── Send a WhatsApp to a chosen LIST of customers (ban-safe drip) ────────
+    case "send_to_customers": {
+      const rawList = Array.isArray(input.customers)
+        ? (input.customers as unknown[]).map(x => String(x).trim()).filter(Boolean)
+        : [];
+      const message = String(input.message || "").trim();
+      if (!rawList.length) return "שגיאה: לא צוינה רשימת לקוחות.";
+      if (!message) return "שגיאה: ההודעה ריקה.";
+      const resolved = new Map<string, string>(); // phone -> name
+      const problems: string[] = [];
+      for (const entry of rawList) {
+        const d = entry.replace(/\D/g, "");
+        const m = await prisma.customer.findMany({
+          where: { businessId, OR: [
+            { name: { contains: entry, mode: "insensitive" } },
+            ...(d ? [{ phone: { contains: d } }] : []),
+          ] },
+          select: { name: true, phone: true },
+          take: 5,
+        });
+        const wp = m.filter(x => x.phone);
+        if (!wp.length) { problems.push(`${entry} — לא נמצא`); continue; }
+        if (wp.length > 1) { problems.push(`${entry} — כמה התאמות`); continue; }
+        resolved.set(wp[0].phone as string, wp[0].name);
+      }
+      if (resolved.size === 0) return `לא זוהה אף לקוח. ${problems.join("; ")}`;
+      const INTERVAL_SEC = 60;
+      const now = Date.now();
+      const rows = Array.from(resolved.entries()).map(([phone, name], i) => ({
+        businessId,
+        customerPhone: phone,
+        kind: "broadcast",
+        body: message.replace(/\{name\}/g, firstName(name)),
+        status: "scheduled",
+        scheduledFor: new Date(now + i * INTERVAL_SEC * 1000 + Math.floor((Math.random() * 20 - 10) * 1000)),
+      }));
+      await prisma.messageLog.createMany({ data: rows });
+      const etaMin = Math.ceil((resolved.size * INTERVAL_SEC) / 60);
+      let out = `ההודעה תישלח ל-${resolved.size} לקוחות (כ-${etaMin} דק').`;
+      if (problems.length) out += ` לא נשלחו: ${problems.join("; ")}.`;
+      return out;
+    }
+
+    // ── Business performance summary ────────────────────────────────────────
+    case "get_business_stats": {
+      const period = String(input.period || "today").toLowerCase();
+      const todayIso = getBusinessNow().date;
+      const end = new Date(`${todayIso}T23:59:59.999Z`);
+      let startIso = todayIso;
+      if (period === "week" || period === "month") {
+        const d = new Date(`${todayIso}T00:00:00.000Z`);
+        d.setUTCDate(d.getUTCDate() - (period === "week" ? 6 : 29));
+        startIso = d.toISOString().slice(0, 10);
+      }
+      const start = new Date(`${startIso}T00:00:00.000Z`);
+      const appts = await prisma.appointment.findMany({
+        where: {
+          businessId, ...(staffId ? { staffId } : {}),
+          date: { gte: start, lte: end },
+          status: { notIn: ["cancelled_by_customer", "cancelled_by_staff", "no_show"] },
+        },
+        include: { staff: { select: { name: true } } },
+      });
+      const revenue = appts.reduce((s, a) => s + (a.price ?? 0), 0);
+      const label = period === "week" ? "7 הימים האחרונים"
+        : period === "month" ? "30 הימים האחרונים"
+        : `היום (${todayIso})`;
+      if (staffId) return `סיכום ${label}: ${appts.length} תורים, הכנסה משוערת ${revenue}₪.`;
+      const byStaff = new Map<string, { count: number; rev: number }>();
+      for (const a of appts) {
+        const k = a.staff?.name || "—";
+        const cur = byStaff.get(k) || { count: 0, rev: 0 };
+        cur.count++; cur.rev += a.price ?? 0;
+        byStaff.set(k, cur);
+      }
+      const staffLines = Array.from(byStaff.entries())
+        .sort((x, y) => y[1].rev - x[1].rev)
+        .map(([n, v]) => `  ${n}: ${v.count} תורים, ${v.rev}₪`).join("\n");
+      return `סיכום ${label}: ${appts.length} תורים, הכנסה משוערת ${revenue}₪.\nלפי ספר:\n${staffLines}`;
+    }
+
+    // ── Customer visit history ──────────────────────────────────────────────
+    case "get_customer_history": {
+      const q = String(input.query || "").trim();
+      if (!q) return "שגיאה: חיפוש ריק.";
+      const digits = q.replace(/\D/g, "");
+      const matches = await prisma.customer.findMany({
+        where: { businessId, OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          ...(digits ? [{ phone: { contains: digits } }] : []),
+        ] },
+        select: { id: true, name: true, phone: true },
+        take: 5,
+      });
+      if (!matches.length) return `לא נמצא לקוח התואם ל-"${q}".`;
+      if (matches.length > 1) {
+        return `יש כמה לקוחות: ${matches.map(m => `${m.name} (${m.phone ?? "ללא טלפון"})`).join(", ")}. ציין מדויק יותר.`;
+      }
+      const c = matches[0];
+      const nowMid = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
+      const scope = staffId ? { staffId } : {};
+      const [past, upcoming] = await Promise.all([
+        prisma.appointment.findMany({
+          where: { businessId, customerId: c.id, ...scope, date: { lt: nowMid },
+            status: { notIn: ["cancelled_by_customer", "cancelled_by_staff", "no_show"] } },
+          orderBy: { date: "desc" },
+          select: { date: true, price: true },
+        }),
+        prisma.appointment.findMany({
+          where: { businessId, customerId: c.id, ...scope, date: { gte: nowMid }, status: { in: ACTIVE_STATUSES } },
+          orderBy: { date: "asc" }, take: 5,
+          include: { staff: { select: { name: true } }, service: { select: { name: true } } },
+        }),
+      ]);
+      const visits = past.length;
+      const spent = past.reduce((s, a) => s + (a.price ?? 0), 0);
+      const last = visits ? new Date(past[0].date).toISOString().slice(0, 10) : "—";
+      const up = upcoming.length
+        ? upcoming.map(a => `  • ${new Date(a.date).toISOString().slice(0, 10)} ${a.startTime} ${a.service.name} (${a.staff.name}) id=${a.id}`).join("\n")
+        : "  אין תורים עתידיים";
+      return `${c.name} | ${c.phone ?? "ללא טלפון"}\nביקורים: ${visits}, אחרון: ${last}, סה"כ שילם: ${spent}₪\nתורים קרובים:\n${up}`;
     }
 
     // ── Setup interview: current status + the next question to ask ───────────
