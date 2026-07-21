@@ -186,6 +186,21 @@ export const OWNER_TOOLS: Anthropic.Tool[] = [
       required: ["query"],
     },
   },
+  {
+    name: "get_conversations",
+    description:
+      "קריאה בלבד: סקירת שיחות וואטסאפ עם לקוחות — מי כתב לאחרונה, כמה הודעות, ומה נאמר. הכי שימושי: status=\"unanswered\" — שיחות שההודעה האחרונה בהן מהלקוח ועברו יותר מ-30 דקות בלי מענה (הלקוחות שנפלו בין הכיסאות). כשמסננים לפי customer יחיד ונמצאת שיחה אחת — מוחזר השרשור המלא כדי להבין למה הסוכן נתקע; אחרת רשימה עם הודעה אחרונה. כלי פיקוח בלבד — לא שולח כלום.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: "\"unanswered\" או \"all\" (ברירת מחדל: all)." },
+        customer: { type: "string", description: "סינון לפי שם או טלפון של לקוח (אופציונלי)." },
+        since: { type: "string", description: "מתאריך YYYY-MM-DD (אופציונלי)." },
+        until: { type: "string", description: "עד תאריך YYYY-MM-DD (אופציונלי)." },
+        limit: { type: "number", description: "מקסימום שיחות (ברירת מחדל 30, מקסימום 60)." },
+      },
+    },
+  },
   // ── Setup interview: configure the customer agent by asking the owner ──────
   {
     name: "get_setup_status",
@@ -803,6 +818,113 @@ export async function execOwnerTool(
         ? upcoming.map(a => `  • ${new Date(a.date).toISOString().slice(0, 10)} ${a.startTime} ${a.service.name} (${a.staff.name}) id=${a.id}`).join("\n")
         : "  אין תורים עתידיים";
       return `${c.name} | ${c.phone ?? "ללא טלפון"}\nביקורים: ${visits}, אחרון: ${last}, סה"כ שילם: ${spent}₪\nתורים קרובים:\n${up}`;
+    }
+
+    // ── Oversight: list customer conversations (read-only) ──────────────────
+    case "get_conversations": {
+      const status = String(input.status || "all").toLowerCase();
+      const limit = Math.max(1, Math.min(60, Math.round(Number(input.limit) || 30)));
+      const customer = String(input.customer || "").trim();
+      const custDigits = customer.replace(/\D/g, "");
+
+      // For "unanswered" we must inspect the last message per conversation, so pull
+      // a wider recent window then filter; for "all" the DB limit is exact.
+      const fetchCount = status === "unanswered" ? 200 : limit;
+      const convs = await prisma.conversation.findMany({
+        where: {
+          businessId,
+          agentType: { not: "owner" },
+          ...(customer ? {
+            OR: [
+              { whatsappName: { contains: customer, mode: "insensitive" } },
+              { customer: { name: { contains: customer, mode: "insensitive" } } },
+              ...(custDigits ? [{ phone: { contains: custDigits } }] : []),
+            ],
+          } : {}),
+          ...((input.since || input.until) ? {
+            lastMessageAt: {
+              ...(input.since ? { gte: new Date(`${input.since as string}T00:00:00.000Z`) } : {}),
+              ...(input.until ? { lte: new Date(`${input.until as string}T23:59:59.999Z`) } : {}),
+            },
+          } : {}),
+        },
+        orderBy: { lastMessageAt: "desc" },
+        take: fetchCount,
+        select: {
+          id: true, phone: true, whatsappName: true, status: true,
+          createdAt: true, lastMessageAt: true,
+          customer: { select: { name: true } },
+          _count: { select: { messages: true } },
+          messages: {
+            orderBy: { createdAt: "desc" }, take: 1,
+            select: { role: true, source: true, content: true, createdAt: true },
+          },
+        },
+      });
+
+      const now = Date.now();
+      const CUTOFF_MS = 30 * 60 * 1000;
+      const ago = (d: Date) => {
+        const m = Math.round((now - new Date(d).getTime()) / 60000);
+        if (m < 60) return `לפני ${m} דק'`;
+        const h = Math.round(m / 60);
+        return h < 24 ? `לפני ${h} שע'` : `לפני ${Math.round(h / 24)} ימים`;
+      };
+      const whoSent = (msg: { role: string; source: string }) =>
+        msg.role === "user" ? "לקוח" : msg.source === "admin" ? "אדמין" : "סוכן";
+
+      let rows = convs.map(c => {
+        const last = c.messages[0];
+        const waitingMs = last && last.role === "user" ? now - new Date(last.createdAt).getTime() : 0;
+        const unanswered = !!last && last.role === "user" && waitingMs > CUTOFF_MS;
+        return { c, last, unanswered, waitingMs };
+      });
+
+      if (status === "unanswered") {
+        rows = rows.filter(r => r.unanswered).sort((a, b) => b.waitingMs - a.waitingMs);
+      }
+      rows = rows.slice(0, limit);
+
+      if (!rows.length) {
+        return status === "unanswered"
+          ? "אין שיחות ללא מענה כרגע — כל מי שכתב קיבל תשובה."
+          : "לא נמצאו שיחות התואמות.";
+      }
+
+      // Drill-in: a customer filter that narrows to ONE conversation returns the
+      // FULL thread (so the owner can see WHY the agent got stuck), not an excerpt.
+      if (customer && rows.length === 1) {
+        const conv = rows[0].c;
+        const msgs = await prisma.conversationMessage.findMany({
+          where: { conversationId: conv.id },
+          orderBy: { createdAt: "desc" },
+          take: 60,
+          select: { role: true, source: true, content: true, createdAt: true },
+        });
+        msgs.reverse(); // chronological
+        const name = conv.customer?.name || conv.whatsappName || conv.phone;
+        const when = (d: Date) =>
+          new Date(d).toLocaleString("he-IL", {
+            day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit",
+            hour12: false, timeZone: "Asia/Jerusalem",
+          });
+        const body = msgs
+          .map(m => `${when(m.createdAt)} ${whoSent(m)}: ${m.content.replace(/\s+/g, " ").trim()}`)
+          .join("\n");
+        return `שיחה עם ${name} | ${conv.phone} | סטטוס: ${conv.status} | ${conv._count.messages} הודעות:\n${body}`;
+      }
+
+      const lines = rows.map(({ c, last, unanswered }) => {
+        const name = c.customer?.name || c.whatsappName || c.phone;
+        const excerpt = last ? last.content.replace(/\s+/g, " ").slice(0, 200) : "אין הודעות";
+        const lastInfo = last ? `אחרון: ${whoSent(last)} ${ago(last.createdAt)}` : "ריק";
+        const flag = unanswered ? "⚠️ ללא מענה · " : "";
+        return `${flag}${name} | ${c.phone} | ${c._count.messages} הודעות | ${lastInfo} | "${excerpt}"`;
+      });
+      const header = status === "unanswered"
+        ? `${rows.length} שיחות ללא מענה (>30 דק'), מהממתין הכי הרבה:`
+        : `${rows.length} שיחות (מהעדכני):`;
+      return `${header}\n${lines.join("\n")}`;
     }
 
     // ── Setup interview: current status + the next question to ask ───────────
