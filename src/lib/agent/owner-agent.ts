@@ -34,7 +34,10 @@ function hebDayLabel(dateIso: string): string {
 }
 
 // ── Tool schemas ──────────────────────────────────────────────────────────────
-const OWNER_TOOLS: Anthropic.Tool[] = [
+// Exported so the external agent gateway (/api/agent/gateway) can publish the
+// same catalog + reuse the same executor. The WhatsApp owner agent and the CEO
+// gateway therefore share one source of truth for what the agent can do.
+export const OWNER_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_schedule",
     description:
@@ -156,7 +159,9 @@ const OWNER_TOOLS: Anthropic.Tool[] = [
 ];
 
 // ── Tool executor ───────────────────────────────────────────────────────────
-async function execOwnerTool(
+// Exported for the agent gateway. `staffId` scopes to a personal calendar; pass
+// null for full business-wide access (the CEO gateway does this).
+export async function execOwnerTool(
   name: string,
   input: Record<string, unknown>,
   businessId: string,
