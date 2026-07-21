@@ -12,7 +12,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { sendMessage, swapConfirmationText, appointmentMovedText } from "@/lib/messaging";
+import { sendMessage, swapConfirmationText, appointmentMovedText, firstName } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 
 const HEBREW_DATE_OPTS: Intl.DateTimeFormatOptions = {
@@ -49,7 +49,7 @@ async function recordInConversation(conversationId: string | null, text: string)
 }
 
 export type ExecResult =
-  | { ok: true; kind: "move" | "swap"; primary: unknown; candidate?: unknown }
+  | { ok: true; kind: "move" | "swap" | "cancel"; primary: unknown; candidate?: unknown }
   | { ok: false; error: string; status?: number };
 
 /**
@@ -73,6 +73,49 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
   if (!business) return { ok: false, error: "no business", status: 500 };
 
   const p = proposal.primary;
+
+  // ── kind: "cancel" — cancel the primary appointment, no relocation ──────
+  if (proposal.kind === "cancel") {
+    try {
+      await prisma.$transaction([
+        prisma.appointment.update({
+          where: { id: p.id },
+          data: { status: "cancelled_by_staff", cancelledAt: new Date() },
+        }),
+        prisma.swapProposal.update({
+          where: { id: proposal.id },
+          data: { status: "approved", approvedAt: new Date() },
+        }),
+        prisma.swapProposal.updateMany({
+          where: {
+            primaryAppointmentId: p.id,
+            status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
+            id: { not: proposal.id },
+          },
+          data: { status: "cancelled" },
+        }),
+      ]);
+    } catch (err) {
+      console.error("[swap-exec] cancel transaction failed:", err);
+      return { ok: false, error: "לא ניתן היה לבטל את התור", status: 409 };
+    }
+    const text =
+      `היי ${firstName(p.customer.name)}, התור שלך ב-${business.name} ל-${hebDate(p.date)} ` +
+      `בשעה ${p.startTime} בוטל. מוזמן/ת לתאם תור חדש מתי שנוח 🙏`;
+    await recordInConversation(proposal.requesterConversationId, text);
+    try {
+      await sendMessage({
+        businessId: business.id,
+        appointmentId: p.id,
+        customerPhone: p.customer.phone,
+        kind: "swap_cancelled",
+        body: text,
+      });
+    } catch (err) {
+      console.error("[swap-exec] cancel confirmation send FAILED:", err);
+    }
+    return { ok: true, kind: "cancel", primary: p };
+  }
 
   // ── kind: "move" — relocate primary, no second appointment involved ─────
   if (proposal.kind === "move") {

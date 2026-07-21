@@ -24,6 +24,7 @@ export type MessageKind =
   | "swap_followup"      // 1-hour nudge when a candidate hasn't replied to a swap/move proposal
   | "swap_staff_request" // sent to a barber asking approval to bother a customer (agent flow)
   | "move_proposal"      // sent to a customer asking if they'd move to a free slot
+  | "cancel_proposal"    // sent to a customer asking if it's ok to cancel their appointment
   | "swap_confirmation"  // sent to both customers when admin approves the swap
   | "swap_cancelled"     // sent when a proposal is cancelled
   // Drag-to-move follow-up

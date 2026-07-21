@@ -27,6 +27,12 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
 import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
+import { pushToOwner } from "@/lib/native/push";
+
+// Hebrew label for a change-request kind (used in owner alerts).
+function kindLabelHe(kind: string): string {
+  return kind === "move" ? "העברה" : kind === "cancel" ? "ביטול" : "החלפה";
+}
 
 // 2-hour windows: barber approval AND each candidate contact.
 const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
@@ -674,6 +680,7 @@ export async function handleAdminProposalReply(
       OR: [
         { candidate: { customer: { OR: [{ phone }, { phone: local }] } } },
         { kind: "move", primary: { customer: { OR: [{ phone }, { phone: local }] } } },
+        { kind: "cancel", primary: { customer: { OR: [{ phone }, { phone: local }] } } },
       ],
     },
     orderBy: { createdAt: "desc" },
@@ -684,13 +691,20 @@ export async function handleAdminProposalReply(
   });
   if (!proposal) return false;
 
-  // Always answer the person who actually received the offer.
-  const replyPhone =
-    proposal.kind === "move"
-      ? normalizeIsraeliPhone(proposal.primary?.customer.phone ?? phone)
-      : normalizeIsraeliPhone(proposal.candidate?.customer.phone ?? phone);
-  const replyKind: "move_proposal" | "swap_proposal" =
-    proposal.kind === "move" ? "move_proposal" : "swap_proposal";
+  // Always answer the person who actually received the offer. For move+cancel
+  // that's the PRIMARY customer; for swap it's the CANDIDATE.
+  const primaryAnswers = proposal.kind === "move" || proposal.kind === "cancel";
+  const replyPhone = primaryAnswers
+    ? normalizeIsraeliPhone(proposal.primary?.customer.phone ?? phone)
+    : normalizeIsraeliPhone(proposal.candidate?.customer.phone ?? phone);
+  const replyKind: "move_proposal" | "swap_proposal" | "cancel_proposal" =
+    proposal.kind === "move" ? "move_proposal"
+      : proposal.kind === "cancel" ? "cancel_proposal"
+      : "swap_proposal";
+  // The customer whose decision this is (for owner alerts).
+  const subjectName = primaryAnswers
+    ? (proposal.primary?.customer.name ?? "לקוח")
+    : (proposal.candidate?.customer.name ?? "לקוח");
 
   // Expired? Admin proposals default to a 24h window and are never auto-expired
   // by the agent cron, so enforce it lazily on reply. Close it and let the
@@ -728,6 +742,12 @@ export async function handleAdminProposalReply(
       kind: replyKind,
       body: `אין בעיה, תודה על התשובה! התור נשאר כרגיל 🙏`,
     }).catch(() => {});
+    // Alert the owner (persisted as the proposal's rejected_by_customer status).
+    pushToOwner(bizId, {
+      title: "לקוח דחה בקשת שינוי",
+      body: `${subjectName} ענה/תה "לא" ל${kindLabelHe(proposal.kind)}. התור נשאר כרגיל.`,
+      data: { type: "change_declined", proposalId: proposal.id },
+    }).catch(() => {});
     return true;
   }
 
@@ -744,7 +764,13 @@ export async function handleAdminProposalReply(
       businessId: bizId,
       customerPhone: replyPhone,
       kind: replyKind,
-      body: `תודה על הנכונות! בסוף ההחלפה כבר לא רלוונטית, אז התור נשאר כרגיל 🙏`,
+      body: `תודה על הנכונות! בסוף השינוי כבר לא רלוונטי, אז התור נשאר כרגיל 🙏`,
+    }).catch(() => {});
+    // Alert the owner: the customer said yes but we couldn't apply it.
+    pushToOwner(bizId, {
+      title: "בקשת שינוי נכשלה",
+      body: `${subjectName} אישר/ה ${kindLabelHe(proposal.kind)} אבל לא ניתן היה לבצע (כנראה השעה נתפסה). התור נשאר.`,
+      data: { type: "change_failed", proposalId: proposal.id },
     }).catch(() => {});
     return true;
   }
@@ -776,5 +802,32 @@ export async function expireStaleAgentSwaps(bizId: string): Promise<void> {
     } else {
       await finishUnsuccessful(s.primaryAppointmentId);
     }
+  }
+
+  // Admin/owner-initiated change requests: no candidate queue — just expire the
+  // ones the customer never answered, and alert the owner (persisted as the
+  // proposal's "expired" status, so a weekly "what fell" report can query it).
+  const staleAdmin = await prisma.swapProposal.findMany({
+    where: {
+      businessId: bizId,
+      initiatedBy: "admin",
+      status: "pending_response",
+      expiresAt: { lt: now },
+    },
+    include: {
+      primary:   { include: { customer: { select: { name: true } } } },
+      candidate: { include: { customer: { select: { name: true } } } },
+    },
+  });
+  for (const s of staleAdmin) {
+    await prisma.swapProposal.update({ where: { id: s.id }, data: { status: "expired" } }).catch(() => {});
+    const nm = s.kind === "swap"
+      ? (s.candidate?.customer.name ?? "לקוח")
+      : (s.primary?.customer.name ?? "לקוח");
+    pushToOwner(bizId, {
+      title: "בקשת שינוי פגה",
+      body: `${nm} לא ענה/תה על בקשת ${kindLabelHe(s.kind)} בזמן. התור נשאר כרגיל.`,
+      data: { type: "change_expired", proposalId: s.id },
+    }).catch(() => {});
   }
 }

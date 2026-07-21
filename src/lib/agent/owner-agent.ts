@@ -201,6 +201,28 @@ export const OWNER_TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: "request_appointment_change",
+    description:
+      "שולח ללקוח בקשה לשנות תור (העברה/ביטול/החלפה) ומחכה לאישורו — לא נוגע בתור עד שהלקוח עונה \"כן\". השתמש בזה כשרוצים לשאול את הלקוח לפני שמשנים, במקום move_appointment/cancel_appointment/swap_appointments שמבצעים מיד. type=move צריך new_time (ואופציונלית new_date). type=swap צריך swap_with_appointment_id. type=cancel אופציונלית reason. הבקשה פגה תוך 24 שעות; בקשה חדשה על אותו תור מבטלת קודמת.",
+    input_schema: {
+      type: "object",
+      properties: {
+        appointment_id: { type: "string", description: "מזהה התור שרוצים לשנות" },
+        type: { type: "string", description: "move | cancel | swap" },
+        new_time: { type: "string", description: "למעבר (move): השעה החדשה HH:MM" },
+        new_date: { type: "string", description: "למעבר (move): תאריך חדש YYYY-MM-DD (אופציונלי — ברירת מחדל אותו יום)" },
+        swap_with_appointment_id: { type: "string", description: "להחלפה (swap): מזהה התור השני להחלפה" },
+        reason: { type: "string", description: "לביטול (cancel): סיבה אופציונלית שתופיע ללקוח" },
+      },
+      required: ["appointment_id", "type"],
+    },
+  },
+  {
+    name: "get_pending_requests",
+    description: "מחזיר את בקשות השינוי שממתינות לתשובת לקוח (העברה/ביטול/החלפה) — מה תלוי באוויר ומתי כל אחת פגה.",
+    input_schema: { type: "object", properties: {} },
+  },
   // ── Setup interview: configure the customer agent by asking the owner ──────
   {
     name: "get_setup_status",
@@ -927,6 +949,122 @@ export async function execOwnerTool(
       return `${header}\n${lines.join("\n")}`;
     }
 
+    // ── Ask the customer before changing (pending request, awaits yes/no) ────
+    case "request_appointment_change": {
+      const apptId = input.appointment_id as string;
+      const type = String(input.type || "").toLowerCase();
+      if (!["move", "cancel", "swap"].includes(type)) return "שגיאה: type חייב להיות move / cancel / swap.";
+      const appt = await prisma.appointment.findUnique({
+        where: { id: apptId },
+        include: { customer: true, staff: true, service: true },
+      });
+      if (!appt || appt.businessId !== businessId) return `שגיאה: תור ${apptId} לא נמצא בעסק.`;
+      if (staffId && appt.staffId !== staffId) return "שגיאה: התור אינו ביומן האישי שלך.";
+      if (!ACTIVE_STATUSES.includes(appt.status)) return "התור כבר אינו פעיל (מבוטל/הושלם).";
+      const curDateIso = new Date(appt.date).toISOString().slice(0, 10);
+
+      // Type-specific fields for the proposal + the customer-facing message.
+      let targetStaffId: string | undefined;
+      let targetDate: Date | undefined;
+      let targetStartTime: string | undefined;
+      let candidateAppointmentId: string | undefined;
+      let customerPhone: string | null = appt.customer.phone;
+      let msgKind: "move_proposal" | "cancel_proposal" | "swap_proposal";
+      let body: string;
+
+      if (type === "move") {
+        const newTime = input.new_time as string;
+        if (!/^\d{1,2}:\d{2}$/.test(newTime || "")) return "שגיאה: לסוג move צריך new_time תקין (HH:MM).";
+        const newDateIso = (input.new_date as string) || curDateIso;
+        const dayAvail = await computeDayAvailability(businessId, newDateIso, appt.staffId, appt.serviceId);
+        const slots = dayAvail.find(s => s.staffId === appt.staffId)?.slots ?? [];
+        if (!slots.includes(newTime)) {
+          return `שים לב: ${newTime} ב-${newDateIso} לא פנוי אצל ${appt.staff.name}. בחר שעה פנויה (get_schedule כדי לראות מה תפוס).`;
+        }
+        targetStaffId = appt.staffId;
+        targetDate = new Date(`${newDateIso}T00:00:00.000Z`);
+        targetStartTime = newTime;
+        msgKind = "move_proposal";
+        body = `היי ${firstName(appt.customer.name)}, רצינו לבדוק — אפשר להעביר את התור שלך ב-DOMINANT ל-${hebDayLabel(newDateIso)} בשעה ${newTime}? עני/ה כן או לא 🙏`;
+      } else if (type === "cancel") {
+        const reason = ((input.reason as string) || "").trim();
+        msgKind = "cancel_proposal";
+        body = `היי ${firstName(appt.customer.name)}, לגבי התור שלך ב-DOMINANT ל-${hebDayLabel(curDateIso)} בשעה ${appt.startTime}${reason ? ` — ${reason}` : ""}. צריך לבטל אותו — בסדר מצידך? כן/לא 🙏`;
+      } else {
+        const candId = (input.swap_with_appointment_id as string) || "";
+        if (!candId) return "שגיאה: לסוג swap צריך swap_with_appointment_id.";
+        if (candId === appt.id) return "שגיאה: אי אפשר להחליף תור עם עצמו.";
+        const cand = await prisma.appointment.findUnique({ where: { id: candId }, include: { customer: true } });
+        if (!cand || cand.businessId !== businessId) return `שגיאה: תור ${candId} לא נמצא בעסק.`;
+        if (!ACTIVE_STATUSES.includes(cand.status)) return "תור ההחלפה כבר אינו פעיל.";
+        if (!cand.customer.phone) return "שגיאה: ללקוח של תור ההחלפה אין טלפון.";
+        candidateAppointmentId = cand.id;
+        customerPhone = cand.customer.phone; // the CANDIDATE is the one asked
+        msgKind = "swap_proposal";
+        body = `היי ${firstName(cand.customer.name)}, אפשר להעביר את שעת התור שלך ב-DOMINANT מ-${cand.startTime} ל-${appt.startTime}? כן/לא 🙏`;
+      }
+
+      if (!customerPhone) return "שגיאה: ללקוח אין מספר טלפון לשליחת הבקשה.";
+
+      // One open request per appointment — supersede any live prior request.
+      await prisma.swapProposal.updateMany({
+        where: {
+          primaryAppointmentId: appt.id,
+          status: { in: ["pending_response", "pending_staff_approval", "queued_next", "accepted_by_customer"] },
+        },
+        data: { status: "superseded" },
+      });
+
+      const proposal = await prisma.swapProposal.create({
+        data: {
+          businessId,
+          primaryAppointmentId: appt.id,
+          initiatedBy: "admin",
+          kind: type,
+          status: "pending_response",
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          targetStaffId, targetDate, targetStartTime, candidateAppointmentId,
+        },
+      });
+      const res = await sendMessage({ businessId, customerPhone, kind: msgKind, body });
+      const label = type === "move" ? "העברה" : type === "cancel" ? "ביטול" : "החלפה";
+      return `נשלחה בקשת ${label} ללקוח. ${res.ok ? "ההודעה יצאה" : "אך שליחת ההודעה נכשלה"}. התור לא השתנה — ממתין לתשובת הלקוח (פג תוך 24 שעות). כשהלקוח יענה "כן", זה יתבצע אוטומטית. id=${proposal.id}`;
+    }
+
+    // ── What's awaiting a customer's yes/no ─────────────────────────────────
+    case "get_pending_requests": {
+      const props = await prisma.swapProposal.findMany({
+        where: {
+          businessId,
+          status: { in: ["pending_response", "pending_staff_approval", "queued_next"] },
+          ...(staffId ? { primary: { staffId } } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: 30,
+        include: {
+          primary:   { include: { customer: { select: { name: true } } } },
+          candidate: { include: { customer: { select: { name: true } } } },
+        },
+      });
+      if (!props.length) return "אין בקשות שינוי פתוחות כרגע.";
+      const lines = props.map(pr => {
+        const label = pr.kind === "move" ? "העברה" : pr.kind === "cancel" ? "ביטול" : "החלפה";
+        const pName = pr.primary?.customer.name ?? "—";
+        const pDate = pr.primary ? new Date(pr.primary.date).toISOString().slice(0, 10) : "";
+        let detail = "";
+        if (pr.kind === "move" && pr.targetStartTime) {
+          const td = pr.targetDate ? new Date(pr.targetDate).toISOString().slice(0, 10) : pDate;
+          detail = `→ ${td} ${pr.targetStartTime}`;
+        } else if (pr.kind === "swap" && pr.candidate) {
+          detail = `↔ ${pr.candidate.customer.name}`;
+        }
+        const mins = Math.max(0, Math.round((new Date(pr.expiresAt).getTime() - Date.now()) / 60000));
+        const expires = mins < 60 ? `${mins} דק'` : `${Math.round(mins / 60)} שע'`;
+        return `${label} | ${pName} (${pDate} ${pr.primary?.startTime ?? ""}) ${detail} | פג בעוד ${expires} | id=${pr.id}`;
+      });
+      return `${props.length} בקשות פתוחות (ממתינות לתשובת לקוח):\n${lines.join("\n")}`;
+    }
+
     // ── Setup interview: current status + the next question to ask ───────────
     case "get_setup_status": {
       const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
@@ -1012,6 +1150,7 @@ function ownerSystemPrompt(
     `ענה קצר וענייני: פעולה + אישור. אל תסביר יותר מדי, אל תשאל שאלות מיותרות.`,
     `יכולות שלך: לראות לוח (get_schedule), להזיז תור בודד לשעה חדשה (move_appointment), להחליף בין שני תורים (swap_appointments), לבטל (cancel_appointment), לקבוע תור חדש ללקוח (book_for_customer), לשלוח הודעה לכל לקוחות היום (send_to_today_customers), ולחפש לקוח (get_customer_info).`,
     `הבחנה חשובה: "תזיז את X לשעה Y" = move_appointment (תור בודד). "תחליף בין X ל-Y" = swap_appointments (שני תורים). אל תציע החלפה כשמבקשים סתם להזיז.`,
+    `לבצע מיד מול לשאול קודם: move_appointment/cancel_appointment/swap_appointments מבצעים את השינוי מיד ומודיעים ללקוח. אם הבעלים מבקש לשאול את הלקוח קודם ("תשאל את X אם מתאים לו", "תבדוק אם אפשר להזיז") — השתמש ב-request_appointment_change: הוא שולח ללקוח בקשה ולא נוגע בתור עד שהלקוח עונה "כן" (ואז זה מתבצע אוטומטית). get_pending_requests מראה מה עדיין ממתין לתשובה.`,
     `לפני הזזה/החלפה/ביטול — קרא ל-get_schedule כדי לאמת על איזה תור מדובר, אשר בקצרה, ובצע מיד את הכלי. אחרי שהבעלים אישר — אל תעצור ואל תדבר, פשוט הפעל את הכלי.`,
     `⚠️ קריטי: כל הכלים שלך (swap_appointments, move_appointment, cancel_appointment, book_for_customer) שולחים ללקוח הודעת WhatsApp אוטומטית בעצמך — אתה כן יכול לפנות ללקוחות. לעולם אל תגיד "אני לא יכול לפנות ללקוח" או "רק אתה יכול לשלוח לו" — זה לא נכון. אתה מבצע את הפעולה והלקוח מקבל הודעה מיד.`,
     `אין לך תהליך "בקשת אישור מהלקוח" וגם אין צורך — לבעלים יש סמכות מלאה. אם הבעלים אומר "תבקש מהלקוח אם הוא מאשר" — הסבר בקצרה שאתה מבצע את ההחלפה ישירות ושני הלקוחות מקבלים הודעה אוטומטית על השינוי, ושאל אם להמשיך. אל תמציא הגבלות ואל תציע לשלוח הודעה לכל לקוחות היום במקום.`,
