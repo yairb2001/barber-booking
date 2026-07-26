@@ -766,6 +766,12 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
+      {(appt.note || appt.staffNote) && (
+        <span className="absolute top-1 right-1 z-10 flex gap-0.5">
+          {appt.note && <span className="block w-1.5 h-1.5 rounded-full bg-blue-500" title="הערת לקוח" />}
+          {appt.staffNote && <span className="block w-1.5 h-1.5 rounded-full bg-orange-500" title="הערה פנימית" />}
+        </span>
+      )}
       {/* Full customer name (first + last) — ALWAYS shown in full. The font
           starts at the zoom-based size and auto-shrinks only as much as needed
           so the complete name fits (wrapping to up to `nameLines` lines); it is
