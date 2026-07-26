@@ -24,6 +24,8 @@ import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
+import { runOnboardingAgent } from "@/lib/agent/onboarding-agent";
+import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import {
   handleStaffApprovalReply,
   handleCandidateReply,
@@ -252,6 +254,37 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!biz) {
     console.error("[webhook] no business found");
     return NextResponse.json({ ok: false, error: "no business" }, { status: 404 });
+  }
+
+  // ── Onboarding agent routing ─────────────────────────────────────────────────
+  // A message landing on the PLATFORM's own instance may actually be a reply
+  // from the owner of a DIFFERENT business who is still mid-onboarding — that
+  // business has no WhatsApp of its own connected yet, so its onboarding
+  // conversation runs on the platform's number (see onboarding-agent.ts).
+  // Checked before anything else business-specific so it can never fall through
+  // to the platform business's own customer/owner agent. Matched by normalized
+  // phone against Business.phone, same trust model as the owner-agent routing
+  // below (no stronger identity check exists anywhere else in this webhook).
+  if (biz.id === SUPER_ADMIN_BUSINESS_ID) {
+    try {
+      const onboardingCandidates = await prisma.business.findMany({
+        where: { id: { not: SUPER_ADMIN_BUSINESS_ID }, onboardingCompletedAt: null, onboardingStartedAt: { not: null }, phone: { not: null } },
+        select: { id: true, phone: true },
+      });
+      const onboardingBiz = onboardingCandidates.find(
+        c => c.phone && normalizeIsraeliPhone(c.phone) === phone
+      );
+      if (onboardingBiz) {
+        try {
+          await runOnboardingAgent({ businessId: onboardingBiz.id, phone, incomingText: text, senderName });
+        } catch (e) {
+          console.error("[onboarding-agent]", e);
+        }
+        return NextResponse.json({ ok: true, handled: "onboarding_agent" });
+      }
+    } catch (e) {
+      console.error("[onboarding routing]", e);
+    }
   }
 
   // Lazily expire stale agent-initiated swap requests (there is no cron — every
