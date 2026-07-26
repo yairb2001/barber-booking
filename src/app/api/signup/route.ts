@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
 import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
+import { startOnboardingConversation } from "@/lib/agent/onboarding-agent";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -13,15 +14,17 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
  * src/app/api/admin/auth/login/route.ts.
  *
  * The owner is NOT seeded as a Staff row here. Instead, right after signup the
- * owner is sent to the onboarding wizard (/admin/onboarding), where THEY set up
- * their own barber profile, weekly calendar and first service — so those choices
- * are configured in the flow, not silently hardcoded. The wizard pre-fills
- * sensible defaults so it's mostly a confirm-and-continue.
+ * primary onboarding channel is a WhatsApp conversation (startOnboardingConversation,
+ * runs on the platform's own number — see src/lib/agent/onboarding-agent.ts),
+ * which walks the owner through their own barber profile, weekly calendar,
+ * services etc. one question at a time. The on-screen wizard (/admin/onboarding)
+ * still exists as a fallback/alternative for owners who'd rather fill a form.
  *
  * New businesses start on the BASIC tier with a 14-day trial and no WhatsApp
- * connected (whatsappStatus = "not_requested"). They can take bookings once the
- * wizard's barber+service steps are done; WhatsApp reminders stay muted until
- * GreenAPI is provisioned.
+ * connected (whatsappStatus = "not_requested") — the onboarding conversation
+ * itself is what runs on the platform's number until this business gets its own.
+ * They can take bookings once a barber+service exist (either onboarding path
+ * gets there); WhatsApp reminders stay muted until GreenAPI is provisioned.
  */
 
 function digits(s: string | null | undefined): string {
@@ -97,6 +100,11 @@ export async function POST(req: NextRequest) {
     });
 
     await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}`);
+
+    // Awaited (not fire-and-forget): a serverless function can freeze right after
+    // the response is sent, which would silently drop an un-awaited send. The
+    // call is internally try/caught, so it can't fail the signup response.
+    await startOnboardingConversation({ businessId: business.id, phone });
 
     const token = await signSession({ businessId: business.id, role: "owner" });
     const res = NextResponse.json({ ok: true, slug: business.slug });

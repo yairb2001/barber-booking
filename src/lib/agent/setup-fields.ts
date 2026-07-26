@@ -34,6 +34,12 @@ export type SetupField = {
   /** Must be answered before the agent may go live. */
   core: boolean;
   /**
+   * Only relevant once another field already holds a specific value (e.g. the
+   * deposit amount only makes sense once `deposit` was answered "true"). Such
+   * fields are skipped by missingCoreFields/unansweredFields until then.
+   */
+  dependsOn?: { key: string; value: string | boolean };
+  /**
    * Renders this field's stored value into one prompt line. Return "" to omit
    * (e.g. a bool that's false and needs no mention). `v` is the stored value.
    */
@@ -93,6 +99,12 @@ export const SETUP_FIELDS: SetupField[] = [
     compile: v => v === true ? "יש לגבות מקדמה על תור — אם לקוח שואל, ציין זאת." : "",
   },
   {
+    key: "depositAmount", group: "מדיניות", core: false, type: "text",
+    dependsOn: { key: "deposit", value: true },
+    question: "כמה המקדמה?",
+    compile: v => v ? `סכום המקדמה: ${v}.` : "",
+  },
+  {
     key: "walkin", group: "מדיניות", core: false, type: "bool", default: true,
     question: "מקבלים לקוח בלי תור מראש (walk-in)? כן / לא",
     compile: v => v === false ? "לא מקבלים לקוחות ללא תור מראש — צריך לקבוע." : "אפשר להגיע גם בלי תור מראש.",
@@ -125,16 +137,24 @@ export const CORE_FIELD_KEYS = SETUP_FIELDS.filter(f => f.core).map(f => f.key);
 
 export type SetupConfig = Record<string, string | boolean>;
 
+/** Whether a field's dependency (if any) is currently satisfied. */
+function dependencyMet(f: SetupField, c: SetupConfig): boolean {
+  if (!f.dependsOn) return true;
+  return c[f.dependsOn.key] === f.dependsOn.value;
+}
+
 /** Core fields still missing a value — empty array means "ready to go live". */
 export function missingCoreFields(cfg: SetupConfig | null | undefined): SetupField[] {
   const c = cfg ?? {};
-  return SETUP_FIELDS.filter(f => f.core && (c[f.key] === undefined || c[f.key] === ""));
+  return SETUP_FIELDS.filter(f => f.core && dependencyMet(f, c) && (c[f.key] === undefined || c[f.key] === ""));
 }
 
-/** Every field still unanswered (core + optional), in ask-order. */
+/** Every field still unanswered (core + optional), in ask-order. Fields whose
+ * dependsOn condition isn't met yet are skipped — not "unanswered", just not
+ * relevant yet. */
 export function unansweredFields(cfg: SetupConfig | null | undefined): SetupField[] {
   const c = cfg ?? {};
-  return SETUP_FIELDS.filter(f => c[f.key] === undefined || c[f.key] === "");
+  return SETUP_FIELDS.filter(f => dependencyMet(f, c) && (c[f.key] === undefined || c[f.key] === ""));
 }
 
 /**

@@ -44,7 +44,12 @@ export type MessageKind =
   | "report_weekly"
   | "report_monthly"
   // Internal staff summaries
-  | "barber_daily_summary";
+  | "barber_daily_summary"
+  // WhatsApp onboarding interview (runs on the platform's own number until the
+  // business has its own connected) — see src/lib/agent/onboarding-agent.ts
+  | "onboarding_start"
+  | "onboarding_reply"
+  | "onboarding_nudge";
 
 export type MessageStatus =
   | "scheduled" // enqueued in the drip queue, waiting for its scheduledFor time

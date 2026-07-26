@@ -366,16 +366,23 @@ export async function deliverMessageLog(
 /**
  * Send a WhatsApp message and log it to MessageLog.
  * Silently no-ops if the business has no provider configured.
+ *
+ * `senderBusinessId` sends via a DIFFERENT business's GreenAPI credentials
+ * while still logging/scoping the MessageLog under `businessId` — used by the
+ * onboarding agent, which talks to a not-yet-onboarded business's owner over
+ * the platform's own WhatsApp number (the new business has no number of its
+ * own connected yet).
  */
 export async function sendMessage(opts: {
   businessId: string;
+  senderBusinessId?: string;
   appointmentId?: string;
   customerPhone: string;
   kind: MessageKind;
   body: string;
 }): Promise<SendResult> {
   const business = await prisma.business.findUnique({
-    where: { id: opts.businessId },
+    where: { id: opts.senderBusinessId || opts.businessId },
   });
   if (!business) return { ok: false, error: "Business not found" };
 
