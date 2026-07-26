@@ -767,7 +767,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
       {(appt.note || appt.staffNote) && (
-        <span className="absolute top-1 right-1 z-10 flex gap-0.5">
+        <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
           {appt.note && <span className="block w-1.5 h-1.5 rounded-full bg-blue-500" title="הערת לקוח" />}
           {appt.staffNote && <span className="block w-1.5 h-1.5 rounded-full bg-orange-500" title="הערה פנימית" />}
         </span>
@@ -1737,6 +1737,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ staffNote }),
     });
     setSavingNote(false);
+    onReload?.();
+    onClose();
   }
 
   async function sendDelayNotification() {
