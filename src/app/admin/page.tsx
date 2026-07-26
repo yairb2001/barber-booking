@@ -4993,7 +4993,7 @@ export default function AdminCalendar() {
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
                               <span className="text-[10px] font-bold text-slate-900 leading-tight">
-                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
+                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight, calStart, calEnd)}
                               </span>
                             )}
                           </div>
@@ -5022,8 +5022,8 @@ export default function AdminCalendar() {
                             staffName={s.name}
                             date={date}
                             onMove={y => setDraftAppt(prev => prev ? { ...prev, startY: y } : null)}
-                            onConfirm={() => { setNewAppt({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
-                            onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onConfirm={() => { setNewAppt({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight, calStart, calEnd) }); setDraftAppt(null); }}
+                            onAddBreak={() => { setAddBreak({ staffId: s.id, date, time: yToTimeFn(colDraft.startY, hourHeight, calStart, calEnd) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
@@ -5130,7 +5130,7 @@ export default function AdminCalendar() {
                             style={{ top: Math.min(colDrag.startY, colDrag.endY), height: Math.max(dragDist, 8) }}>
                             {dragDist > 20 && (
                               <span className="text-[10px] font-bold text-slate-900 leading-tight">
-                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight)}
+                                {yToTimeFn(Math.min(colDrag.startY, colDrag.endY), hourHeight, calStart, calEnd)}
                               </span>
                             )}
                           </div>
@@ -5157,8 +5157,8 @@ export default function AdminCalendar() {
                             staffName={s.name}
                             date={d}
                             onMove={y => setDraftAppt(prev => prev ? { ...prev, startY: y } : null)}
-                            onConfirm={() => { setNewAppt({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
-                            onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight) }); setDraftAppt(null); }}
+                            onConfirm={() => { setNewAppt({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight, calStart, calEnd) }); setDraftAppt(null); }}
+                            onAddBreak={() => { setAddBreak({ staffId: s.id, date: d, time: yToTimeFn(colDraft.startY, hourHeight, calStart, calEnd) }); setDraftAppt(null); }}
                             onDismiss={() => setDraftAppt(null)}
                             onDragMoved={() => { suppressNextGridClick.current = true; }}
                             columnSnapDeltaX={columnSnapDeltaX}
