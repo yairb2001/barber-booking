@@ -99,6 +99,14 @@ export async function POST(req: NextRequest) {
       select: { id: true, slug: true },
     });
 
+    // Sign the session BEFORE firing any customer-visible side effects (platform
+    // notification, onboarding WhatsApp message) \u2014 if session signing throws
+    // (e.g. a misconfigured AUTH_SECRET), the caller gets a real error instead of
+    // a confusing "signup failed" after the owner already got a WhatsApp message
+    // welcoming them in. (The Business row itself is unavoidably already
+    // committed at this point either way.)
+    const token = await signSession({ businessId: business.id, role: "owner" });
+
     await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}`);
 
     // Awaited (not fire-and-forget): a serverless function can freeze right after
@@ -106,7 +114,6 @@ export async function POST(req: NextRequest) {
     // call is internally try/caught, so it can't fail the signup response.
     await startOnboardingConversation({ businessId: business.id, phone });
 
-    const token = await signSession({ businessId: business.id, role: "owner" });
     const res = NextResponse.json({ ok: true, slug: business.slug });
     res.cookies.set(COOKIE_NAME, token, COOKIE_OPTIONS);
     return res;
