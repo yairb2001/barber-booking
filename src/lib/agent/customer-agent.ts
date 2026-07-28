@@ -25,6 +25,32 @@ import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+// Neon has intermittently returned a spurious empty read for a day/staff that
+// demonstrably had free slots seconds before and after (first hit: the "Dvir"
+// incident, commit a919975 — mitigated there with a single retry in
+// get_available_slots only). That mitigation still let a repeat through: the
+// SAME transient empty hit book_appointment's availability guard below, which
+// had no retry at all, permanently rejecting a real, open slot and sending the
+// customer into a "no room anywhere" spiral until he booked via the website
+// instead. Shared helper so every caller of computeDayAvailability gets the
+// same protection — one retry clearly isn't always enough, so this tries up to
+// 3 times with a short gap for the transient read to clear.
+async function computeDayAvailabilityRetrying(
+  bizId: string,
+  date: string,
+  staffId?: string,
+  serviceId?: string,
+): Promise<ReturnType<typeof computeDayAvailability>> {
+  let result = await computeDayAvailability(bizId, date, staffId, serviceId);
+  for (let attempt = 0; !result.length && attempt < 2; attempt++) {
+    await sleep(250);
+    result = await computeDayAvailability(bizId, date, staffId, serviceId);
+  }
+  return result;
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
   // Resilience: transient 429/5xx/"overloaded" responses are common under load
@@ -309,20 +335,18 @@ export async function execTool(
       // ── get_available_slots ──────────────────────────────────────────────────
       case "get_available_slots": {
         const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
-        let byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
         // A specific barber coming back empty has bitten us: the agent offered
         // slots for a day, the customer picked one, and the pre-book re-check then
         // returned "no availability" for that SAME day — which still had free
         // times when checked against the DB. Two guards:
-        //   1) retry once — rescues a spurious/transient empty read;
+        //   1) retry (computeDayAvailabilityRetrying) — rescues a spurious/
+        //      transient empty read;
         //   2) if a staffId was passed and it's STILL empty, make sure that id is
         //      even real. A hallucinated/stale id yields an empty staff list that
         //      is indistinguishable from "fully booked", so we'd wrongly tell the
         //      customer there's no room. Surface it so the model re-fetches the
         //      list instead.
-        if (!byStaff.length) {
-          byStaff = await computeDayAvailability(bizId, date, inputStaffId, inputServiceId);
-        }
+        const byStaff = await computeDayAvailabilityRetrying(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length && inputStaffId) {
           const staffOk = await prisma.staff.findFirst({
             where: { id: inputStaffId, businessId: bizId, isAvailable: true },
@@ -441,7 +465,7 @@ export async function execTool(
         // barber's booking horizon, or a slot already taken. computeDayAvailability
         // is the single source of truth (it applies schedule, overrides, horizon
         // and existing bookings), so re-check the exact slot here before writing.
-        const dayAvail = await computeDayAvailability(bizId, date, staffId, serviceId);
+        const dayAvail = await computeDayAvailabilityRetrying(bizId, date, staffId, serviceId);
         const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
         if (!staffSlots.includes(startTime)) {
           // Diagnostic: this is the "agent said free, booking says taken" path.
