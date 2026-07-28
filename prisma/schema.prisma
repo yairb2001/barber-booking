@@ -69,6 +69,18 @@ model Business {
   trialEndsAt           DateTime?                           @map("trial_ends_at")
   onboardingCompletedAt DateTime?                           @map("onboarding_completed_at")
   whatsappStatus        String    @default("not_requested") @map("whatsapp_status") // not_requested | requested | connected
+  // ── Business niche (v1: barbershops only; keeps the door open for
+  // women_salon / cosmetics / multi_room_business later without a schema
+  // rewrite of the onboarding engine itself) ──
+  businessKind          String    @default("men_barbershop") @map("business_kind")
+  // ── WhatsApp-driven onboarding interview (runs on the platform's own
+  // WhatsApp number until this business has its own connected — see
+  // src/lib/agent/onboarding-agent.ts). Nudge cadence: 1h / 24h / 3d / weekly,
+  // stops after 5 with no reply (onboardingStuckAt set, notifyPlatformOwner). ──
+  onboardingStartedAt   DateTime?                           @map("onboarding_started_at")
+  onboardingNudgeCount  Int       @default(0)                @map("onboarding_nudge_count")
+  onboardingLastNudgeAt DateTime?                           @map("onboarding_last_nudge_at")
+  onboardingStuckAt     DateTime?                           @map("onboarding_stuck_at")
   // ── Billing (managed from the super-admin dashboard) ──
   monthlyPrice          Int?                                @map("monthly_price")   // ₪/month subscription
   setupFee              Int?                                @map("setup_fee")       // one-time AI implementation fee (premium)
