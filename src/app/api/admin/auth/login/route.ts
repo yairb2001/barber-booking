@@ -6,6 +6,7 @@ import {
   COOKIE_NAME,
   COOKIE_OPTIONS,
 } from "@/lib/auth";
+import { getBusinessAccessBlock } from "@/lib/session";
 
 /**
  * Unified admin login: phone + password. MULTI-TENANT.
@@ -56,7 +57,10 @@ export async function POST(req: NextRequest) {
     // passwordHash verifies. We scan every business that has a passwordHash set.
     const ownerCandidates = await prisma.business.findMany({
       where: { passwordHash: { not: null } },
-      select: { id: true, phone: true, passwordHash: true, settings: true },
+      select: {
+        id: true, phone: true, passwordHash: true, settings: true,
+        suspendedAt: true, trialEndsAt: true, paidAt: true,
+      },
     });
 
     for (const biz of ownerCandidates) {
@@ -74,6 +78,9 @@ export async function POST(req: NextRequest) {
       const ok = await verifyPassword(password, biz.passwordHash);
       if (!ok) continue; // phone matched but wrong password for this tenant — keep scanning
 
+      const blockReason = getBusinessAccessBlock(biz);
+      if (blockReason) return NextResponse.json({ error: blockReason }, { status: 403 });
+
       const token = await signSession({ businessId: biz.id, role: "owner" });
       const res = NextResponse.json({ ok: true, role: "owner" });
       res.cookies.set(COOKIE_NAME, token, COOKIE_OPTIONS);
@@ -85,13 +92,19 @@ export async function POST(req: NextRequest) {
     // since stored phone format may vary. Confirm by verifying the password.
     const staffCandidates = await prisma.staff.findMany({
       where: { passwordHash: { not: null } },
-      select: { id: true, businessId: true, phone: true, passwordHash: true, name: true, role: true },
+      select: {
+        id: true, businessId: true, phone: true, passwordHash: true, name: true, role: true,
+        business: { select: { suspendedAt: true, trialEndsAt: true, paidAt: true } },
+      },
     });
 
     for (const staff of staffCandidates) {
       if (!phoneMatches(phone, staff.phone) || !staff.passwordHash) continue;
       const ok = await verifyPassword(password, staff.passwordHash);
       if (!ok) continue;
+
+      const blockReason = getBusinessAccessBlock(staff.business);
+      if (blockReason) return NextResponse.json({ error: blockReason }, { status: 403 });
 
       const token = await signSession({
         businessId: staff.businessId,

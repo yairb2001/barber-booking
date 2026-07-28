@@ -9,6 +9,26 @@ export type RequestSession = {
   isOwner: boolean;
 };
 
+/**
+ * Mirrors the super-admin dashboard's own "paying"/"trialActive" computation
+ * (src/app/api/admin/super/route.ts) — a business is blocked when it's neither.
+ * A business with no trialEndsAt (e.g. hand-provisioned, no trial ever set) is
+ * never blocked by trial expiry; only an explicit suspendedAt blocks it.
+ */
+export function getBusinessAccessBlock(business: {
+  suspendedAt: Date | null;
+  trialEndsAt: Date | null;
+  paidAt: Date | null;
+}): string | null {
+  if (business.suspendedAt) {
+    return "הגישה לחשבון הושהתה. צור קשר עם התמיכה כדי להמשיך.";
+  }
+  if (!business.paidAt && business.trialEndsAt && business.trialEndsAt <= new Date()) {
+    return "תקופת הניסיון הסתיימה. יש להשלים תשלום כדי להמשיך להשתמש במערכת.";
+  }
+  return null;
+}
+
 /** Read session injected by middleware headers. */
 export function getRequestSession(req: NextRequest): RequestSession | null {
   const businessId = req.headers.get("x-session-business-id");
