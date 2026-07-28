@@ -185,6 +185,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
         date:          { type: "string", description: "תאריך YYYY-MM-DD" },
         startTime:     { type: "string", description: "שעת התחלה HH:MM" },
         customerName:  { type: "string", description: "שם מלא של הלקוח. אם הלקוח כבר רשום במערכת — השתמש בשם שכבר רשום ואל תשנה אותו. אם זה לקוח חדש שאינו רשום — חובה שם פרטי + שם משפחה כדי לקבוע, אבל אל תבקש את השם בתחילת השיחה: קודם עזור ללקוח לבחור שירות, ספר, יום ושעה, ורק כשמגיעים לסגור את התור בקש ממנו את שמו המלא." },
+        note:          { type: "string", description: "אופציונלי. השתמש בזה רק כשמי שמתכתב איתך קובע תור עבור מישהו אחר (למשל בן משפחה) — כתוב כאן את שם האדם שהתור בפועל בשבילו, למשל 'התור בפועל עבור: יהל רוזנברג'. התור עצמו נשאר תחת הכרטיס של מי שמתכתב איתך (לפי מספר הטלפון), רק ההערה מציינת עבור מי זה." },
       },
       required: ["staffId", "serviceId", "date", "startTime", "customerName"],
     },
@@ -447,7 +448,7 @@ export async function execTool(
 
       // ── book_appointment ─────────────────────────────────────────────────────
       case "book_appointment": {
-        const { staffId, serviceId, date, startTime, customerName } = input;
+        const { staffId, serviceId, date, startTime, customerName, note } = input;
         // The caller IS the customer — always use their WhatsApp number, never
         // a number the model invented or asked for.
         const phone = normalizeIsraeliPhone(callerPhone);
@@ -546,6 +547,7 @@ export async function execTool(
               price:     eff.price,
               referralSource: "whatsapp_agent",
               source:    "agent",
+              note:      note || null,
             },
           });
         } catch (err: unknown) {
@@ -915,7 +917,11 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 אם אין שעה פנויה ביום שהלקוח רוצה, או שהוא מבקש שנעדכן אותו אם יתפנה משהו — הצע לו להירשם לרשימת המתנה ליום הזה, וברגע שהוא מסכים קרא ל-join_waitlist עם השירות והתאריך (ועם הספר רק אם ביקש ספר מסוים). אם יתפנה תור באותו יום הוא יקבל הודעה אוטומטית. אל תשתמש ברשימת המתנה במקום לקבוע — אם יש שעה שמתאימה ללקוח, תמיד עדיף לסגור אותה.
 
-יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, join_waitlist, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.`;
+יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, join_waitlist, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.
+
+אחרי שכבר אמרת ללקוח שתור נקבע/בוטל/הוזז בהצלחה (למשל "✅ תור נקבע בהצלחה"), אם ההודעה הבאה שלו היא רק אישור סתמי בלי בקשה חדשה וברורה (כמו "מאשר", "תודה", "סבבה", "אחלה", "אגיע") — זו סגירת שיחה, לא בקשה חדשה. אל תפעיל שום כלי ואל תפתח מחדש שום תהליך שכבר נסגר, גם אם משהו בשיחה נראה לך "לא סגור" — פשוט הגב בקצרה ("בשמחה, נתראה!" או דומה) והשיחה נגמרת.
+
+אם מי שמתכתב איתך קובע תור עבור מישהו אחר (למשל בן משפחה) ולא עבור עצמו — התור עדיין נקבע תחת הכרטיס שלו (לפי מספר הטלפון שממנו הוא כותב, לא ניתן לזהות לפי טלפון אדם אחר), אבל העבר את שם האדם שהתור בפועל בשבילו בפרמטר note של book_appointment, כדי שהספר ידע ביומן עבור מי זה בפועל.`;
 }
 
 /** Format an ISO date (YYYY-MM-DD) as a Hebrew weekday + date, e.g.
