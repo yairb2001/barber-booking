@@ -105,6 +105,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: "night-throttle" });
   }
 
+  // Run the piggybacked scans (question follow-up, link-nudge, LLM health) here,
+  // BEFORE the drip queue's own early returns below. Bug found 2026-07-29: these
+  // used to run only at the very bottom of this handler, after several early
+  // `return`s (no due messages / nothing claimed / nothing to deliver) — which is
+  // the common case on most minute-ticks. That silently starved the "fast ~1h"
+  // question follow-up down to whenever a scheduled drip message happened to be
+  // due in the same tick, sometimes hours late (real incident: a same-day booking
+  // stalled waiting on the customer's name, the follow-up meant to nudge within
+  // ~1h only fired 6h later, by which point the slot was gone). Running them here
+  // means every non-throttled tick reaches them, and their own internal
+  // timestamps (lastQuestionFollowupRun etc.) still cap the real frequency.
+  await runPiggybackTasks(now);
+
   // Pull due scheduled messages, oldest scheduledFor first (FIFO + priority:
   // waitlist enqueues with scheduledFor=now, broadcast staggers into the future,
   // so freed-slot notifications naturally jump ahead of a long broadcast).
@@ -263,10 +276,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Piggyback the question follow-up on this every-minute trigger (throttled),
-  // so it runs without a dedicated external cron. Never let it break the drip
-  // queue — the message delivery above is the critical path.
-  const nowMs = Date.now();
+  return NextResponse.json({ ok: true, processed: claimed.length, sent, failed, skipped, throttled });
+}
+
+/** Piggyback scans driven by the every-minute drip trigger, so they run without a
+ *  dedicated external cron. Each is throttled by its own module-level timestamp,
+ *  and none may throw past this function — the drip queue's own delivery (called
+ *  separately, higher up in GET) is the critical path and must never be blocked
+ *  or delayed by these. Must be called on every non-night-throttled tick,
+ *  regardless of whether the drip queue itself has anything due to send. */
+async function runPiggybackTasks(now: Date): Promise<void> {
+  const nowMs = now.getTime();
+
   if (nowMs - lastQuestionFollowupRun >= QUESTION_FOLLOWUP_EVERY_MS) {
     lastQuestionFollowupRun = nowMs;
     try {
@@ -276,8 +297,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Piggyback the link-first 30-min nudge on the same trigger (throttled). Fixed
-  // text, 0 tokens — never let it break the drip queue (critical path above).
   if (nowMs - lastLinkNudgeRun >= LINK_NUDGE_EVERY_MS) {
     lastLinkNudgeRun = nowMs;
     try {
@@ -287,12 +306,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Platform LLM health canary (throttled), so a shared-key/credit outage is
-  // caught within minutes and the platform owner is alerted — never the tenants.
   if (nowMs - lastLlmHealthCheck >= LLM_HEALTH_EVERY_MS) {
     lastLlmHealthCheck = nowMs;
     try { await checkAndRecordLlmHealth(); } catch (err) { console.error("[drip-queue] llm-health failed:", err); }
   }
-
-  return NextResponse.json({ ok: true, processed: claimed.length, sent, failed, skipped, throttled });
 }
