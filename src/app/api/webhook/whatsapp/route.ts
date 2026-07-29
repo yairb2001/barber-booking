@@ -451,11 +451,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // quiet past the re-greet window (measured from the LAST message regardless of
   // sender — a reply to yesterday's follow-up is NOT fresh and goes to the
   // agent). On a fresh contact a tiny intent check decides (owner's rule):
-  //   book  → fixed greeting + booking link, no agent run.
-  //   chat  → the agent answers naturally, then the greeting is sent right after.
-  //   other → a concrete non-booking request — no automation, agent handles it.
-  // A 30-min "didn't book / didn't reply" nudge is handled by runLinkNudges().
-  let sendGreetingAfterAgent = false;
+  //   book        → fixed greeting + booking link, no agent run.
+  //   chat/other  → agent handles it, no automation at all — the agent's own
+  //                 system prompt already nudges toward booking (defaultAgentBody:
+  //                 "תמיד קדם את השיחה צעד אחד קדימה לכיוון קביעת התור"), so a
+  //                 second, fixed link message right after is a pure duplicate.
+  //                 Used to fire unconditionally on "chat" (owner-reported real
+  //                 incident 2026-07-29: customer got a natural agent reply that
+  //                 already offered to book, immediately followed by the canned
+  //                 "היי X, מה קורה?" greeting — jarring and redundant).
   if (
     !isNonText &&
     isLinkFirstEnabled(biz.settings) &&
@@ -470,8 +474,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         await sendGreetingLink(biz, phone, senderName);
         return NextResponse.json({ ok: true, handled: "link_first_greeting" });
       }
-      if (intent === "chat") sendGreetingAfterAgent = true;
-      // intent === "other" → fall through to the agent, no automation.
+      // intent === "chat" | "other" → fall through to the agent, no automation.
     } catch (e) {
       // Never leave the customer hanging — fall through to the agent on failure.
       console.error("[link-first] greeting failed:", e);
@@ -503,18 +506,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
-  }
-
-  // Small-talk first contact ("chat" intent): after the agent's natural reply,
-  // send the booking-link automation too — the customer gets both the human
-  // answer and the fastest path to book (and the greeting_link log arms the
-  // 30-min nudge). Sent even if the agent errored, so the link isn't lost.
-  if (sendGreetingAfterAgent) {
-    try {
-      await sendGreetingLink(biz, phone, senderName);
-    } catch (e) {
-      console.error("[link-first] post-agent greeting failed:", e);
-    }
   }
 
   return NextResponse.json({ ok: true });
