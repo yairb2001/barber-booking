@@ -11,8 +11,20 @@ type Bubble = { side: "right" | "left"; text: string };
 
 const OPENING_HINT: Bubble = {
   side: "left",
-  text: "היי! זה סוכן אמיתי (לא הדגמה מוקלטת) שרץ על מספרת דמו. נסה לכתוב לו כאילו אתה לקוח — למשל \"אפשר לקבוע תור?\"",
+  text: "עכשיו התור שלך — נסה לכתוב כאילו אתה לקוח, למשל \"אפשר לקבוע תור?\"",
 };
+
+// Ambient preview that autoplays on load, so the widget shows activity at a
+// glance instead of sitting empty until someone types. Purely visual (not a
+// real agent call) — cut short the moment the visitor starts typing for real.
+const AUTOPLAY_SCRIPT: Bubble[] = [
+  { side: "right", text: "היי, אפשר לקבוע תור?" },
+  { side: "left", text: "היי! בטח 😊 לאיזה יום נוח לך?" },
+  { side: "right", text: "מחר בבוקר אם יש" },
+  { side: "left", text: "יש לי 9:30 ו-11:00 פנויים מחר. מה מתאים?" },
+  { side: "right", text: "11 מעולה" },
+  { side: "left", text: "סגור! תספורת מחר ב-11:00. שולח תזכורת יום לפני 🔔" },
+];
 
 /** One session id per page load, used only to keep this demo's conversation
  *  continuous across messages — never sent anywhere as an identity. */
@@ -23,11 +35,28 @@ function makeSessionId(): string {
 
 function WaPhone() {
   const [sessionId] = useState(makeSessionId);
-  const [bubbles, setBubbles] = useState<Bubble[]>([OPENING_HINT]);
+  const [phase, setPhase] = useState<"autoplay" | "live">("autoplay");
+  const [autoplayShown, setAutoplayShown] = useState(0);
+  const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const lastPolledAt = useRef(new Date(0));
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Play the ambient preview, then hand control to the visitor.
+  useEffect(() => {
+    if (phase !== "autoplay") return;
+    if (autoplayShown >= AUTOPLAY_SCRIPT.length) {
+      const t = setTimeout(() => { setPhase("live"); setBubbles([OPENING_HINT]); }, 900);
+      return () => clearTimeout(t);
+    }
+    const delay = autoplayShown === 0 ? 500 : 1100;
+    const t = setTimeout(() => {
+      setBubbles(b => [...b, AUTOPLAY_SCRIPT[autoplayShown]]);
+      setAutoplayShown(s => s + 1);
+    }, delay);
+    return () => clearTimeout(t);
+  }, [phase, autoplayShown]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -59,8 +88,10 @@ function WaPhone() {
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
+    const wasAutoplay = phase !== "live";
+    if (wasAutoplay) setPhase("live");
     setInput("");
-    setBubbles(b => [...b, { side: "right", text }]);
+    setBubbles(b => [...(wasAutoplay ? [OPENING_HINT] : b), { side: "right", text }]);
     setSending(true);
     try {
       const res = await fetch("/api/demo-chat", {
