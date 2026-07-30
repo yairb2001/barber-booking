@@ -11,11 +11,15 @@
  *   A. They finished a demo booking — a few minutes later, pitch them.
  *   B. They sent 4+ messages (more than 3) and then went quiet for ~1h.
  *
- * The pitch references what they actually tried in the demo (not a generic
- * "did you like it?"), and ends with a simple ask for a phone number — no
- * reply-parsing needed here: src/app/api/demo-chat/route.ts intercepts a
- * phone-number-shaped reply after a pitch was sent and captures it directly,
- * bypassing the booking agent entirely for that turn.
+ * The pitch is delivered as TWO short bubbles, like a real WhatsApp salesperson
+ * (owner's spec, 2026-07-30) — not one paragraph:
+ *   1. A concrete callback to what they actually did/tried in the demo.
+ *   2. A pain-point question about manually handling WhatsApp, closing with an
+ *      assumptive ask for their name (not a yes/no "does this interest you?" —
+ *      the name request IS the close).
+ * No phone number is requested. A reply after the pitch is captured directly
+ * in src/app/api/demo-chat/route.ts (as a name, unless it reads as an explicit
+ * decline) — bypassing the booking agent entirely for that turn.
  *
  * Never touches any real business — every query below is scoped to
  * DEMO_BUSINESS_ID, and it writes nothing outside that business's own rows.
@@ -35,34 +39,40 @@ const MIN_USER_MESSAGES_FOR_SILENCE_TRIGGER = 4;
 /** Don't chase a demo conversation that's gone stale (visitor long gone). */
 const MAX_CONVERSATION_AGE_MS = 24 * 60 * 60 * 1000;
 
-function fallbackPitch(): string {
-  return "דרך אגב — זה בדיוק איך זה עובד אצל לקוחות אמיתיים. אם זה נראה לך שימושי לעסק שלך, מה השם שלך? נשמח לחזור אליך.";
+function fallbackPitch(): string[] {
+  return [
+    "דרך אגב — זה בדיוק איך זה עובד אצל לקוחות אמיתיים.",
+    "רוצה לראות איך זה נראה בדיוק אצלך בעסק? תגיד לי איך קוראים לך ונחזור אליך היום.",
+  ];
 }
 
-/** Write one short, personalized pitch referencing what they actually tried in
- *  the demo. Returns null on total failure (falls back to a fixed line instead
- *  of skipping — unlike the customer-facing follow-ups, silence here is a lost
- *  sales opportunity, not a risk of bothering someone). */
-async function generatePitch(transcript: string, reason: "booked" | "silence"): Promise<string> {
+/** Write a two-bubble pitch grounded in what they actually tried in the demo.
+ *  Falls back to a fixed two-bubble line on total LLM failure instead of
+ *  skipping — unlike the customer-facing follow-ups, silence here is a lost
+ *  sales opportunity, not a risk of bothering someone. */
+async function generatePitch(transcript: string, reason: "booked" | "silence"): Promise<string[]> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5",
-      max_tokens: 250,
+      max_tokens: 300,
       system:
-        "אתה עוזר לבעל פלטפורמת SaaS למספרות למכור את המערכת. מישהו בדיוק ניסה דמו חי של הסוכן (אותו סוכן AI שמנהל תורים בוואטסאפ), על מספרה בדיונית. " +
-        "המטרה: לכתוב הודעת המשך אחת, קצרה וטבעית (לא פיץ' גנרי), שמתייחסת בדיוק למה שהוא ניסה או שאל בדמו (למשל אם ניסה לקבוע לכמה אנשים, ביטל, שאל על מחיר) ומראה שזה בדיוק מה שיעבוד לו בעסק האמיתי שלו. " +
+        "אתה כותב הודעת המשך בשם בעל פלטפורמת SaaS למספרות, אחרי שמישהו ניסה דמו חי של הסוכן (אותו סוכן AI שמנהל תורים בוואטסאפ) על מספרה בדיונית. " +
+        "כתוב בדיוק שתי הודעות (בועות), מופרדות בשורה ריקה ביניהן — כמו שתי הודעות וואטסאפ נפרדות, לא בלוק טקסט אחד:\n" +
+        "הודעה 1: התייחסות קונקרטית וספציפית למה שהוא בפועל עשה או ניסה בדמו (לפי השיחה למטה — למשל אם קבע תור לשירות מסוים אצל ספר מסוים בשעה מסוימת, תגיד בדיוק את זה: 'ככה הסוכן קבע לך תור אצל X ביום Y בשעה Z'; אם רק שאל שאלה בלי לקבוע, התייחס לזה בלבד — אל תמציא שהוא קבע תור אם לא קבע). " +
         (reason === "booked"
           ? "הוא הרגע סיים לקבוע תור דמו בהצלחה — זה הזמן הכי טוב לפנות, כשהוא עוד רואה כמה זה חלק."
           : "הוא ניסה כמה הודעות ואז נעלם — תזכיר לו בעדינות, בלי לחץ.") +
-        " סיים תמיד בשאלה קצרה וטבעית מה השם שלו, בלי לבקש מספר טלפון או פרטי קשר אחרים — רק שם. משפט אחד או שניים בלבד, בלי אימוג'ים מוגזמים, בעברית טבעית כמו הודעת וואטסאפ. החזר רק את ההודעה עצמה, בלי הקדמות.",
+        "\nהודעה 2: שאלת כאב טבעית על ניהול וואטסאפ ידני (למשל אם הוא עונה בעצמו כל היום ללקוחות למרות שיש לו מערכת), ואז סגירה אחת שמניחה עניין ומבקשת ישירות את השם שלו כדי לחזור אליו — לא לשאול 'מעניין אותך?' בנפרד, השם עצמו הוא הבקשה. " +
+        "אל תמציא פיצ'רים, מחירים או יכולות שלא הוצגו בפועל בדמו — אתה לא יודע מחיר או תנאים, אל תבטיח שום דבר מספרי, רק תדבר על מה שהוא בעצמו ראה עובד. " +
+        "בלי לבקש מספר טלפון או פרטי קשר אחרים — רק שם. בעברית טבעית כמו הודעת וואטסאפ אמיתית, בלי אימוג'ים מוגזמים, בלי בולד/כוכביות. החזר רק את שתי ההודעות מופרדות בשורה ריקה ביניהן, בלי הקדמות.",
       messages: [
-        { role: "user", content: `זו השיחה בדמו עד עכשיו:\n\n${transcript}\n\nכתוב את הודעת ההמשך.` },
+        { role: "user", content: `זו השיחה בדמו עד עכשיו:\n\n${transcript}\n\nכתוב את שתי הודעות ההמשך.` },
       ],
     });
     let text = "";
     for (const b of res.content) if (b.type === "text") text += b.text;
-    text = text.trim();
-    return text || fallbackPitch();
+    const bubbles = text.trim().split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+    return bubbles.length ? bubbles : fallbackPitch();
   } catch (e) {
     console.error("[demo-sales-agent] LLM failed", e);
     return fallbackPitch();
@@ -128,18 +138,20 @@ export async function runDemoSalesAgent(
     const transcript = msgs
       .map(m => `${m.role === "user" ? "מבקר" : "סוכן"}: ${m.content}`)
       .join("\n");
-    const pitch = await generatePitch(transcript, reason);
+    const bubbles = await generatePitch(transcript, reason);
 
     try {
-      await prisma.conversationMessage.create({
-        data: { conversationId: convo.id, role: "assistant", content: pitch },
-      });
+      for (const bubble of bubbles) {
+        await prisma.conversationMessage.create({
+          data: { conversationId: convo.id, role: "assistant", content: bubble },
+        });
+      }
       await prisma.messageLog.create({
         data: {
           businessId: DEMO_BUSINESS_ID,
           customerPhone: convo.phone,
           kind: "demo_sales_pitch",
-          body: pitch,
+          body: bubbles.join("\n\n"),
           status: "sent",
           sentAt: now,
         },

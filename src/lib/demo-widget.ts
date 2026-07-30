@@ -74,3 +74,12 @@ export function maybeCleanupRateLimitMap(): void {
     else hitsByKey.set(key, fresh);
   }
 }
+
+/** True when a reply to the sales pitch's name-ask reads as an explicit
+ *  decline ("no thanks") rather than a name — so we don't capture "לא תודה"
+ *  itself as someone's name. Deliberately narrow: anything not matching this
+ *  is treated as a name, per the owner's low-friction design. */
+const DECLINE_RE = /^\s*(לא[,.\s]|לא תודה|לא רוצה|לא מעוניין|לא כרגע|no\b|no thanks)/i;
+export function looksLikeDecline(text: string): boolean {
+  return DECLINE_RE.test(text.trim());
+}

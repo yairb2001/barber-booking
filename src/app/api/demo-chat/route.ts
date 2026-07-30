@@ -26,6 +26,7 @@ import {
   demoPhoneFor,
   checkRateLimit,
   maybeCleanupRateLimitMap,
+  looksLikeDecline,
 } from "@/lib/demo-widget";
 
 export const dynamic = "force-dynamic";
@@ -62,10 +63,11 @@ export async function POST(req: NextRequest) {
 
   // ── Lead capture intercept ────────────────────────────────────────────────
   // Only after a pitch was already sent, and only if we haven't already
-  // captured this session as a lead. No phone number needed — just a name
-  // (owner's call, 2026-07-30: lower friction than asking a web stranger for
-  // their number). Whatever they reply with here IS their name, as long as
-  // it's non-empty and not absurdly long.
+  // captured this session as a lead (captured OR declined — either way, don't
+  // ask again). No phone number needed — just a name (owner's call,
+  // 2026-07-30: lower friction than asking a web stranger for their number).
+  // An explicit decline ("לא תודה") is recognized so it isn't captured as a
+  // name; anything else short enough IS treated as the name.
   const alreadyPitched = await prisma.messageLog.findFirst({
     where: { businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "demo_sales_pitch" },
     select: { id: true },
@@ -75,6 +77,34 @@ export async function POST(req: NextRequest) {
       where: { businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "demo_lead_captured" },
       select: { id: true },
     });
+    if (!alreadyCaptured && looksLikeDecline(text)) {
+      const conversation = await prisma.conversation.findFirst({
+        where: { businessId: DEMO_BUSINESS_ID, phone },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      const closing = "לגמרי, בלי לחץ! אם תשנה את דעתך אני כאן.";
+      if (conversation) {
+        await prisma.conversationMessage.create({
+          data: { conversationId: conversation.id, role: "user", content: text },
+        });
+        await prisma.conversationMessage.create({
+          data: { conversationId: conversation.id, role: "assistant", content: closing },
+        });
+      }
+      await prisma.messageLog.create({
+        data: {
+          businessId: DEMO_BUSINESS_ID,
+          customerPhone: phone,
+          kind: "demo_lead_captured",
+          body: "declined",
+          status: "sent",
+          sentAt: new Date(),
+        },
+      });
+      return NextResponse.json({ bubbles: [closing] });
+    }
+
     const leadName = !alreadyCaptured && text.trim().length <= 60 ? text.trim() : null;
     if (leadName) {
       const conversation = await prisma.conversation.findFirst({
