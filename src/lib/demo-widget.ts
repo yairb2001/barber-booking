@@ -74,13 +74,3 @@ export function maybeCleanupRateLimitMap(): void {
     else hitsByKey.set(key, fresh);
   }
 }
-
-/** Loose Israeli-phone-shaped detector for lead capture: e.g. "0501234567",
- *  "050-123-4567", "+972501234567". Deliberately permissive — a false positive
- *  just means we try to capture a lead a beat early, not a real problem. */
-export function extractIsraeliPhone(text: string): string | null {
-  const match = text.match(/(?:\+?972[-\s]?|0)5\d(?:[-\s]?\d){7}/);
-  if (!match) return null;
-  const digits = match[0].replace(/\D/g, "");
-  return digits.length >= 9 ? digits : null;
-}

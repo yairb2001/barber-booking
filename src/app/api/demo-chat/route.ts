@@ -9,11 +9,12 @@
  *        async sales pitch from demo-sales-agent.ts, which arrives on its own
  *        schedule via the drip-queue piggyback, not synchronously with a POST).
  *
- * Lead capture: if a phone-number-shaped reply arrives AFTER a sales pitch was
- * already sent to this session, it's captured directly here (dedupe via
- * MessageLog kind "demo_lead_captured") and the owner is notified — the
- * booking agent never sees that turn, so there's no need to teach it how to
- * handle "here's my number" mid-conversation.
+ * Lead capture: the first reply that arrives AFTER a sales pitch was sent to
+ * this session is treated as the visitor's name (no phone number needed —
+ * owner's call) and captured directly here (dedupe via MessageLog kind
+ * "demo_lead_captured"); the owner is notified. The booking agent never sees
+ * that turn, so there's no need to teach it how to handle a lead reply
+ * mid-conversation.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,6 @@ import {
   demoPhoneFor,
   checkRateLimit,
   maybeCleanupRateLimitMap,
-  extractIsraeliPhone,
 } from "@/lib/demo-widget";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +62,10 @@ export async function POST(req: NextRequest) {
 
   // ── Lead capture intercept ────────────────────────────────────────────────
   // Only after a pitch was already sent, and only if we haven't already
-  // captured this session as a lead.
+  // captured this session as a lead. No phone number needed — just a name
+  // (owner's call, 2026-07-30: lower friction than asking a web stranger for
+  // their number). Whatever they reply with here IS their name, as long as
+  // it's non-empty and not absurdly long.
   const alreadyPitched = await prisma.messageLog.findFirst({
     where: { businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "demo_sales_pitch" },
     select: { id: true },
@@ -72,14 +75,14 @@ export async function POST(req: NextRequest) {
       where: { businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "demo_lead_captured" },
       select: { id: true },
     });
-    const capturedPhone = !alreadyCaptured ? extractIsraeliPhone(text) : null;
-    if (capturedPhone) {
+    const leadName = !alreadyCaptured && text.trim().length <= 60 ? text.trim() : null;
+    if (leadName) {
       const conversation = await prisma.conversation.findFirst({
         where: { businessId: DEMO_BUSINESS_ID, phone },
         orderBy: { createdAt: "desc" },
         select: { id: true },
       });
-      const thankYou = "מעולה, קיבלנו את הפרטים — ניצור איתך קשר בקרוב! 🙏";
+      const thankYou = `נעים מאוד ${leadName}! ניצור איתך קשר בקרוב 🙏`;
       if (conversation) {
         await prisma.conversationMessage.create({
           data: { conversationId: conversation.id, role: "user", content: text },
@@ -93,13 +96,13 @@ export async function POST(req: NextRequest) {
           businessId: DEMO_BUSINESS_ID,
           customerPhone: phone,
           kind: "demo_lead_captured",
-          body: capturedPhone,
+          body: leadName,
           status: "sent",
           sentAt: new Date(),
         },
       });
       notifyPlatformOwner(
-        `🎯 ליד חדש מדמו האתר!\nמספר: ${capturedPhone}\n(שיחת דמו: ${phone})`,
+        `🎯 ליד חדש מדמו האתר!\nשם: ${leadName}\n(שיחת דמו: ${phone})`,
       ).catch(() => {});
       return NextResponse.json({ bubbles: [thankYou], leadCaptured: true });
     }
