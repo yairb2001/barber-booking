@@ -154,6 +154,27 @@ function WaPhone() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// "המספרה של דני" — the same demo business the in-page widget talks to. This
+// wa.me link only works once its WhatsApp is actually connected (owner's plan:
+// tomorrow) — the number itself is already the business's real whatsappNumber.
+const DEMO_WA_NUMBER = "972555081866";
+const DEMO_WA_TEXT = encodeURIComponent("היי, ראיתי את הדמו באתר ורוצה לנסות לקבוע תור 😊");
+const DEMO_WA_LINK = `https://wa.me/${DEMO_WA_NUMBER}?text=${DEMO_WA_TEXT}`;
+
+function DemoWhatsAppCTA({ subtitle }: { subtitle?: string }) {
+  return (
+    <div className="text-center">
+      {subtitle && <p className="text-zinc-500 text-[13px] mb-3">{subtitle}</p>}
+      <a href={DEMO_WA_LINK} target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 text-[13px] font-bold px-6 py-3 rounded-full transition-transform hover:scale-105 active:scale-95"
+        style={{ background: WA, color: "#04160c" }}>
+        <span>💬</span>
+        <span>נסה את הסוכן בוואטסאפ — על מספרה אמיתית</span>
+      </a>
+    </div>
+  );
+}
+
 function Label({ text }: { text: string }) {
   return (
     <p className="text-[11px] font-bold tracking-[0.3em] uppercase mb-3" style={{ color: GOLD }}>
@@ -249,6 +270,7 @@ export default function ForBusinessPage() {
         </div>
 
         <WaPhone />
+        <DemoWhatsAppCTA subtitle="מעדיף להתנסות ישר בוואטסאפ שלך?" />
       </section>
 
       <Hr />
@@ -351,6 +373,9 @@ export default function ForBusinessPage() {
                 {f}
               </span>
             ))}
+          </div>
+          <div className="mt-8">
+            <DemoWhatsAppCTA subtitle="לא מאמין שזה עובד ככה? תבדוק בעצמך" />
           </div>
         </div>
       </section>
@@ -526,6 +551,10 @@ export default function ForBusinessPage() {
           <p className="text-zinc-600 text-[13px] mb-8">
             15 דקות הדגמה · ללא התחייבות · ללא כרטיס אשראי
           </p>
+
+          <div className="mb-8">
+            <DemoWhatsAppCTA subtitle="או פשוט תנסה קודם, בלי למלא כלום" />
+          </div>
 
           {!sent ? (
             <form onSubmit={handleSubmit} className="space-y-3">
