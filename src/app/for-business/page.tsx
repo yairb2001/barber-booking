@@ -1,30 +1,84 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const GOLD = "#D4AF37";
 const WA = "#25D366";
 
-// ─── WhatsApp Chat Demo ───────────────────────────────────────────────────────
+// ─── Live agent demo (real chat, real agent — see src/app/api/demo-chat) ──────
 
-const CHAT_MSGS: { side: "right" | "left"; text: string }[] = [
-  { side: "right", text: "היי, אפשר לקבוע תור?" },
-  { side: "left",  text: "שלום! כמובן 😊\nלאיזה ספר תרצה?" },
-  { side: "right", text: "אוריה בבקשה" },
-  { side: "left",  text: "🗓 אוריה פנוי:\n• ראשון 14:00\n• שלישי 10:30\n• חמישי 16:00" },
-  { side: "right", text: "ראשון 14:00 👍" },
-  { side: "left",  text: "✅ קבוע!\nתספורת + זקן | אוריה\nראשון 14:00\n\nתזכורת תגיע יום לפני 🔔" },
-];
+type Bubble = { side: "right" | "left"; text: string };
+
+const OPENING_HINT: Bubble = {
+  side: "left",
+  text: "היי! זה סוכן אמיתי (לא הדגמה מוקלטת) שרץ על מספרת דמו. נסה לכתוב לו כאילו אתה לקוח — למשל \"אפשר לקבוע תור?\"",
+};
+
+/** One session id per page load, used only to keep this demo's conversation
+ *  continuous across messages — never sent anywhere as an identity. */
+function makeSessionId(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `s${Date.now()}${Math.random().toString(36).slice(2)}`;
+}
 
 function WaPhone() {
-  const [shown, setShown] = useState(0);
+  const [sessionId] = useState(makeSessionId);
+  const [bubbles, setBubbles] = useState<Bubble[]>([OPENING_HINT]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const lastPolledAt = useRef(new Date(0));
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (shown >= CHAT_MSGS.length) return;
-    const delay = shown === 0 ? 700 : 1100;
-    const t = setTimeout(() => setShown(s => s + 1), delay);
-    return () => clearTimeout(t);
-  }, [shown]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [bubbles]);
+
+  // Poll for messages that arrive on their own schedule (the sales follow-up),
+  // not just as a direct reply to something the visitor typed.
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/demo-chat?sessionId=${sessionId}&since=${lastPolledAt.current.toISOString()}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (Array.isArray(data.bubbles) && data.bubbles.length) {
+          lastPolledAt.current = new Date();
+          setBubbles(b => [...b, ...data.bubbles.map((text: string) => ({ side: "left" as const, text }))]);
+        } else {
+          lastPolledAt.current = new Date();
+        }
+      } catch {
+        // best-effort — a failed poll just tries again next tick
+      }
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [sessionId]);
+
+  async function send() {
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput("");
+    setBubbles(b => [...b, { side: "right", text }]);
+    setSending(true);
+    try {
+      const res = await fetch("/api/demo-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, text }),
+      });
+      const data = await res.json();
+      lastPolledAt.current = new Date();
+      if (Array.isArray(data.bubbles)) {
+        setBubbles(b => [...b, ...data.bubbles.map((t: string) => ({ side: "left" as const, text: t }))]);
+      }
+    } catch {
+      setBubbles(b => [...b, { side: "left", text: "משהו השתבש, נסה שוב." }]);
+    } finally {
+      setSending(false);
+    }
+  }
 
   return (
     <div className="relative select-none mx-auto" style={{ width: 252 }}>
@@ -41,15 +95,15 @@ function WaPhone() {
           <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-white text-base flex-shrink-0"
             style={{ background: WA }}>✂</div>
           <div>
-            <p className="text-white text-[13px] font-semibold leading-tight">DOMINANT Bot</p>
-            <p className="text-[11px] mt-0.5" style={{ color: "#a7f3c3" }}>פעיל 24/7 • מחובר</p>
+            <p className="text-white text-[13px] font-semibold leading-tight">מספרת דמו</p>
+            <p className="text-[11px] mt-0.5" style={{ color: "#a7f3c3" }}>פעיל עכשיו • נסה בעצמך</p>
           </div>
         </div>
 
         {/* Chat bubbles */}
-        <div className="p-3 space-y-2.5 min-h-[290px] flex flex-col justify-end"
+        <div className="p-3 space-y-2.5 h-[290px] overflow-y-auto flex flex-col"
           style={{ background: "linear-gradient(180deg, #0B1519 0%, #0d1b20 100%)" }} dir="ltr">
-          {CHAT_MSGS.slice(0, shown).map((m, i) => (
+          {bubbles.map((m, i) => (
             <div key={i} className={`flex ${m.side === "right" ? "justify-end" : "justify-start"}`}>
               <div
                 className="max-w-[80%] text-[12px] leading-relaxed whitespace-pre-line text-white/90 px-3 py-2"
@@ -60,8 +114,7 @@ function WaPhone() {
               >{m.text}</div>
             </div>
           ))}
-          {/* Typing dots */}
-          {shown > 0 && shown < CHAT_MSGS.length && shown % 2 === 1 && (
+          {sending && (
             <div className="flex justify-start">
               <div className="px-3 py-3 rounded-[14px_14px_14px_3px]" style={{ background: "#1F2C34" }}>
                 <div className="flex gap-1">
@@ -73,17 +126,27 @@ function WaPhone() {
               </div>
             </div>
           )}
+          <div ref={bottomRef} />
         </div>
 
         {/* Input bar */}
-        <div className="flex items-center gap-2 px-3 py-2.5" style={{ background: "#1F2C34" }}>
-          <div className="flex-1 rounded-full h-8 px-3 flex items-center"
-            style={{ background: "rgba(255,255,255,0.06)" }}>
-            <span className="text-[11px] text-white/20">הודעה...</span>
-          </div>
-          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs"
-            style={{ background: WA }}>→</div>
-        </div>
+        <form
+          className="flex items-center gap-2 px-3 py-2.5" style={{ background: "#1F2C34" }}
+          onSubmit={e => { e.preventDefault(); send(); }}
+        >
+          <input
+            className="flex-1 rounded-full h-8 px-3 text-[11px] text-white bg-transparent outline-none"
+            style={{ background: "rgba(255,255,255,0.06)" }}
+            placeholder="הודעה..."
+            value={input}
+            maxLength={500}
+            onChange={e => setInput(e.target.value)}
+            dir="rtl"
+          />
+          <button type="submit" disabled={sending || !input.trim()}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs disabled:opacity-40"
+            style={{ background: WA }}>→</button>
+        </form>
       </div>
     </div>
   );

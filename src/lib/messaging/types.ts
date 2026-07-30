@@ -44,7 +44,10 @@ export type MessageKind =
   | "report_weekly"
   | "report_monthly"
   // Internal staff summaries
-  | "barber_daily_summary";
+  | "barber_daily_summary"
+  // Public /for-business live demo widget (see src/lib/demo-widget.ts)
+  | "demo_sales_pitch"      // personalized "want this for your business?" pitch after demo interaction
+  | "demo_lead_captured";   // dedupe marker once a demo visitor's contact info was captured as a lead
 
 export type MessageStatus =
   | "scheduled" // enqueued in the drip queue, waiting for its scheduledFor time

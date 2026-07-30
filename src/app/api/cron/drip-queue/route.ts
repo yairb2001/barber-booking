@@ -34,6 +34,7 @@ import { deliverMessageLog } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
+import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +65,11 @@ let lastLinkNudgeRun = 0;
 /** Canary-check the shared Claude key (platform-level) at most this often. */
 const LLM_HEALTH_EVERY_MS = 15 * 60 * 1000;
 let lastLlmHealthCheck = 0;
+
+/** Public /for-business demo widget sales follow-up — scoped only to
+ *  DEMO_BUSINESS_ID (see demo-sales-agent.ts), never touches a real business. */
+const DEMO_SALES_AGENT_EVERY_MS = 5 * 60 * 1000;
+let lastDemoSalesAgentRun = 0;
 
 /** Appointment-bound reminder kinds that must be re-validated before sending —
  *  a reminder for a cancelled/removed appointment must never go out. */
@@ -309,5 +315,14 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   if (nowMs - lastLlmHealthCheck >= LLM_HEALTH_EVERY_MS) {
     lastLlmHealthCheck = nowMs;
     try { await checkAndRecordLlmHealth(); } catch (err) { console.error("[drip-queue] llm-health failed:", err); }
+  }
+
+  if (nowMs - lastDemoSalesAgentRun >= DEMO_SALES_AGENT_EVERY_MS) {
+    lastDemoSalesAgentRun = nowMs;
+    try {
+      await runDemoSalesAgent(now);
+    } catch (err) {
+      console.error("[drip-queue] demo-sales-agent failed:", err);
+    }
   }
 }
