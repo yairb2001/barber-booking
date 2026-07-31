@@ -14,16 +14,36 @@ const OPENING_HINT: Bubble = {
   text: "עכשיו התור שלך — נסה לכתוב כאילו אתה לקוח, למשל \"אפשר לקבוע תור?\"",
 };
 
-// Ambient preview that autoplays on load, so the widget shows activity at a
-// glance instead of sitting empty until someone types. Purely visual (not a
-// real agent call) — cut short the moment the visitor starts typing for real.
-const AUTOPLAY_SCRIPT: Bubble[] = [
-  { side: "right", text: "היי, אפשר לקבוע תור?" },
-  { side: "left", text: "היי! בטח 😊 לאיזה יום נוח לך?" },
-  { side: "right", text: "מחר בבוקר אם יש" },
-  { side: "left", text: "יש לי 9:30 ו-11:00 פנויים מחר. מה מתאים?" },
-  { side: "right", text: "11 מעולה" },
-  { side: "left", text: "סגור! תספורת מחר ב-11:00. שולח תזכורת יום לפני 🔔" },
+// Ambient preview that autoplays on load and loops through a few different
+// examples, so the widget shows activity at a glance instead of sitting
+// empty (or freezing after one playthrough) until someone types. Purely
+// visual (not a real agent call) — cut short the moment the visitor starts
+// typing for real.
+const AUTOPLAY_SCRIPTS: Bubble[][] = [
+  [
+    { side: "right", text: "היי, אפשר לקבוע תור?" },
+    { side: "left", text: "היי! בטח 😊 לאיזה יום נוח לך?" },
+    { side: "right", text: "מחר בבוקר אם יש" },
+    { side: "left", text: "יש לי 9:30 ו-11:00 פנויים מחר. מה מתאים?" },
+    { side: "right", text: "11 מעולה" },
+    { side: "left", text: "סגור! תספורת מחר ב-11:00. שולח תזכורת יום לפני 🔔" },
+  ],
+  [
+    { side: "right", text: "אני צריך להזיז את התור שלי ממחר" },
+    { side: "left", text: "בטח, לאיזה יום או שעה תרצה להעביר?" },
+    { side: "right", text: "אפשר ליום חמישי בערב?" },
+    { side: "left", text: "יש לי חמישי 18:30, מתאים?" },
+    { side: "right", text: "מעולה, תודה" },
+    { side: "left", text: "הוזז! ביום חמישי 18:30 🙌" },
+  ],
+  [
+    { side: "right", text: "כמה עולה תספורת + זקן?" },
+    { side: "left", text: "תספורת + זקן זה 110 ₪, כ-45 דקות" },
+    { side: "right", text: "מעולה, אפשר לקבוע גם לאבא שלי איתי באותה שעה?" },
+    { side: "left", text: "בדקתי — יש שני ספרים פנויים במקביל ביום ראשון 16:00, אחד לכל אחד" },
+    { side: "right", text: "מושלם, שנינו ב-16:00" },
+    { side: "left", text: "קבעתי לשניכם ביום ראשון 16:00 ✌️" },
+  ],
 ];
 
 /** One session id per page load, used only to keep this demo's conversation
@@ -36,30 +56,42 @@ function makeSessionId(): string {
 function WaPhone() {
   const [sessionId] = useState(makeSessionId);
   const [phase, setPhase] = useState<"autoplay" | "live">("autoplay");
+  const [scriptIndex, setScriptIndex] = useState(0);
   const [autoplayShown, setAutoplayShown] = useState(0);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const lastPolledAt = useRef(new Date(0));
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Play the ambient preview, then hand control to the visitor.
+  // Play the ambient preview on loop (a different example each round) until
+  // the visitor starts typing for real — see `send()`.
   useEffect(() => {
     if (phase !== "autoplay") return;
-    if (autoplayShown >= AUTOPLAY_SCRIPT.length) {
-      const t = setTimeout(() => { setPhase("live"); setBubbles([OPENING_HINT]); }, 900);
+    const script = AUTOPLAY_SCRIPTS[scriptIndex % AUTOPLAY_SCRIPTS.length];
+    if (autoplayShown >= script.length) {
+      const t = setTimeout(() => {
+        setBubbles([]);
+        setAutoplayShown(0);
+        setScriptIndex(i => i + 1);
+      }, 2200);
       return () => clearTimeout(t);
     }
     const delay = autoplayShown === 0 ? 500 : 1100;
     const t = setTimeout(() => {
-      setBubbles(b => [...b, AUTOPLAY_SCRIPT[autoplayShown]]);
+      setBubbles(b => [...b, script[autoplayShown]]);
       setAutoplayShown(s => s + 1);
     }, delay);
     return () => clearTimeout(t);
-  }, [phase, autoplayShown]);
+  }, [phase, scriptIndex, autoplayShown]);
 
+  // Scroll only the chat container itself — never scrollIntoView() on
+  // bottomRef, which can drag the WHOLE PAGE's scroll position to try to keep
+  // this tiny ref in view (real incident: the autoplay loop kept yanking
+  // visitors down the landing page away from the hero fold).
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [bubbles]);
 
   // Poll for messages that arrive on their own schedule (the sales follow-up),
@@ -132,7 +164,7 @@ function WaPhone() {
         </div>
 
         {/* Chat bubbles */}
-        <div className="p-3 space-y-2.5 h-[290px] overflow-y-auto flex flex-col"
+        <div ref={scrollContainerRef} className="p-3 space-y-2.5 h-[290px] overflow-y-auto flex flex-col"
           style={{ background: "linear-gradient(180deg, #0B1519 0%, #0d1b20 100%)" }} dir="ltr">
           {bubbles.map((m, i) => (
             <div key={i} className={`flex ${m.side === "right" ? "justify-end" : "justify-start"}`}>
@@ -157,7 +189,6 @@ function WaPhone() {
               </div>
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
 
         {/* Input bar */}
