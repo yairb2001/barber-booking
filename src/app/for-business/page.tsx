@@ -46,22 +46,26 @@ const AUTOPLAY_SCRIPTS: Bubble[][] = [
   ],
 ];
 
-/** One session id per page load, used only to keep this demo's conversation
- *  continuous across messages — never sent anywhere as an identity. */
-function makeSessionId(): string {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return `s${Date.now()}${Math.random().toString(36).slice(2)}`;
+// "המספרה של דני" — the same demo business the widget used to talk to live.
+// The on-site input no longer calls the real agent (cost + abuse surface) —
+// it hands the visitor's typed text straight to a real WhatsApp chat instead.
+const DEMO_WA_NUMBER = "972555081866";
+const REDIRECT_HINT: Bubble = {
+  side: "left",
+  text: "בוא נמשיך בוואטסאפ — פותח לך שיחה עם ההודעה שלך 👇",
+};
+
+function openDemoWhatsApp(text: string) {
+  const link = `https://wa.me/${DEMO_WA_NUMBER}?text=${encodeURIComponent(text)}`;
+  window.open(link, "_blank", "noopener,noreferrer");
 }
 
 function WaPhone() {
-  const [sessionId] = useState(makeSessionId);
   const [phase, setPhase] = useState<"autoplay" | "live">("autoplay");
   const [scriptIndex, setScriptIndex] = useState(0);
   const [autoplayShown, setAutoplayShown] = useState(0);
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const lastPolledAt = useRef(new Date(0));
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Play the ambient preview on loop (a different example each round) until
@@ -94,53 +98,14 @@ function WaPhone() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [bubbles]);
 
-  // Poll for messages that arrive on their own schedule (the sales follow-up),
-  // not just as a direct reply to something the visitor typed.
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(
-          `/api/demo-chat?sessionId=${sessionId}&since=${lastPolledAt.current.toISOString()}`,
-        );
-        if (!res.ok) return;
-        const data = await res.json();
-        if (Array.isArray(data.bubbles) && data.bubbles.length) {
-          lastPolledAt.current = new Date();
-          setBubbles(b => [...b, ...data.bubbles.map((text: string) => ({ side: "left" as const, text }))]);
-        } else {
-          lastPolledAt.current = new Date();
-        }
-      } catch {
-        // best-effort — a failed poll just tries again next tick
-      }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, [sessionId]);
-
-  async function send() {
+  function send() {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text) return;
     const wasAutoplay = phase !== "live";
     if (wasAutoplay) setPhase("live");
     setInput("");
-    setBubbles(b => [...(wasAutoplay ? [OPENING_HINT] : b), { side: "right", text }]);
-    setSending(true);
-    try {
-      const res = await fetch("/api/demo-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, text }),
-      });
-      const data = await res.json();
-      lastPolledAt.current = new Date();
-      if (Array.isArray(data.bubbles)) {
-        setBubbles(b => [...b, ...data.bubbles.map((t: string) => ({ side: "left" as const, text: t }))]);
-      }
-    } catch {
-      setBubbles(b => [...b, { side: "left", text: "משהו השתבש, נסה שוב." }]);
-    } finally {
-      setSending(false);
-    }
+    setBubbles(b => [...(wasAutoplay ? [OPENING_HINT] : b), { side: "right", text }, REDIRECT_HINT]);
+    openDemoWhatsApp(text);
   }
 
   return (
@@ -177,18 +142,6 @@ function WaPhone() {
               >{m.text}</div>
             </div>
           ))}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="px-3 py-3 rounded-[14px_14px_14px_3px]" style={{ background: "#1F2C34" }}>
-                <div className="flex gap-1">
-                  {[0, 1, 2].map(d => (
-                    <span key={d} className="block w-1.5 h-1.5 rounded-full bg-white/35 animate-bounce"
-                      style={{ animationDelay: `${d * 150}ms` }} />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Input bar */}
@@ -205,7 +158,7 @@ function WaPhone() {
             onChange={e => setInput(e.target.value)}
             dir="rtl"
           />
-          <button type="submit" disabled={sending || !input.trim()}
+          <button type="submit" disabled={!input.trim()}
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs disabled:opacity-40"
             style={{ background: WA }}>→</button>
         </form>
@@ -216,10 +169,6 @@ function WaPhone() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-// "המספרה של דני" — the same demo business the in-page widget talks to. This
-// wa.me link only works once its WhatsApp is actually connected (owner's plan:
-// tomorrow) — the number itself is already the business's real whatsappNumber.
-const DEMO_WA_NUMBER = "972555081866";
 const DEMO_WA_TEXT = encodeURIComponent("היי, ראיתי את הדמו באתר ורוצה לנסות לקבוע תור 😊");
 const DEMO_WA_LINK = `https://wa.me/${DEMO_WA_NUMBER}?text=${DEMO_WA_TEXT}`;
 
