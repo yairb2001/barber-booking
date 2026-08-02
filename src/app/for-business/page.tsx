@@ -226,7 +226,7 @@ const DEMO_WA_LINK = `https://wa.me/${DEMO_WA_NUMBER}?text=${DEMO_WA_TEXT}`;
 function DemoWhatsAppCTA({ subtitle }: { subtitle?: string }) {
   return (
     <div className="text-center">
-      {subtitle && <p className="text-zinc-500 text-[13px] mb-3">{subtitle}</p>}
+      {subtitle && <p className="text-zinc-300 text-[13px] mb-3">{subtitle}</p>}
       <a href={DEMO_WA_LINK} target="_blank" rel="noopener noreferrer"
         className="inline-flex items-center gap-2 text-[13px] font-bold px-6 py-3 rounded-full transition-transform hover:scale-105 active:scale-95"
         style={{ background: WA, color: "#04160c" }}>
@@ -315,62 +315,18 @@ export default function ForBusinessPage() {
           <Label text="AI · מערכת לספרים · וואצאפ" />
           <h1 className="font-bold leading-[1.08] text-white mb-3"
             style={{ fontSize: "clamp(2.2rem, 9vw, 4rem)", fontFamily: "var(--font-display)" }}>
-            המספרה שלך<br />
-            <span style={{ color: GOLD }}>פועלת 24/7.</span>
+            אתה מפספס לקוחות<br />
+            <span style={{ color: GOLD }}>בלי לדעת.</span>
           </h1>
           <p className="text-zinc-400 text-[15px] leading-relaxed mb-6">
-            שאלות, תיאומים, ביטולים — הטלפון של המספרה לא מפסיק. מהיום מישהו אחר עונה על הכל:{" "}
+            כל הודעה שלא נענית בזמן, כל תור שמתבטל בלי שממלאים אותו — זה כסף שיצא מהיומן שלך. מהיום מישהו אחר עונה על הכל, מסביב לשעון:{" "}
             <span className="text-white font-semibold">קובע, מזכיר וממלא ביטולים — ואתה חוזר לעבודה.</span>
           </p>
-          <a href="#cta"
-            className="inline-flex items-center gap-2 text-[14px] font-bold px-7 py-4 rounded-full text-black transition-transform hover:scale-105 active:scale-95"
-            style={{ background: GOLD }}>
-            רוצה לראות איך זה עובד?
-            <span>←</span>
-          </a>
           <p className="text-zinc-700 text-xs mt-3">לספר עצמאי או למספרה עם צוות · ללא התחייבות</p>
         </div>
 
         <WaPhone />
-        <DemoWhatsAppCTA subtitle="מעדיף להתנסות ישר בוואטסאפ שלך?" />
-      </section>
-
-      <Hr />
-
-      {/* ── PAIN NUMBERS ────────────────────────────────────────────── */}
-      <section className="px-5 py-14">
-        <div className="text-center mb-8">
-          <Label text="הבעיה" />
-          <h2 className="text-2xl font-bold text-white">כמה לקוחות אתה מפספס?</h2>
-        </div>
-        <div className="grid grid-cols-1 gap-4 max-w-md mx-auto">
-          {[
-            {
-              stat: "60%",
-              label: "מהלקוחות לא חוזרים",
-              detail: "הגיעו פעם אחת. היו מרוצים. נעלמו. לא כי מצאו מישהו אחר — כי אף אחד לא הזכיר להם לחזור.",
-            },
-            {
-              stat: "47",
-              label: "הודעות וואצאפ בשבוע שלא נענות",
-              detail: "אמצע תספורת. מרטט. 'מתי יש פנוי?'. 'כמה עולה?'. תענה אחרי. ועד אז — הם הלכו למתחרה שענה.",
-            },
-            {
-              stat: "₪400+",
-              label: "שעה ריקה שניתן למלא",
-              detail: "תור מבוטל ברגע האחרון. יש לקוחות שרצו אותה. לא ידעת. לא הספקת. כסף ישר על הרצפה.",
-            },
-          ].map(item => (
-            <div key={item.stat} className="flex flex-col items-center text-center p-6 rounded-2xl"
-              style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <span className="text-[2.6rem] font-bold leading-none mb-2" style={{ color: GOLD, fontFamily: "var(--font-display)" }}>
-                {item.stat}
-              </span>
-              <span className="text-white font-semibold text-sm mb-2">{item.label}</span>
-              <span className="text-zinc-500 text-[12px] leading-relaxed">{item.detail}</span>
-            </div>
-          ))}
-        </div>
+        <DemoWhatsAppCTA subtitle="מעדיף ישר להתנסות בוואטסאפ?" />
       </section>
 
       <Hr />
@@ -380,6 +336,7 @@ export default function ForBusinessPage() {
         <div className="text-center mb-10">
           <Label text="מצבים שכל ספר מכיר" />
           <h2 className="text-2xl font-bold text-white">
+            אני בטוח שיצא לך להכיר —<br />
             ספר, מזכיר, נציג שירות,{" "}
             <span style={{ color: GOLD }}>מנהל יומן.</span><br />
             כמה כובעים אתה חייב לחבוש?
@@ -413,19 +370,55 @@ export default function ForBusinessPage() {
         </div>
       </section>
 
+      <Hr />
+
+      {/* ── PAIN NUMBERS ────────────────────────────────────────────── */}
+      <section className="px-5 py-14">
+        <div className="text-center mb-8">
+          <h2 className="text-2xl font-bold text-white">כמה לקוחות אתה מפספס?</h2>
+        </div>
+        <div className="grid grid-cols-1 gap-4 max-w-md mx-auto">
+          {[
+            {
+              stat: "50%",
+              label: "מהלקוחות שהגיעו בפעם הראשונה לא חוזרים",
+              detail: "הגיעו פעם אחת. היו מרוצים. נעלמו. לא כי מצאו מישהו אחר — כי אף אחד לא הזכיר להם לחזור.",
+            },
+            {
+              stat: "47",
+              label: "הודעות וואצאפ בשבוע שלא נענות",
+              detail: "אמצע תספורת. מרטט. 'מתי יש פנוי?'. 'כמה עולה?'. תענה אחרי. ועד אז — הם הלכו למתחרה שענה. כמה לקוחות חדשים שפונים אליך ככה אתה מפספס בלי לדעת?",
+            },
+            {
+              stat: "₪300+",
+              label: "שעה ריקה שניתן למלא",
+              detail: "תור מבוטל ברגע האחרון. יש לקוחות שרצו אותה. לא ידעת. לא הספקת. כסף ישר על הרצפה.",
+            },
+          ].map(item => (
+            <div key={item.stat} className="flex flex-col items-center text-center p-6 rounded-2xl"
+              style={{ background: "#111", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <span className="text-[2.6rem] font-bold leading-none mb-2" style={{ color: GOLD, fontFamily: "var(--font-display)" }}>
+                {item.stat}
+              </span>
+              <span className="text-white font-semibold text-sm mb-2">{item.label}</span>
+              <span className="text-zinc-400 text-[12px] leading-relaxed">{item.detail}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* ── SOLUTION BRIDGE ─────────────────────────────────────────── */}
       <section className="px-5 py-16 text-center relative overflow-hidden"
         style={{ background: "linear-gradient(180deg, #0D0D0D 0%, #091510 50%, #0D0D0D 100%)" }}>
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: "radial-gradient(ellipse at center, rgba(37,211,102,0.07) 0%, transparent 65%)" }} />
         <div className="relative max-w-sm mx-auto">
-          <Label text="הפתרון" />
           <h2 className="text-3xl font-bold text-white mb-3">
-            הכירו את המזכירה<br />
+            תכירו את המזכירה<br />
             <span style={{ color: WA }}>שלא מפספסת כלום.</span>
           </h2>
           <p className="text-zinc-400 text-[14px] leading-relaxed mb-8">
-            מערכת חכמה שיושבת על הוואצאפ שלך ועובדת מסביב לשעון — קובעת, מזכירה, ממלאת ביטולים ומחזירה לקוחות.
+            מערכת חכמה שיושבת על הוואצאפ של המספרה — לא על הוואצאפ שלך — ועובדת מסביב לשעון: קובעת, מזכירה, ממלאת ביטולים ומחזירה לקוחות.
             <br /><span className="text-white">בלי שתזיז אצבע.</span>
           </p>
           <div className="flex flex-wrap gap-2 justify-center">
@@ -447,7 +440,7 @@ export default function ForBusinessPage() {
       {/* ── FEATURES ────────────────────────────────────────────────── */}
       <section className="px-5 py-14">
         <div className="text-center mb-8">
-          <Label text="מה הבוט עושה" />
+          <Label text="מה הסוכן עושה" />
           <h2 className="text-2xl font-bold text-white">הכל. בזמן שאתה עובד.</h2>
         </div>
         <div className="grid grid-cols-1 gap-4 max-w-md mx-auto">
@@ -506,8 +499,8 @@ export default function ForBusinessPage() {
           <div className="space-y-3 text-right">
             {[
               { n: "+40%", label: "חזרת לקוחות עם תזכורות אוטומטיות" },
-              { n: "3–4h", label: "שעות שנחסכות בשבוע על ניהול יומן" },
-              { n: "0 שניות", label: "זמן מענה — הבוט עונה ללקוח מיידית" },
+              { n: "3H-4H", label: "שעות שנחסכות בשבוע על ניהול יומן" },
+              { n: "0 שניות", label: "זמן מענה — הסוכן עונה ללקוח מיידית" },
             ].map(s => (
               <div key={s.label} className="flex items-center gap-4 px-5 py-3.5 rounded-xl"
                 style={{ background: "rgba(212,175,55,0.07)", border: "1px solid rgba(212,175,55,0.14)" }}>
@@ -516,6 +509,18 @@ export default function ForBusinessPage() {
                 <span className="text-zinc-300 text-[13px]">{s.label}</span>
               </div>
             ))}
+          </div>
+
+          <div className="mt-6 p-6 rounded-2xl text-right"
+            style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.22)" }}>
+            <p className="text-white font-bold text-[16px] leading-relaxed mb-2">
+              כל מי שרק שואל <span style={{ color: WA }}>"כמה עולה?"</span> —
+              הסוכן סוגר אותו לתור ב-80-90% מהמקרים.
+            </p>
+            <p className="text-zinc-300 text-[13px] leading-relaxed">
+              לא ענה מיד? הוא לא מוותר — שולח פולואפ ותזכורות עד שסוגרים תור ביומן.{" "}
+              <span className="text-white font-semibold">זו לא רק מזכירה — זה איש מכירות שיושב לך בוואצאפ.</span>
+            </p>
           </div>
         </div>
       </section>
@@ -566,8 +571,8 @@ export default function ForBusinessPage() {
             {[
               {
                 head: "לקוח אחד שחוזר",
-                money: "₪900+ בשנה",
-                body: "תספורת כל שלושה שבועות, שנה שלמה. הבוט מחזיר לך לא אחד — עשרות.",
+                money: "₪1,920 בשנה",
+                body: "תספורת כל שבועיים, שנה שלמה. הסוכן מחזיר לך לא לקוח אחד — הוא מחזיר לך עשרות לקוחות.",
               },
               {
                 head: "שעה ריקה שמתמלאת",
@@ -579,6 +584,11 @@ export default function ForBusinessPage() {
                 money: "3–4 שעות בשבוע",
                 body: "כל הניהול בוואצאפ — תיאומים, אישורים, הזזות. זמן לעוד לקוחות, או לעצמך.",
               },
+              {
+                head: "יותר גרוע מהזמן",
+                money: "",
+                body: "אני יודע שכאב הראש והאנרגיה שניהול וואצאפ גוזל ממך — הרבה יותר גרוע מהזמן שזה לוקח. בדיוק בגלל זה יצרנו את הסוכן.",
+              },
             ].map(row => (
               <div key={row.head} className="flex items-start gap-4 px-5 py-4 rounded-2xl"
                 style={{ background: "#111", border: "1px solid rgba(212,175,55,0.14)" }}>
@@ -586,16 +596,18 @@ export default function ForBusinessPage() {
                   <h3 className="text-white font-semibold text-[14px] mb-1">{row.head}</h3>
                   <p className="text-zinc-500 text-[12px] leading-relaxed">{row.body}</p>
                 </div>
-                <span className="text-[13px] font-bold whitespace-nowrap" style={{ color: GOLD, fontFamily: "var(--font-display)" }}>
-                  {row.money}
-                </span>
+                {row.money && (
+                  <span className="text-[13px] font-bold whitespace-nowrap" style={{ color: GOLD, fontFamily: "var(--font-display)" }}>
+                    {row.money}
+                  </span>
+                )}
               </div>
             ))}
           </div>
 
           <p className="text-center text-zinc-400 text-[14px] leading-relaxed mt-8">
-            כל אחד מהשלושה מחזיר יותר ממה שהמערכת עולה.<br />
-            <span className="text-white font-semibold">ואתה מקבל את שלושתם יחד.</span>
+            כל אחד מהארבעה מחזיר יותר ממה שהמערכת עולה.<br />
+            <span className="text-white font-semibold">ואתה מקבל את כולם יחד.</span>
           </p>
         </div>
       </section>
@@ -607,8 +619,9 @@ export default function ForBusinessPage() {
         <div className="max-w-sm mx-auto">
           <Label text="מתחילים" />
           <h2 className="text-2xl font-bold text-white mb-2">
-            בוא נראה לך איך זה נראה<br />
-            <span style={{ color: GOLD }}>על המספרה שלך</span>
+            רגע לפני —<br />
+            <span style={{ color: GOLD }}>אני מזמין אותך לנסות</span><br />
+            את הסוכן בוואצאפ, על מספרה אמיתית
           </h2>
           <p className="text-zinc-600 text-[13px] mb-8">
             15 דקות הדגמה · ללא התחייבות · ללא כרטיס אשראי
