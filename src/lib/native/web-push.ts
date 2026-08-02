@@ -76,7 +76,11 @@ export async function notifyOwnerWeb(
       : process.env.VAPID_PRIVATE_KEY;
     if (!privateKey) return;
 
-    webpush.setVapidDetails("mailto:noreply@dominant-app.example", VAPID_PUBLIC_KEY, privateKey);
+    // NOTE: the VAPID "subject" must be a real, non-reserved contact — Apple's
+    // web push gateway (web.push.apple.com) hard-rejects a placeholder/reserved
+    // domain (e.g. the RFC 2606 ".example" TLD) with 403 BadJwtToken, silently
+    // dropping every notification. Confirmed by testing directly against Apple.
+    webpush.setVapidDetails("mailto:yair9051@gmail.com", VAPID_PUBLIC_KEY, privateKey);
     const body = JSON.stringify({
       title: payload.title,
       body: payload.body,

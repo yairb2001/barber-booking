@@ -51,3 +51,4 @@ ios/DerivedData/
 # Local AI-agent prompt scratch files
 prompt_backup*.txt
 prompt_new*.txt
+.scratch/
