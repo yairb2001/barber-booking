@@ -71,6 +71,6 @@ export async function middleware(req: NextRequest) {
 // authenticates itself via CRON_SECRET at the endpoint.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|fonts/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|avif|mp4|webm|woff|woff2|ttf|otf|css|js|map|txt|xml|json)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|fonts/|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|avif|mp4|webm|woff|woff2|ttf|otf|css|js|map|txt|xml|json|webmanifest)$).*)",
   ],
 };

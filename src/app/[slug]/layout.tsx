@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -14,6 +16,27 @@ import { prisma } from "@/lib/prisma";
  * useSlug() and thread it through every fetch/link, so the same code serves both
  * the legacy DOMINANT root (no slug) and any number of slugged tenants.
  */
+const getBusiness = cache((slug: string) =>
+  prisma.business.findUnique({ where: { slug }, select: { id: true, name: true } })
+);
+
+// Points "Add to Home Screen" at this tenant's own manifest (src/app/[slug]/manifest.ts)
+// so a customer installing from /<slug> stays scoped to that business's storefront —
+// not the root DOMINANT storefront or /admin, which the root/admin layouts declare.
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const manifest = `/${params.slug}/manifest.webmanifest`;
+  const biz = await getBusiness(params.slug);
+  if (!biz) return { manifest };
+  return {
+    manifest,
+    appleWebApp: { capable: true, title: biz.name, statusBarStyle: "default" },
+  };
+}
+
 export default async function SlugLayout({
   children,
   params,
@@ -21,10 +44,7 @@ export default async function SlugLayout({
   children: React.ReactNode;
   params: { slug: string };
 }) {
-  const biz = await prisma.business.findUnique({
-    where: { slug: params.slug },
-    select: { id: true },
-  });
+  const biz = await getBusiness(params.slug);
   if (!biz) notFound();
   return <>{children}</>;
 }
