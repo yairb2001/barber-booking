@@ -57,6 +57,21 @@ const assistant = Assistant({
 export const metadata: Metadata = {
   title: "DOMINANT Barbershop",
   description: "זימון תורים - DOMINANT Barbershop",
+  // PWA: makes "Add to Home Screen" open standalone (no Safari chrome) with a
+  // real app icon + name. iOS reads appleWebApp.capable; others read the manifest.
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "DOMINANT",
+    statusBarStyle: "default",
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 // iOS/Android native-app behaviour:
