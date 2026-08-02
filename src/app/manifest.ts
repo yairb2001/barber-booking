@@ -11,7 +11,11 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "מערכת ניהול וזימון תורים",
     lang: "he",
     dir: "rtl",
-    start_url: "/",
+    // Open straight into the management area — this app is the owner/barber
+    // tool (notifications, calendar). In standalone mode there's no address bar
+    // to reach /admin otherwise; unauthenticated hits redirect to /admin/login.
+    // Scope stays "/" so in-app navigation to any page stays inside the PWA.
+    start_url: "/admin",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

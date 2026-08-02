@@ -18,7 +18,7 @@ function getSecret(): Uint8Array {
 
 const ALG = "HS256";
 export const COOKIE_NAME = "admin_session";
-const MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+const MAX_AGE = 60 * 60 * 24 * 30; // 30 days — installed as a home-screen app, avoid weekly re-logins
 // Distinguishes an admin-session JWT from the OTP / customer-session JWTs, which
 // are signed with the SAME secret. verifySession rejects any other type so an
 // OTP token can never be replayed as an owner admin session.
