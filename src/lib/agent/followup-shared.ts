@@ -42,3 +42,21 @@ export function isPhoneLikeName(name: string | null | undefined): boolean {
   // Mostly digits and long enough to be a phone number → phone-like.
   return digits.length >= 7 && digits.length / stripped.length > 0.8;
 }
+
+/**
+ * Despite "return only the message itself, no preamble" in the prompt, the
+ * follow-up model sometimes prefaces its answer with a meta-description of
+ * what it's about to write, e.g. "הודעה טבעית שמזמינה את X לענות בעדינות:\n\n
+ * <actual message>" — and that whole thing gets sent to the real customer
+ * verbatim. Two confirmed incidents (2026-07-18, 2026-08-02) both had the
+ * actual line as the LAST blank-line-separated paragraph, so take that; if
+ * even the last paragraph still reads like meta-commentary, refuse it rather
+ * than risk sending it (the caller falls back to a safe canned line).
+ */
+const PREAMBLE_MARKER_RE = /^(הודעה|אני רואה|הודעת ה)/;
+export function stripFollowupPreamble(text: string): string | null {
+  const paragraphs = text.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+  const last = paragraphs[paragraphs.length - 1] ?? text.trim();
+  if (PREAMBLE_MARKER_RE.test(last)) return null;
+  return last;
+}
