@@ -1,5 +1,7 @@
 "use client";
 
+import NotificationBanner from "@/components/NotificationBanner";
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -348,6 +350,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </header>
 
         {/* Main content — fills all remaining height; bottom nav removed, navigation is via the ☰ hamburger */}
+        <NotificationBanner />
         <main className="flex-1 overflow-auto min-h-0">{children}</main>
       </div>
 

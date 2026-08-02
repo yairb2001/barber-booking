@@ -19,6 +19,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb } from "@/lib/native/web-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -559,6 +560,12 @@ export async function execTool(
           throw err;
         }
 
+        notifyOwnerWeb(bizId, "appointment", {
+          title: "תור חדש נקבע 📅 (בוט)",
+          body: `${service.name} אצל ${staff.name} · ${date} ${startTime}`,
+          url: "/admin",
+          tag: `appt-${appt.id}`,
+        }).catch(() => {});
         return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}`;
       }
 
@@ -890,6 +897,12 @@ async function escalateToHuman(opts: {
     where: { id: conversationId },
     data: { status: "escalated", escalatedAt: new Date() },
   });
+  notifyOwnerWeb(bizId, "escalation", {
+    title: "שיחה הופנתה אליך 👤",
+    body: "לקוח ממתין לטיפול אנושי בצ׳אט",
+    url: "/admin/chats",
+    tag: `escalation-${conversationId}`,
+  }).catch(() => {});
 
   return { notified, targetStaffName: targetStaff?.name ?? null };
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 import { tierHas } from "@/lib/tier";
+import NotificationSettings from "@/components/NotificationSettings";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -1287,6 +1288,9 @@ export default function AdminSettingsPage() {
                 ))}
               </div>
             </div>
+
+            {/* ── התראות פוש ── */}
+            <NotificationSettings />
 
             {/* ── הודעת פתיחה בוואטסאפ ── */}
             <div className="bg-white border border-neutral-200 rounded-2xl p-5">

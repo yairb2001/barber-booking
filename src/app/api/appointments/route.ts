@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb } from "@/lib/native/web-push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -322,6 +323,12 @@ export async function POST(request: NextRequest) {
       body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       data: { type: "appointment", appointmentId: appointment.id, date },
     }).catch(() => {}));
+    notifyTasks.push(notifyOwnerWeb(staff.businessId, "appointment", {
+      title: "תור חדש נקבע 📅",
+      body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
+      url: "/admin",
+      tag: `appt-${appointment.id}`,
+    }));
   }
 
   // Send WhatsApp confirmation (fire-and-forget)
