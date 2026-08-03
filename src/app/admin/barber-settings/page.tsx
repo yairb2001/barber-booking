@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import NotificationSettings from "@/components/NotificationSettings";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type ServiceRow = {
@@ -397,6 +398,16 @@ export default function BarberSettingsPage() {
           <p className="text-sm text-neutral-500">{myName}</p>
         </div>
       </div>
+
+      {/* Notifications — kept above the tabs (not buried inside one) so it's
+          the first thing every barber sees, matching how the owner's card
+          works in /admin/settings but scoped to this barber's own device
+          list + toggles via /api/admin/staff/[myId]. */}
+      {myId && (
+        <div className="mb-5">
+          <NotificationSettings endpoint={`/api/admin/staff/${myId}`} />
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 bg-neutral-100 rounded-xl p-1 overflow-x-auto">

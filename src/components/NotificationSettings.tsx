@@ -3,31 +3,42 @@
 import { useEffect, useState } from "react";
 import EnableNotifications from "./EnableNotifications";
 
+function parseMaybeJson(raw: unknown): Record<string, unknown> {
+  if (!raw) return {};
+  if (typeof raw === "string") {
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+  return raw as Record<string, unknown>;
+}
+
 // Self-contained "🔔 התראות" settings card: the enable button + the two
-// per-type toggles (default ON). Loads/saves its own state via /api/admin/business
-// so it can be dropped into the settings page with a single insertion.
-export default function NotificationSettings() {
+// per-type toggles (default ON). Loads/saves its own state via `endpoint`
+// (GET returns { settings }, PATCH accepts { settings: {...} }) so the same
+// component serves both the owner (endpoint="/api/admin/business", the
+// default) and a barber (endpoint={`/api/admin/staff/${myId}`}) — each gets
+// their own device list and their own toggles, independent of one another.
+export default function NotificationSettings({ endpoint = "/api/admin/business" }: { endpoint?: string }) {
   const [appts, setAppts] = useState(true);
   const [escal, setEscal] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    fetch("/api/admin/business")
+    fetch(endpoint)
       .then(r => r.json())
       .then(d => {
-        const s = (d && d.settings) || {};
+        const s = parseMaybeJson(d?.settings);
         if (typeof s.notifyOnAppointments === "boolean") setAppts(s.notifyOnAppointments);
         if (typeof s.notifyOnEscalation === "boolean") setEscal(s.notifyOnEscalation);
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, []);
+  }, [endpoint]);
 
   async function save(patch: { notifyOnAppointments?: boolean; notifyOnEscalation?: boolean }) {
     try {
-      const d = await fetch("/api/admin/business").then(r => r.json());
-      const current = (d && d.settings) || {};
-      await fetch("/api/admin/business", {
+      const d = await fetch(endpoint).then(r => r.json());
+      const current = parseMaybeJson(d?.settings);
+      await fetch(endpoint, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settings: { ...current, ...patch } }),
