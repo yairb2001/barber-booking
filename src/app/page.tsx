@@ -542,6 +542,19 @@ export default function HomePage() {
         <div className="absolute inset-0 pointer-events-none"
           style={{ background: "linear-gradient(180deg, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.15) 35%, rgba(0,0,0,0.65) 70%, rgba(0,0,0,0.97) 100%)" }} />
 
+        {/* ── Quiet top utility row — tiny text, sits above the main icon row
+            so it reads as a step below the business's own contact icons.
+            Mirrored at the bottom in FooterCTA (variant="text" there, styled
+            for a light background); same components, just themed for the
+            dark hero photo here (variant="text-light"). */}
+        <div className="relative z-10 flex items-center justify-center gap-2 pt-3">
+          <BusinessSwitcher currentSlug={slug} variant="text-light" />
+          <span className="text-white/25 text-[10px]">·</span>
+          <a href="/admin" className="text-[10px] text-white/50 hover:text-white/80 transition">
+            כניסה לניהול
+          </a>
+        </div>
+
         {/* ── Social icons row ── */}
         <div className="relative z-10 flex justify-between items-start px-5 pt-14">
           <div className="flex gap-2">
@@ -577,24 +590,6 @@ export default function HomePage() {
               </a>
             )}
           </div>
-
-          {/* Platform utilities — quieter/smaller than the business's own
-              contact icons on either side, so they don't compete for
-              attention. Mirrored at the bottom in FooterCTA (variant="text"
-              there); same components, same behavior, just sized for the hero. */}
-          <div className="flex gap-2">
-            <BusinessSwitcher currentSlug={slug} variant="icon" />
-            <a href="/admin"
-              aria-label="כניסה לניהול"
-              className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-              style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-              <svg viewBox="0 0 24 24" className="w-[15px] h-[15px]" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0110 0v4" />
-              </svg>
-            </a>
-          </div>
-
           <div className="flex gap-2">
             {social.instagram && (
               <a href={social.instagram} target="_blank" rel="noopener noreferrer"

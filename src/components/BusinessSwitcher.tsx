@@ -7,16 +7,17 @@ type Result = { slug: string; name: string; logoUrl: string | null; matchedStaff
 
 // "Switch business" search trigger + overlay. Used in two places, sharing
 // the same search/modal logic: FooterCTA (variant="text", bottom of every
-// page) and the hero icon row on the home page (variant="icon", small glass
-// button matching the existing waze/phone/instagram icons there). Searches
-// by shop name OR any staff member's name — lets a customer who only
-// remembers "the barber's name" find the right shop.
+// page, dark text for a light background) and a quiet row above the hero's
+// icon row on the home page (variant="text-light", same tiny text but themed
+// for the dark hero photo). Searches by shop name OR any staff member's
+// name — lets a customer who only remembers "the barber's name" find the
+// right shop.
 export default function BusinessSwitcher({
   currentSlug,
   variant = "text",
 }: {
   currentSlug: string | null;
-  variant?: "text" | "icon";
+  variant?: "text" | "text-light";
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -41,17 +42,12 @@ export default function BusinessSwitcher({
 
   return (
     <>
-      {variant === "icon" ? (
+      {variant === "text-light" ? (
         <button
           onClick={() => setOpen(true)}
-          aria-label="חיפוש מספרה אחרת"
-          className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
-          style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}
+          className="text-[10px] text-white/50 hover:text-white/80 transition"
         >
-          <svg viewBox="0 0 24 24" className="w-[15px] h-[15px]" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          חיפוש מספרה אחרת
         </button>
       ) : (
         <button
