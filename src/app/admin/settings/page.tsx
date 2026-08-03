@@ -373,12 +373,14 @@ export default function AdminSettingsPage() {
   async function saveOwnerNotifyScope(next: "all" | "mine" | "off") {
     setOwnerNotifyScope(next);
     setNotifyScopeSaved(false);
-    const bizData = await fetch("/api/admin/business").then(r => r.json());
-    const currentSettings = bizData.settings || {};
+    // settingsPatch (not settings) — the server merges against a FRESH read
+    // instead of whatever this tab happened to fetch on load, so this can't
+    // clobber (or be clobbered by) another toggle saved moments apart. See
+    // the settingsPatch handling in /api/admin/business's PATCH.
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settings: { ...currentSettings, ownerNotifyScope: next } }),
+      body: JSON.stringify({ settingsPatch: { ownerNotifyScope: next } }),
     });
     setNotifyScopeSaved(true);
     setTimeout(() => setNotifyScopeSaved(false), 2000);
