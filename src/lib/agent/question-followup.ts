@@ -27,7 +27,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
-import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName } from "@/lib/agent/followup-shared";
+import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName, stripFollowupPreamble } from "@/lib/agent/followup-shared";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -73,7 +73,9 @@ async function generateFollowup(transcript: string, name: string | null): Promis
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
         (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
         FOLLOWUP_HARD_RULES + " " +
-        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות.",
+        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות. אל תתאר מה ההודעה עומדת " +
+        "להיות ואל תסביר את ההחלטה שלך — פשוט כתוב את המשפט הסופי, בלי שום " +
+        "טקסט לפניו ובלי שורות ריקות.",
       messages: [
         { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או תזכורת אחת קצרה על השאלה שנשארה פתוחה.` },
       ],
@@ -83,7 +85,12 @@ async function generateFollowup(transcript: string, name: string | null): Promis
     text = text.trim();
     if (!text) return fallbackFollowup(name);
     if (/^SKIP\b/i.test(text)) return null;
-    return text;
+    const cleaned = stripFollowupPreamble(text);
+    if (!cleaned) {
+      console.error("[question-followup] suspected preamble leak, using fallback:", text);
+      return fallbackFollowup(name);
+    }
+    return cleaned;
   } catch (e) {
     console.error("[question-followup] LLM failed", e);
     return fallbackFollowup(name);

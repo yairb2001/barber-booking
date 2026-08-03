@@ -18,7 +18,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
-import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName } from "@/lib/agent/followup-shared";
+import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName, stripFollowupPreamble } from "@/lib/agent/followup-shared";
 
 export const dynamic = "force-dynamic";
 
@@ -86,7 +86,9 @@ async function generateFollowup(
         "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
         (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
         FOLLOWUP_HARD_RULES + " " +
-        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות.",
+        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות. אל תתאר מה ההודעה עומדת " +
+        "להיות ואל תסביר את ההחלטה שלך — פשוט כתוב את המשפט הסופי, בלי שום " +
+        "טקסט לפניו ובלי שורות ריקות.",
       messages: [
         { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או הודעת פולואפ אחת.` },
       ],
@@ -97,7 +99,12 @@ async function generateFollowup(
     if (!text) return fallbackFollowup(name);
     // The model decided a follow-up would do more harm than good.
     if (/^SKIP\b/i.test(text)) return null;
-    return text;
+    const cleaned = stripFollowupPreamble(text);
+    if (!cleaned) {
+      console.error("[followup] suspected preamble leak, using fallback:", text);
+      return fallbackFollowup(name);
+    }
+    return cleaned;
   } catch (e) {
     console.error("[followup] LLM failed", e);
     return fallbackFollowup(name);
