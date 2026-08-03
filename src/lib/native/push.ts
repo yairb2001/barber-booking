@@ -25,6 +25,7 @@
 import http2 from "node:http2";
 import { importPKCS8, SignJWT } from "jose";
 import { prisma } from "@/lib/prisma";
+import { ownerScopeAllows, parseSettingsObj } from "@/lib/native/owner-scope";
 
 export interface PushPayload {
   title: string;
@@ -202,11 +203,17 @@ export async function pushToStaff(staffId: string, payload: PushPayload): Promis
  * Notify the owner(s) of a business on their device(s).
  * Safe to call fire-and-forget; never throws.
  */
-export async function pushToOwner(businessId: string, payload: PushPayload): Promise<void> {
+export async function pushToOwner(
+  businessId: string,
+  payload: PushPayload,
+  eventStaffId?: string | null,
+): Promise<void> {
   if (!apnsEnv()) return;
   try {
     const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { id: true, settings: true } });
     if (!biz) return;
+    // Honor the owner's notification SCOPE (all / mine / off).
+    if (!(await ownerScopeAllows(businessId, parseSettingsObj(biz.settings), eventStaffId))) return;
     const tokens = parseTokens(biz.settings, "ownerPushTokens").map((t) => t.token).filter(Boolean);
     if (tokens.length === 0) return;
     const { invalid } = await sendApns(tokens, payload);

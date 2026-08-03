@@ -54,6 +54,7 @@ export async function POST(req: NextRequest) {
       id: true, status: true, date: true, startTime: true, staffId: true,
       businessId: true,
       customer: { select: { id: true, name: true, phone: true } },
+      staff: { select: { name: true } },
     },
   });
 
@@ -96,28 +97,29 @@ export async function POST(req: NextRequest) {
   });
 
   const dateLabel = appt.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  const barber = appt.staff?.name ?? "—";
 
   // Notify the assigned barber + business owner (native push).
   {
     pushToStaff(appt.staffId, {
       title: "תור בוטל ע״י הלקוח ❌",
-      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      body: `${appt.customer?.name ?? "לקוח"} אצל ${barber}\n${dateLabel} בשעה ${appt.startTime}`,
       data: { type: "appointment_cancelled", appointmentId: appt.id },
     }).catch(() => {});
     pushToOwner(appt.businessId, {
       title: "תור בוטל ע״י הלקוח ❌",
-      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      body: `${appt.customer?.name ?? "לקוח"} אצל ${barber}\n${dateLabel} בשעה ${appt.startTime}`,
       data: { type: "appointment_cancelled", appointmentId: appt.id },
-    }).catch(() => {});
+    }, appt.staffId).catch(() => {});
     notifyOwnerWeb(appt.businessId, "cancellation", {
       title: "תור בוטל ע״י הלקוח ❌",
-      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      body: `${appt.customer?.name ?? "לקוח"} אצל ${barber}\n${dateLabel} בשעה ${appt.startTime}`,
       url: "/admin",
       tag: `cancel-${appt.id}`,
-    }).catch(() => {});
+    }, appt.staffId).catch(() => {});
     notifyStaffWeb(appt.staffId, "cancellation", {
       title: "תור בוטל ע״י הלקוח ❌",
-      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      body: `${appt.customer?.name ?? "לקוח"} אצל ${barber}\n${dateLabel} בשעה ${appt.startTime}`,
       url: "/admin",
       tag: `cancel-${appt.id}`,
     }).catch(() => {});

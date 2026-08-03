@@ -322,13 +322,13 @@ export async function POST(request: NextRequest) {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       data: { type: "appointment", appointmentId: appointment.id, date },
-    }).catch(() => {}));
+    }, staffId).catch(() => {}));
     notifyTasks.push(notifyOwnerWeb(staff.businessId, "appointment", {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} אצל ${appointment.staff.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,
       url: "/admin",
       tag: `appt-${appointment.id}`,
-    }));
+    }, staffId));
     notifyTasks.push(notifyStaffWeb(staffId, "appointment", {
       title: "תור חדש נקבע 📅",
       body: `${customer.name} — ${appointment.service.name}\n${pushDateLabel} בשעה ${startTime}`,

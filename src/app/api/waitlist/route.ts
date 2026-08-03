@@ -73,7 +73,7 @@ export async function POST(request: Request) {
       preferredTimeOfDay: preferredTimeOfDay || "any",
       status: "waiting",
     },
-    include: { customer: true, service: true },
+    include: { customer: true, service: true, staff: { select: { name: true } } },
   });
 
   // NOTE: We intentionally do NOT send a WhatsApp confirmation on registration.
@@ -87,21 +87,22 @@ export async function POST(request: Request) {
   // it null, so there's no one specific to page besides the owner).
   {
     const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+    const barberLabel = entry.staff?.name ?? "כל ספר פנוי";
     pushToOwner(biz.id, {
       title: "הצטרפות לרשימת המתנה ⏳",
-      body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+      body: `${entry.customer.name} — ${entry.service.name}\nאצל ${barberLabel} · ${dateLabel}`,
       data: { type: "waitlist", waitlistId: entry.id },
-    }).catch(() => {});
+    }, staffId).catch(() => {});
     notifyOwnerWeb(biz.id, "waitlist", {
       title: "הצטרפות לרשימת המתנה ⏳",
-      body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+      body: `${entry.customer.name} — ${entry.service.name}\nאצל ${barberLabel} · ${dateLabel}`,
       url: "/admin",
       tag: `waitlist-${entry.id}`,
-    }).catch(() => {});
+    }, staffId).catch(() => {});
     if (staffId) {
       notifyStaffWeb(staffId, "waitlist", {
         title: "הצטרפות לרשימת המתנה ⏳",
-        body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+        body: `${entry.customer.name} — ${entry.service.name}\nאצל ${barberLabel} · ${dateLabel}`,
         url: "/admin",
         tag: `waitlist-${entry.id}`,
       }).catch(() => {});

@@ -221,7 +221,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         title: "תור בוטל ❌",
         body: `${appointment.customer.name} אצל ${appointment.staff.name}\n${dateLabel} בשעה ${appointment.startTime}`,
         data: { type: "appointment_cancelled", appointmentId: appointment.id },
-      }).catch(() => {});
+      }, appointment.staffId).catch(() => {});
     }
 
     // 1) Tell the waitlist a slot opened up. Awaited — a freed-slot message is

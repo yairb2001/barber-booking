@@ -649,13 +649,13 @@ export async function execTool(
             title: "תור בוטל ע״י הלקוח ❌",
             body: `${appt.customer.name} אצל ${appt.staff.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
             data: { type: "appointment_cancelled", appointmentId: appt.id },
-          }).catch(() => {});
+          }, appt.staffId).catch(() => {});
           notifyOwnerWeb(appt.businessId, "cancellation", {
             title: "תור בוטל ע״י הלקוח ❌",
             body: `${appt.customer.name} אצל ${appt.staff.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
             url: "/admin",
             tag: `cancel-${appt.id}`,
-          }).catch(() => {});
+          }, appt.staffId).catch(() => {});
           notifyStaffWeb(appt.staffId, "cancellation", {
             title: "תור בוטל ע״י הלקוח ❌",
             body: `${appt.customer.name}\n${ownerDateStr} בשעה ${appt.startTime}`,

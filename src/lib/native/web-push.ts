@@ -20,6 +20,7 @@
  */
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
+import { ownerScopeAllows } from "@/lib/native/owner-scope";
 
 /** Public VAPID key — safe to expose to the browser. */
 export const VAPID_PUBLIC_KEY =
@@ -125,6 +126,7 @@ export async function notifyOwnerWeb(
   businessId: string,
   type: NotifyType,
   payload: { title: string; body: string; url?: string; tag?: string },
+  eventStaffId?: string | null,
 ): Promise<void> {
   try {
     const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { settings: true } });
@@ -132,6 +134,8 @@ export async function notifyOwnerWeb(
     const s = parseSettings(biz.settings);
 
     if (s[TOGGLE_KEY[type]] === false) return;
+    // Honor the owner's notification SCOPE (all / mine / off).
+    if (!(await ownerScopeAllows(businessId, s, eventStaffId))) return;
 
     const subs = subsOf(s, "ownerWebPushSubs");
     if (subs.length === 0) return;
