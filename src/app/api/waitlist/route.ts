@@ -3,6 +3,7 @@ import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { resolveBusiness } from "@/lib/tenant";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
@@ -81,6 +82,9 @@ export async function POST(request: Request) {
   //  hours added, and customer self-cancel via the WhatsApp agent).
 
   // Notify the business owner/manager (native app) — someone joined the waitlist.
+  // Also web-push the owner, and the specific barber too when the customer asked
+  // for one in particular (staffId is optional — "any available barber" leaves
+  // it null, so there's no one specific to page besides the owner).
   {
     const dateLabel = dateObj.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
     pushToOwner(biz.id, {
@@ -88,6 +92,20 @@ export async function POST(request: Request) {
       body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
       data: { type: "waitlist", waitlistId: entry.id },
     }).catch(() => {});
+    notifyOwnerWeb(biz.id, "waitlist", {
+      title: "הצטרפות לרשימת המתנה ⏳",
+      body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+      url: "/admin",
+      tag: `waitlist-${entry.id}`,
+    }).catch(() => {});
+    if (staffId) {
+      notifyStaffWeb(staffId, "waitlist", {
+        title: "הצטרפות לרשימת המתנה ⏳",
+        body: `${entry.customer.name} — ${entry.service.name}\n${dateLabel}`,
+        url: "/admin",
+        tag: `waitlist-${entry.id}`,
+      }).catch(() => {});
+    }
   }
 
   return NextResponse.json(entry, { status: 201 });

@@ -650,6 +650,18 @@ export async function execTool(
             body: `${appt.customer.name} אצל ${appt.staff.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
             data: { type: "appointment_cancelled", appointmentId: appt.id },
           }).catch(() => {});
+          notifyOwnerWeb(appt.businessId, "cancellation", {
+            title: "תור בוטל ע״י הלקוח ❌",
+            body: `${appt.customer.name} אצל ${appt.staff.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
+            url: "/admin",
+            tag: `cancel-${appt.id}`,
+          }).catch(() => {});
+          notifyStaffWeb(appt.staffId, "cancellation", {
+            title: "תור בוטל ע״י הלקוח ❌",
+            body: `${appt.customer.name}\n${ownerDateStr} בשעה ${appt.startTime}`,
+            url: "/admin",
+            tag: `cancel-${appt.id}`,
+          }).catch(() => {});
         }
 
         // Notify waitlist members — a slot just freed up. Awaited so the

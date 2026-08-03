@@ -13,6 +13,20 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   return NextResponse.json(staff);
 }
 
+// Merge `patch` into this staff row's CURRENT settings (a fresh read, done
+// right here rather than trusting whatever snapshot the caller fetched
+// earlier) and return the JSON string to write. Several independent toggles
+// (notifications, booking-horizon overrides, ...) all share this one JSON
+// blob with no coordination between their save calls — reading fresh at
+// write-time shrinks the race window from "however long the tab's been
+// open" to "a couple concurrent requests, milliseconds apart".
+async function mergeStaffSettings(staffId: string, patch: Record<string, unknown>): Promise<string> {
+  const row = await prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } });
+  let current: Record<string, unknown> = {};
+  try { current = row?.settings ? JSON.parse(row.settings) : {}; } catch { /* ignore */ }
+  return JSON.stringify({ ...current, ...patch });
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -28,7 +42,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const data: Record<string, unknown> = {};
     if (body.avatarUrl !== undefined) data.avatarUrl = body.avatarUrl;
     if (body.tagline !== undefined) data.tagline = body.tagline ? String(body.tagline).trim() : null;
-    if (body.settings !== undefined) {
+    if (body.settingsPatch !== undefined) {
+      data.settings = await mergeStaffSettings(params.id, body.settingsPatch);
+    } else if (body.settings !== undefined) {
       data.settings = body.settings === null ? null
         : typeof body.settings === "string" ? body.settings
         : JSON.stringify(body.settings);
@@ -42,6 +58,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (guard) return guard;
   const tenantGuard = await requireStaffInBusiness(req, params.id);
   if (tenantGuard) return tenantGuard;
+  const settingsValue = body.settingsPatch !== undefined
+    ? await mergeStaffSettings(params.id, body.settingsPatch)
+    : body.settings !== undefined
+      ? (body.settings === null ? null
+        : typeof body.settings === "string" ? body.settings
+        : JSON.stringify(body.settings))
+      : undefined;
   const staff = await prisma.staff.update({
     where: { id: params.id },
     data: {
@@ -52,11 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.isAvailable !== undefined && { isAvailable: body.isAvailable }),
       ...(body.inQuickPool !== undefined && { inQuickPool: body.inQuickPool }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
-      ...(body.settings !== undefined && {
-        settings: body.settings === null ? null
-          : typeof body.settings === "string" ? body.settings
-          : JSON.stringify(body.settings),
-      }),
+      ...(settingsValue !== undefined && { settings: settingsValue }),
       ...(body.canViewAllCalendars !== undefined && { canViewAllCalendars: !!body.canViewAllCalendars }),
       ...(body.canViewAllChats     !== undefined && { canViewAllChats:     !!body.canViewAllChats     }),
       ...(body.canUseOwnerAgent     !== undefined && { canUseOwnerAgent:    !!body.canUseOwnerAgent    }),

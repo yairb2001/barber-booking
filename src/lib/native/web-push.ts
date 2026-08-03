@@ -14,8 +14,9 @@
  * Owner subscriptions live in Business.settings.ownerWebPushSubs[].
  * Barber subscriptions live in Staff.settings.webPushSubs[] — mirrors the
  * pushTokens[] pattern already used for native APNs in push.ts.
- * Per-type toggles (default ON): notifyOnAppointments, notifyOnEscalation —
- * same field names on both Business.settings and Staff.settings.
+ * Per-type toggles (default ON, see TOGGLE_KEY below): notifyOnAppointments,
+ * notifyOnCancellation, notifyOnWaitlist, notifyOnEscalation — same field
+ * names on both Business.settings and Staff.settings.
  */
 import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
@@ -25,7 +26,14 @@ export const VAPID_PUBLIC_KEY =
   "BALFgMY0H30c5JqnYgWD7KtZrdgiHpAZKtqmzmFTVYAUUQMmMigPjy7STwMyjdCJmKNPtDk53Nk-un3YvNljU9M";
 
 export type WebPushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
-export type NotifyType = "appointment" | "escalation";
+export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation";
+
+const TOGGLE_KEY: Record<NotifyType, string> = {
+  appointment: "notifyOnAppointments",
+  cancellation: "notifyOnCancellation",
+  waitlist: "notifyOnWaitlist",
+  escalation: "notifyOnEscalation",
+};
 
 function parseSettings(raw: string | null): Record<string, unknown> {
   try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
@@ -123,8 +131,7 @@ export async function notifyOwnerWeb(
     if (!biz) return;
     const s = parseSettings(biz.settings);
 
-    const toggleKey = type === "appointment" ? "notifyOnAppointments" : "notifyOnEscalation";
-    if (s[toggleKey] === false) return;
+    if (s[TOGGLE_KEY[type]] === false) return;
 
     const subs = subsOf(s, "ownerWebPushSubs");
     if (subs.length === 0) return;
@@ -161,8 +168,7 @@ export async function notifyStaffWeb(
     if (!staff) return;
     const s = parseSettings(staff.settings);
 
-    const toggleKey = type === "appointment" ? "notifyOnAppointments" : "notifyOnEscalation";
-    if (s[toggleKey] === false) return;
+    if (s[TOGGLE_KEY[type]] === false) return;
 
     const subs = subsOf(s, "webPushSubs");
     if (subs.length === 0) return;

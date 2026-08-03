@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage, cancellationText } from "@/lib/messaging";
 
 
@@ -107,6 +108,18 @@ export async function POST(req: NextRequest) {
       title: "תור בוטל ע״י הלקוח ❌",
       body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
       data: { type: "appointment_cancelled", appointmentId: appt.id },
+    }).catch(() => {});
+    notifyOwnerWeb(appt.businessId, "cancellation", {
+      title: "תור בוטל ע״י הלקוח ❌",
+      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      url: "/admin",
+      tag: `cancel-${appt.id}`,
+    }).catch(() => {});
+    notifyStaffWeb(appt.staffId, "cancellation", {
+      title: "תור בוטל ע״י הלקוח ❌",
+      body: `${appt.customer?.name ?? "לקוח"}\n${dateLabel} בשעה ${appt.startTime}`,
+      url: "/admin",
+      tag: `cancel-${appt.id}`,
     }).catch(() => {});
   }
 

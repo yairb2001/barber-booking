@@ -24,6 +24,28 @@ export async function PATCH(req: NextRequest) {
   const business = await getSessionBusiness(req);
   if (!business) return NextResponse.json({ error: "No business" }, { status: 400 });
 
+  // Two ways to write `settings` (a single free-form JSON blob shared by many
+  // independent toggles — theme, calendar hours, barber permissions,
+  // notifications, ...):
+  //   - `settings`: full replacement (existing contract — the CALLER is
+  //     responsible for merging, by fetching first). Kept for every existing
+  //     caller unchanged.
+  //   - `settingsPatch`: a partial object merged HERE, against the business
+  //     row already read above (moments old, not however-long-the-tab's-been-
+  //     open old). Two callers each sending `settings` full-replacement can
+  //     race and silently clobber each other if their saves overlap — this
+  //     shrinks that window from "arbitrary" to "a couple concurrent
+  //     requests, milliseconds apart". Use this for anything that can be
+  //     toggled independently of the rest of the page (see NotificationSettings).
+  let mergedSettings: string | undefined;
+  if (body.settingsPatch !== undefined) {
+    let current: Record<string, unknown> = {};
+    try { current = business.settings ? JSON.parse(business.settings) : {}; } catch { /* ignore */ }
+    mergedSettings = JSON.stringify({ ...current, ...body.settingsPatch });
+  } else if (body.settings !== undefined) {
+    mergedSettings = JSON.stringify(body.settings);
+  }
+
   const updated = await prisma.business.update({
     where: { id: business.id },
     data: {
@@ -40,9 +62,7 @@ export async function PATCH(req: NextRequest) {
       ...(body.socialLinks !== undefined && {
         socialLinks: JSON.stringify(body.socialLinks),
       }),
-      ...(body.settings !== undefined && {
-        settings: JSON.stringify(body.settings),
-      }),
+      ...(mergedSettings !== undefined && { settings: mergedSettings }),
       // WhatsApp / messaging
       ...(body.whatsappNumber !== undefined && { whatsappNumber: body.whatsappNumber }),
       ...(body.messagingProvider !== undefined && { messagingProvider: body.messagingProvider }),
