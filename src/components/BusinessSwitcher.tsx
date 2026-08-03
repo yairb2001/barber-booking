@@ -5,11 +5,19 @@ import Link from "next/link";
 
 type Result = { slug: string; name: string; logoUrl: string | null; matchedStaffName: string | null };
 
-// Small "switch business" search trigger + overlay, dropped into FooterCTA so
-// it's available on every customer-facing page (root + every /<slug>
-// storefront). Searches by shop name OR any staff member's name — lets a
-// customer who only remembers "the barber's name" find the right shop.
-export default function BusinessSwitcher({ currentSlug }: { currentSlug: string | null }) {
+// "Switch business" search trigger + overlay. Used in two places, sharing
+// the same search/modal logic: FooterCTA (variant="text", bottom of every
+// page) and the hero icon row on the home page (variant="icon", small glass
+// button matching the existing waze/phone/instagram icons there). Searches
+// by shop name OR any staff member's name — lets a customer who only
+// remembers "the barber's name" find the right shop.
+export default function BusinessSwitcher({
+  currentSlug,
+  variant = "text",
+}: {
+  currentSlug: string | null;
+  variant?: "text" | "icon";
+}) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Result[]>([]);
@@ -33,12 +41,26 @@ export default function BusinessSwitcher({ currentSlug }: { currentSlug: string 
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="text-[12px] text-neutral-400 underline underline-offset-2 hover:text-neutral-600 transition"
-      >
-        🔍 חיפוש מספרה אחרת
-      </button>
+      {variant === "icon" ? (
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="חיפוש מספרה אחרת"
+          className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+          style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}
+        >
+          <svg viewBox="0 0 24 24" className="w-[15px] h-[15px]" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+        </button>
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className="text-[12px] text-neutral-400 underline underline-offset-2 hover:text-neutral-600 transition"
+        >
+          🔍 חיפוש מספרה אחרת
+        </button>
+      )}
 
       {open && (
         <div

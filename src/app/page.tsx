@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { telHref } from "@/lib/messaging/phone";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
+import BusinessSwitcher from "@/components/BusinessSwitcher";
 import { type Theme } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
@@ -576,6 +577,24 @@ export default function HomePage() {
               </a>
             )}
           </div>
+
+          {/* Platform utilities — quieter/smaller than the business's own
+              contact icons on either side, so they don't compete for
+              attention. Mirrored at the bottom in FooterCTA (variant="text"
+              there); same components, same behavior, just sized for the hero. */}
+          <div className="flex gap-2">
+            <BusinessSwitcher currentSlug={slug} variant="icon" />
+            <a href="/admin"
+              aria-label="כניסה לניהול"
+              className="w-8 h-8 rounded-full flex items-center justify-center active:scale-90 transition-transform"
+              style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
+              <svg viewBox="0 0 24 24" className="w-[15px] h-[15px]" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0110 0v4" />
+              </svg>
+            </a>
+          </div>
+
           <div className="flex gap-2">
             {social.instagram && (
               <a href={social.instagram} target="_blank" rel="noopener noreferrer"
