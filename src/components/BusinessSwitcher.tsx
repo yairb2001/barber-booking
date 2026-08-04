@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 type Result = { slug: string; name: string; logoUrl: string | null; matchedStaffName: string | null };
@@ -58,7 +59,18 @@ export default function BusinessSwitcher({
         </button>
       )}
 
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
+        // Rendered via portal straight to <body> — NOT inline where the
+        // component happens to be mounted. This trigger sits inside the
+        // hero's "quiet top row" wrapper, which has its own `position:
+        // relative` + `z-10`. That combination creates a stacking context,
+        // and CSS stacking contexts trap descendants — INCLUDING
+        // `position: fixed` ones. So this modal's z-[100] was only ever
+        // competing at z-10 against its OWN container, not the page's true
+        // top layer, and the hero's icon row (a LATER sibling div, also
+        // z-10) rendered over it. Confirmed by reproducing the exact overlap
+        // the user screenshotted. A portal sidesteps this categorically,
+        // regardless of what wrapper this component ends up inside later.
         <div
           className="fixed inset-0 z-[100] bg-black/50 flex items-start sm:items-center justify-center p-4 pt-20 sm:pt-4"
           onClick={() => setOpen(false)}
@@ -117,7 +129,8 @@ export default function BusinessSwitcher({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
