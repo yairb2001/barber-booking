@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
-import { minutesToTime, timeToMinutes } from "@/lib/utils";
+import { minutesToTime, timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
@@ -225,9 +225,9 @@ export async function POST(request: NextRequest) {
   // second one. The UI must ask: keep the existing AND add this ("additional"),
   // or cancel the existing one(s) and book this instead ("cancel"). A brand-new
   // customer (just created above) has none, so this is a no-op for them.
-  const nowUtc = new Date();
-  const todayMidnightUtc = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate()));
-  const upcomingAppts = await prisma.appointment.findMany({
+  const businessNow = getBusinessNow();
+  const todayMidnightUtc = new Date(businessNow.date + "T00:00:00.000Z");
+  const appointmentsFromToday = await prisma.appointment.findMany({
     where: {
       customerId: customer.id,
       businessId: staff.businessId,
@@ -239,6 +239,14 @@ export async function POST(request: NextRequest) {
       staff:   { select: { name: true } },
       service: { select: { name: true } },
     },
+  });
+  // The date filter above is date-only (today-or-later) — a "today" row can
+  // still be a slot that already passed (e.g. it's 23:00 and the appointment
+  // was at 18:30). Drop those so we only flag TRULY upcoming appointments.
+  const upcomingAppts = appointmentsFromToday.filter(a => {
+    const aptDateStr = a.date.toISOString().slice(0, 10);
+    if (aptDateStr > businessNow.date) return true;
+    return timeToMinutes(a.startTime) >= businessNow.minutes;
   });
 
   if (upcomingAppts.length > 0 && existingDecision !== "additional" && existingDecision !== "cancel") {
