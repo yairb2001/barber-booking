@@ -248,9 +248,9 @@ export default function MyAppointmentsPage() {
 
       {/* ── Cancellation policy note ── */}
       {!loading && !error && policyMessage && upcoming.length > 0 && (
-        <div className="mx-4 mt-2 px-3 py-2 rounded-xl text-[11px] leading-relaxed"
-          style={{ background: "var(--bg-alt)", color: "var(--text-muted)", border: "1px solid var(--divider)" }}>
-          ℹ️ {policyMessage}
+        <div className="mx-4 mt-2 px-3.5 py-3 rounded-xl border border-amber-200 bg-amber-50 flex items-start gap-2">
+          <span className="text-base leading-none">⚠️</span>
+          <p className="text-[12px] font-semibold leading-relaxed text-amber-900">{policyMessage}</p>
         </div>
       )}
 

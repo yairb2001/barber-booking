@@ -210,20 +210,13 @@ function AddToCalendar({
     `&location=${encodeURIComponent(location || "")}` +
     `&ctz=Asia/Jerusalem`;
 
-  const ics = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//DOMINANT//Booking//HE",
-    "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT",
-    `UID:${startStr}-${Math.random().toString(36).slice(2)}@dominant`,
-    `DTSTAMP:${startStr}`,
-    `DTSTART;TZID=Asia/Jerusalem:${startStr}`,
-    `DTEND;TZID=Asia/Jerusalem:${endStr}`,
-    `SUMMARY:${title.replace(/\n/g, " ")}`,
-    `DESCRIPTION:${details.replace(/\n/g, "\\n")}`,
-    `LOCATION:${(location || "").replace(/\n/g, " ")}`,
-    "BEGIN:VALARM", "TRIGGER:-PT2H", "ACTION:DISPLAY", "DESCRIPTION:תזכורת לתור",
-    "END:VALARM", "END:VEVENT", "END:VCALENDAR",
-  ].join("\r\n");
-  const icsHref = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+  // Served through a real API route (proper Content-Type/Content-Disposition
+  // headers) instead of a data: URI — mobile Safari and in-app WebViews (e.g.
+  // WhatsApp's browser) largely ignore the `download` attribute on data: URIs,
+  // so the file never actually saved.
+  const icsHref = `/api/calendar/ics?${new URLSearchParams({
+    title, date, time, duration: String(durationMin || 30), details, location: location || "",
+  }).toString()}`;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
@@ -236,7 +229,7 @@ function AddToCalendar({
           className="flex-1 flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-700 text-[12px] font-bold text-center py-2.5 rounded-xl active:bg-slate-100">
           <span>🟢</span> Google
         </a>
-        <a href={icsHref} download="appointment.ics"
+        <a href={icsHref}
           className="flex-1 flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-700 text-[12px] font-bold text-center py-2.5 rounded-xl active:bg-slate-100">
           <span>🍎</span> Apple / אחר
         </a>
@@ -744,8 +737,9 @@ function ConfirmPageContent() {
           </div>
 
           {policyMessage && (
-            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-500">
-              ℹ️ {policyMessage}
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 flex items-start gap-2">
+              <span className="text-base leading-none">⚠️</span>
+              <p className="text-[12px] font-semibold leading-relaxed text-amber-900">{policyMessage}</p>
             </div>
           )}
 
