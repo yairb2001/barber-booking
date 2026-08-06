@@ -1276,7 +1276,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         date,
-        isWorking: true,
+        isWorking: overrideRes?.isWorking ?? true,
         slots: existingSlots,
         breaks: newBreaks,
       }),
