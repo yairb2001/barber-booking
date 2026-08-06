@@ -635,6 +635,18 @@ export async function execTool(
         if (!callerNorm || normalizeIsraeliPhone(appt.customer.phone) !== callerNorm) return "תור לא נמצא.";
         if (["cancelled_by_customer", "cancelled_by_staff"].includes(appt.status)) return "תור זה כבר בוטל.";
 
+        // Block cancelling appointments that already happened — same guard as the
+        // website's self-service cancel endpoint (my-appointments/cancel).
+        {
+          const now = getBusinessNow();
+          const aptDateStr = new Date(appt.date).toISOString().slice(0, 10);
+          if (aptDateStr < now.date) return "לא ניתן לבטל תור שכבר עבר.";
+          if (aptDateStr === now.date) {
+            const [h, m] = appt.startTime.split(":").map(Number);
+            if (h * 60 + m < now.minutes) return "לא ניתן לבטל תור שכבר עבר.";
+          }
+        }
+
         await prisma.appointment.update({
           where: { id: appt.id },
           data: { status: "cancelled_by_customer", cancelledAt: new Date() },
