@@ -3551,10 +3551,11 @@ export default function AdminCalendar() {
   // Barber permissions
   const [isOwner, setIsOwner] = useState(true); // optimistic
   const [barbersCanViewOthersCalendar, setBarbersCanViewOthersCalendar] = useState(false);
-  // Hours picker (local override stored in localStorage)
+  // Hours picker (local override stored in localStorage + the viewer's own staff.settings)
   const [showHoursPicker, setShowHoursPicker] = useState(false);
   const [localCalStart, setLocalCalStart] = useState(DAY_START);
   const [localCalEnd, setLocalCalEnd] = useState(DAY_END);
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appt[]>([]);
   // Override map: keyed by `${staffId}|YYYY-MM-DD`
   const [overrideMap, setOverrideMap] = useState<Record<string, { isWorking: boolean; slots: string | null; breaks: string | null }>>({});
@@ -4043,6 +4044,7 @@ export default function AdminCalendar() {
     // They only ever see their own column — the appointments API enforces the
     // same scoping on the server, so other barbers' data never reaches them.
     const myStaffId: string | null = me?.staffId ?? null;
+    setMyStaffId(myStaffId);
     const canViewAllCalendars = (me?.isOwner ?? true) || (me?.barbersCanViewOthersCalendar ?? false);
     const effectiveStaff: Staff[] = (canViewAllCalendars || !myStaffId)
       ? (st as Staff[])
@@ -4087,6 +4089,19 @@ export default function AdminCalendar() {
           if (typeof s.calendarStartHour === "number") serverStart = s.calendarStartHour;
           if (typeof s.calendarEndHour   === "number") serverEnd = s.calendarEndHour;
         } catch { /* ignore */ }
+      }
+      // Per-staff override — each team member can set their own calendar
+      // display hours (stored in their own staff.settings), on top of the
+      // business-wide default. Follows their account across devices.
+      if (myStaffId) {
+        const myRec = effectiveStaff.find(s => s.id === myStaffId) ?? (st as Staff[]).find((s: Staff) => s.id === myStaffId);
+        if (myRec?.settings) {
+          try {
+            const ss = JSON.parse(myRec.settings);
+            if (typeof ss.calendarStartHour === "number") serverStart = ss.calendarStartHour;
+            if (typeof ss.calendarEndHour   === "number") serverEnd = ss.calendarEndHour;
+          } catch { /* ignore */ }
+        }
       }
       const savedHours = typeof window !== "undefined" ? localStorage.getItem("cal_hours") : null;
       if (savedHours) {
@@ -4290,6 +4305,15 @@ export default function AdminCalendar() {
     setCalEnd(localCalEnd);
     localStorage.setItem("cal_hours", JSON.stringify({ start: localCalStart, end: localCalEnd }));
     setShowHoursPicker(false);
+    // Persist to the viewer's own staff account too, so the preference follows
+    // them across devices (not just this browser's localStorage).
+    if (myStaffId) {
+      fetch(`/api/admin/staff/${myStaffId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settingsPatch: { calendarStartHour: localCalStart, calendarEndHour: localCalEnd } }),
+      }).catch(() => { /* localStorage already has it; DB sync is best-effort */ });
+    }
   }
 
   function navigate(dir: -1 | 1) {
@@ -5383,6 +5407,16 @@ export default function AdminCalendar() {
             </div>
           )}
 
+          {/* Calendar display hours — personal, per-account preference */}
+          {view !== "month" && (
+            <button
+              onClick={() => { setLocalCalStart(calStart); setLocalCalEnd(calEnd); setShowHoursPicker(true); }}
+              title="שעות תצוגת יומן"
+              className="shrink-0 px-2 py-1 rounded-lg text-xs font-medium border bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition">
+              🕐 {String(calStart).padStart(2,"0")}-{String(calEnd).padStart(2,"0")}
+            </button>
+          )}
+
           {/* Day barber filter */}
           {view === "day" && (
             <div className="relative shrink-0">
@@ -5433,6 +5467,35 @@ export default function AdminCalendar() {
         onMarkSwap={async (proposalId, action) => { await markSwapResponse(proposalId, action); }}
         onApproveSwap={async (proposalId) => { await approveSwap(proposalId); }}
       />}
+      {showHoursPicker && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowHoursPicker(false)}>
+          <div className="bg-white rounded-2xl w-80 shadow-2xl p-5" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-neutral-900 mb-1">שעות תצוגת יומן</h3>
+            <p className="text-xs text-neutral-500 mb-4">קובע רק את הטווח שאתה רואה ביומן שלך — לא משפיע על אף אחד אחר, ונשמר אצלך גם במעבר בין מכשירים.</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">משעה</label>
+                <select value={localCalStart} onChange={e => setLocalCalStart(Number(e.target.value))}
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm">
+                  {Array.from({ length: 24 }, (_, h) => h).map(h => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">עד שעה</label>
+                <select value={localCalEnd} onChange={e => setLocalCalEnd(Number(e.target.value))}
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm">
+                  {Array.from({ length: 24 }, (_, h) => h + 1).map(h => <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setShowHoursPicker(false)} className="flex-1 py-2 rounded-lg border border-neutral-200 text-neutral-600 text-sm font-medium">ביטול</button>
+              <button onClick={saveLocalHours} disabled={localCalEnd <= localCalStart}
+                className="flex-1 py-2 rounded-lg bg-teal-600 text-white text-sm font-semibold disabled:opacity-40">שמור</button>
+            </div>
+          </div>
+        </div>
+      )}
       {newAppt && (
         <NewApptModal
           staff={allStaff.find(s => s.id === newAppt.staffId) || null}
