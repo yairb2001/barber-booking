@@ -131,6 +131,15 @@ export async function PATCH(req: NextRequest) {
       ...(body.chatsEnabled !== undefined && { chatsEnabled: Boolean(body.chatsEnabled) }),
       // Whether barbers manage their own services (vs owner controls all)
       ...(body.staffManageOwnServices !== undefined && { staffManageOwnServices: Boolean(body.staffManageOwnServices) }),
+      // Cancellation policy: who controls the minimum-notice window (owner sets
+      // one value for everyone, or each barber sets their own) + the global/
+      // fallback hours value itself.
+      ...(body.cancellationPolicyMode !== undefined && {
+        cancellationPolicyMode: body.cancellationPolicyMode === "staff" ? "staff" : "owner",
+      }),
+      ...(body.minCancellationHours !== undefined && {
+        minCancellationHours: Math.max(0, Number(body.minCancellationHours) || 0),
+      }),
       // Re-engagement automation
       ...(body.reengageEnabled !== undefined && { reengageEnabled: Boolean(body.reengageEnabled) }),
       ...(body.reengageWeeks   !== undefined && { reengageWeeks:   Number(body.reengageWeeks) || 6 }),

@@ -40,6 +40,8 @@ export async function GET(req: NextRequest) {
       greenApiInstanceId: true,
       greenApiToken: true,
       onboardingCompletedAt: true,
+      cancellationPolicyMode: true,
+      minCancellationHours: true,
     },
   });
 
@@ -119,5 +121,7 @@ export async function GET(req: NextRequest) {
     barbersCanViewOthersCalendar: perms.canViewAllCalendars,
     barbersCanAccessChats: perms.canViewAllChats,
     referralProgramEnabled: getReferralConfig(business?.settings ?? null).enabled,
+    cancellationPolicyMode: business?.cancellationPolicyMode ?? "owner",
+    minCancellationHours: business?.minCancellationHours ?? 0,
   });
 }

@@ -6,6 +6,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage, cancellationText } from "@/lib/messaging";
+import { getEffectiveCancellationHours, hoursUntilAppointment, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
 
 
 /**
@@ -87,6 +88,12 @@ export async function POST(req: NextRequest) {
     if (aptMinutes < nowMinutes) {
       return NextResponse.json({ error: "לא ניתן לבטל תור שכבר עבר" }, { status: 400 });
     }
+  }
+
+  // Minimum-notice cancellation policy.
+  const minHours = await getEffectiveCancellationHours(appt.businessId, appt.staffId);
+  if (minHours > 0 && hoursUntilAppointment(appt.date, appt.startTime) < minHours) {
+    return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(minHours) }, { status: 400 });
   }
 
   await prisma.appointment.update({

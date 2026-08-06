@@ -64,6 +64,12 @@ model Business {
   // When true, each barber manages their own services (create/edit/delete) in
   // their own interface. When false (default), the owner controls all services.
   staffManageOwnServices Boolean @default(false) @map("staff_manage_own_services")
+  // ── Cancellation policy: minimum hours before an appointment that a customer
+  // may still cancel/move it. "owner" = minCancellationHours below applies to
+  // everyone; "staff" = each barber sets their own value (staff.settings JSON),
+  // falling back to minCancellationHours if they haven't set one. 0 = no limit. ──
+  cancellationPolicyMode String @default("owner") @map("cancellation_policy_mode")
+  minCancellationHours   Int    @default(0)       @map("min_cancellation_hours")
   // ── SaaS / multi-tenant subscription ──
   tier                  String    @default("basic")        @map("tier")            // basic | pro | premium
   trialEndsAt           DateTime?                           @map("trial_ends_at")

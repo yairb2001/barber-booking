@@ -31,6 +31,7 @@ import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availab
 import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
+import { getEffectiveCancellationHours, hoursUntilAppointment, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
 
 // Hebrew label for a change-request kind (used in owner alerts).
 function kindLabelHe(kind: string): string {
@@ -226,6 +227,13 @@ export async function requestAppointmentMove(opts: {
   const custPhone = normalizeIsraeliPhone(appt.customer.phone);
   if (custPhone !== phone && custPhone !== normalizeIsraeliPhone(localPhone)) {
     return "התור הזה שייך ללקוח אחר — אי אפשר להעביר אותו מהשיחה הזו.";
+  }
+
+  // Minimum-notice cancellation/move policy — block moving an appointment
+  // that's too close to its (current) start time.
+  const minHours = await getEffectiveCancellationHours(bizId, appt.staffId);
+  if (minHours > 0 && hoursUntilAppointment(appt.date, appt.startTime) < minHours) {
+    return CANCELLATION_WINDOW_MESSAGE(minHours);
   }
 
   // Same time/date as now? Nothing to do.

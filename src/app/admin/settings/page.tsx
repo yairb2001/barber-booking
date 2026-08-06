@@ -28,6 +28,8 @@ type Business = {
   chatsEnabled: boolean;
   staffManageOwnServices: boolean;
   facebookPixel: string;
+  cancellationPolicyMode: string; // "owner" | "staff"
+  minCancellationHours: number;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -91,6 +93,8 @@ const emptyBusiness: Business = {
   reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
   chatsEnabled: false,
   staffManageOwnServices: false,
+  cancellationPolicyMode: "owner",
+  minCancellationHours: 0,
   facebookPixel: "",
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -538,6 +542,8 @@ export default function AdminSettingsPage() {
           reengageTemplate:    data.reengageTemplate    || "",
           chatsEnabled:        data.chatsEnabled        ?? false,
           staffManageOwnServices: data.staffManageOwnServices ?? false,
+          cancellationPolicyMode: data.cancellationPolicyMode === "staff" ? "staff" : "owner",
+          minCancellationHours:   data.minCancellationHours   ?? 0,
           facebookPixel:       data.facebookPixel       || "",
         });
         const settingsObj = data.settings || {};
@@ -1131,6 +1137,46 @@ export default function AdminSettingsPage() {
                   </p>
                 </div>
               </div>
+            </div>
+
+            {/* Cancellation / move policy — minimum notice window */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <h2 className="font-semibold text-neutral-800 mb-1">מדיניות ביטולים</h2>
+              <p className="text-xs text-neutral-400 mb-4">מינימום שעות מראש שבהן לקוח עדיין יכול לבטל/להזיז תור — גם בוואטסאפ וגם באתר. מתחת לסף, הביטול/ההזזה חסומים לגמרי.</p>
+
+              <div className="flex items-start gap-3 mb-4">
+                <button
+                  onClick={() => setField("cancellationPolicyMode", form.cancellationPolicyMode === "staff" ? "owner" : "staff")}
+                  className={`relative w-10 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${form.cancellationPolicyMode === "staff" ? "bg-teal-500" : "bg-neutral-200"}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.cancellationPolicyMode === "staff" ? "right-0.5" : "left-0.5"}`} />
+                </button>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-800">כל ספר קובע את הסף שלו</p>
+                  <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                    {form.cancellationPolicyMode === "staff"
+                      ? "כל ספר קובע בהגדרות שלו כמה שעות מראש נדרשות. מי שלא הגדיר — הערך הכללי למטה חל עליו."
+                      : "אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. הספרים לא יכולים לשנות אותו."}
+                  </p>
+                </div>
+              </div>
+
+              <label className="text-xs text-neutral-500 block mb-1">
+                {form.cancellationPolicyMode === "staff" ? "ערך כללי (ברירת מחדל למי שלא הגדיר לעצמו)" : "מספר שעות מראש"}
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="number" min={0} max={720}
+                  value={form.minCancellationHours}
+                  onChange={e => setField("minCancellationHours", Number(e.target.value))}
+                  className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+                <span className="text-sm text-neutral-500">שעות</span>
+              </div>
+              <p className="text-xs text-neutral-400 mt-1">
+                {form.minCancellationHours === 0
+                  ? "אין הגבלה — לקוחות יכולים לבטל/להזיז עד רגע לפני."
+                  : `לקוחות לא יוכלו לבטל/להזיז תור בפחות מ-${form.minCancellationHours} שעות מראש.`}
+              </p>
             </div>
 
             {/* Calendar display hours */}

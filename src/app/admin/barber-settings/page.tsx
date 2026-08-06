@@ -83,6 +83,11 @@ export default function BarberSettingsPage() {
   const [leadMins,    setLeadMins]    = useState("");
   const [firstLeadMins, setFirstLeadMins] = useState("");
   const [bookSaved, setBookSaved]     = useState(false);
+  // Minimum-notice cancellation policy — editable only when the owner set the
+  // business-wide switch to "staff" (each barber controls their own).
+  const [cancelPolicyMode, setCancelPolicyMode] = useState<"owner" | "staff">("owner");
+  const [globalCancelHours, setGlobalCancelHours] = useState(0);
+  const [cancelHours, setCancelHours] = useState("");
 
   // ── Password ──
   const [oldPass, setOldPass]       = useState("");
@@ -110,6 +115,8 @@ export default function BarberSettingsPage() {
     if (!me?.staffId) return;
     setMyId(me.staffId);
     setMyName(me.staff?.name || "");
+    setCancelPolicyMode(me.cancellationPolicyMode === "staff" ? "staff" : "owner");
+    setGlobalCancelHours(me.minCancellationHours ?? 0);
     return me.staffId as string;
   }
 
@@ -189,6 +196,7 @@ export default function BarberSettingsPage() {
       if (s.bookingHorizonDays !== undefined) setHorizonDays(String(s.bookingHorizonDays));
       if (s.minBookingLeadMinutes !== undefined) setLeadMins(String(s.minBookingLeadMinutes));
       if (s.firstApptLeadMinutes !== undefined) setFirstLeadMins(String(s.firstApptLeadMinutes));
+      if (s.minCancellationHours !== undefined) setCancelHours(String(s.minCancellationHours));
     } catch { /* ignore */ }
   }
 
@@ -250,12 +258,17 @@ export default function BarberSettingsPage() {
   async function saveSchedule() {
     if (!myId) return;
     setSaving(true);
-    await fetch(`/api/admin/staff/${myId}/schedule`, {
+    const res = await fetch(`/api/admin/staff/${myId}/schedule`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(schedule),
     });
     setSaving(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "השמירה נכשלה, נסה שוב");
+      return;
+    }
     setSchedSaved(true);
     setTimeout(() => setSchedSaved(false), 2500);
   }
@@ -272,12 +285,18 @@ export default function BarberSettingsPage() {
     if (horizonDays   !== "") patch.bookingHorizonDays = Number(horizonDays);
     if (leadMins      !== "") patch.minBookingLeadMinutes = Number(leadMins);
     if (firstLeadMins !== "") patch.firstApptLeadMinutes = Number(firstLeadMins);
-    await fetch(`/api/admin/staff/${myId}`, {
+    if (cancelPolicyMode === "staff" && cancelHours !== "") patch.minCancellationHours = Number(cancelHours);
+    const res = await fetch(`/api/admin/staff/${myId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ settings: { ...existing, ...patch } }),
     });
     setSaving(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "השמירה נכשלה, נסה שוב");
+      return;
+    }
     setBookSaved(true);
     setTimeout(() => setBookSaved(false), 2500);
   }
@@ -747,6 +766,25 @@ export default function BarberSettingsPage() {
                     className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                   <span className="text-sm text-neutral-500">דקות</span>
                 </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-neutral-700 block mb-1">מינימום שעות מראש לביטול/הזזת תור</label>
+                {cancelPolicyMode === "staff" ? (
+                  <>
+                    <p className="text-xs text-neutral-400 mb-2">ריק = ברירת המחדל של העסק ({globalCancelHours} שעות)</p>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min={0} max={720} value={cancelHours}
+                        onChange={e => setCancelHours(e.target.value)}
+                        placeholder={String(globalCancelHours)}
+                        className="w-24 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                      <span className="text-sm text-neutral-500">שעות</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-neutral-400">
+                    נקבע ע״י המנהל הראשי לכל הצוות: {globalCancelHours === 0 ? "אין הגבלה" : `${globalCancelHours} שעות מראש`}
+                  </p>
+                )}
               </div>
             </div>
             <button onClick={saveBooking} disabled={saving}

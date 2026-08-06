@@ -25,6 +25,7 @@ import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
+import { getEffectiveCancellationHours, hoursUntilAppointment, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -644,6 +645,14 @@ export async function execTool(
           if (aptDateStr === now.date) {
             const [h, m] = appt.startTime.split(":").map(Number);
             if (h * 60 + m < now.minutes) return "לא ניתן לבטל תור שכבר עבר.";
+          }
+        }
+
+        // Minimum-notice cancellation policy.
+        {
+          const minHours = await getEffectiveCancellationHours(bizId, appt.staffId);
+          if (minHours > 0 && hoursUntilAppointment(appt.date, appt.startTime) < minHours) {
+            return CANCELLATION_WINDOW_MESSAGE(minHours);
           }
         }
 
