@@ -30,6 +30,7 @@ type Business = {
   facebookPixel: string;
   cancellationPolicyMode: string; // "owner" | "staff"
   minCancellationHours: number;
+  cancellationPolicyText: string;
 };
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -53,6 +54,12 @@ const AUTO_DEFAULT_SETTINGS: Record<AutoType, object> = {
   post_every_visit: { segment: "regular_only", minVisits: 2, ctaType: "google_review", ctaUrl: "", delayMinutes: 60 },
 };
 function parseAutoS<T>(s: string): T { try { return JSON.parse(s) as T; } catch { return {} as T; } }
+// Mirrors formatCancellationPolicyMessage in src/lib/cancellation-policy.ts (kept
+// separate — that module imports prisma and can't be pulled into a client bundle).
+function formatCancellationPolicyPreview(hours: number): string {
+  if (hours <= 0) return "";
+  return `מינימום לביטול: ${hours} שעות מראש. ביטול בפחות מהזמן הזה יחויב במחיר המלא.`;
+}
 
 // ── Defaults ───────────────────────────────────────────────────────────────────
 const DEFAULT_24H_TEMPLATE =
@@ -95,6 +102,7 @@ const emptyBusiness: Business = {
   staffManageOwnServices: false,
   cancellationPolicyMode: "owner",
   minCancellationHours: 0,
+  cancellationPolicyText: "",
   facebookPixel: "",
 };
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -544,6 +552,7 @@ export default function AdminSettingsPage() {
           staffManageOwnServices: data.staffManageOwnServices ?? false,
           cancellationPolicyMode: data.cancellationPolicyMode === "staff" ? "staff" : "owner",
           minCancellationHours:   data.minCancellationHours   ?? 0,
+          cancellationPolicyText: data.cancellationPolicyText || "",
           facebookPixel:       data.facebookPixel       || "",
         });
         const settingsObj = data.settings || {};
@@ -1177,6 +1186,25 @@ export default function AdminSettingsPage() {
                   ? "אין הגבלה — לקוחות יכולים לבטל/להזיז עד רגע לפני."
                   : `לקוחות לא יוכלו לבטל/להזיז תור בפחות מ-${form.minCancellationHours} שעות מראש.`}
               </p>
+              {form.minCancellationHours > 0 && (
+                <p className="text-xs text-neutral-400 mt-1">
+                  חריג: אם לקוח קבע תור כשכבר היו פחות מ-{form.minCancellationHours} שעות עד המועד (הזמנה של רגע אחרון) — הוא עדיין יוכל לבטל אותו, כי לא הייתה לו אפשרות לתת התראה מראש.
+                </p>
+              )}
+
+              <div className="mt-5 pt-5 border-t border-neutral-100">
+                <label className="text-xs text-neutral-500 block mb-1">הודעה ללקוח (מוצגת במסך "התורים שלי" ובמסך אישור הקביעה)</label>
+                <textarea
+                  value={form.cancellationPolicyText}
+                  onChange={e => setField("cancellationPolicyText", e.target.value)}
+                  placeholder={formatCancellationPolicyPreview(form.minCancellationHours)}
+                  rows={2}
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+                <p className="text-xs text-neutral-400 mt-1">
+                  ריק = הודעה אוטומטית: {formatCancellationPolicyPreview(form.minCancellationHours) || "(לא מוצג — אין הגבלה)"}
+                </p>
+              </div>
             </div>
 
             {/* Calendar display hours */}

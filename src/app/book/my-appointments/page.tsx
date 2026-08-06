@@ -68,6 +68,7 @@ export default function MyAppointmentsPage() {
   const [cancelError, setCancelError]   = useState("");
   // Leave-waitlist flow state
   const [leavingWaitlistId, setLeavingWaitlistId] = useState<string | null>(null); // request in flight
+  const [policyMessage, setPolicyMessage] = useState<string | null>(null);
   // Phone + OTP login (fallback when there's no bk_session cookie — e.g. incognito
   // or a different device/browser than the one used to book).
   const [loginStep, setLoginStep]     = useState<"phone" | "code">("phone");
@@ -88,6 +89,12 @@ export default function MyAppointmentsPage() {
     if (data?.customer?.name) setName(String(data.customer.name).split(" ")[0]);
     return true;
   }
+
+  useEffect(() => {
+    fetch(apiWithSlug("/api/business", slug)).then(r => r.json()).then(biz => {
+      if (biz?.cancellationPolicyMessage) setPolicyMessage(biz.cancellationPolicyMessage);
+    }).catch(() => {});
+  }, [slug]);
 
   useEffect(() => {
     (async () => {
@@ -236,6 +243,14 @@ export default function MyAppointmentsPage() {
               ? `יש לך ${upcoming.length} ${upcoming.length === 1 ? "תור עתידי" : "תורים עתידיים"}`
               : "אין לך תורים עתידיים כרגע"}
           </p>
+        </div>
+      )}
+
+      {/* ── Cancellation policy note ── */}
+      {!loading && !error && policyMessage && upcoming.length > 0 && (
+        <div className="mx-4 mt-2 px-3 py-2 rounded-xl text-[11px] leading-relaxed"
+          style={{ background: "var(--bg-alt)", color: "var(--text-muted)", border: "1px solid var(--divider)" }}>
+          ℹ️ {policyMessage}
         </div>
       )}
 

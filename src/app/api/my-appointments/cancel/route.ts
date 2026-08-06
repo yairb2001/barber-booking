@@ -6,7 +6,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage, cancellationText } from "@/lib/messaging";
-import { getEffectiveCancellationHours, hoursUntilAppointment, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
+import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
 
 
 /**
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     where: { id: appointmentId },
     select: {
       id: true, status: true, date: true, startTime: true, staffId: true,
-      businessId: true,
+      businessId: true, createdAt: true,
       customer: { select: { id: true, name: true, phone: true } },
       staff: { select: { name: true } },
     },
@@ -91,9 +91,12 @@ export async function POST(req: NextRequest) {
   }
 
   // Minimum-notice cancellation policy.
-  const minHours = await getEffectiveCancellationHours(appt.businessId, appt.staffId);
-  if (minHours > 0 && hoursUntilAppointment(appt.date, appt.startTime) < minHours) {
-    return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(minHours) }, { status: 400 });
+  const policy = await checkCancellationWindow({
+    businessId: appt.businessId, staffId: appt.staffId,
+    apptDate: appt.date, startTime: appt.startTime, bookedAt: appt.createdAt,
+  });
+  if (policy.blocked) {
+    return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(policy.minHours) }, { status: 400 });
   }
 
   await prisma.appointment.update({

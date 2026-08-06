@@ -68,8 +68,11 @@ model Business {
   // may still cancel/move it. "owner" = minCancellationHours below applies to
   // everyone; "staff" = each barber sets their own value (staff.settings JSON),
   // falling back to minCancellationHours if they haven't set one. 0 = no limit. ──
-  cancellationPolicyMode String @default("owner") @map("cancellation_policy_mode")
-  minCancellationHours   Int    @default(0)       @map("min_cancellation_hours")
+  cancellationPolicyMode String  @default("owner") @map("cancellation_policy_mode")
+  minCancellationHours   Int     @default(0)       @map("min_cancellation_hours")
+  // Customer-facing wording shown on the booking confirmation + my-appointments
+  // screens. null = auto-generate from minCancellationHours.
+  cancellationPolicyText String? @map("cancellation_policy_text")
   // ── SaaS / multi-tenant subscription ──
   tier                  String    @default("basic")        @map("tier")            // basic | pro | premium
   trialEndsAt           DateTime?                           @map("trial_ends_at")

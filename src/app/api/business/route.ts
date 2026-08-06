@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolveTheme } from "@/lib/themes";
 import { fallbackBusiness } from "@/lib/tenant";
 import { getReferralConfig, getReferralFriendSource, getReferralSources } from "@/lib/referral";
+import { formatCancellationPolicyMessage } from "@/lib/cancellation-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function GET(req: NextRequest) {
         id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
         phone: true, address: true, about: true, socialLinks: true,
         settings: true, bookingHorizonDays: true, facebookPixel: true,
+        minCancellationHours: true, cancellationPolicyText: true,
       } })
     : businessId
       ? await prisma.business.findUnique({ where: { id: businessId }, select: {
@@ -37,6 +39,8 @@ export async function GET(req: NextRequest) {
       settings: true,
       bookingHorizonDays: true,
       facebookPixel: true,
+      minCancellationHours: true,
+      cancellationPolicyText: true,
     },
   });
 
@@ -79,6 +83,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ...business,
     settings: undefined, // strip raw settings — theme is exposed instead
+    cancellationPolicyText: undefined, // raw override — resolved message exposed instead
+    cancellationPolicyMessage: formatCancellationPolicyMessage(business.minCancellationHours, business.cancellationPolicyText),
     referral,      // resolved referral config (enabled/goal/giftLabel/friendSource)
     socialLinks,
     theme,         // full palette object: bg, brand, fontDisplay, etc.

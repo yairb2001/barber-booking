@@ -140,6 +140,9 @@ export async function PATCH(req: NextRequest) {
       ...(body.minCancellationHours !== undefined && {
         minCancellationHours: Math.max(0, Number(body.minCancellationHours) || 0),
       }),
+      ...(body.cancellationPolicyText !== undefined && {
+        cancellationPolicyText: body.cancellationPolicyText?.trim() || null,
+      }),
       // Re-engagement automation
       ...(body.reengageEnabled !== undefined && { reengageEnabled: Boolean(body.reengageEnabled) }),
       ...(body.reengageWeeks   !== undefined && { reengageWeeks:   Number(body.reengageWeeks) || 6 }),

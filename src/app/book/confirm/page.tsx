@@ -423,6 +423,7 @@ function ConfirmPageContent() {
   const [playStoreUrl, setPlayStoreUrl] = useState("");
   const [businessName,    setBusinessName]    = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
+  const [policyMessage,   setPolicyMessage]   = useState("");
 
   // Autocomplete: search customers as user types referrer name
   useEffect(() => {
@@ -466,6 +467,7 @@ function ConfirmPageContent() {
       if (biz?.id) setBusinessId(biz.id);
       if (biz?.name) setBusinessName(biz.name);
       if (biz?.address) setBusinessAddress(biz.address);
+      if (biz?.cancellationPolicyMessage) setPolicyMessage(biz.cancellationPolicyMessage);
       try {
         const s = typeof biz?.settings === "string" ? JSON.parse(biz.settings) : (biz?.settings || {});
         if (s.appStoreUrl)  setAppStoreUrl(s.appStoreUrl);
@@ -740,6 +742,12 @@ function ConfirmPageContent() {
             <SummaryRow label="שעה" value={<span dir="ltr">{successTime}</span>} />
             <SummaryRow label="מחיר" value={`₪${successPrice}`} large />
           </div>
+
+          {policyMessage && (
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+              ℹ️ {policyMessage}
+            </div>
+          )}
 
           <AddToCalendar
             title={`תור לתספורת${businessName ? ` ב${businessName.toUpperCase()}` : ""}`}
