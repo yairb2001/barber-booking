@@ -31,6 +31,7 @@ import {
   expireStaleAgentSwaps,
 } from "@/lib/agent/appointment-swap";
 import { pushToOwner } from "@/lib/native/push";
+import { sendMessage } from "@/lib/messaging";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
 import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent, isNonHebrewMessage } from "@/lib/link-first";
@@ -499,13 +500,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // The agent failed to produce a reply (e.g. a transient Anthropic outage the
     // retries couldn't ride out). Do NOT leave the customer in silence — alert
     // the owner so a human can jump in, exactly the manual save that otherwise
-    // only happens if someone notices the chat.
+    // only happens if someone notices the chat. Previously only the owner was
+    // notified and the customer saw nothing at all (real incident: a customer's
+    // message got zero reply, zero indication anything was wrong, for hours).
     console.error("[agent] error:", agentErr);
     pushToOwner(biz.id, {
       title: `⚠️ הסוכן לא הצליח לענות ל${senderName || phone}`,
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
+    const fallbackMsg = "מצטערים, יש לנו תקלה זמנית ולא הצלחנו לענות כרגע — אחד מהצוות יחזור אליך בהקדם 🙏";
+    await prisma.conversationMessage.create({
+      data: { conversationId: conv.id, role: "assistant", content: fallbackMsg },
+    }).catch(() => {});
+    await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: fallbackMsg })
+      .catch(e => console.error("[agent] fallback message send failed", e));
   }
 
   return NextResponse.json({ ok: true });

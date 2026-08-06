@@ -1242,8 +1242,16 @@ export async function runCustomerAgent(opts: {
   if (!biz) { console.error("[agent] business not found", businessId); return; }
 
   // ── Load or create conversation ───────────────────────────────────────────────
+  // Same lookup as the webhook and every other caller in the codebase (link-first,
+  // messaging, admin/chats, owner-agent): most recent non-owner thread for this
+  // phone, regardless of status. Filtering by status:"active" here used to orphan
+  // any conversation the moment it got escalated — escalateToHuman() sets
+  // status:"escalated" and nothing ever sets it back (only escalatedAt gets
+  // cleared, by the webhook's lazy 24h TTL check), so every message after a mute
+  // expired silently started a brand-new, history-less conversation instead of
+  // continuing the real one.
   let conversation = await prisma.conversation.findFirst({
-    where: { businessId, phone, status: "active" },
+    where: { businessId, phone, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
   });
   if (!conversation) {
@@ -1475,7 +1483,11 @@ export async function runCustomerAgent(opts: {
   }
   } // end Anthropic provider branch
 
-  if (!assistantText.trim()) return;
+  // Never go fully silent: if even the safety-net closing turn produced no
+  // text (e.g. a transient API error on the very first call), throw so the
+  // webhook's catch block can send the customer a fallback message instead of
+  // leaving them with zero response and zero indication anything went wrong.
+  if (!assistantText.trim()) throw new Error("[agent] produced empty reply after all iterations + safety net");
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
