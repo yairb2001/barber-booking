@@ -34,6 +34,7 @@ type Analytics = {
   todayRevenue:         number;
   todayNewToBusiness:   number;
   bookingsCreatedToday: number;
+  todayDate:            string; // YYYY-MM-DD — server-clamped echo of the requested `date` param
   occupancyToday:       number;
   occupancyMonth:       number;
   dailyRevenue:         { date: string; revenue: number; count: number }[];
@@ -1055,6 +1056,9 @@ export default function Dashboard() {
   const [custLoading,  setCustLoading]  = useState(false);
   const [todayModal,   setTodayModal]   = useState<{ title: string; data: TodayModalData } | null>(null);
   const [todayLoading, setTodayLoading] = useState(false);
+  // Which day the "⚡ [date]" snapshot section shows — independent of the
+  // month picker above it. Defaults to today; navigated with the ▶/◀ arrows.
+  const [todayViewDate, setTodayViewDate] = useState(todayISO);
 
   const { from, to, label: monthLabel } = useMemo(
     () => monthRange(viewYear, viewMonth),
@@ -1080,14 +1084,31 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const params = new URLSearchParams({ from, to, returnWindowDays: String(debouncedWindowDays) });
+    const params = new URLSearchParams({ from, to, returnWindowDays: String(debouncedWindowDays), date: todayViewDate });
     if (selStaff) params.set("staffId", selStaff);
     if (!includeFuture) params.set("includeFuture", "false");
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, debouncedWindowDays, includeFuture]);
+  }, [from, to, selStaff, debouncedWindowDays, includeFuture, todayViewDate]);
+
+  function shiftTodayView(deltaDays: number) {
+    const d = new Date(todayViewDate + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() + deltaDays);
+    const iso = d.toISOString().slice(0, 10);
+    if (iso <= todayISO) setTodayViewDate(iso);
+  }
+  const isTodayViewToday = todayViewDate === todayISO;
+  const todayViewLabel = isTodayViewToday
+    ? "היום"
+    : (() => {
+        const d = new Date(todayViewDate + "T00:00:00.000Z");
+        const y = new Date(todayISO + "T00:00:00.000Z");
+        y.setUTCDate(y.getUTCDate() - 1);
+        if (todayViewDate === y.toISOString().slice(0, 10)) return "אתמול";
+        return d.toLocaleDateString("he-IL", { day: "numeric", month: "numeric" });
+      })();
 
   function prevMonth() {
     if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
@@ -1128,8 +1149,8 @@ export default function Dashboard() {
 
   function openTodayList(kind: "new" | "appointments" | "booked") {
     const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
-    const url = `/api/admin/analytics/today?kind=${kind}${staffParam ? `&staffId=${staffParam}` : ""}`;
-    const title = kind === "new" ? "חדשים היום" : kind === "appointments" ? "לקוחות היום" : "נקבעו היום";
+    const url = `/api/admin/analytics/today?kind=${kind}&date=${todayViewDate}${staffParam ? `&staffId=${staffParam}` : ""}`;
+    const title = kind === "new" ? `חדשים ${todayViewLabel}` : kind === "appointments" ? `לקוחות ${todayViewLabel}` : `נקבעו ${todayViewLabel}`;
     setTodayLoading(true);
     fetch(url)
       .then(r => r.json())
@@ -1340,12 +1361,26 @@ export default function Dashboard() {
           {/* ── Today snapshot — owners only; hidden in a future-month view ── */}
           {isOwner && !isFutureMonth && (
             <div className="border-t border-neutral-100 pt-4">
-              <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2.5">⚡ היום</h2>
+              <div className="flex items-center justify-between mb-2.5">
+                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">⚡ {todayViewLabel}</h2>
+                <div className="flex items-center gap-1 bg-white rounded-lg border border-neutral-200 px-1 py-0.5">
+                  {/* ▶ on right = go to an earlier day (RTL: right = past) */}
+                  <button onClick={() => shiftTodayView(-1)}
+                    className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-neutral-100 text-neutral-500 text-xs">▶</button>
+                  {!isTodayViewToday && (
+                    <button onClick={() => setTodayViewDate(todayISO)}
+                      className="text-[10px] text-teal-600 hover:underline px-1">היום</button>
+                  )}
+                  {/* ◀ on left = go to a later day, capped at today */}
+                  <button onClick={() => shiftTodayView(1)} disabled={isTodayViewToday}
+                    className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-neutral-100 text-neutral-500 text-xs disabled:opacity-30">◀</button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-2.5">
-                <MiniStat icon="👥" label="לקוחות היום" value={a.todayAppointments} onClick={() => openTodayList("appointments")} />
-                <MiniStat icon="🆕" label="חדשים היום" value={a.todayNewToBusiness} onClick={() => openTodayList("new")} />
+                <MiniStat icon="👥" label={`לקוחות ${todayViewLabel}`} value={a.todayAppointments} onClick={() => openTodayList("appointments")} />
+                <MiniStat icon="🆕" label={`חדשים ${todayViewLabel}`} value={a.todayNewToBusiness} onClick={() => openTodayList("new")} />
                 <MiniStat icon="💰" label="מחזור יומי" value={`₪${a.todayRevenue.toLocaleString("he-IL")}`} />
-                <MiniStat icon="📅" label="נקבעו היום" value={a.bookingsCreatedToday} sub="ידני + עצמאי" onClick={() => openTodayList("booked")} />
+                <MiniStat icon="📅" label={`נקבעו ${todayViewLabel}`} value={a.bookingsCreatedToday} sub="ידני + עצמאי" onClick={() => openTodayList("booked")} />
               </div>
             </div>
           )}

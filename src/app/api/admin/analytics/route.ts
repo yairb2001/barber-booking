@@ -67,6 +67,10 @@ export async function GET(req: NextRequest) {
   // includeFuture (default true): when false, the period metrics ignore
   // appointments that haven't happened yet — i.e. "data up to this moment".
   const includeFuture    = (searchParams.get("includeFuture") ?? "true") !== "false";
+  // date (optional, YYYY-MM-DD): which day the "⚡ [date]" snapshot section
+  // covers. Defaults to the real today. Independent of from/to (the month
+  // picker) — lets the owner browse the snapshot back through past days.
+  const dateStr           = searchParams.get("date") || "";
 
   // Staff scoping: barbers only see analytics for their own data
   const session = getRequestSession(req);
@@ -85,9 +89,14 @@ export async function GET(req: NextRequest) {
   const sf       = effectiveStaffId ? { staffId: effectiveStaffId } : {};
   const cancelledArr = Array.from(CANCELLED);
 
-  // Today range (UTC day — matches how Appointment.date is stored)
-  const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-  const todayEnd   = new Date(); todayEnd.setUTCHours(23, 59, 59, 999);
+  // Today range (UTC day — matches how Appointment.date is stored). Clamped to
+  // never exceed the real today, so the snapshot can't be pointed at the future.
+  const realTodayStart = new Date(); realTodayStart.setUTCHours(0, 0, 0, 0);
+  const parsedDate = dateStr ? new Date(dateStr + "T00:00:00.000Z") : null;
+  const todayStart = (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate <= realTodayStart)
+    ? parsedDate
+    : realTodayStart;
+  const todayEnd = new Date(todayStart); todayEnd.setUTCHours(23, 59, 59, 999);
 
   // Previous calendar month (relative to [from])
   const prevMonthEnd   = new Date(fromDate); prevMonthEnd.setUTCDate(0); prevMonthEnd.setUTCHours(23, 59, 59, 999);
@@ -243,6 +252,7 @@ export async function GET(req: NextRequest) {
       newToStaff: 0,
       newBySource: [],
       todayAppointments, todayRevenue, todayNewToBusiness: 0, bookingsCreatedToday,
+      todayDate: todayStart.toISOString().slice(0, 10),
       occupancyToday: occToday.pct, occupancyMonth: occMonth.pct,
       prevMonthCohort: { newInPrevMonth: 0, returnedThisMonth: 0, rate: 0 },
       activityBreakdown: { total: 0, oneTime: 0, active: 0, regulars: 0 },
@@ -536,6 +546,7 @@ export async function GET(req: NextRequest) {
     todayRevenue,
     todayNewToBusiness,
     bookingsCreatedToday,
+    todayDate: todayStart.toISOString().slice(0, 10),
     occupancyToday: occToday.pct,
     occupancyMonth: occMonth.pct,
     prevMonthCohort,

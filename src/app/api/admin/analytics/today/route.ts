@@ -9,6 +9,7 @@
  * Params:
  *   kind      "new" | "appointments" | "booked"
  *   staffId?  filter to one barber
+ *   date?     YYYY-MM-DD — defaults to (and is clamped to) today
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
   const kind    = searchParams.get("kind") ?? "";
   const staffId = searchParams.get("staffId") || null;
+  const dateStr = searchParams.get("date") || "";
 
   const effectiveStaffId = (!session.isOwner && session.staffId)
     ? session.staffId
@@ -37,8 +39,14 @@ export async function GET(req: NextRequest) {
   const sf = effectiveStaffId ? { staffId: effectiveStaffId } : {};
   const cancelledArr = Array.from(CANCELLED);
 
-  const todayStart = new Date(); todayStart.setUTCHours(0, 0, 0, 0);
-  const todayEnd   = new Date(); todayEnd.setUTCHours(23, 59, 59, 999);
+  // Same clamp-to-real-today rule as /api/admin/analytics, so the drill-down
+  // list always matches whichever day the "⚡ [date]" snapshot is showing.
+  const realTodayStart = new Date(); realTodayStart.setUTCHours(0, 0, 0, 0);
+  const parsedDate = dateStr ? new Date(dateStr + "T00:00:00.000Z") : null;
+  const todayStart = (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate <= realTodayStart)
+    ? parsedDate
+    : realTodayStart;
+  const todayEnd = new Date(todayStart); todayEnd.setUTCHours(23, 59, 59, 999);
 
   if (kind === "appointments") {
     const todayAppts = await prisma.appointment.findMany({
