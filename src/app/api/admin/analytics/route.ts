@@ -90,10 +90,12 @@ export async function GET(req: NextRequest) {
   const cancelledArr = Array.from(CANCELLED);
 
   // Today range (UTC day — matches how Appointment.date is stored). Clamped to
-  // never exceed the real today, so the snapshot can't be pointed at the future.
+  // [today-30, today] so the snapshot can't be pointed at the future or wander
+  // arbitrarily far into the past.
   const realTodayStart = new Date(); realTodayStart.setUTCHours(0, 0, 0, 0);
+  const minTodayStart = new Date(realTodayStart); minTodayStart.setUTCDate(minTodayStart.getUTCDate() - 30);
   const parsedDate = dateStr ? new Date(dateStr + "T00:00:00.000Z") : null;
-  const todayStart = (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate <= realTodayStart)
+  const todayStart = (parsedDate && !isNaN(parsedDate.getTime()) && parsedDate <= realTodayStart && parsedDate >= minTodayStart)
     ? parsedDate
     : realTodayStart;
   const todayEnd = new Date(todayStart); todayEnd.setUTCHours(23, 59, 59, 999);

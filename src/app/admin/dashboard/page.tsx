@@ -1093,13 +1093,21 @@ export default function Dashboard() {
       .catch(() => setLoading(false));
   }, [from, to, selStaff, debouncedWindowDays, includeFuture, todayViewDate]);
 
+  // Browsing is capped to the last 30 days — matches the server-side clamp in
+  // /api/admin/analytics, so the arrow can't request a date the API would reject.
+  const minTodayViewDate = useMemo(() => {
+    const d = new Date(todayISO + "T00:00:00.000Z");
+    d.setUTCDate(d.getUTCDate() - 30);
+    return d.toISOString().slice(0, 10);
+  }, [todayISO]);
   function shiftTodayView(deltaDays: number) {
     const d = new Date(todayViewDate + "T00:00:00.000Z");
     d.setUTCDate(d.getUTCDate() + deltaDays);
     const iso = d.toISOString().slice(0, 10);
-    if (iso <= todayISO) setTodayViewDate(iso);
+    if (iso <= todayISO && iso >= minTodayViewDate) setTodayViewDate(iso);
   }
   const isTodayViewToday = todayViewDate === todayISO;
+  const isTodayViewAtMin = todayViewDate === minTodayViewDate;
   const todayViewLabel = isTodayViewToday
     ? "היום"
     : (() => {
@@ -1364,9 +1372,9 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-2.5">
                 <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">⚡ {todayViewLabel}</h2>
                 <div className="flex items-center gap-1 bg-white rounded-lg border border-neutral-200 px-1 py-0.5">
-                  {/* ▶ on right = go to an earlier day (RTL: right = past) */}
-                  <button onClick={() => shiftTodayView(-1)}
-                    className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-neutral-100 text-neutral-500 text-xs">▶</button>
+                  {/* ▶ on right = go to an earlier day (RTL: right = past), capped 30 days back */}
+                  <button onClick={() => shiftTodayView(-1)} disabled={isTodayViewAtMin}
+                    className="w-6 h-6 flex items-center justify-center rounded-md hover:bg-neutral-100 text-neutral-500 text-xs disabled:opacity-30">▶</button>
                   {!isTodayViewToday && (
                     <button onClick={() => setTodayViewDate(todayISO)}
                       className="text-[10px] text-teal-600 hover:underline px-1">היום</button>
