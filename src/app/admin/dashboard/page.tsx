@@ -167,19 +167,102 @@ function CustomerListModal({ title, customers, onClose }: {
   );
 }
 
-// ── MiniStat (for the "Today" strip — more compact) ──────────────────────────
-function MiniStat({ icon, label, value, sub, accent }: {
-  icon: string; label: string; value: string | number; sub?: string; accent?: string;
+// ── Today drill-down modal (new / appointments / booked tiles) ───────────────
+type TodayNewRow  = { id: string; name: string; phone: string; staffName: string };
+type TodayApptRow = { id: string; name: string; phone: string; startTime: string; staffName: string };
+type TodayBookedRow = { id: string; name: string; phone: string; staffName: string; apptDate: string; startTime: string; createdAt: string };
+type TodayModalData =
+  | { kind: "new"; rows: TodayNewRow[] }
+  | { kind: "appointments"; rows: TodayApptRow[] }
+  | { kind: "booked"; rows: TodayBookedRow[] };
+
+function TodayListModal({ title, data, onClose }: {
+  title: string; data: TodayModalData; onClose: () => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-neutral-200 px-4 py-3 flex items-center gap-3 min-w-0">
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b border-neutral-100">
+          <h3 className="font-bold text-neutral-800">{title}</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-neutral-400 bg-neutral-100 px-2 py-0.5 rounded-full">{data.rows.length}</span>
+            <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-lg">✕</button>
+          </div>
+        </div>
+        <div className="overflow-y-auto flex-1 p-2">
+          {data.rows.length === 0 ? (
+            <p className="text-center text-neutral-400 py-8 text-sm">אין נתונים</p>
+          ) : data.kind === "new" ? (
+            data.rows.map((c, i) => (
+              <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
+                  {c.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                  <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                </div>
+                <span className="text-[10px] text-neutral-500 shrink-0">{c.staffName}</span>
+              </div>
+            ))
+          ) : data.kind === "appointments" ? (
+            data.rows.map((c, i) => (
+              <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
+                  {c.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                  <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                </div>
+                <div className="text-left shrink-0">
+                  <p className="text-xs font-semibold text-neutral-700" dir="ltr">{c.startTime}</p>
+                  <p className="text-[10px] text-neutral-400">{c.staffName}</p>
+                </div>
+              </div>
+            ))
+          ) : (
+            data.rows.map((c, i) => (
+              <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
+                <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
+                  {c.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                  <p className="text-[10px] text-neutral-400">{c.staffName}</p>
+                </div>
+                <div className="text-left shrink-0">
+                  <p className="text-xs font-semibold text-neutral-700" dir="ltr">
+                    {new Date(c.apptDate).toLocaleDateString("he-IL", { day: "numeric", month: "numeric" })} · {c.startTime}
+                  </p>
+                  <p className="text-[10px] text-neutral-400">
+                    נקבע {new Date(c.createdAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MiniStat (for the "Today" strip — more compact) ──────────────────────────
+function MiniStat({ icon, label, value, sub, accent, onClick }: {
+  icon: string; label: string; value: string | number; sub?: string; accent?: string; onClick?: () => void;
+}) {
+  const Wrapper = onClick ? "button" : "div";
+  return (
+    <Wrapper onClick={onClick} className={`bg-white rounded-xl border border-neutral-200 px-4 py-3 flex items-center gap-3 min-w-0 text-right ${onClick ? "cursor-pointer hover:border-teal-300 hover:shadow-sm transition active:scale-[0.98]" : ""}`}>
       <div className={`text-2xl shrink-0 ${accent ?? ""}`}>{icon}</div>
       <div className="min-w-0">
         <p className="text-[10px] text-neutral-500 uppercase tracking-wider truncate">{label}</p>
         <p className="text-lg font-bold text-neutral-900 leading-tight">{value}</p>
         {sub && <p className="text-[10px] text-neutral-400 truncate">{sub}</p>}
+        {onClick && <p className="text-[9px] text-teal-500 mt-0.5">לחץ לפרטים ←</p>}
       </div>
-    </div>
+    </Wrapper>
   );
 }
 
@@ -970,6 +1053,8 @@ export default function Dashboard() {
   const [barberStats,  setBarberStats]  = useState<BarberStats | null>(null);
   const [custModal,    setCustModal]    = useState<{ title: string; customers: { id: string; name: string; phone: string; firstVisit?: string }[] } | null>(null);
   const [custLoading,  setCustLoading]  = useState(false);
+  const [todayModal,   setTodayModal]   = useState<{ title: string; data: TodayModalData } | null>(null);
+  const [todayLoading, setTodayLoading] = useState(false);
 
   const { from, to, label: monthLabel } = useMemo(
     () => monthRange(viewYear, viewMonth),
@@ -1039,6 +1124,20 @@ export default function Dashboard() {
       })
       .catch(() => setCustModal({ title: "שגיאה", customers: [] }))
       .finally(() => setCustLoading(false));
+  }
+
+  function openTodayList(kind: "new" | "appointments" | "booked") {
+    const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
+    const url = `/api/admin/analytics/today?kind=${kind}${staffParam ? `&staffId=${staffParam}` : ""}`;
+    const title = kind === "new" ? "חדשים היום" : kind === "appointments" ? "לקוחות היום" : "נקבעו היום";
+    setTodayLoading(true);
+    fetch(url)
+      .then(r => r.json())
+      .then((rows: TodayNewRow[] | TodayApptRow[] | TodayBookedRow[]) => {
+        setTodayModal({ title, data: { kind, rows } as TodayModalData });
+      })
+      .catch(() => setTodayModal({ title: "שגיאה", data: { kind: "new", rows: [] } }))
+      .finally(() => setTodayLoading(false));
   }
 
   const heading = selStaff
@@ -1243,10 +1342,10 @@ export default function Dashboard() {
             <div className="border-t border-neutral-100 pt-4">
               <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2.5">⚡ היום</h2>
               <div className="grid grid-cols-2 gap-2.5">
-                <MiniStat icon="👥" label="לקוחות היום" value={a.todayAppointments} />
-                <MiniStat icon="🆕" label="חדשים היום" value={a.todayNewToBusiness} />
+                <MiniStat icon="👥" label="לקוחות היום" value={a.todayAppointments} onClick={() => openTodayList("appointments")} />
+                <MiniStat icon="🆕" label="חדשים היום" value={a.todayNewToBusiness} onClick={() => openTodayList("new")} />
                 <MiniStat icon="💰" label="מחזור יומי" value={`₪${a.todayRevenue.toLocaleString("he-IL")}`} />
-                <MiniStat icon="📅" label="נקבעו היום" value={a.bookingsCreatedToday} sub="ידני + עצמאי" />
+                <MiniStat icon="📅" label="נקבעו היום" value={a.bookingsCreatedToday} sub="ידני + עצמאי" onClick={() => openTodayList("booked")} />
               </div>
             </div>
           )}
@@ -1286,6 +1385,22 @@ export default function Dashboard() {
           title={custModal.title}
           customers={custModal.customers}
           onClose={() => setCustModal(null)}
+        />
+      )}
+
+      {/* Today tiles loading overlay */}
+      {todayLoading && (
+        <div className="fixed inset-0 z-50 bg-black/20 flex items-center justify-center">
+          <div className="bg-white rounded-xl px-6 py-4 shadow-lg text-sm text-neutral-600">טוען רשימה...</div>
+        </div>
+      )}
+
+      {/* Today tiles modal */}
+      {todayModal && (
+        <TodayListModal
+          title={todayModal.title}
+          data={todayModal.data}
+          onClose={() => setTodayModal(null)}
         />
       )}
     </div>
