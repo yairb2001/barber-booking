@@ -213,6 +213,12 @@ export async function GET(req: NextRequest) {
     },
   });
 
+  // totalNoShows — all-time count, NOT date-scoped (unlike the metrics above).
+  // Powers the "🚫 הברזות" dashboard card + drill-down list of repeat no-shows.
+  const totalNoShows = await prisma.appointment.count({
+    where: { businessId: bizId, status: "no_show", ...sf },
+  });
+
   // ── Weekly summary (this week, last week, 12-week trend) ────────────────────
   // Anchored to "now" (not the month picker) and scoped by the active staff
   // filter — powers the weekly section at the bottom of the owner dashboard.
@@ -253,7 +259,7 @@ export async function GET(req: NextRequest) {
       newToBusiness: 0,
       newToStaff: 0,
       newBySource: [],
-      todayAppointments, todayRevenue, todayNewToBusiness: 0, bookingsCreatedToday,
+      todayAppointments, todayRevenue, todayNewToBusiness: 0, bookingsCreatedToday, totalNoShows,
       todayDate: todayStart.toISOString().slice(0, 10),
       occupancyToday: occToday.pct, occupancyMonth: occMonth.pct,
       prevMonthCohort: { newInPrevMonth: 0, returnedThisMonth: 0, rate: 0 },
@@ -548,6 +554,7 @@ export async function GET(req: NextRequest) {
     todayRevenue,
     todayNewToBusiness,
     bookingsCreatedToday,
+    totalNoShows,
     todayDate: todayStart.toISOString().slice(0, 10),
     occupancyToday: occToday.pct,
     occupancyMonth: occMonth.pct,

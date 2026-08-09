@@ -1352,6 +1352,9 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [cancelNotifyCustomer, setCancelNotifyCustomer] = useState(true);
   const [cancelNotifyWaitlist, setCancelNotifyWaitlist] = useState(true);
+  // No-show confirmation — ask the barber whether to notify the customer.
+  const [confirmingNoShow, setConfirmingNoShow] = useState(false);
+  const [noShowMessage, setNoShowMessage] = useState<"none" | "first" | "repeat">("none");
 
   // ── Product sales (קנה מוצר) ──────────────────────────────────────────────
   // Barber logs which products the customer bought during this appointment.
@@ -1734,6 +1737,24 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     setConfirmingCancel(false);
     onReload?.();
     onClose(); // close the customer window after cancelling
+  }
+
+  // Mark no-show with explicit choice on whether to notify the customer, then
+  // close the window (mirrors confirmCancel above).
+  async function confirmNoShow() {
+    setUpdating(true);
+    await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: "no_show",
+        noShowMessage,
+      }),
+    });
+    onChange(appt.id, "no_show");
+    setUpdating(false);
+    setConfirmingNoShow(false);
+    onReload?.();
+    onClose();
   }
 
   async function saveNote() {
@@ -2185,12 +2206,44 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="px-4 bg-white border border-slate-300 text-slate-700 rounded-lg py-2 text-sm">חזרה</button>
               </div>
             </div>
+          ) : confirmingNoShow ? (
+            <div className="bg-neutral-50 border border-neutral-200 rounded-xl p-3 space-y-3">
+              <p className="text-sm font-semibold text-neutral-700">לסמן ש-{dispName} לא הגיע לתור?</p>
+              {/* which message (if any) to send — never auto-picked, the barber chooses */}
+              <div>
+                <p className="text-xs text-neutral-400 mb-1.5">הודעה ללקוח בוואטסאפ</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button type="button" onClick={() => setNoShowMessage("none")}
+                    className={`py-1.5 rounded-lg text-xs font-medium border transition ${noShowMessage === "none" ? "bg-neutral-800 text-white border-neutral-800" : "bg-white text-slate-600 border-slate-300"}`}>
+                    בלי הודעה
+                  </button>
+                  <button type="button" onClick={() => setNoShowMessage("first")}
+                    className={`py-1.5 rounded-lg text-xs font-medium border transition ${noShowMessage === "first" ? "bg-teal-600 text-white border-teal-600" : "bg-white text-slate-600 border-slate-300"}`}>
+                    פעם ראשונה
+                  </button>
+                  <button type="button" onClick={() => setNoShowMessage("repeat")}
+                    className={`py-1.5 rounded-lg text-xs font-medium border transition ${noShowMessage === "repeat" ? "bg-orange-600 text-white border-orange-600" : "bg-white text-slate-600 border-slate-300"}`}>
+                    פעם שנייה+ (חיוב)
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-0.5">
+                <button onClick={confirmNoShow} disabled={updating}
+                  className="flex-1 bg-neutral-800 hover:bg-neutral-900 text-white rounded-lg py-2 text-sm font-semibold disabled:opacity-50">
+                  {updating ? "מסמן..." : "כן, סמן הבריז"}
+                </button>
+                <button onClick={() => setConfirmingNoShow(false)} disabled={updating}
+                  className="px-4 bg-white border border-slate-300 text-slate-700 rounded-lg py-2 text-sm">חזרה</button>
+              </div>
+            </div>
           ) : (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button disabled={appt.status === "confirmed" || updating} onClick={() => setStatus("confirmed")}
                 className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-emerald-50 text-emerald-700 border border-emerald-200">✓ מאשר</button>
               <button disabled={appt.status === "cancelled_by_staff" || updating} onClick={() => { setCancelNotifyCustomer(true); setCancelNotifyWaitlist(true); setConfirmingCancel(true); }}
                 className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-red-50 text-red-600 border border-red-200">בטל תור</button>
+              <button disabled={appt.status === "no_show" || updating} onClick={() => { setNoShowMessage("none"); setConfirmingNoShow(true); }}
+                className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-neutral-100 text-neutral-600 border border-neutral-300">🚫 הבריז</button>
             </div>
           )}
         </div>

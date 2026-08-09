@@ -70,6 +70,8 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   waitlist_notify:        { emoji: "📣", when: "נשלחת אוטומטית ללקוח שברשימת המתנה כשמתפנה תור מתאים" },
   appointment_cancelled:      { emoji: "❌", when: "נשלחת ללקוח כשהעסק/הספר מבטל לו תור" },
   appointment_self_cancelled: { emoji: "🗑️", when: "נשלחת ללקוח כשהוא מבטל לעצמו תור דרך 'התורים שלי'" },
+  appointment_no_show:        { emoji: "🚫", when: "נשלחת כשמסמנים 'הבריז' על תור ובוחרים 'פעם ראשונה'" },
+  appointment_no_show_repeat: { emoji: "🚫", when: "נשלחת כשמסמנים 'הבריז' על תור ובוחרים 'פעם שנייה+'" },
 };
 
 // Display order, grouped into sections.
@@ -98,6 +100,11 @@ const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
     title: "ביטול תור",
     subtitle: "ההודעות שנשלחות ללקוח כשתור מתבטל",
     keys: ["appointment_cancelled", "appointment_self_cancelled"],
+  },
+  {
+    title: "לא הגיע לתור (הבריז)",
+    subtitle: "נשלחות רק אם בוחרים לשלוח בזמן סימון 'הבריז' על תור — לא אוטומטי",
+    keys: ["appointment_no_show", "appointment_no_show_repeat"],
   },
 ];
 

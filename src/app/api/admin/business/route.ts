@@ -117,6 +117,12 @@ export async function PATCH(req: NextRequest) {
       ...(body.appointmentSelfCancelledTemplate !== undefined && {
         appointmentSelfCancelledTemplate: body.appointmentSelfCancelledTemplate || null,
       }),
+      ...(body.appointmentNoShowTemplate !== undefined && {
+        appointmentNoShowTemplate: body.appointmentNoShowTemplate || null,
+      }),
+      ...(body.appointmentNoShowRepeatTemplate !== undefined && {
+        appointmentNoShowRepeatTemplate: body.appointmentNoShowRepeatTemplate || null,
+      }),
       // Booking calendar
       ...(body.bookingHorizonDays !== undefined && {
         bookingHorizonDays: Number(body.bookingHorizonDays) || 30,

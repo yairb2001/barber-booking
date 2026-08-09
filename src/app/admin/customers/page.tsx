@@ -44,6 +44,7 @@ type CustomerDetail = Customer & {
   totalVisits: number;
   referrals: ReferralInfo[];
   rewards: Rewards;
+  blockedStaffIds: string[];
 };
 
 export default function CustomersPage() {
@@ -327,7 +328,13 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
   const [notesDraft, setNotesDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
+  const [staffList, setStaffList] = useState<StaffItem[]>([]);
+  const [staffBlockOpen, setStaffBlockOpen] = useState(false);
   useModalBack(true, onClose);
+
+  useEffect(() => {
+    fetch("/api/admin/staff").then(r => r.json()).then((d: StaffItem[]) => setStaffList(d)).catch(() => {});
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -370,6 +377,15 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
     const next = !detail.isBlocked;
     if (next && !confirm("לחסום את הלקוח? הוא לא יוכל לקבוע תור דרך האפליקציה.")) return;
     await patch({ isBlocked: next });
+  };
+
+  const toggleStaffBlock = async (staffId: string) => {
+    if (!detail) return;
+    const current = detail.blockedStaffIds || [];
+    const next = current.includes(staffId)
+      ? current.filter(x => x !== staffId)
+      : [...current, staffId];
+    await patch({ blockedStaffIds: next });
   };
 
   const remove = async () => {
@@ -621,6 +637,33 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
             🔄 הפוך לקוח לספר / מנהל
           </button>
         </div>
+
+        {/* Per-barber blocking — finer-grained than the full "🚫 חסום משתמש" below */}
+        {staffList.length > 0 && (
+          <div className="px-5 pb-3">
+            <button onClick={() => setStaffBlockOpen(v => !v)}
+              className="w-full flex items-center justify-between text-sm text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl py-2.5 px-3">
+              <span>🚫 חסימה אצל ספר מסוים{(detail.blockedStaffIds?.length ?? 0) > 0 ? ` (${detail.blockedStaffIds.length})` : ""}</span>
+              <span className="text-xs">{staffBlockOpen ? "▲" : "▼"}</span>
+            </button>
+            {staffBlockOpen && (
+              <div className="mt-2 space-y-1.5 bg-white border border-slate-200 rounded-xl p-3">
+                {staffList.map(s => {
+                  const blocked = (detail.blockedStaffIds || []).includes(s.id);
+                  return (
+                    <button key={s.id} type="button" onClick={() => toggleStaffBlock(s.id)} disabled={busy}
+                      className="w-full flex items-center gap-2.5 text-right">
+                      <div className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${blocked ? "bg-red-500" : "bg-neutral-300"}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-all ${blocked ? "right-0.5" : "right-4"}`} />
+                      </div>
+                      <span className="text-sm text-slate-700">חסום אצל {s.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Danger zone */}
         <div className="p-5 flex gap-2">

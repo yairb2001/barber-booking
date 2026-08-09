@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes } from "@/lib/utils";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
-import { sendProactiveMessage, cancellationText } from "@/lib/messaging";
+import { sendProactiveMessage, cancellationText, noShowText } from "@/lib/messaging";
 import { pushToOwner } from "@/lib/native/push";
 
 const CANCEL_STATUSES = new Set(["cancelled_by_staff", "cancelled_by_customer"]);
@@ -255,6 +255,49 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           body:          cancelBody,
           customerName:  appointment.customer.name,
         }).catch(err => console.error("cancellation send failed", err));
+      }
+    }
+  }
+
+  // If status just changed to no_show → optionally notify the customer, and
+  // always alert the owner (mirrors the cancellation flow above). No waitlist
+  // notify here — a no-show is discovered after the slot has already passed.
+  const justMarkedNoShow =
+    before.status !== "no_show" && appointment.status === "no_show";
+
+  if (justMarkedNoShow) {
+    const dateLabel = appointment.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+    pushToOwner(before.businessId, {
+      title: "לא הגיע לתור 🚫",
+      body: `${appointment.customer.name} אצל ${appointment.staff.name}\n${dateLabel} בשעה ${appointment.startTime}`,
+      data: { type: "appointment_no_show", appointmentId: appointment.id },
+    }, appointment.staffId).catch(() => {});
+
+    // The admin picks one of three options in the confirm dialog: don't send,
+    // send the first-time wording, or send the firmer repeat/payment-required
+    // wording — never auto-guessed from the customer's actual no-show count,
+    // since the barber may know context the count doesn't capture.
+    const noShowMessage: "none" | "first" | "repeat" =
+      body.noShowMessage === "first" || body.noShowMessage === "repeat" ? body.noShowMessage : "none";
+
+    if (noShowMessage !== "none") {
+      const business = await prisma.business.findUnique({ where: { id: before.businessId } });
+      if (business) {
+        const noShowBody = noShowText({
+          customerName: appointment.customer.name,
+          businessName: business.name,
+          dateLabel,
+          startTime:    appointment.startTime,
+          repeat:       noShowMessage === "repeat",
+        }, noShowMessage === "repeat" ? business.appointmentNoShowRepeatTemplate : business.appointmentNoShowTemplate);
+        sendProactiveMessage({
+          businessId:    before.businessId,
+          appointmentId: appointment.id,
+          customerPhone: appointment.customer.phone,
+          kind:          "appointment_no_show",
+          body:          noShowBody,
+          customerName:  appointment.customer.name,
+        }).catch(err => console.error("no-show send failed", err));
       }
     }
   }

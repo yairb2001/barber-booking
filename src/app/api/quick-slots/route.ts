@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId } from "@/lib/tenant";
 import { getPreferredServiceId } from "@/lib/preferred-service";
+import { getBlockStatus } from "@/lib/customer-block";
 import {
   generateSlots,
   timeToMinutes,
@@ -142,7 +143,16 @@ export async function GET(request: Request) {
     })
     .filter((s): s is NonNullable<typeof s> => s !== null);
 
-  if (eligiblePoolStaff.length === 0) {
+  // A blocked returning customer must never see availability for a barber
+  // they're blocked from (or any barber, if blocked business-wide) — filtered
+  // out before scanning, so it behaves exactly like "fully booked". See
+  // getBlockStatus: only affects identified returning customers.
+  const blockStatus = await getBlockStatus(request, resolvedBusinessId);
+  const scopedPoolStaff = blockStatus.allBlocked
+    ? []
+    : eligiblePoolStaff.filter(s => !blockStatus.blockedStaffIds.has(s.id));
+
+  if (scopedPoolStaff.length === 0) {
     return NextResponse.json([]);
   }
 
@@ -151,8 +161,8 @@ export async function GET(request: Request) {
   const todayStr = nowBiz.date;
 
   // The furthest day any eligible barber lets us scan to.
-  const maxHorizon = Math.max(...eligiblePoolStaff.map(s => s.horizon));
-  const staffIds = eligiblePoolStaff.map(s => s.id);
+  const maxHorizon = Math.max(...scopedPoolStaff.map(s => s.horizon));
+  const staffIds = scopedPoolStaff.map(s => s.id);
   const firstDate = new Date(todayStr + "T00:00:00.000Z");
   const lastDate = new Date(addDaysISO(todayStr, Math.max(0, maxHorizon - 1)) + "T00:00:00.000Z");
 
@@ -210,13 +220,13 @@ export async function GET(request: Request) {
   const doneStaff = new Set<string>();
 
   for (let dayOffset = 0; dayOffset < maxHorizon; dayOffset++) {
-    if (doneStaff.size === eligiblePoolStaff.length) break; // everyone has enough
+    if (doneStaff.size === scopedPoolStaff.length) break; // everyone has enough
 
     const dateStr = addDaysISO(todayStr, dayOffset);
     const dayOfWeek = getDayOfWeekISO(dateStr);
     const dayLabel = dayLabelFor(dateStr, dayOffset);
 
-    for (const staff of eligiblePoolStaff) {
+    for (const staff of scopedPoolStaff) {
       if (doneStaff.has(staff.id)) continue;
       if (dayOffset >= staff.horizon) { doneStaff.add(staff.id); continue; }
 

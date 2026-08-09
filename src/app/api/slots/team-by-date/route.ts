@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { getPreferredServiceId } from "@/lib/preferred-service";
+import { getBlockStatus } from "@/lib/customer-block";
 import {
   generateSlots,
   timeToMinutes,
@@ -127,13 +128,24 @@ export async function GET(request: Request) {
     })
     .filter((s): s is EligibleStaff => s !== null);
 
-  if (eligibleStaff.length === 0) {
+  // A blocked returning customer must never see availability that leads
+  // nowhere — filter their blocked barber(s) out of the pool entirely, before
+  // computing dots/slots, so both stay consistent (no "dot says open, list
+  // says empty" glitch). See getBlockStatus for why this only covers
+  // identified returning customers — first-time/anonymous visitors are caught
+  // by the final-submit guard in /api/appointments instead.
+  const blockStatus = await getBlockStatus(request, resolvedBusinessId);
+  const scopedStaff = blockStatus.allBlocked
+    ? []
+    : eligibleStaff.filter(s => !blockStatus.blockedStaffIds.has(s.id));
+
+  if (scopedStaff.length === 0) {
     return NextResponse.json(dateParam ? { barbers: [] } : { days: {} });
   }
 
   const nowBiz = getBusinessNow();
   const todayStr = nowBiz.date;
-  const staffIds = eligibleStaff.map(s => s.id);
+  const staffIds = scopedStaff.map(s => s.id);
 
   // Date window we need data for.
   const windowDates: string[] = [];
@@ -216,7 +228,7 @@ export async function GET(request: Request) {
     const days: Record<string, boolean> = {};
     for (const dateStr of windowDates) {
       let open = false;
-      for (const staff of eligibleStaff) {
+      for (const staff of scopedStaff) {
         if (slotsFor(staff, dateStr).length > 0) { open = true; break; }
       }
       days[dateStr] = open;
@@ -233,7 +245,7 @@ export async function GET(request: Request) {
 
   // time → barbers available at that time (kept in poolPriority order)
   const byTime = new Map<string, EligibleStaff[]>();
-  for (const staff of eligibleStaff) {
+  for (const staff of scopedStaff) {
     for (const t of slotsFor(staff, dateStr)) {
       const list = byTime.get(t) || [];
       list.push(staff);
@@ -248,7 +260,7 @@ export async function GET(request: Request) {
   // emptier barbers. A packed barber gets fewer of the day's slots → we actively
   // spread demand across the team instead of a blind round-robin from zero.
   const assignCount = new Map<string, number>(); // staffId → load (existing + assigned)
-  for (const staff of eligibleStaff) {
+  for (const staff of scopedStaff) {
     assignCount.set(staff.id, (apptsByKey.get(`${staff.id}|${dateStr}`) || []).length);
   }
 

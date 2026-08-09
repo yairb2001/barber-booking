@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
+import { getBlockStatus } from "@/lib/customer-block";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,15 @@ export async function GET(request: Request) {
       { error: "staffId, serviceId, and date are required" },
       { status: 400 }
     );
+  }
+
+  // A blocked returning customer must never see this barber's slots — behaves
+  // exactly like a fully-booked day (no `closed` flag, so it doesn't read as
+  // a day off either). Only affects identified returning customers (see
+  // getBlockStatus); a first-time/anonymous visitor is caught at final submit.
+  const blockStatus = await getBlockStatus(request, businessId ?? undefined);
+  if (blockStatus.allBlocked || blockStatus.blockedStaffIds.has(staffId)) {
+    return NextResponse.json({ slots: [] });
   }
 
   const date = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight

@@ -99,6 +99,27 @@ export async function GET(req: NextRequest) {
     })));
   }
 
+  if (kind === "no_show") {
+    // Cumulative, all-time — NOT scoped to `date` like the other kinds above.
+    // Must match the totalNoShows count computed in /api/admin/analytics.
+    const noShowAppts = await prisma.appointment.findMany({
+      where: { businessId: bizId, status: "no_show", ...sf },
+      select: {
+        customerId: true,
+        customer: { select: { id: true, name: true, phone: true } },
+      },
+    });
+    const counts = new Map<string, { id: string; name: string; phone: string; count: number }>();
+    for (const a of noShowAppts) {
+      const cur = counts.get(a.customerId);
+      if (cur) cur.count++;
+      else counts.set(a.customerId, { id: a.customer.id, name: a.customer.name, phone: a.customer.phone, count: 1 });
+    }
+    return NextResponse.json(
+      Array.from(counts.values()).sort((x, y) => y.count - x.count)
+    );
+  }
+
   if (kind === "new") {
     const todayAppts = await prisma.appointment.findMany({
       where: {

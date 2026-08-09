@@ -45,6 +45,23 @@ export async function POST(request: Request) {
     });
   }
 
+  // A blocked customer must never actually enter the waitlist — otherwise the
+  // waitlist-horizon notifier would surface them again later, defeating the
+  // whole point of the block. Per product decision they must never learn
+  // they're blocked, so this returns a normal-looking success without writing
+  // a real entry — same shape as the dedupe branch below.
+  if (customer.isBlocked) {
+    return NextResponse.json({ id: "noop", businessId: biz.id, customerId: customer.id, status: "waiting" }, { status: 200 });
+  }
+  if (staffId) {
+    const staffBlock = await prisma.customerStaffBlock.findUnique({
+      where: { customerId_staffId: { customerId: customer.id, staffId } },
+    });
+    if (staffBlock) {
+      return NextResponse.json({ id: "noop", businessId: biz.id, customerId: customer.id, status: "waiting" }, { status: 200 });
+    }
+  }
+
   const dateObj = new Date(date + "T00:00:00.000Z");
 
   // Avoid duplicate waitlist entries for the same person/staff/service/date

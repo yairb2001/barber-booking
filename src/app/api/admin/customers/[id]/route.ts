@@ -17,6 +17,7 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
       referrals: {
         select: { id: true, name: true, phone: true, createdAt: true, appointments: { where: { status: "completed" }, select: { id: true } } },
       },
+      staffBlocks: { select: { staffId: true } },
     },
   });
   if (!customer) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -73,6 +74,8 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     past,
     totalVisits: past.filter(a => a.status === "completed").length,
     rewards,
+    blockedStaffIds: customer.staffBlocks.map(b => b.staffId),
+    staffBlocks: undefined,
   });
 }
 
@@ -111,6 +114,25 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   }
 
   const customer = await prisma.customer.update({ where: { id }, data });
+
+  // Sync per-barber blocks — full replace of the set to match the checkbox UI
+  // (send the complete desired list of blocked staff IDs each time).
+  if (Array.isArray(body.blockedStaffIds)) {
+    const nextIds: string[] = body.blockedStaffIds.filter((x: unknown) => typeof x === "string");
+    const existing = await prisma.customerStaffBlock.findMany({ where: { customerId: id }, select: { staffId: true } });
+    const existingIds = new Set(existing.map(b => b.staffId));
+    const toAdd = nextIds.filter(sid => !existingIds.has(sid));
+    const toRemove = Array.from(existingIds).filter(sid => !nextIds.includes(sid));
+    await prisma.$transaction([
+      ...(toAdd.length
+        ? [prisma.customerStaffBlock.createMany({ data: toAdd.map(staffId => ({ customerId: id, staffId })) })]
+        : []),
+      ...(toRemove.length
+        ? [prisma.customerStaffBlock.deleteMany({ where: { customerId: id, staffId: { in: toRemove } } })]
+        : []),
+    ]);
+  }
+
   return NextResponse.json(customer);
 }
 

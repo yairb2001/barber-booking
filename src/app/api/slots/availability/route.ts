@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
+import { getBlockStatus } from "@/lib/customer-block";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,17 @@ export async function GET(request: Request) {
 
   if (!staffId || !serviceId || !fromStr || !toStr) {
     return NextResponse.json({ error: "staffId, serviceId, from, to are required" }, { status: 400 });
+  }
+
+  // A blocked returning customer must never see a green dot for this barber —
+  // mirrors the single-day /api/slots guard so the month view and day view
+  // never disagree. Only affects identified returning customers.
+  const blockStatus = await getBlockStatus(request, businessId ?? undefined);
+  if (blockStatus.allBlocked || blockStatus.blockedStaffIds.has(staffId)) {
+    const days: Record<string, boolean> = {};
+    let cur = fromStr;
+    for (let i = 0; i < 70 && cur <= toStr; i++) { days[cur] = false; cur = addDaysISO(cur, 1); }
+    return NextResponse.json({ days });
   }
 
   // Service duration (with per-barber custom override)

@@ -601,6 +601,28 @@ export const DEFAULT_APPOINTMENT_SELF_CANCELLED_TEMPLATE =
 נשמח לראותך בפעם הבאה 💈
 לקביעת תור חדש פשוט כתבו לנו כאן.`;
 
+export const DEFAULT_APPOINTMENT_NO_SHOW_TEMPLATE =
+`שלום {{name}} 👋
+
+שמנו לב שלא הגעת לתור שלך ב*{{business}}*:
+📅 {{date}}
+🕒 {{time}}
+
+זה תופס זמן שיכול היה להתפנות ללקוח אחר — הברזות חוזרות עלולות לחייב תשלום מראש/מלא בפעם הבאה.
+נשמח לראותך בקרוב 🙏`;
+
+// Sent for a REPEAT no-show (second time or more) — same warm tone, but the
+// soft "may require payment" becomes an explicit "will be charged full price".
+export const DEFAULT_APPOINTMENT_NO_SHOW_REPEAT_TEMPLATE =
+`שלום {{name}} 👋
+
+שמנו לב שזו כבר לא הפעם הראשונה שלא הגעת לתור שנקבע ב*{{business}}* בלי עדכון מראש:
+📅 {{date}}
+🕒 {{time}}
+
+מכיוון שזה קרה שוב, בתור הבא תחויב/י במחיר המלא של התספורת מראש כדי לשריין את השעה.
+מקווים שתביני/תבין, ונשמח לראותך בתור הבא 🙏`;
+
 export const DEFAULT_FIRST_BOOKING_TEMPLATE =
 `שלום {{name}} 👋
 
@@ -865,6 +887,30 @@ export const TEMPLATE_DEFS = {
       { key: "time",     label: "שעה" },
     ],
   },
+  appointment_no_show: {
+    label: "לא הגיע לתור (פעם ראשונה)",
+    description: "נשלחת ללקוח כשמסמנים אותו כ'הבריז' בכרטיס התור, ובוחרים 'פעם ראשונה' — נימה מבינה, בלי דרישת תשלום.",
+    field: "appointmentNoShowTemplate" as const,
+    default: DEFAULT_APPOINTMENT_NO_SHOW_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "business", label: "שם העסק" },
+      { key: "date",     label: "תאריך" },
+      { key: "time",     label: "שעה" },
+    ],
+  },
+  appointment_no_show_repeat: {
+    label: "לא הגיע לתור (פעם שנייה+)",
+    description: "נשלחת ללקוח כשמסמנים אותו כ'הבריז' ובוחרים 'פעם שנייה+' — אותה נימה חמה, אבל עם דרישת תשלום מלא מראש בתור הבא.",
+    field: "appointmentNoShowRepeatTemplate" as const,
+    default: DEFAULT_APPOINTMENT_NO_SHOW_REPEAT_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "business", label: "שם העסק" },
+      { key: "date",     label: "תאריך" },
+      { key: "time",     label: "שעה" },
+    ],
+  },
 } as const;
 
 export type TemplateKey = keyof typeof TEMPLATE_DEFS;
@@ -1052,6 +1098,28 @@ export function cancellationText(
     (params.bySelf
       ? DEFAULT_APPOINTMENT_SELF_CANCELLED_TEMPLATE
       : DEFAULT_APPOINTMENT_CANCELLED_TEMPLATE);
+  return applyTemplate(tmpl, {
+    name:     firstName(params.customerName),
+    business: formatBusinessName(params.businessName),
+    date:     params.dateLabel,
+    time:     params.startTime,
+  });
+}
+
+export function noShowText(
+  params: {
+    customerName: string;
+    businessName: string;
+    dateLabel: string;
+    startTime: string;
+    /** true → this isn't their first no-show → firm "payment required" tone. */
+    repeat?: boolean;
+  },
+  customTemplate?: string | null,
+): string {
+  const tmpl =
+    customTemplate ||
+    (params.repeat ? DEFAULT_APPOINTMENT_NO_SHOW_REPEAT_TEMPLATE : DEFAULT_APPOINTMENT_NO_SHOW_TEMPLATE);
   return applyTemplate(tmpl, {
     name:     firstName(params.customerName),
     business: formatBusinessName(params.businessName),

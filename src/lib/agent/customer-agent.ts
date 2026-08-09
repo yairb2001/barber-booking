@@ -508,6 +508,21 @@ export async function execTool(
           customer = await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } });
         }
 
+        // ── Block guard ─────────────────────────────────────────────────────
+        // A customer blocked from the whole business, or specifically from THIS
+        // barber, must never be booked by the agent. Per product decision: don't
+        // reveal it's a personal block — tell them plainly there's no way to book
+        // through WhatsApp/the app right now and to call the shop directly.
+        if (customer.isBlocked) {
+          return "שגיאה: הלקוח הזה חסום מקביעת תורים במערכת. אל תקבע לו תור. אמור לו בנימוס שאין אפשרות לקבוע תור דרך הוואטסאפ כרגע, ושיתקשר למספרה ישירות. אל תסביר לו שהוא חסום ואל תעביר את השיחה לצוות.";
+        }
+        const staffBlock = await prisma.customerStaffBlock.findUnique({
+          where: { customerId_staffId: { customerId: customer.id, staffId } },
+        });
+        if (staffBlock) {
+          return `שגיאה: הלקוח הזה חסום מקביעת תור אצל ${staff.name} ספציפית (לא חסום מכל העסק). אם יש ספר אחר פנוי הציע אותו בנימוס בלי לציין סיבה. אם הלקוח מתעקש דווקא על ${staff.name} — אמור לו שאין אפשרות לקבוע תור אצלו דרך הוואטסאפ כרגע, ושיתקשר למספרה ישירות. אל תסביר לו שהוא חסום.`;
+        }
+
         // Link customer to conversation
         await prisma.conversation.update({
           where: { id: conversationId },

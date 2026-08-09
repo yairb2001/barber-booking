@@ -46,6 +46,8 @@ model Business {
   waitlistNotifyTemplate    String?  @map("waitlist_notify_template")
   appointmentCancelledTemplate     String?  @map("appointment_cancelled_template")
   appointmentSelfCancelledTemplate String?  @map("appointment_self_cancelled_template")
+  appointmentNoShowTemplate        String?  @map("appointment_no_show_template")
+  appointmentNoShowRepeatTemplate  String?  @map("appointment_no_show_repeat_template")
   // ── Re-engagement automation ──
   reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
   reengageWeeks         Int      @default(6)     @map("reengage_weeks")
@@ -178,6 +180,7 @@ model Staff {
   portfolio     PortfolioItem[]
   stories       Story[]
   recurringAppointments RecurringAppointment[]
+  blockedCustomers CustomerStaffBlock[]
 
   @@map("staff")
 }
@@ -286,9 +289,25 @@ model Customer {
   waitlist          Waitlist[]
   recurringAppointments RecurringAppointment[]
   conversations     Conversation[]
+  staffBlocks       CustomerStaffBlock[]
 
   @@unique([businessId, phone])
   @@map("customers")
+}
+
+// A customer blocked from booking with ONE specific barber (finer-grained than
+// Customer.isBlocked, which blocks them from the whole business).
+model CustomerStaffBlock {
+  id         String   @id @default(uuid())
+  customerId String   @map("customer_id")
+  staffId    String   @map("staff_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer   Customer @relation(fields: [customerId], references: [id])
+  staff      Staff    @relation(fields: [staffId], references: [id])
+
+  @@unique([customerId, staffId])
+  @@map("customer_staff_blocks")
 }
 
 // === תורים ===

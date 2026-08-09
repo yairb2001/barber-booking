@@ -34,6 +34,7 @@ type Analytics = {
   todayRevenue:         number;
   todayNewToBusiness:   number;
   bookingsCreatedToday: number;
+  totalNoShows:         number; // all-time, not date-scoped
   todayDate:            string; // YYYY-MM-DD — server-clamped echo of the requested `date` param
   occupancyToday:       number;
   occupancyMonth:       number;
@@ -172,10 +173,12 @@ function CustomerListModal({ title, customers, onClose }: {
 type TodayNewRow  = { id: string; name: string; phone: string; staffName: string };
 type TodayApptRow = { id: string; name: string; phone: string; startTime: string; staffName: string };
 type TodayBookedRow = { id: string; name: string; phone: string; staffName: string; apptDate: string; startTime: string; createdAt: string };
+type TodayNoShowRow = { id: string; name: string; phone: string; count: number };
 type TodayModalData =
   | { kind: "new"; rows: TodayNewRow[] }
   | { kind: "appointments"; rows: TodayApptRow[] }
-  | { kind: "booked"; rows: TodayBookedRow[] };
+  | { kind: "booked"; rows: TodayBookedRow[] }
+  | { kind: "no_show"; rows: TodayNoShowRow[] };
 
 function TodayListModal({ title, data, onClose }: {
   title: string; data: TodayModalData; onClose: () => void;
@@ -222,7 +225,7 @@ function TodayListModal({ title, data, onClose }: {
                 </div>
               </div>
             ))
-          ) : (
+          ) : data.kind === "booked" ? (
             data.rows.map((c, i) => (
               <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
                 <div className="w-8 h-8 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center text-sm font-bold shrink-0">
@@ -240,6 +243,19 @@ function TodayListModal({ title, data, onClose }: {
                     נקבע {new Date(c.createdAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}
                   </p>
                 </div>
+              </div>
+            ))
+          ) : (
+            data.rows.map((c, i) => (
+              <div key={c.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl ${i % 2 === 0 ? "bg-neutral-50" : ""}`}>
+                <div className="w-8 h-8 rounded-full bg-neutral-200 text-neutral-600 flex items-center justify-center text-sm font-bold shrink-0">
+                  {c.name[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                  <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                </div>
+                <span className="text-xs font-semibold text-neutral-600 shrink-0">{c.count}×</span>
               </div>
             ))
           )}
@@ -1155,14 +1171,19 @@ export default function Dashboard() {
       .finally(() => setCustLoading(false));
   }
 
-  function openTodayList(kind: "new" | "appointments" | "booked") {
+  function openTodayList(kind: "new" | "appointments" | "booked" | "no_show") {
     const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
+    // `no_show` is cumulative (all-time) — the `date` param is harmless noise,
+    // the endpoint ignores it for that kind.
     const url = `/api/admin/analytics/today?kind=${kind}&date=${todayViewDate}${staffParam ? `&staffId=${staffParam}` : ""}`;
-    const title = kind === "new" ? `חדשים ${todayViewLabel}` : kind === "appointments" ? `לקוחות ${todayViewLabel}` : `נקבעו ${todayViewLabel}`;
+    const title = kind === "new" ? `חדשים ${todayViewLabel}`
+      : kind === "appointments" ? `לקוחות ${todayViewLabel}`
+      : kind === "booked" ? `נקבעו ${todayViewLabel}`
+      : "לקוחות עם הברזות";
     setTodayLoading(true);
     fetch(url)
       .then(r => r.json())
-      .then((rows: TodayNewRow[] | TodayApptRow[] | TodayBookedRow[]) => {
+      .then((rows: TodayNewRow[] | TodayApptRow[] | TodayBookedRow[] | TodayNoShowRow[]) => {
         setTodayModal({ title, data: { kind, rows } as TodayModalData });
       })
       .catch(() => setTodayModal({ title: "שגיאה", data: { kind: "new", rows: [] } }))
@@ -1389,6 +1410,7 @@ export default function Dashboard() {
                 <MiniStat icon="🆕" label={`חדשים ${todayViewLabel}`} value={a.todayNewToBusiness} onClick={() => openTodayList("new")} />
                 <MiniStat icon="💰" label="מחזור יומי" value={`₪${a.todayRevenue.toLocaleString("he-IL")}`} />
                 <MiniStat icon="📅" label={`נקבעו ${todayViewLabel}`} value={a.bookingsCreatedToday} sub="ידני + עצמאי" onClick={() => openTodayList("booked")} />
+                <MiniStat icon="🚫" label="לקוחות עם הברזות" value={a.totalNoShows} sub="סה״כ, כל הזמנים" onClick={() => openTodayList("no_show")} />
               </div>
             </div>
           )}

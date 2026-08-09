@@ -116,6 +116,29 @@ export async function POST(request: NextRequest) {
     },
   });
 
+  // Block guard — an existing customer blocked from the whole business, or
+  // specifically from this barber, may not self-book. A brand-new customer
+  // (no record yet) can never be blocked, so this only applies when found.
+  //
+  // Deliberately phrased identically to an ordinary taken-slot rejection (see
+  // the timing-conflict error below) — a blocked customer must never be able
+  // to tell they were singled out, only that "this slot isn't available".
+  // The calendar itself can't hide the slot in advance (availability is shown
+  // before we know who's browsing — phone/identity is only captured here, at
+  // the final submit), so this end-of-flow rejection is the only place to
+  // enforce it, and it has to blend in with normal booking friction.
+  if (customer && !customer.deletedAt) {
+    if (customer.isBlocked) {
+      return NextResponse.json({ error: "השעה הזו כבר לא זמינה. נסו שעה אחרת." }, { status: 409 });
+    }
+    const staffBlock = await prisma.customerStaffBlock.findUnique({
+      where: { customerId_staffId: { customerId: customer.id, staffId } },
+    });
+    if (staffBlock) {
+      return NextResponse.json({ error: "השעה הזו כבר לא זמינה. נסו שעה אחרת." }, { status: 409 });
+    }
+  }
+
   // If referred by a friend, look up the referrer customer record
   let referredById: string | undefined;
   let referrerRecord: { id: string; name: string; phone: string } | null = null;

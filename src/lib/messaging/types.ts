@@ -33,6 +33,8 @@ export type MessageKind =
   | "delay_notification" // sent to a customer when the barber is running late
   // Appointment cancelled by the business
   | "appointment_cancelled" // sent to a customer when staff cancels their appointment
+  // Customer marked as a no-show for their appointment
+  | "appointment_no_show" // sent to a customer when staff marks them as not having shown up
   // First-time customer booking — replaces the regular confirmation
   | "first_booking"
   // Walk-in customers — thank-you + booking link after appointment ends
