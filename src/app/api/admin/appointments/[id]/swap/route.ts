@@ -13,7 +13,7 @@ import { timeToMinutes } from "@/lib/utils";
  * can't make sense of the customer's reply. role=assistant + source=admin marks
  * it as a human-initiated outgoing message (does NOT mute the agent).
  */
-async function mirrorProposalToChat(bizId: string, recipientPhone: string, body: string): Promise<void> {
+async function mirrorProposalToChat(bizId: string, recipientPhone: string, body: string): Promise<string> {
   const phone = normalizeIsraeliPhone(recipientPhone);
   let conv = await prisma.conversation.findFirst({
     where: { businessId: bizId, phone },
@@ -31,6 +31,7 @@ async function mirrorProposalToChat(bizId: string, recipientPhone: string, body:
     where: { id: conv.id },
     data: { lastMessageAt: new Date() },
   });
+  return conv.id;
 }
 
 /**
@@ -301,12 +302,24 @@ export async function POST(
 
   // Mirror each outgoing manual proposal into the recipient's conversation so it
   // appears in /admin/chats and enters the agent's context. Best-effort — a
-  // mirror failure must never block the actual WhatsApp send below.
+  // mirror failure must never block the actual WhatsApp send below. Also stash
+  // the resulting conversationId on the proposal (sendJobs[i] <-> proposalIds[i],
+  // built 1:1 in the same loop above) so the customer's later "כן" reply
+  // (handleAdminProposalReply → executeApprovedProposal → recordInConversation)
+  // writes the confirmation into the SAME thread — without this, that write is
+  // a silent no-op (requesterConversationId stays null) and /admin/chats looks
+  // like the conversation stalled after "כן" even though the real WhatsApp
+  // confirmation went out fine.
   await Promise.all(
-    sendJobs.map(j =>
-      mirrorProposalToChat(primary.businessId, j.phone, j.body).catch(err =>
-        console.error("swap_proposal mirror failed:", err)
-      )
+    sendJobs.map((j, i) =>
+      mirrorProposalToChat(primary.businessId, j.phone, j.body)
+        .then(conversationId =>
+          prisma.swapProposal.update({
+            where: { id: proposalIds[i] },
+            data: { requesterConversationId: conversationId },
+          })
+        )
+        .catch(err => console.error("swap_proposal mirror failed:", err))
     )
   );
 
