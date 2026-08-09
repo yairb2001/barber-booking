@@ -213,7 +213,7 @@ export default function AdminStaffPage() {
   }
 
   async function deleteStaff(id: string, name: string) {
-    if (!confirm(`למחוק את ${name}?\n\nפעולה זו תמחק גם את לוח השעות, השירותים והגלריה שלו.`)) return;
+    if (!confirm(`להוציא את ${name} מהניהול?\n\nהוא ייעלם מהיומן ומקביעת תורים חדשים, אבל כל ההיסטוריה שלו (תורים, לוח שעות, שירותים, גלריה) נשמרת ולא נמחקת — אפשר עדיין לראות אותה בדוחות ובכרטיסי לקוחות.`)) return;
     const res = await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
     if (!res.ok) { const data = await res.json(); alert(data.error || "שגיאה במחיקה"); return; }
     load();

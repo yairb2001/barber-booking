@@ -184,7 +184,11 @@ const savePrefs = (patch: Partial<CalendarPrefs>) => {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
-type Staff = { id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[]; settings?: string | null };
+type Staff = {
+  id: string; name: string; avatarUrl: string | null; isAvailable: boolean; schedules: Schedule[]; settings?: string | null;
+  isActive?: boolean; // absent/true = active; false = departed (soft-deleted), see departedStaff
+  lastAppointment?: { date: string; startTime: string } | null;
+};
 type Service = { id: string; name: string; price: number; durationMinutes: number; ownerStaffId?: string | null };
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
@@ -3596,6 +3600,10 @@ export default function AdminCalendar() {
   const [view, setView] = useState<ViewType>("week");
   const [date, setDate] = useState(todayISO());
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
+  // Soft-deleted (isActive:false) staff — hidden from the calendar by default,
+  // loaded lazily only when the admin opens "הצג ספרים שעזבו" (see loadDepartedStaff).
+  const [departedStaff, setDepartedStaff] = useState<Staff[]>([]);
+  const [showDeparted, setShowDeparted] = useState(false);
   const [services, setServices] = useState<Service[]>([]);
   const [visibleStaff, setVisibleStaff] = useState<string[]>([]);
   // activeBarber is shared across ALL views (day/week/3day) — used for the "+ תור" button default
@@ -4176,6 +4184,35 @@ export default function AdminCalendar() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Owner-only, loaded lazily the first time "הצג ספרים שעזבו" is toggled on —
+  // most admins never need this, so it's not part of the regular loadStaff.
+  const [loadingDeparted, setLoadingDeparted] = useState(false);
+  async function ensureDepartedLoaded() {
+    if (departedStaff.length > 0 || loadingDeparted) return;
+    setLoadingDeparted(true);
+    try {
+      const res = await fetch("/api/admin/staff/departed");
+      if (res.ok) setDepartedStaff(await res.json());
+    } finally {
+      setLoadingDeparted(false);
+    }
+  }
+  async function toggleShowDeparted() {
+    const next = !showDeparted;
+    setShowDeparted(next);
+    if (next) await ensureDepartedLoaded();
+  }
+
+  // Selecting a departed barber has nothing to show "today" — jump straight to
+  // the date of their last real appointment (always in the past; DELETE
+  // /api/admin/staff/[id] refuses to soft-delete a barber with open future
+  // appointments) so their history is immediately visible.
+  function jumpToDepartedStaff(s: Staff) {
+    if (s.lastAppointment?.date) {
+      setDate(s.lastAppointment.date.slice(0, 10));
+    }
+  }
+
   // Load staff + services + calendar settings once on mount
   useEffect(() => { loadStaff(true); }, [loadStaff]);
 
@@ -4379,8 +4416,11 @@ export default function AdminCalendar() {
     setDate(addDays(date, dir * step));
   }
 
-  const displayedStaff = allStaff.filter(s => visibleStaff.includes(s.id));
-  const weekStaff = allStaff.find(s => s.id === weekBarber) || allStaff[0];
+  // Include a departed barber ONLY if explicitly selected (visibleStaff /
+  // weekBarber) — otherwise they never clutter the normal picker.
+  const combinedStaff = [...allStaff, ...departedStaff];
+  const displayedStaff = combinedStaff.filter(s => visibleStaff.includes(s.id));
+  const weekStaff = combinedStaff.find(s => s.id === weekBarber) || allStaff[0];
   const dates = getDates();
 
   function getAppts(staffId: string, d: string) {
@@ -5434,8 +5474,14 @@ export default function AdminCalendar() {
             {(["day","week","month"] as ViewType[]).map(v => (
               <button key={v} onClick={() => {
                 setView(v);
-                // Switching to day view → always show all staff (כולם)
-                if (v === "day") setVisibleStaff(allStaff.map(s => s.id));
+                // Switching to day view → always show all active staff (כולם),
+                // but keep any departed barber the admin explicitly selected.
+                if (v === "day") {
+                  setVisibleStaff(prev => [
+                    ...allStaff.map(s => s.id),
+                    ...prev.filter(id => departedStaff.some(d => d.id === id)),
+                  ]);
+                }
               }}
                 className={`px-2.5 py-1 text-[11px] rounded-md font-medium transition ${view === v ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
                 {v === "day" ? "יום" : v === "week" ? "שבוע" : "חודש"}
@@ -5446,9 +5492,20 @@ export default function AdminCalendar() {
           {/* Barber picker — swipe left/right here to switch between barbers' calendars */}
           {(isOwner || barbersCanViewOthersCalendar) && (view === "week" || view === "3day") && allStaff.length > 1 && (
             <div className="relative flex-1 min-w-0" onTouchStart={onBarberTouchStart} onTouchEnd={onBarberTouchEnd}>
-              <select value={weekBarber} onChange={e => setWeekBarber(e.target.value)}
+              <select value={weekBarber}
+                onFocus={() => { if (isOwner) ensureDepartedLoaded(); }}
+                onChange={e => {
+                  setWeekBarber(e.target.value);
+                  const dep = departedStaff.find(d => d.id === e.target.value);
+                  if (dep) jumpToDepartedStaff(dep);
+                }}
                 className="border border-neutral-200 rounded-lg pr-2 pl-6 py-1 text-xs text-neutral-700 w-full appearance-none">
                 {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {isOwner && departedStaff.length > 0 && (
+                  <optgroup label="עזבו">
+                    {departedStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </optgroup>
+                )}
               </select>
               <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[11px] text-neutral-400 select-none">‹ ›</span>
             </div>
@@ -5497,6 +5554,29 @@ export default function AdminCalendar() {
                       <span className="text-xs text-neutral-800">{s.name}</span>
                     </label>
                   ))}
+                  {isOwner && (
+                    <div className="border-t border-neutral-100 mt-1 pt-1">
+                      <button onClick={toggleShowDeparted}
+                        className="w-full text-right text-[11px] text-neutral-500 hover:text-neutral-800 px-1 py-1">
+                        {loadingDeparted ? "טוען..." : showDeparted ? "▲ הסתר ספרים שעזבו" : "▼ הצג ספרים שעזבו"}
+                      </button>
+                      {showDeparted && departedStaff.map((s, si) => (
+                        <label key={s.id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-lg hover:bg-neutral-50 opacity-70">
+                          <input type="checkbox" checked={visibleStaff.includes(s.id)}
+                            onChange={e => {
+                              setVisibleStaff(prev => e.target.checked ? [...prev, s.id] : prev.filter(id => id !== s.id));
+                              if (e.target.checked) jumpToDepartedStaff(s);
+                            }}
+                            className="accent-slate-900" />
+                          <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${COLORS[si % COLORS.length].bg}`}>{s.name[0]}</div>
+                          <span className="text-xs text-neutral-800">{s.name} <span className="text-neutral-400">(עזב)</span></span>
+                        </label>
+                      ))}
+                      {showDeparted && !loadingDeparted && departedStaff.length === 0 && (
+                        <p className="text-[10px] text-neutral-400 px-1 py-1">אין ספרים שעזבו</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
