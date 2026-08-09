@@ -25,6 +25,7 @@ type SourceRow = { source: string; new: number; returned: number };
 type Analytics = {
   totalRevenue:         number;
   totalAppointments:    number;
+  periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1340,6 +1341,13 @@ export default function Dashboard() {
                   ? `${a.prevMonthCohort.rate}% מלקוחות חודש שעבר`
                   : undefined}
                 onClick={() => openCustomerList("returning")}
+              />
+            )}
+            {!isFutureMonth && (
+              <StatCard
+                label="הברזות החודש"
+                value={a.periodNoShows}
+                color="text-neutral-600"
               />
             )}
           </div>

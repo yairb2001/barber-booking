@@ -127,6 +127,10 @@ export async function GET(req: NextRequest) {
   const totalRevenue      = activeAppts.reduce((s, a) => s + a.price, 0);
   const totalAppointments = activeAppts.length;
 
+  // No-shows within the selected period (respects the month picker + staff
+  // filter) — separate from `totalNoShows` below, which is all-time.
+  const periodNoShows = periodAll.filter(a => a.status === "no_show").length;
+
   // ── Service breakdown (for the pie chart): appointments per service in period ──
   const svcMap = new Map<string, { name: string; count: number; revenue: number }>();
   for (const a of activeAppts) {
@@ -252,7 +256,7 @@ export async function GET(req: NextRequest) {
       computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
     ]);
     return NextResponse.json({
-      totalRevenue, totalAppointments,
+      totalRevenue, totalAppointments, periodNoShows,
       uniqueCustomers: 0,
       weekly,
       newCustomers: 0,           // legacy alias
@@ -542,6 +546,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     totalRevenue,
     totalAppointments,
+    periodNoShows,
     // Unique customers served in the period (respects staff filter via sf)
     uniqueCustomers: periodCustIds.length,
     // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.
