@@ -1458,6 +1458,25 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     }
 
     // Case 2 — editing THIS customer's name/phone in place (typo fix etc.).
+    // Guard: if the typed name exactly matches a DIFFERENT existing customer,
+    // this is almost certainly a missed "pick from the list above" — saving
+    // here would silently rename THIS customer's own record (corrupting their
+    // real identity/history) instead of actually linking the appointment to
+    // the person intended. Re-check fresh against the server rather than
+    // trusting custSuggestions, which may already be empty by the time Save
+    // is clicked (e.g. picked via keyboard, or the list closed).
+    const typedName = editName.trim();
+    if (typedName && typedName.toLowerCase() !== appt.customer.name.trim().toLowerCase()) {
+      const check: { id: string; name: string }[] = await fetch(`/api/admin/customers?q=${encodeURIComponent(typedName)}`)
+        .then(r => r.json()).catch(() => []);
+      const exactMatch = Array.isArray(check) && check.find(c => c.id !== appt.customer.id && c.name.trim().toLowerCase() === typedName.toLowerCase());
+      if (exactMatch) {
+        setInlineSaving(false);
+        setInlineErr(`יש כבר לקוח בשם "${exactMatch.name}" — לבחור אותו מהרשימה כדי לשייך את התור אליו, לא להקליד את השם`);
+        return;
+      }
+    }
+
     const r = await fetch(`/api/admin/customers/${appt.customer.id}`, {
       method: "PATCH", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: editName.trim(), phone: editPhone.trim() }),
