@@ -1267,6 +1267,11 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
     const baseSlots = baseSchedule ? JSON.parse(baseSchedule.slots || "[]") : [{ start: "09:00", end: "20:00" }];
     const existingBreaks = overrideRes?.breaks ? JSON.parse(overrideRes.breaks) : (baseSchedule?.breaks ? JSON.parse(baseSchedule.breaks || "[]") : []);
     const existingSlots = overrideRes?.slots ? JSON.parse(overrideRes.slots) : baseSlots;
+    // A day with no per-date override yet is "closed" only via the weekly
+    // schedule (baseSchedule.isWorking) — fall back to that instead of
+    // assuming open, or a break added on a normally-closed day would
+    // silently reopen it to public booking.
+    const baseIsWorking = baseSchedule ? baseSchedule.isWorking : true;
 
     // Add the new break (with its name, set before creation)
     const newBreaks = [...existingBreaks, { start, end, name: name.trim() || "הפסקה" }];
@@ -1276,7 +1281,7 @@ function AddBreakModal({ staffId, date, defaultTime, onClose, onSaved }: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         date,
-        isWorking: overrideRes?.isWorking ?? true,
+        isWorking: overrideRes?.isWorking ?? baseIsWorking,
         slots: existingSlots,
         breaks: newBreaks,
       }),
