@@ -1068,6 +1068,26 @@ export default function Dashboard() {
   const [loading,      setLoading]      = useState(true);
   const [me,           setMe]           = useState<Me | null>(null);
   const [allStaff,     setAllStaff]     = useState<Staff[]>([]);
+  // Soft-deleted (isActive:false) staff — hidden from the pill filter by
+  // default, loaded lazily only when "הצג ספרים שעזבו" is clicked. Analytics
+  // still has their historical data (staffId filter doesn't check isActive),
+  // just no quick way to select them without this.
+  const [departedStaffDash, setDepartedStaffDash] = useState<Staff[]>([]);
+  const [showDepartedDash,  setShowDepartedDash]  = useState(false);
+  const [loadingDepartedDash, setLoadingDepartedDash] = useState(false);
+  async function toggleShowDepartedDash() {
+    const next = !showDepartedDash;
+    setShowDepartedDash(next);
+    if (next && departedStaffDash.length === 0 && !loadingDepartedDash) {
+      setLoadingDepartedDash(true);
+      try {
+        const res = await fetch("/api/admin/staff/departed");
+        if (res.ok) setDepartedStaffDash(await res.json());
+      } finally {
+        setLoadingDepartedDash(false);
+      }
+    }
+  }
   const [barberStats,  setBarberStats]  = useState<BarberStats | null>(null);
   const [custModal,    setCustModal]    = useState<{ title: string; customers: { id: string; name: string; phone: string; firstVisit?: string }[] } | null>(null);
   const [custLoading,  setCustLoading]  = useState(false);
@@ -1192,7 +1212,7 @@ export default function Dashboard() {
   }
 
   const heading = selStaff
-    ? `דשבורד — ${allStaff.find(s => s.id === selStaff)?.name ?? ""}`
+    ? `דשבורד — ${[...allStaff, ...departedStaffDash].find(s => s.id === selStaff)?.name ?? ""}`
     : (me && !isOwner && me.staff) ? `הדשבורד שלי — ${me.staff.name}` : "דשבורד";
 
   const a = analytics;
@@ -1245,6 +1265,16 @@ export default function Dashboard() {
                 <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
                   className={`px-3 py-1 rounded-full text-xs font-medium border transition ${selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"}`}>
                   {s.name}
+                </button>
+              ))}
+              <button onClick={toggleShowDepartedDash}
+                className="px-3 py-1 rounded-full text-xs font-medium border border-dashed border-neutral-300 text-neutral-400 hover:text-neutral-600 hover:border-neutral-400 transition">
+                {loadingDepartedDash ? "טוען..." : showDepartedDash ? "▲ עזבו" : "▼ הצג ספרים שעזבו"}
+              </button>
+              {showDepartedDash && departedStaffDash.map(s => (
+                <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition ${selStaff === s.id ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-400 hover:border-slate-300"}`}>
+                  {s.name} <span className="text-neutral-400">(עזב)</span>
                 </button>
               ))}
             </>

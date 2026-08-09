@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     // Pull every staff with a passwordHash and compare digits-normalized,
     // since stored phone format may vary. Confirm by verifying the password.
     const staffCandidates = await prisma.staff.findMany({
-      where: { passwordHash: { not: null } },
+      where: { passwordHash: { not: null }, isActive: true },
       select: {
         id: true, businessId: true, phone: true, passwordHash: true, name: true, role: true,
         business: { select: { suspendedAt: true, trialEndsAt: true, paidAt: true } },
