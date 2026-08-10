@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
 import { tierHas } from "@/lib/tier";
 import NotificationSettings from "@/components/NotificationSettings";
+import { useWhatsAppQr, WhatsAppQrBody } from "@/components/WhatsAppQrPanel";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Business = {
@@ -1621,37 +1622,11 @@ function ReminderTemplateEditor({
 // ── QR re-connect ────────────────────────────────────────────────────────────
 // Live GreenAPI linking: polls the instance state and, when the WhatsApp number
 // is disconnected, shows a fresh QR (rotates ~20s) so the owner can re-scan from
-// inside the app instead of opening the GreenAPI console.
-type QrState = { state?: string; connected?: boolean; qr?: string; type?: string; error?: string };
+// inside the app instead of opening the GreenAPI console. Shares its polling +
+// rendering with the global reconnect banner modal — see WhatsAppQrPanel.
 function QrConnect() {
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<QrState | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    async function tick() {
-      if (cancelled) return;
-      setLoading(true);
-      try {
-        const res = await fetch("/api/admin/whatsapp/qr", { cache: "no-store" });
-        const d: QrState = await res.json();
-        if (cancelled) return;
-        setData(d);
-        setLoading(false);
-        if (!d.connected) timer = setTimeout(tick, 15000); // QR rotates — re-poll
-      } catch {
-        if (cancelled) return;
-        setData({ error: "network" });
-        setLoading(false);
-        timer = setTimeout(tick, 15000);
-      }
-    }
-    tick();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [open]);
+  const { data, loading } = useWhatsAppQr(open);
 
   if (!open) {
     return (
@@ -1679,37 +1654,10 @@ function QrConnect() {
           <span className="text-2xl">🔗</span>
           <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
         </div>
-        <button onClick={() => { setOpen(false); setData(null); }}
+        <button onClick={() => setOpen(false)}
           className="text-xs text-neutral-400 hover:text-neutral-600">סגור</button>
       </div>
-
-      {data?.connected ? (
-        <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-5 text-center">
-          <div className="text-3xl mb-1">✓</div>
-          <p className="text-sm font-semibold text-emerald-800">ה-WhatsApp מחובר ופעיל</p>
-          <p className="text-[11px] text-emerald-600 mt-1">המספר מקושר — הודעות יישלחו כרגיל.</p>
-        </div>
-      ) : data?.qr ? (
-        <div className="text-center">
-          <div className="inline-block rounded-xl border border-neutral-200 p-3 bg-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={data.qr} alt="WhatsApp QR" width={240} height={240} className="block" />
-          </div>
-          <p className="text-sm font-medium text-neutral-700 mt-3">סרקו את הקוד מ-WhatsApp במכשיר העסק</p>
-          <p className="text-[11px] text-neutral-400 mt-1 leading-relaxed">
-            WhatsApp ← הגדרות ← מכשירים מקושרים ← קישור מכשיר.
-            <br />הקוד מתחדש אוטומטית — אם פג, ימתין קוד חדש.
-          </p>
-        </div>
-      ) : data?.error ? (
-        <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 text-center">
-          לא הצלחנו לטעון את החיבור ({data.error}). ודאו ש-Instance ID ו-API Token נכונים ושמורים.
-        </div>
-      ) : (
-        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-sm text-slate-500 text-center">
-          {loading ? "טוען חיבור..." : "ממתין לחיבור..."}
-        </div>
-      )}
+      <WhatsAppQrBody data={data} loading={loading} errorHint="ודאו ש-Instance ID ו-API Token נכונים ושמורים." />
     </div>
   );
 }
