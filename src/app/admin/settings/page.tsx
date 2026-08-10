@@ -22,9 +22,6 @@ type Business = {
   bookingHorizonDays: number;
   minBookingLeadMinutes: number;
   firstApptLeadMinutes: number;
-  reengageEnabled: boolean;
-  reengageWeeks: number;
-  reengageTemplate: string;
   chatsEnabled: boolean;
   staffManageOwnServices: boolean;
   facebookPixel: string;
@@ -81,14 +78,6 @@ const DEFAULT_2H_TEMPLATE =
 
 נתראה בקרוב! 💈`;
 
-const DEFAULT_REENGAGE_TEMPLATE =
-`שלום {{name}} 👋
-
-מזמן לא ראינו אותך אצלנו!
-נשמח לראותך שוב — קבע תור עכשיו 💈
-
-{{booking_link}}`;
-
 const emptyBusiness: Business = {
   name: "", phone: "", address: "", about: "", logoUrl: "", coverImageUrl: "",
   brandColor: "#D4AF37", secondaryColor: "#ffffff", bgColor: "#faf9f7", textColor: "#171717",
@@ -97,7 +86,6 @@ const emptyBusiness: Business = {
   features: { reminders: true, reminder_24h: true, reminder_2h: false, agent: false },
   reminder24hTemplate: "", reminder2hTemplate: "",
   bookingHorizonDays: 30, minBookingLeadMinutes: 0, firstApptLeadMinutes: 0,
-  reengageEnabled: false, reengageWeeks: 6, reengageTemplate: "",
   chatsEnabled: false,
   staffManageOwnServices: false,
   cancellationPolicyMode: "owner",
@@ -283,14 +271,16 @@ function StaffScheduleEditor({ staff, onSaved }: { staff: StaffMember; onSaved?:
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminSettingsPage() {
-  const [tab, setTab] = useState<"business" | "hours" | "whatsapp" | "automations">("business");
+  const [tab, setTab] = useState<"general" | "calendar" | "whatsapp" | "automations">("general");
   // Honor ?tab=whatsapp deep-links (e.g. the WhatsApp-disconnect banner's
   // "חבר מחדש" CTA points here). Read from the URL once on mount.
   useEffect(() => {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "business" || t === "hours" || t === "whatsapp" || t === "automations") {
-      setTab(t);
-    }
+    // "business"/"hours" are legacy tab keys from before the general/calendar split —
+    // still honored so old bookmarks/links don't land on a blank tab.
+    if (t === "business") setTab("general");
+    else if (t === "hours") setTab("calendar");
+    else if (t === "whatsapp" || t === "automations") setTab(t);
   }, []);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
@@ -545,9 +535,6 @@ export default function AdminSettingsPage() {
           bookingHorizonDays:     data.bookingHorizonDays     ?? 30,
           minBookingLeadMinutes:  data.minBookingLeadMinutes  ?? 0,
           firstApptLeadMinutes:   data.firstApptLeadMinutes   ?? 0,
-          reengageEnabled:        data.reengageEnabled        ?? false,
-          reengageWeeks:       data.reengageWeeks       ?? 6,
-          reengageTemplate:    data.reengageTemplate    || "",
           chatsEnabled:        data.chatsEnabled        ?? false,
           staffManageOwnServices: data.staffManageOwnServices ?? false,
           cancellationPolicyMode: data.cancellationPolicyMode === "staff" ? "staff" : "owner",
@@ -786,11 +773,11 @@ export default function AdminSettingsPage() {
       {/* Tabs */}
       <div className="flex gap-1 bg-neutral-100 rounded-xl p-1 mb-6 w-fit">
         {([
-          { key: "business", label: "פרטי עסק" },
-          { key: "hours",    label: "שעות עבודה" },
-          { key: "whatsapp", label: "WhatsApp" },
+          { key: "general",     label: "כללי" },
+          { key: "calendar",    label: "יומן" },
+          { key: "whatsapp",    label: "WhatsApp" },
           { key: "automations", label: "🤖 אוטומציות" },
-        ] as { key: "business" | "hours" | "whatsapp" | "automations"; label: string }[]).map(({ key, label }) => (
+        ] as { key: "general" | "calendar" | "whatsapp" | "automations"; label: string }[]).map(({ key, label }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition ${tab === key ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
             {label}
@@ -798,8 +785,8 @@ export default function AdminSettingsPage() {
         ))}
       </div>
 
-      {/* ── Business tab ── */}
-      {tab === "business" && (
+      {/* ── General tab ── */}
+      {tab === "general" && (
         bizLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
           <div className="space-y-5 max-w-xl">
             {/* General */}
@@ -1089,7 +1076,14 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )
+      )}
 
+      {/* ── Calendar tab ── */}
+      {tab === "calendar" && (
+        bizLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
+          <div className="space-y-5 max-w-xl">
             {/* Booking calendar */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <h2 className="font-semibold text-neutral-800 mb-4">יומן ותורים</h2>
@@ -1296,6 +1290,27 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
+            {/* Working hours per staff member */}
+            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+              <h2 className="font-semibold text-neutral-800 mb-1">שעות עבודה</h2>
+              <p className="text-xs text-neutral-400 mb-4">
+                הגדר שעות עבודה קבועות לכל ספר. לשינויים חד-פעמיים — לחץ על כותרת היום ביומן.
+              </p>
+              {staffLoading ? <div className="text-center py-8 text-neutral-400">טוען...</div> : (
+                <div className="space-y-4">
+                  {staffList.map(staff => (
+                    <StaffScheduleEditor key={staff.id} staff={staff} onSaved={reloadStaff} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      )}
+
+      {/* ── General tab (continued) ── */}
+      {tab === "general" && !bizLoading && (
+        <div className="space-y-5 max-w-xl">
             {/* Referral program — "חבר מביא חבר" */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <div className="flex items-center justify-between mb-1">
@@ -1484,21 +1499,6 @@ export default function AdminSettingsPage() {
               {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
             </button>
           </div>
-        )
-      )}
-
-      {/* ── Hours tab ── */}
-      {tab === "hours" && (
-        staffLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
-          <div className="space-y-4 max-w-3xl">
-            <p className="text-sm text-neutral-500 mb-2">
-              הגדר שעות עבודה קבועות לכל ספר. לשינויים חד-פעמיים — לחץ על כותרת היום ביומן.
-            </p>
-            {staffList.map(staff => (
-              <StaffScheduleEditor key={staff.id} staff={staff} onSaved={reloadStaff} />
-            ))}
-          </div>
-        )
       )}
 
       {/* ── WhatsApp tab ── */}
@@ -1612,106 +1612,6 @@ function ReminderTemplateEditor({
   );
 }
 
-// ── Re-engagement Template Editor ─────────────────────────────────────────────
-function ReengageEditor({
-  form, setField,
-}: {
-  form: Business;
-  setField: <K extends keyof Business>(key: K, value: Business[K]) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const displayValue = form.reengageTemplate || DEFAULT_REENGAGE_TEMPLATE;
-
-  return (
-    <div className={`rounded-xl border transition ${form.reengageEnabled ? "border-neutral-200 bg-white" : "border-neutral-100 bg-neutral-50/50"}`}>
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3">
-        <button
-          onClick={() => setField("reengageEnabled", !form.reengageEnabled)}
-          className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${form.reengageEnabled ? "bg-emerald-500" : "bg-neutral-200"}`}
-        >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${form.reengageEnabled ? "right-0.5" : "left-0.5"}`} />
-        </button>
-
-        <div className="flex-1 min-w-0">
-          <p className={`text-sm font-semibold ${form.reengageEnabled ? "text-neutral-800" : "text-neutral-400"}`}>
-            🔁 החזרת לקוחות לא פעילים
-          </p>
-          <p className="text-xs text-neutral-400 truncate">
-            שלח הודעה אוטומטית ללקוחות שלא ביקרו — מופעל על ידי cron יומי
-          </p>
-        </div>
-
-        <button
-          onClick={() => setExpanded(x => !x)}
-          className="text-xs text-neutral-400 hover:text-neutral-600 px-2 py-1 rounded-lg hover:bg-neutral-100 transition flex items-center gap-1 shrink-0"
-        >
-          ✏️ ערוך
-          <span className="text-[10px]">{expanded ? "▲" : "▼"}</span>
-        </button>
-      </div>
-
-      {expanded && (
-        <div className="px-4 pb-4 border-t border-neutral-100 pt-3 space-y-3">
-          {/* Weeks threshold */}
-          <div>
-            <label className="text-xs text-neutral-500 block mb-1">שלח הודעה אחרי</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" min={1} max={52}
-                value={form.reengageWeeks}
-                onChange={e => setField("reengageWeeks", Number(e.target.value))}
-                className="w-20 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
-              />
-              <span className="text-sm text-neutral-600">שבועות ללא ביקור</span>
-            </div>
-          </div>
-
-          {/* Template */}
-          <div>
-            <label className="text-xs text-neutral-500 block mb-1">טקסט ההודעה</label>
-            <textarea
-              value={displayValue}
-              onChange={e => setField("reengageTemplate", e.target.value)}
-              rows={6}
-              dir="rtl"
-              className="w-full border border-neutral-200 rounded-xl px-3 py-2.5 text-sm font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-emerald-400 resize-none"
-            />
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {[
-                ["{{name}}", "שם לקוח"],
-                ["{{business}}", "שם עסק"],
-                ["{{booking_link}}", "קישור לאתר"],
-              ].map(([placeholder, label]) => (
-                <button
-                  key={placeholder}
-                  onClick={() => setField("reengageTemplate", displayValue + placeholder)}
-                  title={`הוסף ${label}`}
-                  className="text-[11px] bg-neutral-100 hover:bg-neutral-200 text-neutral-600 px-2 py-0.5 rounded-md font-mono transition"
-                >
-                  {placeholder}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {form.reengageTemplate && (
-            <button
-              onClick={() => setField("reengageTemplate", "")}
-              className="text-xs text-red-400 hover:text-red-600 transition"
-            >
-              ↺ החזר לברירת מחדל
-            </button>
-          )}
-
-          <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700">
-            ⚠️ הגדר cron יומי שיפנה ל: <code className="font-mono">/api/cron/reengage?secret=CRON_SECRET</code>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── QR re-connect ────────────────────────────────────────────────────────────
 // Live GreenAPI linking: polls the instance state and, when the WhatsApp number
@@ -1967,15 +1867,21 @@ function WhatsAppTab({
         </div>
       </div>
 
-      {/* Re-engagement automation */}
+      {/* Re-engagement automation — link to dedicated tab */}
       <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="font-semibold text-neutral-800">אוטומציה — החזרת לקוחות</h2>
+        <div className="flex items-start gap-3">
+          <span className="text-lg mt-0.5">🔁</span>
+          <div>
+            <p className="text-sm font-semibold text-neutral-800">החזרת לקוחות לא פעילים</p>
+            <p className="text-xs text-neutral-500 mb-1">שלח הודעה אוטומטית ללקוחות שלא ביקרו זמן רב</p>
+            <a
+              href="?tab=automations"
+              className="text-xs text-slate-800 hover:text-slate-700 font-medium underline"
+            >
+              עבור ללשונית אוטומציות ←
+            </a>
+          </div>
         </div>
-        <p className="text-xs text-neutral-500 mb-4">
-          שלח הודעה ללקוחות שלא ביקרו כבר זמן מה — נדרש הגדרת cron יומי.
-        </p>
-        <ReengageEditor form={form} setField={setField} />
       </div>
 
       {/* Chats — bidirectional WhatsApp */}
