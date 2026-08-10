@@ -104,6 +104,11 @@ export default function AdminServicesPage() {
         </button>
       </div>
 
+      <p className="text-xs text-neutral-400 bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 mb-6 leading-relaxed">
+        * שירות חדש נוסף אוטומטית לכל הספרים בעסק. אם ספר מסוים לא מבצע שירות מסוים —
+        אפשר לכבות לו אותו נקודתית דרך פרופיל הספר (טאב &quot;שירותים&quot;), בלי למחוק אותו לכולם.
+      </p>
+
       {loading ? (
         <div className="text-center py-16 text-neutral-400">טוען...</div>
       ) : (
