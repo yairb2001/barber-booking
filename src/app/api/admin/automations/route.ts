@@ -30,12 +30,14 @@ export async function POST(req: NextRequest) {
   if (!bizId) return NextResponse.json({ error: "No business" }, { status: 500 });
 
   const body = await req.json();
+  const active = body.active ?? false;
   const automation = await prisma.automation.create({
     data: {
       businessId: bizId,
       type:     body.type,
       name:     body.name,
-      active:   body.active   ?? false,
+      active,
+      activatedAt: active ? new Date() : null,
       settings: typeof body.settings === "string" ? body.settings : JSON.stringify(body.settings ?? {}),
       template: body.template ?? null,
     },

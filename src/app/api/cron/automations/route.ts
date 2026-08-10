@@ -40,14 +40,23 @@ export async function GET(req: NextRequest) {
     const cutoffDate = new Date(now);
     cutoffDate.setDate(cutoffDate.getDate() - inactiveWeeks * 7);
 
-    // Customers who haven't visited since cutoff
+    // Fence off the pre-existing backlog: only customers who *cross* the
+    // inactivity threshold after this automation was (last) activated should
+    // ever get a message. Without activatedAt we can't establish that floor
+    // safely, so skip rather than risk blasting everyone who already qualifies.
+    if (!auto.activatedAt) continue;
+    const activationFloor = new Date(auto.activatedAt);
+    activationFloor.setDate(activationFloor.getDate() - inactiveWeeks * 7);
+
+    // Customers who haven't visited since cutoff, but were still "active"
+    // (i.e. hadn't crossed the threshold yet) when the automation turned on.
     let customers = await prisma.customer.findMany({
       where: {
         businessId: auto.businessId,
         isBlocked: false,
         deletedAt: null,
         phone: { not: "" },
-        lastVisitAt: { lte: cutoffDate, not: null },
+        lastVisitAt: { lte: cutoffDate, gte: activationFloor, not: null },
       },
       include: {
         _count: {

@@ -558,6 +558,11 @@ model Automation {
   name        String
   settings    String   // JSON with type-specific config
   template    String?
+  // Set whenever `active` flips false -> true. Used to fence off customers who
+  // were already inactive before this run started — a reengage automation only
+  // fires for customers who cross the inactivity threshold AFTER activatedAt,
+  // never for the pre-existing backlog (see /api/cron/automations).
+  activatedAt DateTime? @map("activated_at")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 

@@ -13,12 +13,18 @@ export async function PATCH(
   if (guard) return guard;
   const session = getRequestSession(req)!;
   // Tenant isolation: only touch an automation that belongs to the caller's business.
-  const owned = await prisma.automation.findFirst({ where: { id: params.id, businessId: session.businessId }, select: { id: true } });
+  const owned = await prisma.automation.findFirst({ where: { id: params.id, businessId: session.businessId }, select: { id: true, active: true } });
   if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
   const body = await req.json();
   const data: Record<string, unknown> = {};
 
-  if (body.active   !== undefined) data.active   = Boolean(body.active);
+  if (body.active !== undefined) {
+    const active = Boolean(body.active);
+    data.active = active;
+    // Flipping off -> on (re)fences the backlog: only customers who go inactive
+    // from this moment on will trigger a message, never the existing backlog.
+    if (active && !owned.active) data.activatedAt = new Date();
+  }
   if (body.name     !== undefined) data.name     = String(body.name);
   if (body.template !== undefined) data.template = body.template ?? null;
   if (body.settings !== undefined)
