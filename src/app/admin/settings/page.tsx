@@ -34,7 +34,8 @@ type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: 
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
 type StaffBookingSettings = { bookingHorizonDays?: number; minBookingLeadMinutes?: number };
 
-type DayConfig = { isWorking: boolean; start: string; end: string; hasBreak: boolean; breakStart: string; breakEnd: string };
+type BreakRange = { start: string; end: string };
+type DayConfig = { isWorking: boolean; start: string; end: string; breaks: BreakRange[] };
 
 type AutoType = "reengage" | "post_first_visit" | "post_every_visit";
 interface AutoRec {
@@ -98,7 +99,7 @@ const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמיש
 
 function defaultDay(dow: number): DayConfig {
   const isFriday = dow === 5; const isSaturday = dow === 6;
-  return { isWorking: !isSaturday, start: isFriday ? "08:00" : "09:00", end: isFriday ? "14:00" : "20:00", hasBreak: false, breakStart: "13:00", breakEnd: "14:00" };
+  return { isWorking: !isSaturday, start: isFriday ? "08:00" : "09:00", end: isFriday ? "14:00" : "20:00", breaks: [] };
 }
 
 function parseSchedule(schedules: Schedule[]): DayConfig[] {
@@ -107,9 +108,12 @@ function parseSchedule(schedules: Schedule[]): DayConfig[] {
     if (!s) return defaultDay(dow);
     let start = "09:00", end = "20:00";
     try { const sl = JSON.parse(s.slots); if (sl[0]) { start = sl[0].start; end = sl[0].end; } } catch { /* ignore */ }
-    let hasBreak = false, breakStart = "13:00", breakEnd = "14:00";
-    if (s.breaks) { try { const br = JSON.parse(s.breaks); if (br[0]) { hasBreak = true; breakStart = br[0].start; breakEnd = br[0].end; } } catch { /* ignore */ } }
-    return { isWorking: s.isWorking, start, end, hasBreak, breakStart, breakEnd };
+    // Read the full breaks[] array — a day can carry more than one break, and
+    // reading only the first (as this editor briefly did) silently drops the
+    // rest on the next save from here.
+    let breaks: BreakRange[] = [];
+    if (s.breaks) { try { const br = JSON.parse(s.breaks); if (Array.isArray(br)) breaks = br; } catch { /* ignore */ } }
+    return { isWorking: s.isWorking, start, end, breaks };
   });
 }
 
@@ -153,11 +157,26 @@ function StaffScheduleEditor({ staff, onSaved }: { staff: StaffMember; onSaved?:
     setSaved(false);
   }
 
+  function updateBreak(dow: number, bi: number, patch: Partial<BreakRange>) {
+    setDays(prev => prev.map((d, i) => i !== dow ? d : {
+      ...d, breaks: d.breaks.map((b, j) => j === bi ? { ...b, ...patch } : b),
+    }));
+    setSaved(false);
+  }
+  function addBreak(dow: number) {
+    setDays(prev => prev.map((d, i) => i === dow ? { ...d, breaks: [...d.breaks, { start: "13:00", end: "14:00" }] } : d));
+    setSaved(false);
+  }
+  function removeBreak(dow: number, bi: number) {
+    setDays(prev => prev.map((d, i) => i !== dow ? d : { ...d, breaks: d.breaks.filter((_, j) => j !== bi) }));
+    setSaved(false);
+  }
+
   async function save() {
     setSaving(true);
     const payload = days.map((d, dow) => ({
       dayOfWeek: dow, isWorking: d.isWorking, start: d.start, end: d.end,
-      ...(d.hasBreak && d.breakStart && d.breakEnd ? { breakStart: d.breakStart, breakEnd: d.breakEnd } : {}),
+      breaks: d.breaks.filter(b => b.start && b.end),
     }));
     const res = await fetch(`/api/admin/staff/${staff.id}/schedule`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
@@ -206,21 +225,22 @@ function StaffScheduleEditor({ staff, onSaved }: { staff: StaffMember; onSaved?:
                     <span className="text-xs text-neutral-400">עד</span>
                   </div>
 
-                  {/* Break */}
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => updateDay(dow, { hasBreak: !day.hasBreak })}
-                      className={`text-xs px-2.5 py-1 rounded-lg border transition ${day.hasBreak ? "bg-orange-50 border-orange-200 text-orange-700" : "bg-neutral-50 border-neutral-200 text-neutral-400"}`}>
-                      הפסקה
-                    </button>
-                    {day.hasBreak && (
-                      <div className="flex items-center gap-2" dir="ltr">
-                        <input type="time" dir="ltr" value={day.breakStart} onChange={e => updateDay(dow, { breakStart: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
-                        <span className="text-xs text-neutral-400">—</span>
-                        <input type="time" dir="ltr" value={day.breakEnd} onChange={e => updateDay(dow, { breakEnd: e.target.value })}
-                          className="border border-neutral-200 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-teal-300" />
+                  {/* Breaks — a day can have more than one */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {day.breaks.map((br, bi) => (
+                      <div key={bi} className="flex items-center gap-1.5 bg-orange-50 border border-orange-200 rounded-lg px-2 py-1" dir="ltr">
+                        <input type="time" dir="ltr" value={br.start} onChange={e => updateBreak(dow, bi, { start: e.target.value })}
+                          className="border border-orange-200 rounded px-1.5 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white" />
+                        <span className="text-orange-400 text-xs">—</span>
+                        <input type="time" dir="ltr" value={br.end} onChange={e => updateBreak(dow, bi, { end: e.target.value })}
+                          className="border border-orange-200 rounded px-1.5 py-0.5 text-xs w-20 focus:outline-none focus:ring-1 focus:ring-orange-300 bg-white" />
+                        <button onClick={() => removeBreak(dow, bi)} className="text-red-400 hover:text-red-600 text-xs px-0.5">✕</button>
                       </div>
-                    )}
+                    ))}
+                    <button onClick={() => addBreak(dow)}
+                      className="text-xs px-2.5 py-1 rounded-lg border border-dashed border-neutral-200 text-neutral-400 hover:border-orange-300 hover:text-orange-600 transition">
+                      + הפסקה
+                    </button>
                   </div>
                 </>
               ) : (
