@@ -707,6 +707,11 @@ export default function AdminSettingsPage() {
               <span className="text-xl">💈</span>
               <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">שירותים</span>
             </Link>
+            <Link href="/admin/agent"
+              className="flex items-center gap-2.5 bg-white border border-neutral-200 rounded-xl px-4 py-3 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
+              <span className="text-xl">🤖</span>
+              <span className="text-sm font-medium text-neutral-700 group-hover:text-neutral-900">סוכן AI</span>
+            </Link>
           </div>
 
           {/* Who manages services: owner controls all, or each barber manages their own */}
