@@ -193,6 +193,7 @@ type Service = { id: string; name: string; price: number; durationMinutes: numbe
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
+  customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
   customServiceName?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
@@ -769,6 +770,12 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
+      )}
+      {!!appt.customerNoShows && (
+        <span className="absolute top-0.5 right-0.5 z-10 flex items-center text-[8px] font-bold leading-none px-1 py-px rounded bg-neutral-700 text-white shadow-sm"
+          title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>
+          ⚠{appt.customerNoShows > 1 ? appt.customerNoShows : ""}
+        </span>
       )}
       {(appt.note || appt.staffNote) && (
         <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">

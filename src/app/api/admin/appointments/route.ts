@@ -46,7 +46,25 @@ export async function GET(req: NextRequest) {
     where, include: { customer: true, staff: true, service: true },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
-  return NextResponse.json(appointments);
+
+  // Flag customers who have no-showed ("הבריז") before, so the calendar can warn
+  // the barber. One extra grouped query over the customers already in this
+  // result. A restricted barber only counts their OWN no-shows.
+  const customerIds = Array.from(new Set(appointments.map(a => a.customerId)));
+  const noShowWhere: Record<string, unknown> = {
+    businessId: session.businessId,
+    status: "no_show",
+    customerId: { in: customerIds },
+  };
+  if (!perms.isOwner && !perms.canViewAllCalendars && perms.staffId) {
+    noShowWhere.staffId = perms.staffId;
+  }
+  const noShowGroups = customerIds.length
+    ? await prisma.appointment.groupBy({ by: ["customerId"], where: noShowWhere, _count: { _all: true } })
+    : [];
+  const noShowByCustomer = new Map(noShowGroups.map(g => [g.customerId, g._count._all]));
+  const withNoShow = appointments.map(a => ({ ...a, customerNoShows: noShowByCustomer.get(a.customerId) || 0 }));
+  return NextResponse.json(withNoShow);
 }
 
 export async function POST(req: NextRequest) {
