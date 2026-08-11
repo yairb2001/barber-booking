@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { telHref } from "@/lib/messaging/phone";
 import { useModalBack } from "@/lib/useModalBack";
+import { useRouter } from "next/navigation";
 
 type Customer = {
   id: string;
@@ -66,6 +67,20 @@ export default function CustomersPage() {
     const t = setTimeout(reload, 300);
     return () => clearTimeout(t);
   }, [q]);
+
+  // Deep-link: /admin/customers?customer=<phone> opens that customer's card
+  // (used by the WhatsApp inbox "open customer card" link).
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("customer");
+    if (p) setPendingPhone(p);
+  }, []);
+  useEffect(() => {
+    if (!pendingPhone || customers.length === 0) return;
+    const norm = (x: string) => (x || "").replace(/\D/g, "").replace(/^0/, "972");
+    const target = customers.find(c => norm(c.phone) === norm(pendingPhone));
+    if (target) { setSelectedId(target.id); setPendingPhone(null); }
+  }, [pendingPhone, customers]);
 
   return (
     <div className="p-8 overflow-auto h-full">
@@ -149,7 +164,6 @@ export default function CustomersPage() {
           onClose={() => setSelectedId(null)}
           onChanged={() => { reload(); }}
           onDeleted={() => { setSelectedId(null); reload(); }}
-          onSendMessage={(id, name) => setMessageTarget({ id, name })}
         />
       )}
 
@@ -313,12 +327,11 @@ function AddCustomerModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
 // ───────────────────────────────────────────────────────────
 // Customer detail modal (view + edit + actions)
 // ───────────────────────────────────────────────────────────
-function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage }: {
+function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
   id: string;
   onClose: () => void;
   onChanged: () => void;
   onDeleted: () => void;
-  onSendMessage: (id: string, name: string) => void;
 }) {
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -330,6 +343,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [staffList, setStaffList] = useState<StaffItem[]>([]);
   const [staffBlockOpen, setStaffBlockOpen] = useState(false);
+  const router = useRouter();
   useModalBack(true, onClose);
 
   useEffect(() => {
@@ -474,9 +488,9 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted, onSendMessage 
             className="flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl py-3 text-sm">
             <span>🔁</span> תור קבוע
           </button>
-          <button onClick={() => onSendMessage(detail.id, detail.name)}
+          <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(detail.phone)}`)}
             className="flex items-center justify-center gap-2 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl py-3 text-sm">
-            <span>✉️</span> שלח הודעה מהמערכת
+            <span>✉️</span> פתח שיחה במערכת
           </button>
           <a href={`https://wa.me/${detail.phone.replace(/\D/g,"").replace(/^0/,"972")}`} target="_blank" rel="noreferrer"
             className="flex items-center justify-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-xl py-3 text-sm">

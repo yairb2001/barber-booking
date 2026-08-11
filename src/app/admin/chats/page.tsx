@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 type ChatListItem = {
   id: string;
@@ -56,6 +57,8 @@ function timeOnly(iso: string): string {
 export default function ChatsPage() {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [selId, setSelId] = useState<string | null>(null);
+  const router = useRouter();
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -78,6 +81,19 @@ export default function ChatsPage() {
     document.addEventListener("visibilitychange", fetchList);
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", fetchList); };
   }, [fetchList]);
+
+  // Deep-link: /admin/chats?phone=<phone> opens that customer's thread
+  // (used by the customer card "open conversation in system" button).
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("phone");
+    if (p) setPendingPhone(p);
+  }, []);
+  useEffect(() => {
+    if (!pendingPhone || chats.length === 0) return;
+    const norm = (x: string) => (x || "").replace(/\D/g, "").replace(/^0/, "972");
+    const conv = chats.find(c => norm(c.phone) === norm(pendingPhone));
+    if (conv) { setSelId(conv.id); setPendingPhone(null); }
+  }, [pendingPhone, chats]);
 
   // ── Detail polling ──────────────────────────────────────────────────────────
   const fetchDetail = useCallback((id: string) => {
@@ -280,10 +296,11 @@ export default function ChatsPage() {
               >
                 ←
               </button>
-              <div className="flex-1 min-w-0">
+              <button onClick={() => router.push(`/admin/customers?customer=${encodeURIComponent(detail.phone)}`)}
+                className="flex-1 min-w-0 text-right hover:opacity-70 transition" title="פתח כרטיס לקוח">
                 <p className="font-semibold text-slate-900 truncate">{detail.customerName || detail.phone}</p>
                 <p className="text-xs text-slate-400" dir="ltr">{detail.phone}</p>
-              </div>
+              </button>
               <button
                 onClick={() => toggleAgent(detail.escalated)}
                 className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${
