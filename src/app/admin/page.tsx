@@ -1492,6 +1492,21 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
   // Customer history modal
   const [showHistory, setShowHistory] = useState(false);
+  // Red dot on the history button when this customer has a permanent note.
+  const [hasNote, setHasNote] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/admin/customers/${appt.customer.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!alive) return;
+        let n = "";
+        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
+        setHasNote(!!n.trim());
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [appt.customer.id, showHistory]);
 
   // Active swap proposals where this appointment is involved
   const [proposalsAsPrimary, setProposalsAsPrimary] = useState<SwapProposal[]>([]);
@@ -1888,8 +1903,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                 <p className="text-xs text-neutral-500" dir="ltr">{dispPhone}</p>
               </div>
               <div className="flex items-center gap-1.5">
-                <button onClick={() => setShowHistory(true)} title="היסטוריית לקוח"
-                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
+                <button onClick={() => setShowHistory(true)} title={hasNote ? "יש הערה על הלקוח" : "היסטוריית לקוח"}
+                  className="relative w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘{hasNote && (
+                    <span className="absolute -top-1 -right-1 min-w-[0.9rem] h-[0.9rem] px-0.5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center text-[8px] font-bold text-white leading-none">1</span>
+                  )}</button>
                 <button onClick={() => openInline("name")} title="ערוך שם לקוח"
                   className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
                 <a href={telHref(dispPhone)}
