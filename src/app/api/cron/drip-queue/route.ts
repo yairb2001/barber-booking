@@ -38,10 +38,18 @@ import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 
 export const dynamic = "force-dynamic";
 
-/** Minimum wall-clock gap between two sends for the SAME business. ~1/min keeps
- *  the number safely under WhatsApp's blasting radar. Enforced against the last
- *  message actually marked "sent", so it holds even under a burst of calls. */
-const MIN_SEND_GAP_MS = 60 * 1000;
+/** Minimum wall-clock gap between two sends for the SAME business. ~1/30s keeps
+ *  the number safely under WhatsApp's blasting radar while still moving twice
+ *  as fast as the original 1/min. Enforced against the last message actually
+ *  marked "sent", so it holds even under a burst of calls.
+ *
+ *  NOTE: this is a ceiling, not a guarantee — the actual send rate is capped
+ *  by however often the external cron-job.org trigger actually invokes this
+ *  endpoint. Measured 2026-08-11 on a live broadcast: gaps between sends
+ *  averaged ~115s even at the old 60s ceiling (cron-job.org was firing far
+ *  less than once a minute), so this change alone won't speed anything up
+ *  unless cron-job.org's own schedule is also tightened/fixed. */
+const MIN_SEND_GAP_MS = 30 * 1000;
 
 /** Messages per business per run (kept at 1 — the real throttle is the time
  *  gate above; this just avoids sending two in a single invocation). */

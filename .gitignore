@@ -52,3 +52,4 @@ ios/DerivedData/
 prompt_backup*.txt
 prompt_new*.txt
 .scratch/
+graphify-out/
