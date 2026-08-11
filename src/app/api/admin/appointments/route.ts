@@ -63,7 +63,11 @@ export async function GET(req: NextRequest) {
     ? await prisma.appointment.groupBy({ by: ["customerId"], where: noShowWhere, _count: { _all: true } })
     : [];
   const noShowByCustomer = new Map(noShowGroups.map(g => [g.customerId, g._count._all]));
-  const withNoShow = appointments.map(a => ({ ...a, customerNoShows: noShowByCustomer.get(a.customerId) || 0 }));
+  const withNoShow = appointments.map(a => {
+    let acked = false;
+    try { acked = a.customer?.notificationPrefs ? !!JSON.parse(a.customer.notificationPrefs).noShowAck : false; } catch { /* ignore */ }
+    return { ...a, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0) };
+  });
   return NextResponse.json(withNoShow);
 }
 

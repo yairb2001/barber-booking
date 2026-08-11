@@ -708,6 +708,10 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   let ringClass = "";
   let badge: { text: string; cls: string } | null = null;
   let extraStyle: React.CSSProperties = {};
+
+  // Gray out the whole block for a customer who has no-showed ("הבריז") before.
+  const flaked = !!appt.customerNoShows;
+  const blockColor = flaked ? "bg-neutral-200 text-neutral-700 border-neutral-300" : colorClass;
   if (swapState.kind === "swap-mode-primary") {
     ringClass = "ring-2 ring-slate-900 ring-offset-1";
     badge = { text: "המקור", cls: "bg-teal-600 text-white" };
@@ -733,7 +737,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     // block (pan-y); switch to "none" only once THIS block is actively dragged, so
     // the drag captures movement instead of scrolling. The switch happens at
     // long-press time — before any finger movement — so it's in place in time.
-    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${colorClass} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
@@ -771,11 +775,9 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-      {!!appt.customerNoShows && (
-        <span className="absolute top-0.5 right-0.5 z-10 flex items-center text-[8px] font-bold leading-none px-1 py-px rounded bg-neutral-700 text-white shadow-sm"
-          title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>
-          ⚠{appt.customerNoShows > 1 ? appt.customerNoShows : ""}
-        </span>
+            {!!appt.customerNoShows && (
+        <span className="absolute top-0.5 right-0.5 z-10 text-[9px] leading-none text-neutral-500"
+          title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>⚠</span>
       )}
       {(appt.note || appt.staffNote) && (
         <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
@@ -1520,6 +1522,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [showHistory, setShowHistory] = useState(false);
   // Red dot on the history button when this customer has a permanent note.
   const [hasNote, setHasNote] = useState(false);
+  const [noShowHidden, setNoShowHidden] = useState(false);
+  const [dismissingNoShow, setDismissingNoShow] = useState(false);
   useEffect(() => {
     let alive = true;
     fetch(`/api/admin/customers/${appt.customer.id}`)
@@ -1812,6 +1816,19 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     onClose();
   }
 
+  async function dismissNoShow() {
+    setDismissingNoShow(true);
+    try {
+      await fetch(`/api/admin/customers/${appt.customer.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ noShowAck: true }),
+      });
+      setNoShowHidden(true);
+      onReload?.();
+    } catch { /* ignore */ }
+    setDismissingNoShow(false);
+  }
+
   async function sendDelayNotification() {
     const mins = parseInt(delayMinutes, 10);
     if (!mins || mins <= 0) return;
@@ -1943,6 +1960,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </div>
           )}
         </div>
+
+        {!!appt.customerNoShows && !noShowHidden && (
+          <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-neutral-100 border border-neutral-200 px-3 py-1.5">
+            <span className="text-xs text-neutral-600">⚠ הלקוח הבריז בעבר{appt.customerNoShows > 1 ? ` (${appt.customerNoShows} פעמים)` : ""}</span>
+            <button onClick={dismissNoShow} disabled={dismissingNoShow}
+              className="text-[11px] text-neutral-500 hover:text-neutral-800 underline disabled:opacity-40 shrink-0">
+              {dismissingNoShow ? "מסתיר…" : "הסתר"}
+            </button>
+          </div>
+        )}
 
         {/* Details row — תאריך / שעה / מחיר each with pencil (inline, per-field) */}
         {inlineEdit === "date" || inlineEdit === "time" || inlineEdit === "price" ? (

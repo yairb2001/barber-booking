@@ -109,8 +109,13 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   if (typeof body.phone === "string" && body.phone.trim()) data.phone = normalizeIsraeliPhone(body.phone) || body.phone.replace(/\s/g, "");
   if (typeof body.isBlocked === "boolean") data.isBlocked = body.isBlocked;
   if (body.referralSource !== undefined) data.referralSource = body.referralSource || null;
-  if (body.notes !== undefined) {
-    data.notificationPrefs = body.notes ? JSON.stringify({ notes: String(body.notes) }) : null;
+  if (body.notes !== undefined || body.noShowAck !== undefined) {
+    const cur = await prisma.customer.findUnique({ where: { id }, select: { notificationPrefs: true } });
+    let prefs: Record<string, unknown> = {};
+    try { prefs = cur?.notificationPrefs ? JSON.parse(cur.notificationPrefs) : {}; } catch { prefs = {}; }
+    if (body.notes !== undefined) { if (body.notes) prefs.notes = String(body.notes); else delete prefs.notes; }
+    if (body.noShowAck !== undefined) { if (body.noShowAck) prefs.noShowAck = true; else delete prefs.noShowAck; }
+    data.notificationPrefs = Object.keys(prefs).length ? JSON.stringify(prefs) : null;
   }
 
   const customer = await prisma.customer.update({ where: { id }, data });
