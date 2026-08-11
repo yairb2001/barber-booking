@@ -60,7 +60,6 @@ export default function WhatsAppSettingsPage() {
   const [greenApiToken, setGreenApiToken] = useState("");
   const [chatsEnabled, setChatsEnabled] = useState(false);
   const [whatsappPrefill, setWhatsappPrefill] = useState("");
-  const [whatsappBubbleEnabled, setWhatsappBubbleEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -79,7 +78,6 @@ export default function WhatsAppSettingsPage() {
         setTestPhone(data.phone || "");
         const s = data.settings || {};
         if (typeof s.whatsappPrefill === "string") setWhatsappPrefill(s.whatsappPrefill);
-        setWhatsappBubbleEnabled(s.whatsappBubbleEnabled !== false);
       }
       setLoading(false);
     });
@@ -123,7 +121,7 @@ export default function WhatsAppSettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         whatsappNumber, messagingProvider, greenApiInstanceId, greenApiToken, chatsEnabled,
-        settingsPatch: { whatsappPrefill: whatsappPrefill.trim(), whatsappBubbleEnabled },
+        settingsPatch: { whatsappPrefill: whatsappPrefill.trim() },
       }),
     });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
@@ -219,18 +217,6 @@ export default function WhatsAppSettingsPage() {
               כשלקוח לוחץ על &quot;קבע תור דרך הוואטסאפ&quot; בדף הבית, הטקסט הזה כבר יופיע לו כתוב מראש בהודעה — הוא רק צריך לשלוח.
             </p>
 
-            <label className="flex items-center justify-between cursor-pointer mb-4 pb-4 border-b border-neutral-100">
-              <div>
-                <p className="text-sm font-medium text-neutral-800">הצג בועה &quot;קבע תור דרך הוואטסאפ&quot;</p>
-                <p className="text-xs text-neutral-400 mt-0.5">בועה קופצת ליד כפתור הוואטסאפ בדף הבית שמזמינה לקבוע תור בצ&apos;אט.</p>
-              </div>
-              <button
-                onClick={() => setWhatsappBubbleEnabled(v => !v)}
-                className={`relative w-11 h-6 rounded-full transition-colors shrink-0 mr-4 ${whatsappBubbleEnabled ? "bg-teal-600" : "bg-neutral-300"}`}>
-                <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${whatsappBubbleEnabled ? "right-0.5" : "left-0.5"}`} />
-              </button>
-            </label>
-
             <label className="text-xs text-neutral-500 block mb-1">ההודעה</label>
             <textarea
               value={whatsappPrefill}
@@ -240,6 +226,11 @@ export default function WhatsAppSettingsPage() {
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
             <p className="text-[11px] text-neutral-400 mt-2 leading-relaxed">
               השאר ריק כדי שהצ&apos;אט ייפתח בלי הודעה מוכנה מראש.
+            </p>
+            <p className="text-[11px] text-neutral-400 mt-3 pt-3 border-t border-neutral-100">
+              את הבועה שמזמינה לקבוע תור מפעילים במסך
+              {" "}
+              <Link href="/admin/settings/storefront" className="text-teal-600 hover:underline">עיצוב דף הבית</Link>
             </p>
           </div>
 

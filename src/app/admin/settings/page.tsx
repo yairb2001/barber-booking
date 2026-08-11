@@ -13,6 +13,7 @@ const GROUPS: Group[] = [
     icon: "🏢",
     tint: "bg-teal-50 text-teal-700 border-teal-100",
     cards: [
+      { href: "/admin/settings/storefront", icon: "🖼️", title: "עיצוב דף הבית", desc: "סטוריז, מוצרים, עדכונים, גלריה ובועת וואטסאפ" },
       { href: "/admin/settings/business", icon: "🏢", title: "פרטי עסק", desc: "שם, פרטי קשר, תמונות וערכת עיצוב" },
       { href: "/admin/settings/social", icon: "🔗", title: "רשתות חברתיות", desc: "וואטסאפ, אינסטגרם, פייסבוק, ווייז" },
       { href: "/admin/settings/access", icon: "🔐", title: "גישה ואבטחה", desc: "טלפון כניסה למנהל, החלפת סיסמה" },
@@ -43,12 +44,11 @@ const GROUPS: Group[] = [
     ],
   },
   {
-    label: "שיווק ותוכן",
+    label: "שיווק",
     icon: "🎁",
     tint: "bg-amber-50 text-amber-700 border-amber-100",
     cards: [
       { href: "/admin/settings/marketing", icon: "🎁", title: "שיווק והפניות", desc: "חבר מביא חבר, מקורות הגעה, פיקסל פייסבוק" },
-      { href: "/admin/settings/storefront", icon: "🖼️", title: "עיצוב דף הבית", desc: "סטוריז, מוצרים, עדכונים, גלריה" },
     ],
   },
 ];
