@@ -193,6 +193,7 @@ type Service = { id: string; name: string; price: number; durationMinutes: numbe
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
+  customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
   customServiceName?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
@@ -769,6 +770,12 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
+      )}
+      {!!appt.customerNoShows && (
+        <span className="absolute top-0.5 right-0.5 z-10 flex items-center text-[8px] font-bold leading-none px-1 py-px rounded bg-neutral-700 text-white shadow-sm"
+          title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>
+          ⚠{appt.customerNoShows > 1 ? appt.customerNoShows : ""}
+        </span>
       )}
       {(appt.note || appt.staffNote) && (
         <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
@@ -1511,6 +1518,21 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
   // Customer history modal
   const [showHistory, setShowHistory] = useState(false);
+  // Red dot on the history button when this customer has a permanent note.
+  const [hasNote, setHasNote] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch(`/api/admin/customers/${appt.customer.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!alive) return;
+        let n = "";
+        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
+        setHasNote(!!n.trim());
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [appt.customer.id, showHistory]);
 
   // Active swap proposals where this appointment is involved
   const [proposalsAsPrimary, setProposalsAsPrimary] = useState<SwapProposal[]>([]);
@@ -1907,8 +1929,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                 <p className="text-xs text-neutral-500" dir="ltr">{dispPhone}</p>
               </div>
               <div className="flex items-center gap-1.5">
-                <button onClick={() => setShowHistory(true)} title="היסטוריית לקוח"
-                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘</button>
+                <button onClick={() => setShowHistory(true)} title={hasNote ? "יש הערה על הלקוח" : "היסטוריית לקוח"}
+                  className="relative w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘{hasNote && (
+                    <span className="absolute -top-1 -right-1 min-w-[0.9rem] h-[0.9rem] px-0.5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center text-[8px] font-bold text-white leading-none">1</span>
+                  )}</button>
                 <button onClick={() => openInline("name")} title="ערוך שם לקוח"
                   className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
                 <a href={telHref(dispPhone)}
@@ -2502,21 +2526,45 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
 ) {
   useModalBack(true, onClose);
   const [data, setData] = useState<CustomerHistory | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     fetch(`/api/admin/customers/${customerId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (alive) { setData(d); setLoading(false); } })
+      .then(d => {
+        if (!alive) return;
+        setData(d);
+        setLoading(false);
+        let n = "";
+        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
+        setNoteDraft(n);
+        setSavedNote(n);
+      })
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [customerId]);
 
-  // Notes are stored inside notificationPrefs JSON ({ notes: "..." })
-  let note = "";
-  if (data?.notificationPrefs) {
-    try { note = JSON.parse(data.notificationPrefs)?.notes || ""; } catch { /* ignore */ }
+  // Permanent note about the customer, persisted in notificationPrefs JSON.
+  async function saveNote() {
+    setSavingNote(true);
+    try {
+      const res = await fetch(`/api/admin/customers/${customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: noteDraft }),
+      });
+      if (res.ok) {
+        setSavedNote(noteDraft);
+        setNoteSaved(true);
+        setTimeout(() => setNoteSaved(false), 1800);
+      }
+    } catch { /* ignore */ }
+    setSavingNote(false);
   }
 
   // Distinct barbers visited (from past appointments)
@@ -2542,14 +2590,24 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
           <div className="px-5 py-10 text-center text-neutral-400 text-sm">לא נמצאו נתונים</div>
         ) : (
           <div className="px-5 py-4 space-y-4">
-            {/* Notes about the customer */}
+            {/* Permanent note about the customer — editable */}
             <div>
-              <p className="text-xs text-neutral-400 mb-1">הערה על הלקוח</p>
-              {note ? (
-                <p className="text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{note}</p>
-              ) : (
-                <p className="text-sm text-neutral-400 italic">אין הערות</p>
-              )}
+              <p className="text-xs text-neutral-400 mb-1">הערה קבועה על הלקוח</p>
+              <textarea
+                value={noteDraft}
+                onChange={e => setNoteDraft(e.target.value)}
+                rows={3}
+                placeholder="למשל: מכונה מס' 2 בצדדים, פוני קצר, אלרגי לג'ל…"
+                className="w-full text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none placeholder:text-neutral-300" />
+              <div className="flex items-center gap-2 mt-1.5 min-h-[1.5rem]">
+                {noteDraft !== savedNote && (
+                  <button onClick={saveNote} disabled={savingNote}
+                    className="px-3 py-1 rounded-lg text-xs font-semibold bg-teal-600 text-white disabled:opacity-40 hover:bg-teal-700 transition">
+                    {savingNote ? "שומר…" : "שמור הערה"}
+                  </button>
+                )}
+                {noteSaved && <span className="text-xs text-emerald-600 font-medium">✓ נשמר</span>}
+              </div>
             </div>
 
             {/* Barbers visited */}
