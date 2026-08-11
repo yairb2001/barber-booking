@@ -69,8 +69,8 @@ const anthropic = new Anthropic({
 // ── Model router ────────────────────────────────────────────────────────────
 // Cheap model handles greetings + simple info queries; strong model handles
 // booking / cancellation / multi-step reasoning. Saves ~5-10x on the common case.
-const MODEL_FAST  = "claude-haiku-4-5";
-const MODEL_SMART = "claude-sonnet-4-6";
+export const MODEL_FAST  = "claude-haiku-4-5";
+export const MODEL_SMART = "claude-sonnet-4-6";
 const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 
 // Context window: the agent only "remembers" the last 24h of a conversation.
@@ -102,7 +102,10 @@ const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_
 // barber?") requires Sonnet-level reasoning even though slot-listing itself doesn't.
 const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_available_slots", "find_next_available", "find_parallel_slots"]);
 
-function pickInitialModel(
+/** Exported (not just used internally) so test scripts can reuse the exact
+ *  production routing signal instead of re-implementing a second, possibly
+ *  drifting, copy of these regexes. */
+export function pickInitialModel(
   incomingText: string,
   recentToolNames: (string | null)[],
   recentMessages: string[] = []
@@ -995,7 +998,10 @@ function hebDayDate(iso: string): string {
   });
 }
 
-function buildSystemPrompt(params: {
+/** Exported so test scripts can build the exact same system prompt Anthropic
+ *  sees in production (including the hard guardrails + dynamic time block),
+ *  instead of re-implementing this assembly a second time. */
+export function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
