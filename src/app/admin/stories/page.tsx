@@ -127,7 +127,7 @@ export default function AdminStoriesPage() {
 
   return (
     <div className="p-6 overflow-auto h-full" dir="rtl">
-      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
+      <Link href="/admin/settings/storefront" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
         ← הגדרות עסק
       </Link>
 

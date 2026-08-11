@@ -86,7 +86,7 @@ export default function AdminPortfolioPage() {
     <div className="max-w-2xl mx-auto px-4 py-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin/settings" className="text-slate-400 hover:text-slate-600 transition text-sm">
+        <Link href="/admin/settings/storefront" className="text-slate-400 hover:text-slate-600 transition text-sm">
           ← הגדרות
         </Link>
         <div className="w-px h-4 bg-slate-200" />

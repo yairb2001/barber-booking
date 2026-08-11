@@ -111,7 +111,7 @@ export default function AdminProductsPage() {
 
   return (
     <div className="p-8 overflow-auto h-full">
-      <Link href="/admin/settings" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
+      <Link href="/admin/settings/storefront" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
         ← הגדרות עסק
       </Link>
       <div className="flex items-center justify-between mb-8">
