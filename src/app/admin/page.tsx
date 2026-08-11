@@ -2483,21 +2483,45 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
 ) {
   useModalBack(true, onClose);
   const [data, setData] = useState<CustomerHistory | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
+  const [savedNote, setSavedNote] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSaved, setNoteSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
     fetch(`/api/admin/customers/${customerId}`)
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (alive) { setData(d); setLoading(false); } })
+      .then(d => {
+        if (!alive) return;
+        setData(d);
+        setLoading(false);
+        let n = "";
+        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
+        setNoteDraft(n);
+        setSavedNote(n);
+      })
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [customerId]);
 
-  // Notes are stored inside notificationPrefs JSON ({ notes: "..." })
-  let note = "";
-  if (data?.notificationPrefs) {
-    try { note = JSON.parse(data.notificationPrefs)?.notes || ""; } catch { /* ignore */ }
+  // Permanent note about the customer, persisted in notificationPrefs JSON.
+  async function saveNote() {
+    setSavingNote(true);
+    try {
+      const res = await fetch(`/api/admin/customers/${customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: noteDraft }),
+      });
+      if (res.ok) {
+        setSavedNote(noteDraft);
+        setNoteSaved(true);
+        setTimeout(() => setNoteSaved(false), 1800);
+      }
+    } catch { /* ignore */ }
+    setSavingNote(false);
   }
 
   // Distinct barbers visited (from past appointments)
@@ -2523,14 +2547,24 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
           <div className="px-5 py-10 text-center text-neutral-400 text-sm">לא נמצאו נתונים</div>
         ) : (
           <div className="px-5 py-4 space-y-4">
-            {/* Notes about the customer */}
+            {/* Permanent note about the customer — editable */}
             <div>
-              <p className="text-xs text-neutral-400 mb-1">הערה על הלקוח</p>
-              {note ? (
-                <p className="text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{note}</p>
-              ) : (
-                <p className="text-sm text-neutral-400 italic">אין הערות</p>
-              )}
+              <p className="text-xs text-neutral-400 mb-1">הערה קבועה על הלקוח</p>
+              <textarea
+                value={noteDraft}
+                onChange={e => setNoteDraft(e.target.value)}
+                rows={3}
+                placeholder="למשל: מכונה מס' 2 בצדדים, פוני קצר, אלרגי לג'ל…"
+                className="w-full text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none placeholder:text-neutral-300" />
+              <div className="flex items-center gap-2 mt-1.5 min-h-[1.5rem]">
+                {noteDraft !== savedNote && (
+                  <button onClick={saveNote} disabled={savingNote}
+                    className="px-3 py-1 rounded-lg text-xs font-semibold bg-teal-600 text-white disabled:opacity-40 hover:bg-teal-700 transition">
+                    {savingNote ? "שומר…" : "שמור הערה"}
+                  </button>
+                )}
+                {noteSaved && <span className="text-xs text-emerald-600 font-medium">✓ נשמר</span>}
+              </div>
             </div>
 
             {/* Barbers visited */}
