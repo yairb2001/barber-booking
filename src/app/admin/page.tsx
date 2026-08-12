@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { telHref } from "@/lib/messaging/phone";
 import { pickFriendSource } from "@/lib/referral";
 import { useModalBack } from "@/lib/useModalBack";
+import { useRouter } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1857,6 +1858,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   }
 
   const cleanPhone = dispPhone.replace(/\D/g, "").replace(/^0/, "972");
+  const router = useRouter();
 
   if (editMode) {
     return <ApptEditForm
@@ -1954,8 +1956,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
                 <a href={telHref(dispPhone)}
                   className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
-                <a href={`https://wa.me/${cleanPhone}`} target="_blank"
-                  className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</a>
+                <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(dispPhone)}`)} title="פתח שיחה במערכת"
+                  className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</button>
               </div>
             </div>
           )}
