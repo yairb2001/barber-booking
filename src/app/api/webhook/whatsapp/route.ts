@@ -408,6 +408,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── 2. Check if agent should run ─────────────────────────────────────────────
+  // Steps 2+3 are wrapped in one try/catch: a transient failure ANYWHERE in this
+  // section (e.g. a DB blip on the agentConfig/escalation lookups below, not just
+  // inside runCustomerAgent itself) must never leave the customer in total silence.
+  // Before this wrapped the DB lookups here separately from the agent call, so an
+  // error thrown before reaching runCustomerAgent skipped straight to the outer
+  // catch (which only logs and returns 200) — no fallback message, no owner push.
+  // Real incident: customer messaged about a same-day appointment and got zero
+  // reply, zero indication anything was wrong, for hours (2026-08-12 01:17).
+  try {
   const agentConfig = await prisma.agentConfig.findUnique({
     where: { businessId: biz.id },
     select: { isEnabled: true },
@@ -494,16 +503,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── 3. Run agent — message is already persisted; agent will skip its own save ──
-  try {
-    await runCustomerAgent({ businessId: biz.id, phone, incomingText: text, alreadyPersisted: true });
-  } catch (agentErr) {
-    // The agent failed to produce a reply (e.g. a transient Anthropic outage the
-    // retries couldn't ride out). Do NOT leave the customer in silence — alert
-    // the owner so a human can jump in, exactly the manual save that otherwise
-    // only happens if someone notices the chat. Previously only the owner was
-    // notified and the customer saw nothing at all (real incident: a customer's
-    // message got zero reply, zero indication anything was wrong, for hours).
-    console.error("[agent] error:", agentErr);
+  await runCustomerAgent({ businessId: biz.id, phone, incomingText: text, alreadyPersisted: true });
+
+  return NextResponse.json({ ok: true });
+
+  } catch (stepErr) {
+    // Steps 2+3 failed somewhere — the agentConfig/escalation DB lookups above,
+    // or runCustomerAgent itself (e.g. a transient Anthropic outage the retries
+    // couldn't ride out). Do NOT leave the customer in silence — alert the owner
+    // so a human can jump in, exactly the manual save that otherwise only
+    // happens if someone notices the chat. Previously this fallback only wrapped
+    // runCustomerAgent, so a DB blip on the lookups above it fell through to the
+    // outer catch below instead, which sends no fallback message and no owner
+    // push at all (real incident: a customer's message got zero reply, zero
+    // indication anything was wrong, for hours — 2026-08-12 01:17).
+    console.error("[agent] step 2/3 failed:", stepErr);
     pushToOwner(biz.id, {
       title: `⚠️ הסוכן לא הצליח לענות ל${senderName || phone}`,
       body: previewText(text),
@@ -515,9 +529,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }).catch(() => {});
     await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: fallbackMsg })
       .catch(e => console.error("[agent] fallback message send failed", e));
+    return NextResponse.json({ ok: true });
   }
-
-  return NextResponse.json({ ok: true });
 
   } catch (err) {
     // Never return 500 to Green API — it will retry endlessly
