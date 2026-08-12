@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionBusiness, requireOwner } from "@/lib/session";
+import { propagateTeamPermissions } from "@/lib/staff-permissions";
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
@@ -37,14 +38,23 @@ export async function PATCH(req: NextRequest) {
   //     shrinks that window from "arbitrary" to "a couple concurrent
   //     requests, milliseconds apart". Use this for anything that can be
   //     toggled independently of the rest of the page (see NotificationSettings).
+  let current: Record<string, unknown> = {};
+  try { current = business.settings ? JSON.parse(business.settings) : {}; } catch { /* ignore */ }
+
   let mergedSettings: string | undefined;
+  let incomingSettings: Record<string, unknown> | undefined;
   if (body.settingsPatch !== undefined) {
-    let current: Record<string, unknown> = {};
-    try { current = business.settings ? JSON.parse(business.settings) : {}; } catch { /* ignore */ }
+    incomingSettings = body.settingsPatch;
     mergedSettings = JSON.stringify({ ...current, ...body.settingsPatch });
   } else if (body.settings !== undefined) {
+    incomingSettings = body.settings;
     mergedSettings = JSON.stringify(body.settings);
   }
+
+  // The business-wide barber switches live in this JSON blob, but what actually
+  // gates a barber at runtime is a column on their own Staff row. Without this
+  // the toggle saves and does nothing.
+  await propagateTeamPermissions(business.id, incomingSettings, current);
 
   const updated = await prisma.business.update({
     where: { id: business.id },

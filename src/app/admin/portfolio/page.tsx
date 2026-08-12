@@ -22,6 +22,9 @@ export default function AdminPortfolioPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null); // staffId being uploaded
   const [deleting, setDeleting] = useState<string | null>(null);   // itemId being deleted
+  // Barbers reach this page from their own settings (the API already scopes
+  // them to their single row); owners reach it from the storefront page.
+  const [backHref, setBackHref] = useState("/admin/settings/storefront");
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   async function load() {
@@ -30,7 +33,12 @@ export default function AdminPortfolioPage() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(me => {
+      if (me && me.isOwner === false) setBackHref("/admin/barber-settings");
+    }).catch(() => {});
+  }, []);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>, staffId: string) {
     const file = e.target.files?.[0];
@@ -86,7 +94,7 @@ export default function AdminPortfolioPage() {
     <div className="max-w-2xl mx-auto px-4 py-6" dir="rtl">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
-        <Link href="/admin/settings/storefront" className="text-slate-400 hover:text-slate-600 transition text-sm">
+        <Link href={backHref} className="text-slate-400 hover:text-slate-600 transition text-sm">
           ← הגדרות
         </Link>
         <div className="w-px h-4 bg-slate-200" />

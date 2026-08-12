@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
+import { propagateTeamPermissions } from "@/lib/staff-permissions";
 
 // GET /api/admin/settings — readable by all authenticated admins/barbers
 export async function GET(req: NextRequest) {
@@ -31,30 +32,7 @@ export async function PATCH(req: NextRequest) {
     try { return business.settings ? JSON.parse(business.settings) : {}; } catch { return {}; }
   })();
 
-  // Business-wide permission switches are a convenience that BULK-WRITE the
-  // per-barber flags. The per-staff flags (Staff.canViewAllCalendars /
-  // canViewAllChats) are the authoritative runtime control (see
-  // getEffectivePermissions). So when the owner flips a global switch here,
-  // apply it to every barber in the business; afterwards the owner can still
-  // override an individual barber from /admin/staff/[id].
-  if (
-    "barbersCanViewOthersCalendar" in body &&
-    body.barbersCanViewOthersCalendar !== existing.barbersCanViewOthersCalendar
-  ) {
-    await prisma.staff.updateMany({
-      where: { businessId: business.id, role: "barber" },
-      data: { canViewAllCalendars: !!body.barbersCanViewOthersCalendar },
-    });
-  }
-  if (
-    "barbersCanAccessChats" in body &&
-    body.barbersCanAccessChats !== existing.barbersCanAccessChats
-  ) {
-    await prisma.staff.updateMany({
-      where: { businessId: business.id, role: "barber" },
-      data: { canViewAllChats: !!body.barbersCanAccessChats },
-    });
-  }
+  await propagateTeamPermissions(business.id, body, existing);
 
   const updated = await prisma.business.update({
     where: { id: business.id },

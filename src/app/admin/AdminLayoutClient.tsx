@@ -34,6 +34,7 @@ const SETTINGS_SUB_PATHS = [
 // Pages that live "inside" Barber Settings — the Barber-Settings nav item stays highlighted
 const BARBER_SETTINGS_SUB_PATHS = [
   "/admin/barber-settings",
+  "/admin/portfolio", // barbers reach their own gallery from here (owners from Settings)
 ];
 
 // Sidebar — flat list. Everything that's a sub-page of settings is reached from inside /admin/settings.
