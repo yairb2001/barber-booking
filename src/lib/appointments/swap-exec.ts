@@ -14,6 +14,7 @@
 import { prisma } from "@/lib/prisma";
 import { sendMessage, swapConfirmationText, appointmentMovedText, firstName } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const HEBREW_DATE_OPTS: Intl.DateTimeFormatOptions = {
   weekday: "long",
@@ -45,6 +46,32 @@ async function recordInConversation(conversationId: string | null, text: string)
     });
   } catch (err) {
     console.error("[swap-exec] failed to record confirmation in conversation:", err);
+  }
+}
+
+/**
+ * Same as recordInConversation, but for the CANDIDATE side of a swap — unlike
+ * the requester, a SwapProposal row has no stored conversationId for the
+ * candidate, so their thread is looked up (or created) by phone. Without this
+ * the WhatsApp confirmation the candidate actually receives (see sendMessage
+ * below) never shows up in /admin/chats — the thread just ends at their "כן"
+ * with no visible reply, even though the swap went through. Found 2026-08-13.
+ */
+async function recordInConversationByPhone(businessId: string, rawPhone: string, text: string): Promise<void> {
+  try {
+    const phone = normalizeIsraeliPhone(rawPhone);
+    let conv = await prisma.conversation.findFirst({
+      where: { businessId, phone, agentType: { not: "owner" } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!conv) {
+      conv = await prisma.conversation.create({
+        data: { businessId, phone, agentType: "customer", status: "active", lastMessageAt: new Date() },
+      });
+    }
+    await recordInConversation(conv.id, text);
+  } catch (err) {
+    console.error("[swap-exec] failed to record candidate confirmation in conversation:", err);
   }
 }
 
@@ -282,6 +309,7 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     console.error("[swap-exec] primary swap confirmation send FAILED:", err);
   }
   // Candidate (the customer who agreed to give up their slot).
+  await recordInConversationByPhone(business.id, c.customer.phone, candidateConfirm);
   try {
     await sendMessage({
       businessId: business.id,

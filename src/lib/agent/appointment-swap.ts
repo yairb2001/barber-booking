@@ -99,6 +99,32 @@ async function notifyRequester(
   await sendMessage({ businessId: bizId, customerPhone: phone, kind: "agent_reply", body: text }).catch(() => {});
 }
 
+/**
+ * Acknowledge a staff member's own "כן"/"לא" reply back into THEIR chat
+ * thread — unlike notifyRequester there's no stored conversationId for the
+ * approving staff, so their thread is looked up by phone. Without this the
+ * staff member sees their own "כן" just sit there with no reply (the actual
+ * outcome only gets messaged to the requester's conversation), which reads as
+ * the system ignoring them even though it acted correctly. Found 2026-08-13.
+ */
+async function notifyStaffByPhone(bizId: string, phone: string, text: string): Promise<void> {
+  const normalized = normalizeIsraeliPhone(phone);
+  const conv = await prisma.conversation.findFirst({
+    where: { businessId: bizId, phone: normalized, agentType: { not: "owner" } },
+    orderBy: { createdAt: "desc" },
+  });
+  if (conv) {
+    await prisma.conversationMessage.create({
+      data: { conversationId: conv.id, role: "assistant", content: text },
+    }).catch(() => {});
+    await prisma.conversation.update({
+      where: { id: conv.id },
+      data: { lastMessageAt: new Date() },
+    }).catch(() => {});
+  }
+  await sendMessage({ businessId: bizId, customerPhone: normalized, kind: "agent_reply", body: text }).catch(() => {});
+}
+
 /** Find up to 2 OTHER customers' appointments occupying a specific slot. */
 async function gatherCandidates(
   bizId: string,
@@ -478,6 +504,7 @@ export async function handleStaffApprovalReply(
       where: { id: proposal.id },
       data: { status: "staff_rejected", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
     });
+    await notifyStaffByPhone(bizId, phone, `בסדר, ביטלתי את בקשת ההחלפה של ${proposal.primary.customer.name} 👍`);
     await notifyRequester(
       bizId,
       proposal.requesterConversationId,
@@ -492,6 +519,7 @@ export async function handleStaffApprovalReply(
     where: { id: proposal.id },
     data: { respondedAt: new Date(), rawResponse: text.slice(0, 500) },
   });
+  await notifyStaffByPhone(bizId, phone, `תודה, מטפל בזה עכשיו מול הלקוח השני 🙏`);
 
   if (!proposal.targetStaffId || !proposal.targetDate || !proposal.targetStartTime) {
     await finishUnsuccessful(proposal.primaryAppointmentId);
