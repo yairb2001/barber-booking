@@ -24,7 +24,7 @@ import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
-import { requestAppointmentMove } from "@/lib/agent/appointment-swap";
+import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
 
@@ -94,7 +94,7 @@ const BOOKING_FLOW = /מאשר|לקבוע|לבטל|להזיז|להעביר|לש�
 // Mid-loop escalation: only write operations need Sonnet mid-turn.
 // Availability reads are excluded — Haiku handles "here are the slots" fine
 // and there's no point burning Sonnet just to format a list.
-const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_appointment_move", "join_waitlist", "escalate_to_human"]);
+const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_appointment_move", "join_waitlist", "escalate_to_human", "report_running_late"]);
 
 // Cross-turn context: if ANY of these ran in recent turns, the conversation is
 // in an active booking flow and the NEXT turn needs Sonnet. Availability tools
@@ -237,6 +237,22 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
         insistExactTime: { type: "boolean", description: "true כשהלקוח בחר לנסות בהחלפה עם התור שתפוס בשעה המדויקת שביקש (במקום אחד הזמנים הפנויים) — אחרי ששמע את שתי האפשרויות יחד, לא רק אם 'התעקש'. ברירת מחדל false. כשהוא true המערכת מתחילה תהליך אישור מול הספר והלקוח האחר." },
       },
       required: ["appointmentId", "targetDate", "targetStartTime"],
+    },
+  },
+  {
+    name: "report_running_late",
+    description:
+      "מטפל בלקוח שמודיע שהוא מתעכב/יאחר לתור שלו היום. השתמש בו רק אחרי שהלקוח אמר בפירוש כמה דקות בערך הוא מתעכב — אם הוא רק אמר 'אני מתעכב' בלי מספר, שאל אותו קודם 'כמה דקות בערך?' ורק אז קרא לכלי. " +
+      "קודם מצא את התור עם check_appointment כדי לקבל את ה-appointmentId. " +
+      "המערכת מטפלת בכל הלוגיקה לפי הגדרות העסק: אם זה בתוך זמן הסבלנות המוגדר, היא מעדכנת את הספר וזהו. אם זה מעבר לזמן שהוגדר, היא שולחת לספר בקשת אישור לאיחור (כן/לא) ומחזירה לך טקסט להגיד ללקוח. " +
+      "קרא את הטקסט שחוזר מהכלי מילה במילה — אל תבטיח ללקוח שהאיחור אושר לפני שיש תשובה בפועל מהספר.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        appointmentId: { type: "string", description: "מזהה התור הקיים של הלקוח (מ-check_appointment)" },
+        delayMinutes:  { type: "number", description: "כמה דקות בערך הלקוח אמר שהוא מתעכב" },
+      },
+      required: ["appointmentId", "delayMinutes"],
     },
   },
   {
@@ -745,6 +761,17 @@ export async function execTool(
         });
       }
 
+      // ── report_running_late ──────────────────────────────────────────────────
+      case "report_running_late": {
+        return await reportRunningLate({
+          bizId,
+          conversationId,
+          callerPhone,
+          appointmentId: input.appointmentId,
+          delayMinutes: Number((input as Record<string, unknown>).delayMinutes) || 0,
+        });
+      }
+
       // ── join_waitlist ────────────────────────────────────────────────────────
       case "join_waitlist": {
         const { serviceId, date } = input;
@@ -1008,7 +1035,7 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 - הוא בסוף לא קבע כלום (השיחה נראית כמו שהיא נגמרת בלי החלטה, או שהוא אמר שהוא לא יודע/יחשוב על זה) — לפני שאתה נותן לשיחה להיגמר ככה, הצע לו את רשימת ההמתנה במקום פשוט לעזוב אותו בלי כלום.
 בשני המצבים: רק אם הוא אומר כן — קרא ל-join_waitlist לתאריך ולחלק-היום שרצה במקור, עם staffId רק אם ביקש אותו ספר ספציפי במקור. אם הוא אומר לא, או לא מגיב לזה — אל תרשום ואל תחזור על ההצעה.
 
-יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, join_waitlist, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.
+יש לך כלים: get_staff_list, get_services, get_available_slots, find_next_available, book_appointment, check_appointment, cancel_appointment, request_appointment_move, report_running_late, join_waitlist, get_business_info ו-escalate_to_human. כשהלקוח מבקש את התור הכי קרוב או "מתי יש מקום" — קרא ל-find_next_available במקום לבדוק יום-יום. אם לקוח כותב שהוא מתעכב/יאחר לתור שלו היום — קרא ל-report_running_late (אחרי ששאלת כמה דקות בערך, אם הוא לא אמר). השתמש בהם מאחורי הקלעים כשצריך, בלי להכריז עליהם, ואל תזכיר ללקוח שמות של כלים או מספרי מזהה — דבר תמיד בשמות של ספרים ושירותים.
 
 אחרי שכבר אמרת ללקוח שתור נקבע/בוטל/הוזז בהצלחה (למשל "✅ תור נקבע בהצלחה"), אם ההודעה הבאה שלו היא רק אישור סתמי בלי בקשה חדשה וברורה (כמו "מאשר", "תודה", "סבבה", "אחלה", "אגיע") — זו סגירת שיחה, לא בקשה חדשה. אל תפעיל שום כלי ואל תפתח מחדש שום תהליך שכבר נסגר, גם אם משהו בשיחה נראה לך "לא סגור" — פשוט הגב בקצרה ("בשמחה, נתראה!" או דומה) והשיחה נגמרת.
 
