@@ -851,10 +851,13 @@ export async function execTool(
  * Hand a conversation to a human: resolve the right barber (explicit hint →
  * the customer's upcoming-appointment barber → most-visited barber → business
  * owner), WhatsApp them an alert with the customer + reason, then mute the agent
- * for this conversation (24h lazy expiry). Used both by the escalate_to_human
- * tool and by the "too many messages" auto-guard in runCustomerAgent.
+ * for this conversation (24h lazy expiry). Used by the escalate_to_human
+ * tool, the "too many messages" auto-guard in runCustomerAgent, and the
+ * webhook's step-2/3 error fallback (agent crashed / Anthropic outage) so a
+ * real error reaches a staff member's WhatsApp, not just a push notification
+ * that's easy to miss.
  */
-async function escalateToHuman(opts: {
+export async function escalateToHuman(opts: {
   bizId: string;
   conversationId: string;
   callerPhone: string;

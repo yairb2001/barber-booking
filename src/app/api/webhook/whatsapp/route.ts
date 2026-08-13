@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
-import { runCustomerAgent } from "@/lib/agent/customer-agent";
+import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
 import {
   handleStaffApprovalReply,
@@ -544,15 +544,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.conversationMessage.create({
       data: { conversationId: conv.id, role: "assistant", content: fallbackMsg },
     }).catch(() => {});
-    // The message ABOVE promises a human will follow up — a transient push
-    // notification alone isn't enough backing for that (easy to miss among
-    // other pushes), so also flag the conversation itself as escalated. Found
-    // 2026-08-13: a customer with an urgent same-day request hit this fallback
-    // and the conversation never showed as "needs attention" in /admin/chats.
-    await prisma.conversation.update({
-      where: { id: conv.id },
-      data: { escalatedAt: new Date() },
-    }).catch(() => {});
+    // The message ABOVE promises a human will follow up — a push notification
+    // to the owner alone isn't enough backing for that (easy to miss, and only
+    // reaches the owner's device). Route through the same escalateToHuman()
+    // used everywhere else a human needs to take over: resolves the right
+    // staff member (or falls back to the owner), sends them a real WhatsApp
+    // alert, and flags the conversation. Found 2026-08-13: a customer with an
+    // urgent same-day request hit this fallback (Anthropic credits ran out)
+    // and the conversation never showed as "needs attention" in /admin/chats
+    // — Yair asked that this specific fallback always reach a real person.
+    await escalateToHuman({
+      bizId: biz.id,
+      conversationId: conv.id,
+      callerPhone: phone,
+      reason: "הסוכן נתקל בשגיאה טכנית ולא הצליח לענות ללקוח באופן אוטומטי.",
+    }).catch((e) => console.error("[agent] escalateToHuman on fallback failed", e));
     await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: fallbackMsg })
       .catch(e => console.error("[agent] fallback message send failed", e));
     return NextResponse.json({ ok: true });
