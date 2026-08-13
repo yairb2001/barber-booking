@@ -12,6 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -1242,6 +1243,7 @@ export async function runOwnerAgent(opts: {
     });
     const u = response.usage;
     console.log(`[owner-agent] in=${u.input_tokens} out=${u.output_tokens}`);
+    void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "owner", usage: u });
 
     messages.push({ role: "assistant", content: response.content });
 

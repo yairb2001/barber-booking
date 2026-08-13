@@ -25,6 +25,7 @@
  * DEMO_BUSINESS_ID, and it writes nothing outside that business's own rows.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 
@@ -69,6 +70,7 @@ async function generatePitch(transcript: string, reason: "booked" | "silence"): 
         { role: "user", content: `זו השיחה בדמו עד עכשיו:\n\n${transcript}\n\nכתוב את שתי הודעות ההמשך.` },
       ],
     });
+    void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: "claude-haiku-4-5", kind: "demo_sales", usage: res.usage });
     let text = "";
     for (const b of res.content) if (b.type === "text") text += b.text;
     const bubbles = text.trim().split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);

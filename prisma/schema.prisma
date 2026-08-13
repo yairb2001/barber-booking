@@ -691,6 +691,26 @@ model AgentFAQ {
   @@map("agent_faqs")
 }
 
+// === מדידת שימוש בסוכן (טוקנים + עלות) פר עסק ===
+// One row per LLM call. Aggregated by the super-admin console to show, per
+// business, how many tokens it burned and how much it cost us.
+model AgentUsage {
+  id               String   @id @default(uuid())
+  businessId       String   @map("business_id")
+  provider         String   // "anthropic" | "openai"
+  model            String
+  kind             String?  // which agent: customer | owner | demo_sales | question_followup
+  inputTokens      Int      @default(0) @map("input_tokens")
+  outputTokens     Int      @default(0) @map("output_tokens")
+  cacheWriteTokens Int      @default(0) @map("cache_write_tokens")
+  cacheReadTokens  Int      @default(0) @map("cache_read_tokens")
+  costUsd          Float    @default(0) @map("cost_usd")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, createdAt])
+  @@map("agent_usage")
+}
+
 // === גלריית עבודות / סטוריז ===
 model PortfolioItem {
   id          String   @id @default(uuid())

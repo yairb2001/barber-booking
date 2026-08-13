@@ -16,6 +16,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
 
 // Tools and execTool are passed in from customer-agent.ts (rather than imported)
@@ -125,6 +126,7 @@ export async function runOpenAiAgentLoop(opts: {
       `[agent:openai] model=${model} in=${usage.prompt_tokens ?? 0} out=${usage.completion_tokens ?? 0} ` +
       `cached=${usage.prompt_tokens_details?.cached_tokens ?? 0} finish=${choice?.finish_reason}`
     );
+    void recordAgentUsage({ businessId, provider: "openai", model, kind: "customer", usage });
     if (!msg) break;
 
     const toolCalls: OpenAiToolCall[] = msg.tool_calls ?? [];

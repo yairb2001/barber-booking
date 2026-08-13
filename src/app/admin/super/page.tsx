@@ -39,7 +39,7 @@ const LEAD_STATUS: Record<string, { label: string; cls: string }> = {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function SuperAdminPage() {
-  const [tab, setTab] = useState<"overview" | "leads" | "businesses">("overview");
+  const [tab, setTab] = useState<"overview" | "leads" | "businesses" | "usage">("overview");
   const [stats, setStats] = useState<Stats | null>(null);
   const [businesses, setBusinesses] = useState<Biz[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -90,7 +90,7 @@ export default function SuperAdminPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-5 bg-slate-100 p-1 rounded-xl w-fit">
-        {([["overview", "מבט־על"], ["leads", `לידים${stats?.openLeads ? ` (${stats.openLeads})` : ""}`], ["businesses", "עסקים"]] as const).map(([k, label]) => (
+        {([["overview", "מבט־על"], ["leads", `לידים${stats?.openLeads ? ` (${stats.openLeads})` : ""}`], ["businesses", "עסקים"], ["usage", "עלויות"]] as const).map(([k, label]) => (
           <button key={k} onClick={() => setTab(k as typeof tab)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
               tab === k ? "bg-white text-teal-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
@@ -101,6 +101,102 @@ export default function SuperAdminPage() {
       {tab === "overview" && stats && <Overview stats={stats} businesses={businesses} />}
       {tab === "leads" && <Leads leads={leads} reload={load} />}
       {tab === "businesses" && <Businesses businesses={businesses} reload={load} />}
+      {tab === "usage" && <Usage />}
+    </div>
+  );
+}
+
+// ── Usage & cost (per business) ───────────────────────────────────────────────
+type UsageRow = {
+  businessId: string; name: string; calls: number;
+  inputTokens: number; outputTokens: number; cacheTokens: number;
+  costUsd: number; costUsdMonth: number; callsMonth: number;
+};
+type UsageData = {
+  rows: UsageRow[];
+  totals: { costUsd: number; costUsdMonth: number; calls: number; businesses: number };
+};
+
+const USD_TO_ILS = 3.7; // approx, display only
+
+function Usage() {
+  const [data, setData] = useState<UsageData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/super/usage", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const ils = (usd: number) => `${NIS}${(usd * USD_TO_ILS).toFixed(2)}`;
+  const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+
+  if (loading) return <div className="p-6 text-slate-400">טוען…</div>;
+  if (!data || !data.rows?.length) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-500">
+        <div className="text-3xl mb-2">📊</div>
+        עדיין אין נתוני שימוש.
+        <div className="text-xs text-slate-400 mt-1">הנתונים יתחילו להצטבר ברגע שהסוכן ירוץ בפרודקשן (אחרי פריסה).</div>
+      </div>
+    );
+  }
+
+  const { rows, totals } = data;
+  const cards = [
+    { label: "עלות החודש", value: ils(totals.costUsdMonth), tone: "emerald" },
+    { label: "עלות מצטברת", value: ils(totals.costUsd), tone: "teal" },
+    { label: "קריאות סוכן", value: totals.calls.toLocaleString(), tone: "slate" },
+    { label: "עסקים פעילים", value: totals.businesses, tone: "slate" },
+  ];
+  const toneCls: Record<string, string> = {
+    emerald: "text-emerald-600", teal: "text-teal-600", slate: "text-slate-700",
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-xs text-slate-500">{c.label}</div>
+            <div className={`text-2xl font-bold ${toneCls[c.tone]}`}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-slate-500 text-xs border-b border-slate-100">
+              <th className="text-right font-medium p-3">עסק</th>
+              <th className="text-center font-medium p-3">קריאות (חודש / סה״כ)</th>
+              <th className="text-center font-medium p-3">טוקנים (קלט/פלט)</th>
+              <th className="text-center font-medium p-3">עלות החודש</th>
+              <th className="text-center font-medium p-3">מצטבר</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.businessId} className="border-b border-slate-50 last:border-0">
+                <td className="p-3 font-medium text-slate-800">{r.name}</td>
+                <td className="p-3 text-center text-slate-600">
+                  {r.callsMonth.toLocaleString()}<span className="text-slate-300"> / {r.calls.toLocaleString()}</span>
+                </td>
+                <td className="p-3 text-center text-slate-500 text-xs" dir="ltr">
+                  {fmtTok(r.inputTokens)} / {fmtTok(r.outputTokens)}
+                </td>
+                <td className="p-3 text-center font-semibold text-emerald-700">{ils(r.costUsdMonth)}</td>
+                <td className="p-3 text-center text-slate-600">{ils(r.costUsd)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-slate-400 text-center">
+        ₪ מחושב לפי ~{USD_TO_ILS}₪/$ (להמחשה). מחירי הטוקנים בקוד הם הערכה — לאמת מול המחירון העדכני.
+      </p>
     </div>
   );
 }

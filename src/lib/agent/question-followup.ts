@@ -23,6 +23,7 @@
  * It's idempotent and safe to call often.
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -58,7 +59,7 @@ function fallbackFollowup(name: string | null): string {
  * decide to send NOTHING (returns null) when the customer already declined or
  * the question is no longer relevant (e.g. it was about a time that passed).
  */
-async function generateFollowup(transcript: string, name: string | null): Promise<string | null> {
+async function generateFollowup(transcript: string, name: string | null, businessId: string): Promise<string | null> {
   try {
     const res = await anthropic.messages.create({
       model: "claude-haiku-4-5",
@@ -80,6 +81,7 @@ async function generateFollowup(transcript: string, name: string | null): Promis
         { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או תזכורת אחת קצרה על השאלה שנשארה פתוחה.` },
       ],
     });
+    void recordAgentUsage({ businessId, provider: "anthropic", model: "claude-haiku-4-5", kind: "question_followup", usage: res.usage });
     let text = "";
     for (const b of res.content) if (b.type === "text") text += b.text;
     text = text.trim();
@@ -234,7 +236,7 @@ export async function runAgentQuestionFollowup(
           });
       if (registered?.name && !isPhoneLikeName(registered.name)) name = firstName(registered.name);
 
-      const followup = await generateFollowup(transcript, name);
+      const followup = await generateFollowup(transcript, name, biz.id);
       // Model decided the reminder would hurt (declined / no longer relevant).
       if (followup === null) { skipped++; continue; }
 
