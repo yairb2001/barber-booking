@@ -18,6 +18,7 @@ const GROUPS: Group[] = [
       { href: "/admin/settings/social", icon: "🔗", title: "רשתות חברתיות", desc: "וואטסאפ, אינסטגרם, פייסבוק, ווייז" },
       { href: "/admin/settings/access", icon: "🔐", title: "גישה ואבטחה", desc: "טלפון כניסה למנהל, החלפת סיסמה" },
       { href: "/admin/settings/notifications", icon: "🔔", title: "התראות", desc: "מי מקבל התראה, ועל אילו אירועים" },
+      { href: "/admin/settings/reports", icon: "📊", title: "דוחות", desc: "סיכום יומי, שבועי וחודשי — אליך ולצוות" },
     ],
   },
   {
