@@ -1,3 +1,17 @@
+/**
+ * Strip invisible Unicode bidi/formatting control characters before storing a
+ * phone number typed or pasted into an admin form. Exact-match phone lookups
+ * elsewhere in the codebase (e.g. matching a staff reply to a pending swap
+ * approval) compare the stored value byte-for-byte against the webhook's
+ * normalized incoming phone — a hidden character silently breaks that match.
+ * Found 2026-08-13: 4 of 5 staff had a trailing U+202C (their phone was
+ * copied from an RTL-aware contacts app), so their "כן"/"לא" replies to swap
+ * approval requests never matched and fell through to the booking agent.
+ */
+export function sanitizePhoneInput(raw: string): string {
+  return raw.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069]/g, "").trim();
+}
+
 /** Normalize an Israeli phone to E.164 (972...) without '+' or leading zero. */
 export function normalizeIsraeliPhone(raw: string): string {
   const digits = raw.replace(/\D/g, "");

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 import { getBusinessNow } from "@/lib/utils";
+import { sanitizePhoneInput } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
   // All authenticated users (owners + barbers) see all staff.
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest) {
     data: {
       businessId: business.id,
       name: body.name,
-      phone: body.phone || null,
+      phone: body.phone ? sanitizePhoneInput(body.phone) : null,
       avatarUrl: body.avatarUrl || null,
       role: body.role || "barber",
       isAvailable: body.isAvailable ?? true,

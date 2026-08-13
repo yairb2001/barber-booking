@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwner, requireStaffInBusiness } from "@/lib/session";
+import { sanitizePhoneInput } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = await requireStaffInBusiness(req, params.id);
@@ -70,7 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data: {
       ...(body.name !== undefined && { name: body.name }),
       ...(body.tagline !== undefined && { tagline: body.tagline ? String(body.tagline).trim() : null }),
-      ...(body.phone !== undefined && { phone: body.phone }),
+      ...(body.phone !== undefined && { phone: body.phone ? sanitizePhoneInput(body.phone) : null }),
       ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),
       ...(body.isAvailable !== undefined && { isAvailable: body.isAvailable }),
       ...(body.inQuickPool !== undefined && { inQuickPool: body.inQuickPool }),
