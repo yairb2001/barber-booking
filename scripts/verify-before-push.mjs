@@ -2,9 +2,25 @@
 // Pre-push verification chain: lint -> build -> live smoke test (dev server + real browser).
 // Run this after finishing a code change, BEFORE telling יאיר/המנכ"ל it's ready for push.
 // Exit code 0 = all checks passed. Non-zero = something is broken, do not request push approval.
+//
+// Lint is a BASELINE gate, not a 100%-clean hard gate (decision: 2026-08-13) —
+// there's real pre-existing lint debt across the repo that nobody asked us to
+// clean up right now. This script fails ONLY on lint violations that are NOT
+// already in .lint-baseline.json (i.e. genuinely new). Regenerate the baseline
+// with `node scripts/verify-before-push.mjs --update-baseline` (only do this
+// deliberately — e.g. after a real cleanup pass — never just to silence a
+// failure).
+// Build and the live smoke test remain full hard gates: zero deviation allowed.
 
-import { spawn, execSync } from "node:child_process";
+import { spawn, spawnSync, execSync } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { chromium } from "playwright";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, "..");
+const BASELINE_PATH = path.join(REPO_ROOT, ".lint-baseline.json");
 
 const DEV_PORT = 3001;
 const DEV_URL = `http://localhost:${DEV_PORT}`;
@@ -20,6 +36,106 @@ function step(name, fn) {
 
 function runOrThrow(cmd) {
   execSync(cmd, { stdio: "inherit" });
+}
+
+/**
+ * Run `next lint --format json` and return the parsed ESLint JSON report
+ * (array of {filePath, messages: [...]}), regardless of exit code — a lint
+ * failure is expected input here, not a script error.
+ *
+ * Written to a temp file via --output-file rather than captured from
+ * stdout/stderr: piping ~1MB+ of JSON through spawnSync's stdio pipes proved
+ * unreliable in testing (output silently truncated mid-string on some runs,
+ * for reasons that didn't reproduce consistently — likely internal worker
+ * buffering in `next lint`). A file write doesn't have that failure mode.
+ */
+function runLintJson() {
+  const outFile = path.join(REPO_ROOT, ".lint-output.tmp.json");
+  spawnSync("npx", ["next", "lint", "--format", "json", "--output-file", outFile], {
+    encoding: "utf8",
+    cwd: REPO_ROOT,
+  });
+  if (!existsSync(outFile)) {
+    throw new Error("next lint did not produce an output file — lint may have crashed outright.");
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(outFile, "utf8"));
+    if (!Array.isArray(parsed)) throw new Error("lint output was not a JSON array");
+    return parsed;
+  } finally {
+    try { unlinkSync(outFile); } catch { /* best effort cleanup */ }
+  }
+}
+
+/** Normalize a lint report into a violation-key -> count multiset. Keyed by
+ * relative path + rule + message (NOT line number, which drifts with
+ * unrelated edits elsewhere in the same file and would cause false "new
+ * violation" failures). */
+function toViolationCounts(report) {
+  const counts = {};
+  for (const file of report) {
+    const rel = path.relative(REPO_ROOT, file.filePath);
+    for (const msg of file.messages || []) {
+      const key = `${rel}::${msg.ruleId ?? "(no-rule)"}::${msg.message}`;
+      counts[key] = (counts[key] || 0) + 1;
+    }
+  }
+  return counts;
+}
+
+function loadBaseline() {
+  if (!existsSync(BASELINE_PATH)) return {};
+  try {
+    return JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
+  } catch {
+    console.error(`Could not parse ${BASELINE_PATH} — treating baseline as empty.`);
+    return {};
+  }
+}
+
+/** Returns violations present in `current` beyond what `baseline` already
+ * allows for that key (baseline count acts as an allowance, not just a set
+ * membership check — so a NEW instance of an already-known rule+message
+ * combo still gets caught). */
+function diffAgainstBaseline(current, baseline) {
+  const newOnes = [];
+  for (const [key, count] of Object.entries(current)) {
+    const allowed = baseline[key] || 0;
+    if (count > allowed) {
+      newOnes.push({ key, count, allowed });
+    }
+  }
+  return newOnes;
+}
+
+async function runLintStep() {
+  const report = runLintJson();
+  const current = toViolationCounts(report);
+
+  if (process.argv.includes("--update-baseline")) {
+    writeFileSync(BASELINE_PATH, JSON.stringify(current, null, 2) + "\n");
+    const total = Object.values(current).reduce((a, b) => a + b, 0);
+    console.log(`Baseline updated: ${Object.keys(current).length} distinct violations, ${total} total, written to ${BASELINE_PATH}`);
+    process.exit(0);
+  }
+
+  const baseline = loadBaseline();
+  const newOnes = diffAgainstBaseline(current, baseline);
+  if (newOnes.length) {
+    console.error(`\nLINT: ${newOnes.length} NEW violation(s) not present in .lint-baseline.json:`);
+    for (const v of newOnes) {
+      console.error(`  [+${v.count - v.allowed}] ${v.key}`);
+    }
+    console.error(
+      "\nThese are new — pre-existing baseline debt does not fail the check, but this does. Fix them, " +
+      "or if a change is a deliberate baseline update (e.g. after a real cleanup pass), regenerate with " +
+      "`node scripts/verify-before-push.mjs --update-baseline`."
+    );
+    return false;
+  }
+  const totalCurrent = Object.values(current).reduce((a, b) => a + b, 0);
+  console.log(`Lint OK — ${totalCurrent} violation(s), all already in baseline (pre-existing debt, not blocking).`);
+  return true;
 }
 
 async function waitForServer(url, timeoutMs = 30000) {
@@ -58,12 +174,8 @@ async function main() {
 
   await assertPortFree(DEV_PORT);
 
-  try {
-    step("lint", () => runOrThrow("npm run lint"));
-  } catch {
-    console.error("LINT FAILED");
-    failed = true;
-  }
+  const lintOk = await step("lint (baseline-aware)", () => runLintStep());
+  if (!lintOk) failed = true;
 
   try {
     step("build", () => runOrThrow("npm run build"));

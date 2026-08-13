@@ -53,3 +53,4 @@ prompt_backup*.txt
 prompt_new*.txt
 .scratch/
 graphify-out/
+.lint-output.tmp.json
