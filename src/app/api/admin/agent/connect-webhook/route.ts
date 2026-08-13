@@ -4,6 +4,14 @@
  * One-click GreenAPI wiring: points the business's WhatsApp instance webhook
  * at our handler and enables incoming-message delivery. Removes the manual
  * copy-paste-into-GreenAPI step that blocks non-technical owners.
+ *
+ * outgoingMessageWebhook must be "yes" — GreenAPI only fires
+ * outgoingMessageReceived (a reply typed on the phone itself) when this is on,
+ * and the webhook handler relies on that event to mute the agent for 24h when
+ * the owner/staff manually takes over a chat (see src/app/api/webhook/whatsapp).
+ * Left "no" here silently breaks that mute for every business connected
+ * through this flow — found 2026-08-13 when the demo business's manual reply
+ * never muted its agent.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -37,7 +45,7 @@ export async function POST(req: NextRequest) {
         webhookUrl,
         incomingWebhook: "yes",
         outgoingWebhook: "no",
-        outgoingMessageWebhook: "no",
+        outgoingMessageWebhook: "yes",
         outgoingAPIMessageWebhook: "no",
         stateWebhook: "no",
         deviceWebhook: "no",
