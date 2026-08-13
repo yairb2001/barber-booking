@@ -433,6 +433,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
     }).catch(() => {});
+    // Real incident (2026-08-11/12): with no escalatedAt set, these threads look
+    // identical to any other resolved chat and never surface a "needs handling"
+    // flag — a customer's booking request sat completely unanswered for hours
+    // until staff happened to notice manually. Mark it escalated (same flag/TTL
+    // the human-handoff path below already uses) so it's visible, and let the
+    // customer know a person will reply instead of leaving them in silence.
+    // Skip re-sending the ack on every message in an already-escalated thread.
+    const alreadyFlagged = conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < 24 * 60 * 60 * 1000;
+    if (!alreadyFlagged) {
+      await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: new Date() } });
+      const noAgentMsg = "תודה על ההודעה 🙏 אחד מהצוות יחזור אליך בהקדם.";
+      await prisma.conversationMessage.create({
+        data: { conversationId: conv.id, role: "assistant", content: noAgentMsg },
+      }).catch(() => {});
+      await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: noAgentMsg })
+        .catch(e => console.error("[webhook] agent_disabled ack send failed", e));
+    }
     return NextResponse.json({
       ok: true,
       skipped: agentAllowedByTier ? "agent_disabled" : "agent_not_in_tier",
