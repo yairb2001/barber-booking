@@ -263,31 +263,45 @@ async function runOne(scenario: Scenario, routed: boolean) {
   };
 }
 
+// REPEATS>1 turns this into a consistency check: since the model is
+// non-deterministic, one pass proves nothing about reliability — rerun each
+// scenario N times and report the pass rate, not just pass/fail.
+const REPEATS = Number(process.env.REPEATS ?? "1");
+
 async function main() {
-  let failures = 0;
+  let scenarioFailures = 0;
   for (const scenario of SCENARIOS) {
-    const [oldRun, newRun] = await Promise.all([
-      runOne(scenario, false),
-      runOne(scenario, true),
-    ]);
-    const oldCheck = scenario.check(oldRun.text, oldRun.tool);
-    const newCheck = scenario.check(newRun.text, newRun.tool);
-    const savings = Math.round(100 * (1 - newRun.promptChars / oldRun.promptChars));
+    const runs = await Promise.all(
+      Array.from({ length: REPEATS }, () =>
+        Promise.all([runOne(scenario, false), runOne(scenario, true)]))
+    );
+    const oldChecks = runs.map(([oldRun]) => scenario.check(oldRun.text, oldRun.tool));
+    const newChecks = runs.map(([, newRun]) => scenario.check(newRun.text, newRun.tool));
+    const oldPassRate = oldChecks.filter(c => c.pass).length;
+    const newPassRate = newChecks.filter(c => c.pass).length;
+    const [firstOld, firstNew] = runs[0];
+    const savings = Math.round(100 * (1 - firstNew.promptChars / firstOld.promptChars));
 
     console.log(`\n━━━ ${scenario.label} ━━━`);
-    console.log(`  prompt size: old=${oldRun.promptChars} new=${newRun.promptChars} (${savings}% smaller)`);
-    console.log(`  OLD  [${oldCheck.pass ? "PASS" : "FAIL"}] ${oldCheck.note}`);
-    console.log(`       reply: ${oldRun.text.slice(0, 200).replace(/\n/g, " ")}`);
-    console.log(`  NEW  [${newCheck.pass ? "PASS" : "FAIL"}] ${newCheck.note}`);
-    console.log(`       reply: ${newRun.text.slice(0, 200).replace(/\n/g, " ")}`);
+    console.log(`  prompt size: old=${firstOld.promptChars} new=${firstNew.promptChars} (${savings}% smaller)`);
+    console.log(`  OLD  [${oldPassRate}/${REPEATS} pass] ${oldChecks[0].note}`);
+    console.log(`  NEW  [${newPassRate}/${REPEATS} pass] ${newChecks[0].note}`);
+    if (REPEATS === 1) {
+      console.log(`       old reply: ${firstOld.text.slice(0, 200).replace(/\n/g, " ")}`);
+      console.log(`       new reply: ${firstNew.text.slice(0, 200).replace(/\n/g, " ")}`);
+    } else {
+      newChecks.forEach((c, i) => {
+        if (!c.pass) console.log(`       new run #${i + 1} FAILED — reply: ${runs[i][1].text.slice(0, 200).replace(/\n/g, " ")}`);
+      });
+    }
 
-    if (!newCheck.pass) failures++;
-    if (oldCheck.pass && !newCheck.pass) {
-      console.log(`  ⚠️  REGRESSION: old prompt passed, new prompt failed`);
+    if (newPassRate < REPEATS) scenarioFailures++;
+    if (oldPassRate === REPEATS && newPassRate < REPEATS) {
+      console.log(`  ⚠️  REGRESSION: old prompt passed every run, new prompt failed at least one`);
     }
   }
-  console.log(`\n${failures === 0 ? "✅ All new-prompt checks passed" : `❌ ${failures} new-prompt check(s) failed`}`);
-  process.exit(failures === 0 ? 0 : 1);
+  console.log(`\n${scenarioFailures === 0 ? "✅ All new-prompt checks passed every run" : `❌ ${scenarioFailures} scenario(s) had at least one new-prompt failure`}`);
+  process.exit(scenarioFailures === 0 ? 0 : 1);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
