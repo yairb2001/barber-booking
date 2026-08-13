@@ -544,6 +544,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.conversationMessage.create({
       data: { conversationId: conv.id, role: "assistant", content: fallbackMsg },
     }).catch(() => {});
+    // The message ABOVE promises a human will follow up — a transient push
+    // notification alone isn't enough backing for that (easy to miss among
+    // other pushes), so also flag the conversation itself as escalated. Found
+    // 2026-08-13: a customer with an urgent same-day request hit this fallback
+    // and the conversation never showed as "needs attention" in /admin/chats.
+    await prisma.conversation.update({
+      where: { id: conv.id },
+      data: { escalatedAt: new Date() },
+    }).catch(() => {});
     await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: fallbackMsg })
       .catch(e => console.error("[agent] fallback message send failed", e));
     return NextResponse.json({ ok: true });
