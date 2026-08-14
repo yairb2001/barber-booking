@@ -62,9 +62,13 @@ async function computeDayAvailabilityRetrying(
  * path that already decided "no slots", so it can't be forgotten or skipped.
  * Reuses the real Waitlist table/notify pipeline (source="declined_offer"
  * keeps it out of the admin waitlist screen — see schema.prisma comment).
- * Requires an existing Customer record (found by phone) and a known
- * serviceId — skips silently otherwise rather than interrupting the
- * conversation to ask for a name/service just for this.
+ * Works for brand-new callers too (Yair, 2026-08-14: "even customers not in
+ * the system, you don't need to add them formally") — silently creates a
+ * minimal Customer record keyed by phone if none exists yet, same fallback
+ * pattern already used by the public waitlist signup form (name defaults to
+ * the phone number; nothing is ever asked). Requires a known serviceId
+ * though — skips silently rather than interrupting the conversation to ask
+ * for one just for this side effect.
  */
 async function noteImplicitWaitlistInterest(opts: {
   bizId: string;
@@ -78,11 +82,17 @@ async function noteImplicitWaitlistInterest(opts: {
   try {
     const phone = normalizeIsraeliPhone(callerPhone);
     const localPhone = phone.replace(/^972/, "0");
-    const customer = await prisma.customer.findFirst({
+    let customer = await prisma.customer.findFirst({
       where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
       select: { id: true, isBlocked: true },
     });
-    if (!customer || customer.isBlocked) return;
+    if (customer?.isBlocked) return;
+    if (!customer) {
+      customer = await prisma.customer.create({
+        data: { businessId: bizId, phone, name: phone, referralSource: "whatsapp" },
+        select: { id: true, isBlocked: true },
+      });
+    }
 
     const dateObj = new Date(`${date}T00:00:00.000Z`);
     const existing = await prisma.waitlist.findFirst({

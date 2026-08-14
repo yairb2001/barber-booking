@@ -413,6 +413,9 @@ model SwapProposal {
   //   rejected_by_customer   → candidate said no
   //   approved               → executed
   //   staff_rejected         → barber declined (agent)
+  //   pending_staff_swap_confirm → late_arrival only: barber said no to the
+  //                                delay itself, now asked separately whether
+  //                                to offer their slot to the next customer
   //   cancelled / expired
   status                 String    @default("pending_response")
   rawResponse            String?   @map("raw_response") // free-text customer reply, if captured
@@ -471,7 +474,7 @@ model Waitlist {
   serviceId    String   @map("service_id")
   date         DateTime
   isFlexible   Boolean  @default(false) @map("is_flexible")
-  status              String   @default("waiting") // waiting, notified, booked, expired
+  status              String   @default("waiting") // waiting, notified, booked, expired, awaiting_declined_confirm
   preferredTimeOfDay  String?  @map("preferred_time_of_day") // morning | afternoon | any
   // "explicit" — customer actively asked to be waitlisted (join_waitlist tool,
   // the public /book waitlist form, or an admin manually adding one). Shown in

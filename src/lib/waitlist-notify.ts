@@ -1,5 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { enqueueMessage, sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { parseYesNo } from "@/lib/agent/appointment-swap";
+
+// How long after pinging an implicit-waitlist customer ("a slot opened up,
+// interested?") a plain כן/לא reply is still treated as answering THAT
+// message, not an unrelated new conversation.
+const DECLINE_REPLY_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours
 
 // A waitlisted customer stays "waiting" after we notify them of a freed slot —
 // the slot might not have suited them and they may want a LATER one. To avoid
@@ -275,4 +282,86 @@ export function sendWaitlistEntryNotification(
   })
     .then(markNotified)
     .catch(console.error);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Webhook: a customer replied after being pinged about a freed slot on their
+// IMPLICIT waitlist entry (source="declined_offer" — see
+// noteImplicitWaitlistInterest in customer-agent.ts). Called from the webhook
+// route BEFORE the general booking agent, same pattern as
+// handleStaffApprovalReply/handleCandidateReply.
+//
+// Only "לא" is intercepted here — Yair, 2026-08-14: a flat "no" shouldn't
+// silently drop them, ask once more whether they want to keep hearing about
+// OTHER openings before removing them. A "כן" (or anything else) is left to
+// fall through to the normal agent, which already has the booking link and
+// full conversation context to just help them book.
+//
+// Explicit (source="explicit") entries are untouched by this — they're a
+// separate, already-established flow the owner didn't ask to change here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function handleWaitlistDeclineReply(
+  businessId: string,
+  fromPhone: string,
+  text: string,
+): Promise<boolean> {
+  const phone = normalizeIsraeliPhone(fromPhone);
+  const local = phone.replace(/^972/, "0");
+  const customer = await prisma.customer.findFirst({
+    where: { businessId, OR: [{ phone }, { phone: local }] },
+    select: { id: true },
+  });
+  if (!customer) return false;
+
+  // Case 1: they already said "לא" once and we asked the follow-up — this
+  // message is the answer to THAT question.
+  const awaiting = await prisma.waitlist.findFirst({
+    where: { businessId, customerId: customer.id, source: "declined_offer", status: "awaiting_declined_confirm" },
+    orderBy: { notifiedAt: "desc" },
+  });
+  if (awaiting) {
+    const ans = parseYesNo(text);
+    if (ans === "unclear") {
+      await sendMessage({
+        businessId, customerPhone: phone, kind: "waitlist_notify",
+        body: `לא הבנתי — רוצה שאעדכן אותך אם יתפנה משהו אחר? ענה כן או לא בבקשה.`,
+      }).catch(() => {});
+      return true;
+    }
+    await prisma.waitlist.update({
+      where: { id: awaiting.id },
+      data: { status: ans === "yes" ? "waiting" : "expired" },
+    });
+    await sendMessage({
+      businessId, customerPhone: phone, kind: "waitlist_notify",
+      body: ans === "yes" ? `מעולה, אעדכן אותך אם יתפנה משהו 🙏` : `סבבה, הבנתי 🙏`,
+    }).catch(() => {});
+    return true;
+  }
+
+  // Case 2: a plain "לא" shortly after we pinged them about a freed slot —
+  // treat it as declining THAT slot, and ask if they still want future ones.
+  const recentlyNotified = await prisma.waitlist.findFirst({
+    where: {
+      businessId,
+      customerId: customer.id,
+      source: "declined_offer",
+      status: "waiting",
+      notifiedAt: { gte: new Date(Date.now() - DECLINE_REPLY_WINDOW_MS) },
+    },
+    orderBy: { notifiedAt: "desc" },
+  });
+  if (!recentlyNotified) return false;
+  if (parseYesNo(text) !== "no") return false; // "כן"/unclear → let the normal agent handle it
+
+  await prisma.waitlist.update({
+    where: { id: recentlyNotified.id },
+    data: { status: "awaiting_declined_confirm" },
+  });
+  await sendMessage({
+    businessId, customerPhone: phone, kind: "waitlist_notify",
+    body: `בסדר גמור. רוצה בכל זאת שאעדכן אותך אם יתפנה משהו אחר?`,
+  }).catch(() => {});
+  return true;
 }

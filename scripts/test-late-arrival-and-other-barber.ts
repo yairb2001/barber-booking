@@ -1,12 +1,16 @@
 /**
- * Live functional test for the two new features (2026-08-13):
+ * Live functional test for the late-arrival + other-barber features
+ * (2026-08-13, extended 2026-08-14 after Yair's live test on the real
+ * business surfaced two gaps — see Test D):
  *   1. offerOtherBarberAtRequestedTime — request_appointment_move offers an
  *      exact-time match with another barber even when a specific barber was
  *      requested.
  *   2. Late-arrival flow (reportRunningLate + handleLateArrivalStaffReply):
  *      under grace → FYI to staff; over grace → staff approval; staff "no"
- *      with enough lead time → swap-with-next candidate flow; candidate "yes"
- *      → real appointment swap via executeApprovedProposal.
+ *      → a SEPARATE yes/no asking whether to offer the slot to the next
+ *      customer (Test B) — declining the delay must not auto-trigger the
+ *      swap offer. Staff "no" to THAT question too → the appointment is
+ *      marked an actual no_show, not just a chat message (Test D).
  *
  * Runs against the DEMO business ("המספרה של דני") — real DB writes, real
  * WhatsApp sends to Dani's connected number. Creates its own test customers/
@@ -126,14 +130,27 @@ async function main() {
   console.log("proposal after reportRunningLate:", JSON.stringify(proposal, null, 2));
   if (!proposal || proposal.status !== "pending_staff_approval") throw new Error("FAIL: expected pending_staff_approval");
 
-  console.log("\n-- staff (Dani) replies לא --");
+  console.log("\n-- staff (Dani) replies לא (declines the delay itself) --");
   const consumed1 = await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "לא");
   console.log("consumed:", consumed1, "(expect true)");
 
+  // 2026-08-14 (Yair, live test on the real business): declining the delay
+  // must NOT auto-offer the swap — the barber gets asked a SEPARATE yes/no
+  // first ("want me to offer your slot to the next customer?").
   const proposalAfterNo = await prisma.swapProposal.findUnique({ where: { id: proposal.id } });
   console.log("proposal after staff לא:", JSON.stringify(proposalAfterNo, null, 2));
-  if (proposalAfterNo?.status !== "pending_response" || proposalAfterNo?.candidateAppointmentId !== nextAppt.id) {
-    throw new Error("FAIL: expected pending_response with candidateAppointmentId=nextAppt after staff says no with enough lead time");
+  if (proposalAfterNo?.status !== "pending_staff_swap_confirm" || proposalAfterNo?.candidateAppointmentId !== nextAppt.id) {
+    throw new Error("FAIL: expected pending_staff_swap_confirm with candidateAppointmentId stashed after staff says no with enough lead time");
+  }
+  console.log("✅ swap NOT auto-offered — staff asked a separate confirm question first");
+
+  console.log("\n-- staff (Dani) replies כן to 'offer the swap?' --");
+  const consumedSwapConfirm = await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "כן");
+  console.log("consumed:", consumedSwapConfirm, "(expect true)");
+
+  const proposalAfterSwapConfirm = await prisma.swapProposal.findUnique({ where: { id: proposal.id } });
+  if (proposalAfterSwapConfirm?.status !== "pending_response" || proposalAfterSwapConfirm?.candidateAppointmentId !== nextAppt.id) {
+    throw new Error("FAIL: expected pending_response with candidateAppointmentId=nextAppt after staff confirms the swap offer");
   }
 
   console.log("\n-- candidate (next customer) replies כן --");
@@ -153,6 +170,66 @@ async function main() {
   console.log("proposal final status:", proposalFinal?.status, "(expect approved)");
 
   console.log("\n✅ TEST A+B PASSED");
+
+  // ── Test D: staff declines the delay AND declines the swap offer → real no-show ──
+  console.log("\n=== TEST D: staff says לא twice (delay, then swap offer) → appointment marked no_show ===");
+  // Distinct offsets from Test B's times — those slots are now occupied by
+  // the post-swap appointments (lateAppt/nextAppt swapped times in Test B).
+  const lateTimeD = `${pad(Math.floor((nowMin + 180) / 60) % 24)}:${pad((nowMin + 180) % 60)}`;
+  const nextTimeD = `${pad(Math.floor((nowMin + 210) / 60) % 24)}:${pad((nowMin + 210) % 60)}`;
+  const lateCustD = await prisma.customer.create({ data: { businessId: BIZ_ID, name: "בדיקה-מאחר-ד", phone: "972000000005" } });
+  createdCustomerIds.push(lateCustD.id);
+  const nextCustD = await prisma.customer.create({ data: { businessId: BIZ_ID, name: "בדיקה-הבא-ד", phone: "972000000006" } });
+  createdCustomerIds.push(nextCustD.id);
+  const lateConvD = await prisma.conversation.create({
+    data: { businessId: BIZ_ID, phone: "972000000005", agentType: "customer", status: "active", lastMessageAt: new Date() },
+  });
+  createdConversationIds.push(lateConvD.id);
+  const lateApptD = await prisma.appointment.create({
+    data: {
+      businessId: BIZ_ID, customerId: lateCustD.id, staffId: DANI_ID, serviceId: SERVICE_ID,
+      date: new Date(`${todayIso}T00:00:00.000Z`), startTime: lateTimeD, endTime: nextTimeD,
+      status: "confirmed", price: 80,
+    },
+  });
+  createdAppointmentIds.push(lateApptD.id);
+  const nextApptD = await prisma.appointment.create({
+    data: {
+      businessId: BIZ_ID, customerId: nextCustD.id, staffId: DANI_ID, serviceId: SERVICE_ID,
+      date: new Date(`${todayIso}T00:00:00.000Z`), startTime: nextTimeD, endTime: `${pad(Math.floor((nowMin + 240) / 60) % 24)}:${pad((nowMin + 240) % 60)}`,
+      status: "confirmed", price: 80,
+    },
+  });
+  createdAppointmentIds.push(nextApptD.id);
+
+  await reportRunningLate({
+    bizId: BIZ_ID, conversationId: lateConvD.id, callerPhone: "972000000005",
+    appointmentId: lateApptD.id, delayMinutes: 20,
+  });
+  await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "לא"); // decline the delay
+  const proposalD = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId: lateApptD.id, kind: "late_arrival" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (proposalD?.status !== "pending_staff_swap_confirm") {
+    throw new Error(`FAIL: expected pending_staff_swap_confirm, got ${proposalD?.status}`);
+  }
+  await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "לא"); // decline offering the swap too
+
+  const [lateApptDFinal, proposalDFinal] = await Promise.all([
+    prisma.appointment.findUnique({ where: { id: lateApptD.id } }),
+    prisma.swapProposal.findUnique({ where: { id: proposalD.id } }),
+  ]);
+  console.log("lateApptD status:", lateApptDFinal?.status, "(expect no_show)");
+  console.log("proposalD status:", proposalDFinal?.status, "(expect staff_rejected)");
+  if (lateApptDFinal?.status !== "no_show") throw new Error("FAIL: appointment was not marked no_show after staff declined both questions");
+  if (proposalDFinal?.status !== "staff_rejected") throw new Error("FAIL: proposal not left in staff_rejected");
+
+  const nextApptDUnchanged = await prisma.appointment.findUnique({ where: { id: nextApptD.id } });
+  if (nextApptDUnchanged?.status !== "confirmed" || nextApptDUnchanged?.startTime !== nextTimeD) {
+    throw new Error("FAIL: the NEXT customer's appointment should be untouched when the swap was declined");
+  }
+  console.log("✅ TEST D PASSED — real no_show, next customer's appointment untouched");
 
   // ── Test C: offer other barber at exact requested time ──────────────────
   // Deterministic: tomorrow at 12:00 (well within the 10:00-19:00 schedule for

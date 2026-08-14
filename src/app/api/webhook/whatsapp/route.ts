@@ -30,6 +30,7 @@ import {
   handleAdminProposalReply,
   expireStaleAgentSwaps,
 } from "@/lib/agent/appointment-swap";
+import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
 import { sendMessage } from "@/lib/messaging";
 import { tierHas } from "@/lib/tier";
@@ -402,6 +403,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // agent guess what "כן" means.
     if (await handleAdminProposalReply(biz.id, phone, text)) {
       return NextResponse.json({ ok: true, handled: "swap_admin_reply" });
+    }
+    // A customer replying "לא" shortly after an implicit-waitlist "a slot
+    // opened up" ping — see handleWaitlistDeclineReply for why this only
+    // intercepts "לא", not "כן".
+    if (await handleWaitlistDeclineReply(biz.id, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "waitlist_decline_reply" });
     }
   } catch (e) {
     console.error("[swap reply routing]", e);

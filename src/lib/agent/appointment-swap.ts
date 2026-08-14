@@ -43,7 +43,7 @@ function kindLabelHe(kind: string): string {
 const APPROVAL_TTL_MS = 2 * 60 * 60 * 1000;
 
 // SwapProposal statuses that mean "an agent swap flow is live for this primary".
-const LIVE_STATUSES = ["pending_staff_approval", "pending_response", "queued_next", "accepted_by_customer"];
+const LIVE_STATUSES = ["pending_staff_approval", "pending_staff_swap_confirm", "pending_response", "queued_next", "accepted_by_customer"];
 
 function hebDate(date: Date): string {
   return date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
@@ -583,7 +583,7 @@ export async function reportRunningLate(opts: {
       `אפשר לאשר את האיחור בכל זאת? ענה כן או לא.`,
   }).catch(err => console.error("[agent-swap] late-arrival staff alert failed", err));
 
-  return `❌ מעל ${grace} הדקות שמוגדרות — זה בדרך כלל נחשב הברזה. שלחתי ל${appt.staff.name} בקשת אישור. אמור ללקוח בעדינות שמעל ${grace} דקות זה בדרך כלל נחשב הברזה, אבל אתה בודק מול ${appt.staff.name} אם אפשר לאשר את זה הפעם, ותעדכן ברגע שיש תשובה — בלי להבטיח שזה יאושר.`;
+  return `❌ מעל ${grace} הדקות שמוגדרות — זה בדרך כלל נחשב הברזה. שלחתי ל${appt.staff.name} בקשת אישור. אמור ללקוח, במדויק ובעדינות: "${delayMinutes} דקות זה קצת מעל הזמן שמקובל אצלנו — בדרך כלל עד ${grace} דקות אנחנו מבליגים, מעל זה האיחור נחשב הברזה. בודק מול ${appt.staff.name} אם אפשר לאשר את זה בכל זאת, ותעדכן ברגע שיש תשובה" — לא יכול להבטיח לו שזה יאושר, רק שאתה בודק.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -607,7 +607,15 @@ export async function handleStaffApprovalReply(
   if (!staff) return false;
 
   const proposal = await prisma.swapProposal.findFirst({
-    where: { businessId: bizId, approvalStaffId: staff.id, status: "pending_staff_approval", initiatedBy: "agent" },
+    where: {
+      businessId: bizId,
+      approvalStaffId: staff.id,
+      // pending_staff_swap_confirm = late_arrival's second question ("offer
+      // the slot to the next customer?"), asked only after the barber
+      // already declined the delay itself — see handleLateArrivalStaffReply.
+      status: { in: ["pending_staff_approval", "pending_staff_swap_confirm"] },
+      initiatedBy: "agent",
+    },
     orderBy: { createdAt: "desc" },
     include: { primary: { include: { customer: true, staff: true, service: true } } },
   });
@@ -746,15 +754,119 @@ export async function handleStaffApprovalReply(
 //       • כן  → approved, tell the customer, done.
 //       • לא  → if lateArrivalOfferSwapWithNext is on AND at least
 //               lateArrivalSwapLeadMinutes remain before the original time,
-//               reuse this row as a candidate-swap against the NEXT
-//               appointment for the same barber that day (same machinery as
-//               a regular swap — handleCandidateReply/executeApprovedProposal
-//               don't care how the proposal originated). Otherwise: no-show.
+//               ask the BARBER a separate yes/no (status
+//               pending_staff_swap_confirm) before bothering the next
+//               customer — Yair, 2026-08-14: declining the delay must not
+//               auto-trigger the swap offer, that's a second decision.
+//               Only on the barber's "כן" here does the candidate actually
+//               get messaged (handleLateArrivalSwapOfferConfirm below).
+//               Otherwise, or if swap-with-next doesn't apply at all: the
+//               appointment is marked a real no-show (not just a message).
 // ─────────────────────────────────────────────────────────────────────────────
 
 type LateArrivalProposal = Prisma.SwapProposalGetPayload<{
   include: { primary: { include: { customer: true; staff: true; service: true } } };
 }>;
+
+/** Turns "not approved, no swap happening" into an ACTUAL no-show — the
+ *  appointment stops being a normal confirmed slot on the calendar, matching
+ *  how a manually-marked no-show behaves elsewhere in the app (billing/repeat
+ *  no-show tracking keys off appointment.status, not off chat text). Doesn't
+ *  auto-send the formal no-show/payment template — same as the admin flow,
+ *  that wording choice is left to a human, not guessed here. */
+async function markLateArrivalNoShow(
+  bizId: string,
+  proposal: LateArrivalProposal,
+  staffPhone: string,
+): Promise<void> {
+  if (!proposal.primary) return;
+  await prisma.appointment.update({
+    where: { id: proposal.primary.id },
+    data: { status: "no_show" },
+  }).catch(err => console.error("[agent-swap] late-arrival no-show update failed", err));
+
+  const dateLabel = hebDate(dateOnly(proposal.primary.date.toISOString().slice(0, 10)));
+  pushToOwner(bizId, {
+    title: "לא הגיע לתור 🚫",
+    body: `${proposal.primary.customer.name} אצל ${proposal.primary.staff.name}\n${dateLabel} בשעה ${proposal.primary.startTime} (איחור לא אושר)`,
+    data: { type: "appointment_no_show", appointmentId: proposal.primary.id },
+  }, proposal.primary.staffId).catch(() => {});
+
+  await notifyStaffByPhone(bizId, staffPhone, `מבין, התור מסומן כהברזה.`);
+  await notifyRequester(
+    bizId,
+    proposal.requesterConversationId,
+    proposal.primary.customer.phone,
+    `לצערי ${proposal.primary.staff.name} לא אישר את האיחור, אז התור נחשב הברזה ובוטל. מומלץ להגיע מוקדם יותר בפעם הבאה 🙏`,
+  );
+}
+
+/** Barber's כן/לא to "should I offer your slot to the next customer" — asked
+ *  separately from (and only after) declining the delay itself. */
+async function handleLateArrivalSwapOfferConfirm(
+  bizId: string,
+  phone: string,
+  proposal: LateArrivalProposal,
+  ans: "yes" | "no" | "unclear",
+  text: string,
+): Promise<boolean> {
+  if (!proposal.primary) return false;
+
+  if (ans === "unclear") {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_staff_request",
+      body: `לא הבנתי — רוצה שאציע ללקוח הבא בתור להחליף עם ${proposal.primary.customer.name}? ענה כן או לא בבקשה.`,
+    }).catch(() => {});
+    return true;
+  }
+
+  if (ans === "no" || !proposal.candidateAppointmentId) {
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "staff_rejected", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await markLateArrivalNoShow(bizId, proposal, phone);
+    return true;
+  }
+
+  // ans === "yes" — now actually contact the next customer.
+  const next = await prisma.appointment.findUnique({
+    where: { id: proposal.candidateAppointmentId },
+    include: { customer: true },
+  });
+  if (!next) {
+    // The next appointment got cancelled/moved while we were waiting on the
+    // barber — nothing left to offer.
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "staff_rejected", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await markLateArrivalNoShow(bizId, proposal, phone);
+    return true;
+  }
+
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: {
+      status: "pending_response",
+      approvalStaffId: null,
+      respondedAt: new Date(),
+      rawResponse: text.slice(0, 500),
+      expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+    },
+  });
+  await messageCandidate(proposal.id);
+  await notifyStaffByPhone(bizId, phone, `מבין, בודק עם ${next.customer.name} (התור הבא) אם אפשר להחליף.`);
+  await notifyRequester(
+    bizId,
+    proposal.requesterConversationId,
+    proposal.primary.customer.phone,
+    `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע, אבל אני בודק אם אפשר להחליף אותך עם הלקוח שאחריך בתור. אעדכן אותך ברגע שיש תשובה 🙏`,
+  );
+  return true;
+}
 
 async function handleLateArrivalStaffReply(
   bizId: string,
@@ -779,6 +891,13 @@ async function handleLateArrivalStaffReply(
   }
 
   const ans = parseYesNo(text);
+
+  // This reply might be answering the SECOND question (offer the slot to the
+  // next customer?), not the original lateness approval — different handler.
+  if (proposal.status === "pending_staff_swap_confirm") {
+    return handleLateArrivalSwapOfferConfirm(bizId, phone, proposal, ans, text);
+  }
+
   if (ans === "unclear") {
     await sendMessage({
       businessId: bizId,
@@ -832,36 +951,35 @@ async function handleLateArrivalStaffReply(
     });
 
     if (next) {
+      // Ask the barber FIRST whether to even offer the swap — don't bother
+      // the next customer until they say yes to this separate question.
       await prisma.swapProposal.update({
         where: { id: proposal.id },
         data: {
-          status: "pending_response",
+          status: "pending_staff_swap_confirm",
           candidateAppointmentId: next.id,
-          approvalStaffId: null,
+          approvalStaffId: staff.id,
           expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
         },
       });
-      await messageCandidate(proposal.id);
-      await notifyStaffByPhone(bizId, phone, `מבין, בודק עם ${next.customer.name} (התור הבא) אם אפשר להחליף.`);
+      await notifyStaffByPhone(
+        bizId,
+        phone,
+        `מבחינתנו זה נחשב הברזה. רוצה שאציע ל${next.customer.name} (התור הבא) להחליף איתו? ענה כן או לא.`,
+      );
       await notifyRequester(
         bizId,
         proposal.requesterConversationId,
         proposal.primary.customer.phone,
-        `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע, אבל אני בודק אם אפשר להחליף אותך עם הלקוח שאחריך בתור. אעדכן אותך ברגע שיש תשובה 🙏`,
+        `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע — בודק מולו אפשרות נוספת, אעדכן אותך בקרוב 🙏`,
       );
       return true;
     }
   }
 
   // No swap-with-next possible (feature off, not enough lead time, or no one
-  // scheduled after this slot) — plain no-show outcome.
-  await notifyStaffByPhone(bizId, phone, `מבין, מעדכן את ${proposal.primary.customer.name} שהתור נחשב הברזה.`);
-  await notifyRequester(
-    bizId,
-    proposal.requesterConversationId,
-    proposal.primary.customer.phone,
-    `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע, אז התור נחשב הברזה. מומלץ להגיע מוקדם יותר בפעם הבאה 🙏`,
-  );
+  // scheduled after this slot) — real no-show outcome.
+  await markLateArrivalNoShow(bizId, proposal, phone);
   return true;
 }
 
