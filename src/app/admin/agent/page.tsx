@@ -20,6 +20,7 @@ type Config = {
   lateArrivalGraceMinutes: number;
   lateArrivalSwapLeadMinutes: number;
   lateArrivalOfferSwapWithNext: boolean;
+  lateArrivalNoShowMessage: string | null;
   faqs: FAQ[];
 };
 
@@ -448,6 +449,22 @@ export default function AdminAgentPage() {
                     </span>
                   </label>
                 )}
+
+                <label className="block">
+                  <span className="text-xs text-neutral-500 block mb-1">
+                    ההודעה ללקוח כשהאיחור לא אושר (בסופו של דבר, בכל מסלול)
+                  </span>
+                  <textarea
+                    value={config.lateArrivalNoShowMessage ?? ""}
+                    onChange={e => setConfig(c => c ? { ...c, lateArrivalNoShowMessage: e.target.value } : c)}
+                    placeholder="לצערי {{staff}} לא אישר את האיחור, אז מבחינתנו זה נחשב הברזה — ואנחנו בדרך כלל מחייבים תשלום מלא במקרה כזה. מומלץ להגיע בזמן בפעם הבאה 🙏"
+                    rows={3}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                  />
+                  <span className="text-[11px] text-neutral-400 block mt-1">
+                    ריק = ברירת המחדל שמוצגת כדוגמה מעל. {"{{staff}}"} יוחלף בשם הספר. התור גם מסומן בפועל כהברזה במערכת, לא רק ההודעה הזו.
+                  </span>
+                </label>
               </div>
             )}
           </div>

@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
       lateArrivalGraceMinutes: 10,
       lateArrivalSwapLeadMinutes: 40,
       lateArrivalOfferSwapWithNext: false,
+      lateArrivalNoShowMessage: null,
       faqs:          [],
     });
   }
@@ -56,6 +57,7 @@ export async function PATCH(req: NextRequest) {
     requireSwapApproval, allowSwapOffers, escalateAfterMessages,
     offerOtherBarberAtRequestedTime,
     lateArrivalEnabled, lateArrivalGraceMinutes, lateArrivalSwapLeadMinutes, lateArrivalOfferSwapWithNext,
+    lateArrivalNoShowMessage,
   } = body;
 
   const config = await prisma.agentConfig.upsert({
@@ -76,6 +78,7 @@ export async function PATCH(req: NextRequest) {
       lateArrivalGraceMinutes: lateArrivalGraceMinutes ?? 10,
       lateArrivalSwapLeadMinutes: lateArrivalSwapLeadMinutes ?? 40,
       lateArrivalOfferSwapWithNext: lateArrivalOfferSwapWithNext ?? false,
+      lateArrivalNoShowMessage: lateArrivalNoShowMessage || null,
     },
     update: {
       ...(isEnabled      !== undefined && { isEnabled }),
@@ -92,6 +95,7 @@ export async function PATCH(req: NextRequest) {
       ...(lateArrivalGraceMinutes !== undefined && { lateArrivalGraceMinutes }),
       ...(lateArrivalSwapLeadMinutes !== undefined && { lateArrivalSwapLeadMinutes }),
       ...(lateArrivalOfferSwapWithNext !== undefined && { lateArrivalOfferSwapWithNext }),
+      ...(lateArrivalNoShowMessage !== undefined && { lateArrivalNoShowMessage: lateArrivalNoShowMessage || null }),
     },
     include: { faqs: { orderBy: { sortOrder: "asc" } } },
   });

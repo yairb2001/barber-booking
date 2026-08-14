@@ -1,7 +1,7 @@
 /**
  * Live functional test for the late-arrival + other-barber features
- * (2026-08-13, extended 2026-08-14 after Yair's live test on the real
- * business surfaced two gaps — see Test D):
+ * (2026-08-13, extended 2026-08-14 after two rounds of Yair's live testing
+ * on the real business surfaced real gaps — see Tests D and E):
  *   1. offerOtherBarberAtRequestedTime — request_appointment_move offers an
  *      exact-time match with another barber even when a specific barber was
  *      requested.
@@ -9,8 +9,12 @@
  *      under grace → FYI to staff; over grace → staff approval; staff "no"
  *      → a SEPARATE yes/no asking whether to offer the slot to the next
  *      customer (Test B) — declining the delay must not auto-trigger the
- *      swap offer. Staff "no" to THAT question too → the appointment is
- *      marked an actual no_show, not just a chat message (Test D).
+ *      swap offer. Every path that ends in "not approved" — staff declines
+ *      outright with no swap possible (Test D), staff declines offering the
+ *      swap too (Test D), or the NEXT customer declines the swap (Test E) —
+ *      must all mark the appointment an actual no_show and tell the late
+ *      customer the same "considered a no-show, we usually charge full
+ *      price" wording (per-business editable, lateArrivalNoShowMessage).
  *
  * Runs against the DEMO business ("המספרה של דני") — real DB writes, real
  * WhatsApp sends to Dani's connected number. Creates its own test customers/
@@ -230,6 +234,75 @@ async function main() {
     throw new Error("FAIL: the NEXT customer's appointment should be untouched when the swap was declined");
   }
   console.log("✅ TEST D PASSED — real no_show, next customer's appointment untouched");
+
+  // ── Test E: staff confirms the swap offer, but the CANDIDATE declines it ──
+  // 2026-08-14 (Yair, live test): this path went through finishUnsuccessful,
+  // which said "your appointment stays as normal" — wrong for late_arrival,
+  // where declining the swap means the SAME no-show outcome as the barber
+  // declining outright. Also checks the exact wording Yair asked for.
+  console.log("\n=== TEST E: staff confirms swap offer, candidate declines → still a real no-show ===");
+  const lateTimeE = `${pad(Math.floor((nowMin + 270) / 60) % 24)}:${pad((nowMin + 270) % 60)}`;
+  const nextTimeE = `${pad(Math.floor((nowMin + 300) / 60) % 24)}:${pad((nowMin + 300) % 60)}`;
+  const lateCustE = await prisma.customer.create({ data: { businessId: BIZ_ID, name: "בדיקה-מאחר-ה", phone: "972000000007" } });
+  createdCustomerIds.push(lateCustE.id);
+  const nextCustE = await prisma.customer.create({ data: { businessId: BIZ_ID, name: "בדיקה-הבא-ה", phone: "972000000008" } });
+  createdCustomerIds.push(nextCustE.id);
+  const lateConvE = await prisma.conversation.create({
+    data: { businessId: BIZ_ID, phone: "972000000007", agentType: "customer", status: "active", lastMessageAt: new Date() },
+  });
+  createdConversationIds.push(lateConvE.id);
+  const lateApptE = await prisma.appointment.create({
+    data: {
+      businessId: BIZ_ID, customerId: lateCustE.id, staffId: DANI_ID, serviceId: SERVICE_ID,
+      date: new Date(`${todayIso}T00:00:00.000Z`), startTime: lateTimeE, endTime: nextTimeE,
+      status: "confirmed", price: 80,
+    },
+  });
+  createdAppointmentIds.push(lateApptE.id);
+  const nextApptE = await prisma.appointment.create({
+    data: {
+      businessId: BIZ_ID, customerId: nextCustE.id, staffId: DANI_ID, serviceId: SERVICE_ID,
+      date: new Date(`${todayIso}T00:00:00.000Z`), startTime: nextTimeE, endTime: `${pad(Math.floor((nowMin + 330) / 60) % 24)}:${pad((nowMin + 330) % 60)}`,
+      status: "confirmed", price: 80,
+    },
+  });
+  createdAppointmentIds.push(nextApptE.id);
+
+  await reportRunningLate({
+    bizId: BIZ_ID, conversationId: lateConvE.id, callerPhone: "972000000007",
+    appointmentId: lateApptE.id, delayMinutes: 20,
+  });
+  await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "לא"); // decline the delay
+  await handleStaffApprovalReply(BIZ_ID, DANI_PHONE, "כן"); // confirm offering the swap
+  const proposalE = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId: lateApptE.id, kind: "late_arrival" },
+    orderBy: { createdAt: "desc" },
+  });
+  if (proposalE?.status !== "pending_response") throw new Error(`FAIL: expected pending_response after staff confirms swap offer, got ${proposalE?.status}`);
+
+  console.log("\n-- candidate (next customer) replies לא --");
+  const consumedCandidateNo = await handleCandidateReply(BIZ_ID, "972000000008", "לא");
+  console.log("consumed:", consumedCandidateNo, "(expect true)");
+
+  const [lateApptEFinal, nextApptEFinal] = await Promise.all([
+    prisma.appointment.findUnique({ where: { id: lateApptE.id } }),
+    prisma.appointment.findUnique({ where: { id: nextApptE.id } }),
+  ]);
+  console.log("lateApptE status:", lateApptEFinal?.status, "(expect no_show)");
+  if (lateApptEFinal?.status !== "no_show") throw new Error("FAIL: late appointment should be no_show after the candidate declined the swap");
+  if (nextApptEFinal?.status !== "confirmed" || nextApptEFinal?.startTime !== nextTimeE) {
+    throw new Error("FAIL: the candidate's own appointment should be untouched after declining");
+  }
+
+  const msgLogE = await prisma.messageLog.findFirst({
+    where: { businessId: BIZ_ID, customerPhone: "972000000007" },
+    orderBy: { createdAt: "desc" },
+  });
+  console.log("message to late customer:", msgLogE?.body);
+  if (!msgLogE?.body.includes("הברזה") || !msgLogE?.body.includes("תשלום מלא")) {
+    throw new Error("FAIL: late customer's message should mention it's considered a no-show AND the full-charge note");
+  }
+  console.log("✅ TEST E PASSED — candidate decline also produces a real no-show, with the exact wording Yair asked for");
 
   // ── Test C: offer other barber at exact requested time ──────────────────
   // Deterministic: tomorrow at 12:00 (well within the 10:00-19:00 schedule for

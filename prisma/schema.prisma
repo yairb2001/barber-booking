@@ -701,6 +701,14 @@ model AgentConfig {
   // lateArrivalEnabled so a business can use the grace-period/barber-approval
   // part without this more disruptive swap option.
   lateArrivalOfferSwapWithNext Boolean @default(false) @map("late_arrival_offer_swap_with_next")
+  // What the LATE customer is told once lateness ends up NOT approved (barber
+  // declined outright, barber declined offering the swap, or the next
+  // customer declined it) — the appointment is also marked a real no_show at
+  // that point, not just this chat message. {{staff}} placeholder. Null =
+  // use the built-in default (DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE in
+  // appointment-swap.ts). Business-specific — Yair, 2026-08-14: not every
+  // business necessarily charges full price for a no-show.
+  lateArrivalNoShowMessage String? @map("late_arrival_no_show_message")
   // Structured answers from the self-configuring setup interview (JSON string).
   // Compiled into a shop-specific prompt block by lib/agent/setup-fields.ts.
   // Only the prompt-shaping fields live here; system toggles use their own cols.

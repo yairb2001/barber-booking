@@ -223,7 +223,12 @@ async function promoteNextCandidate(primaryAppointmentId: string): Promise<boole
   return true;
 }
 
-/** No (more) candidate accepted — tell the requester their appt stays put. */
+/** No (more) candidate accepted — tell the requester their appt stays put.
+ *  EXCEPT for a late_arrival proposal: there the primary customer is the one
+ *  running late, so "stays put as normal" is wrong — a declined swap there
+ *  means the same no-show outcome as the barber declining outright (Yair,
+ *  2026-08-14: found this gap after live-testing the barber-declines path
+ *  but not the candidate-declines one). */
 async function finishUnsuccessful(primaryAppointmentId: string): Promise<void> {
   // Cancel any leftover reserved candidates for this primary.
   await prisma.swapProposal.updateMany({
@@ -233,9 +238,15 @@ async function finishUnsuccessful(primaryAppointmentId: string): Promise<void> {
   const any = await prisma.swapProposal.findFirst({
     where: { primaryAppointmentId, initiatedBy: "agent" },
     orderBy: { createdAt: "desc" },
-    include: { primary: { include: { customer: true } } },
+    include: { primary: { include: { customer: true, staff: true, service: true } } },
   });
   if (!any?.primary) return;
+
+  if (any.kind === "late_arrival") {
+    await markLateArrivalNoShow(any.businessId, any as LateArrivalProposal);
+    return;
+  }
+
   await notifyRequester(
     any.businessId,
     any.requesterConversationId,
@@ -768,16 +779,28 @@ type LateArrivalProposal = Prisma.SwapProposalGetPayload<{
   include: { primary: { include: { customer: true; staff: true; service: true } } };
 }>;
 
+// Per-business editable (AgentConfig.lateArrivalNoShowMessage), {{staff}}
+// filled in below. Yair, 2026-08-14: the late customer must always land on
+// this exact framing — considered a no-show, usually charged in full —
+// however the "not approved" outcome was reached (staff declined outright,
+// staff declined offering the swap, or the next customer declined it).
+const DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE =
+  "לצערי {{staff}} לא אישר את האיחור, אז מבחינתנו זה נחשב הברזה — ואנחנו בדרך כלל מחייבים תשלום מלא במקרה כזה. מומלץ להגיע בזמן בפעם הבאה 🙏";
+
 /** Turns "not approved, no swap happening" into an ACTUAL no-show — the
  *  appointment stops being a normal confirmed slot on the calendar, matching
  *  how a manually-marked no-show behaves elsewhere in the app (billing/repeat
  *  no-show tracking keys off appointment.status, not off chat text). Doesn't
  *  auto-send the formal no-show/payment template — same as the admin flow,
- *  that wording choice is left to a human, not guessed here. */
+ *  that wording choice is left to a human, not guessed here.
+ *
+ *  `staffPhone` is only passed when the barber's OWN reply is what triggered
+ *  this (so we can ack it into their thread) — the candidate-declined path
+ *  (finishUnsuccessful) has no staff reply to ack, just a separate FYI. */
 async function markLateArrivalNoShow(
   bizId: string,
   proposal: LateArrivalProposal,
-  staffPhone: string,
+  staffPhone?: string,
 ): Promise<void> {
   if (!proposal.primary) return;
   await prisma.appointment.update({
@@ -792,13 +815,26 @@ async function markLateArrivalNoShow(
     data: { type: "appointment_no_show", appointmentId: proposal.primary.id },
   }, proposal.primary.staffId).catch(() => {});
 
-  await notifyStaffByPhone(bizId, staffPhone, `מבין, התור מסומן כהברזה.`);
-  await notifyRequester(
-    bizId,
-    proposal.requesterConversationId,
-    proposal.primary.customer.phone,
-    `לצערי ${proposal.primary.staff.name} לא אישר את האיחור, אז התור נחשב הברזה ובוטל. מומלץ להגיע מוקדם יותר בפעם הבאה 🙏`,
-  );
+  if (staffPhone) {
+    await notifyStaffByPhone(bizId, staffPhone, `מבין, התור מסומן כהברזה.`);
+  } else if (proposal.primary.staff.phone) {
+    // Candidate declined the swap — the barber never replied in this leg of
+    // the flow, so they wouldn't otherwise know it fell through.
+    await notifyStaffByPhone(
+      bizId,
+      proposal.primary.staff.phone,
+      `${proposal.candidateAppointmentId ? "הלקוח הבא לא הסכים להחליף — " : ""}התור של ${proposal.primary.customer.name} מסומן כהברזה.`,
+    ).catch(() => {});
+  }
+
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { lateArrivalNoShowMessage: true },
+  });
+  const message = (cfg?.lateArrivalNoShowMessage || DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE)
+    .replace(/\{\{staff\}\}/g, proposal.primary.staff.name);
+
+  await notifyRequester(bizId, proposal.requesterConversationId, proposal.primary.customer.phone, message);
 }
 
 /** Barber's כן/לא to "should I offer your slot to the next customer" — asked
