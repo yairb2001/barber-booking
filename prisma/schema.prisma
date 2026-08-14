@@ -473,6 +473,16 @@ model Waitlist {
   isFlexible   Boolean  @default(false) @map("is_flexible")
   status              String   @default("waiting") // waiting, notified, booked, expired
   preferredTimeOfDay  String?  @map("preferred_time_of_day") // morning | afternoon | any
+  // "explicit" — customer actively asked to be waitlisted (join_waitlist tool,
+  // the public /book waitlist form, or an admin manually adding one). Shown in
+  // the admin waitlist screen/calendar badges as normal.
+  // "declined_offer" — the agent told the customer there was no room for a
+  // specific day/barber and silently noted the interest, without the customer
+  // ever asking to be waitlisted. Same notify-when-freed mechanism, but hidden
+  // from the admin waitlist UI (the customer never "signed up") and gets a
+  // casual "you asked about X, it opened up" message instead of the owner's
+  // waitlist template.
+  source              String   @default("explicit") @map("source")
   // Last time we messaged this customer about a freed slot. The entry stays
   // "waiting" after a notification (they may want a LATER slot), so this is used
   // to throttle repeat pings — we won't re-notify within RENOTIFY_THROTTLE.

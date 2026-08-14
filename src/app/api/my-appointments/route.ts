@@ -116,6 +116,10 @@ export async function GET(req: NextRequest) {
       customerId: customer.id,
       status: { in: ["waiting", "notified"] },
       date: { gte: todayDate },
+      // Implicit entries (silently noted when the agent said there was no
+      // room — see noteImplicitWaitlistInterest) never appear here either;
+      // the customer never asked to join, so nothing to show/let them leave.
+      source: "explicit",
     },
     include: {
       staff:   { select: { id: true, name: true } },

@@ -20,6 +20,11 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {
     businessId: business.id,
     status: "waiting",
+    // Implicit entries (customer never actually asked to be waitlisted — see
+    // noteImplicitWaitlistInterest in customer-agent.ts) stay invisible here;
+    // they still get notified when a slot frees up, just not shown as if the
+    // customer had signed up for anything.
+    source: "explicit",
   };
   if (date) {
     const start = new Date(date); start.setHours(0, 0, 0, 0);

@@ -142,6 +142,10 @@ export async function GET(req: NextRequest) {
     where: {
       businessId: session.businessId,
       createdAt: { gte: since },
+      // Implicit entries (silently noted after the agent said there was no
+      // room — see noteImplicitWaitlistInterest) aren't a "customer signed
+      // up" event, so they don't belong in this feed either.
+      source: "explicit",
       ...(staffScope ? { OR: [{ staffId: staffScope }, { staffId: null }] } : {}),
     },
     select: {

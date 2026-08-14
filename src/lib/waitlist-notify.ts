@@ -158,6 +158,13 @@ export type WaitlistEntryForNotify = {
   customer: { name: string; phone: string };
   service: { name: string };
   staff: { name: string } | null;
+  /** "explicit" (default) uses the owner's editable template. "declined_offer"
+   *  (silently noted after the agent said there was no room — see
+   *  noteImplicitWaitlistInterest in customer-agent.ts) always gets the
+   *  casual hardcoded message below instead, regardless of the owner's
+   *  template — these customers never signed up, so a formal "great news, you
+   *  registered!" tone would be confusing. */
+  source?: string;
 };
 
 /**
@@ -206,17 +213,30 @@ export function sendWaitlistEntryNotification(
   const timeLabel = freedTime ? `בשעה ${freedTime}` : prefLabel;
   const slotLabel = `${triggerType === "day_open" ? "יום נפתח" : "תור פנוי"}${timeLabel ? ` ${timeLabel}` : ""}`;
 
-  // Render the owner's editable template (or the built-in default).
-  let body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {
-    name:         firstName(entry.customer.name),
-    business:     formatBusinessName(businessName),
-    slot:         slotLabel,
-    time:         freedTime ?? "",
-    date:         dateLabel,
-    staff_line:   staffName ? `💈 אצל ${staffName}\n` : "",
-    service:      entry.service.name,
-    booking_link: bookingLink,
-  });
+  // Implicit entries (customer never actually asked to be waitlisted — see
+  // noteImplicitWaitlistInterest) always get this casual message, ignoring the
+  // owner's formal template entirely — "you registered, great news!" would be
+  // confusing for someone who never signed up for anything.
+  let body: string;
+  if (entry.source === "declined_offer") {
+    const staffLine = staffName ? ` אצל ${staffName}` : "";
+    const openLabel = triggerType === "day_open" ? "התפנה יום" : `התפנה תור${timeLabel ? ` ${timeLabel}` : ""}`;
+    body =
+      `היי ${firstName(entry.customer.name)}, שאלת אצלנו על ${entry.service.name}${staffLine} ב-${dateLabel} ולא היה מקום — ` +
+      `${openLabel}. מעניין אותך?`;
+  } else {
+    // Render the owner's editable template (or the built-in default).
+    body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {
+      name:         firstName(entry.customer.name),
+      business:     formatBusinessName(businessName),
+      slot:         slotLabel,
+      time:         freedTime ?? "",
+      date:         dateLabel,
+      staff_line:   staffName ? `💈 אצל ${staffName}\n` : "",
+      service:      entry.service.name,
+      booking_link: bookingLink,
+    });
+  }
 
   // Always guarantee a booking link. If the owner edited the template and
   // removed the link, append it so the customer can still tap through and grab

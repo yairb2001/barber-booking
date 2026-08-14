@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
         customer: entry.customer,
         service: entry.service,
         staff: entry.staff,
+        source: entry.source,
       }, "day_open", biz.slug, biz.waitlistNotifyTemplate);
       notified++;
       details.push(`${biz.name}: ${entry.customer.name} → ${entryISO}`);

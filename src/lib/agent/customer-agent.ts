@@ -54,6 +54,69 @@ async function computeDayAvailabilityRetrying(
   return result;
 }
 
+/**
+ * Silently note interest when the agent just told a customer there's no room
+ * on a given day (2026-08 — Yair: a customer who gets turned down should get
+ * pinged if a slot frees up, without ever formally "joining a waitlist").
+ * Deliberately NOT a tool the model calls — it's a side effect of the code
+ * path that already decided "no slots", so it can't be forgotten or skipped.
+ * Reuses the real Waitlist table/notify pipeline (source="declined_offer"
+ * keeps it out of the admin waitlist screen — see schema.prisma comment).
+ * Requires an existing Customer record (found by phone) and a known
+ * serviceId — skips silently otherwise rather than interrupting the
+ * conversation to ask for a name/service just for this.
+ */
+async function noteImplicitWaitlistInterest(opts: {
+  bizId: string;
+  callerPhone: string;
+  date: string;
+  staffId?: string;
+  serviceId?: string;
+}): Promise<void> {
+  const { bizId, callerPhone, date, staffId, serviceId } = opts;
+  if (!serviceId) return;
+  try {
+    const phone = normalizeIsraeliPhone(callerPhone);
+    const localPhone = phone.replace(/^972/, "0");
+    const customer = await prisma.customer.findFirst({
+      where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
+      select: { id: true, isBlocked: true },
+    });
+    if (!customer || customer.isBlocked) return;
+
+    const dateObj = new Date(`${date}T00:00:00.000Z`);
+    const existing = await prisma.waitlist.findFirst({
+      where: {
+        businessId: bizId,
+        customerId: customer.id,
+        staffId: staffId || null,
+        serviceId,
+        date: dateObj,
+        status: { in: ["waiting", "notified"] },
+      },
+      select: { id: true },
+    });
+    if (existing) return; // already noted this exact ask — don't duplicate
+
+    await prisma.waitlist.create({
+      data: {
+        businessId: bizId,
+        customerId: customer.id,
+        staffId: staffId || null,
+        serviceId,
+        date: dateObj,
+        isFlexible: false,
+        preferredTimeOfDay: "any",
+        status: "waiting",
+        source: "declined_offer",
+      },
+    });
+  } catch (err) {
+    // Best-effort — never let this break the actual availability answer.
+    console.error("[agent] noteImplicitWaitlistInterest failed", err);
+  }
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
   // Resilience: transient 429/5xx/"overloaded" responses are common under load
@@ -431,6 +494,7 @@ export async function execTool(
         }
         if (!byStaff.length) {
           console.warn(`[agent] get_available_slots returned empty (after retry) — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
+          void noteImplicitWaitlistInterest({ bizId, callerPhone, date, staffId: inputStaffId, serviceId: inputServiceId });
           return `אין תורים פנויים ב${hebDayDate(date)} (${date}).`;
         }
         const header = `${hebDayDate(date)} (${date}):`;

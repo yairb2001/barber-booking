@@ -489,6 +489,10 @@ export async function POST(request: NextRequest) {
       businessId: staff.businessId,
       status: { in: ["waiting", "notified"] },
       date: { gte: dateObj, lt: dayEnd },
+      // Implicit entries stay invisible everywhere, including this "remove
+      // from waitlist?" prompt — surfacing one here would make it look like
+      // the customer had signed up when they never did.
+      source: "explicit",
     },
     select: { id: true, date: true },
   });
