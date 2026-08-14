@@ -1,11 +1,10 @@
 /**
- * Prompt-routing regression harness (2026-08 refactor).
+ * Prompt regression harness.
  * ───────────────────────────────────────────────────────
- * Compares the OLD always-full system prompt against the NEW routed one on a
- * set of representative scenarios — including two real historical incidents
- * from the QA audit log (Harel's multi-stage jailbreak, Itamar's
- * engraving→recipe jailbreak) — to confirm the trimmed prompt didn't drop
- * any rule the model actually relies on.
+ * Runs the production system prompt against a set of representative
+ * scenarios — including two real historical incidents from the QA audit log
+ * (Harel's multi-stage jailbreak, Itamar's engraving→recipe jailbreak) — to
+ * catch regressions when the prompt body changes.
  *
  * Zero DB writes, zero WhatsApp sends: tools are advertised to the model
  * (so we can see if it reaches for the right one) but never executed here.
@@ -18,7 +17,6 @@ import {
   buildSystemPrompt,
   pickInitialModel,
   AGENT_TOOLS,
-  MODEL_SMART,
 } from "../src/lib/agent/customer-agent";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -26,10 +24,6 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const AGENT_NAME = "הסוכן";
 const BUSINESS_NAME = "מספרת דומיננט";
 const NOW = "יום שלישי, 11 באוגוסט 2026, 11:00";
-
-// Signals that force EVERY conditional block on — reproduces the exact old
-// always-full prompt via the real production code path (no re-implementation).
-const FULL_SIGNALS = { bookingActive: true, incomingText: "מחיר בשביל" };
 
 interface Scenario {
   label: string;
@@ -222,23 +216,18 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
-async function runOne(scenario: Scenario, routed: boolean) {
+async function runOne(scenario: Scenario) {
   const model = pickInitialModel(
     scenario.incomingText,
     [],
     scenario.history.map(h => h.content)
   );
-  const bookingActive = model === MODEL_SMART;
-  const routerSignals = routed
-    ? { bookingActive, incomingText: scenario.incomingText }
-    : FULL_SIGNALS;
 
   const system = buildSystemPrompt({
     agentName: AGENT_NAME,
     businessName: BUSINESS_NAME,
     faqs: [{ question: "כמה עולה תספורת?", answer: "תספורת רגילה עולה 90 ש\"ח." }],
     now: NOW,
-    routerSignals,
   });
 
   const response = await anthropic.messages.create({
@@ -254,39 +243,32 @@ async function runOne(scenario: Scenario, routed: boolean) {
 
   const textBlock = response.content.find(b => b.type === "text");
   const toolBlock = response.content.find(b => b.type === "tool_use");
-  const promptChars = system.reduce((n, b) => n + b.text.length, 0);
 
   return {
     text: textBlock && "text" in textBlock ? textBlock.text : "",
     tool: toolBlock && "name" in toolBlock ? toolBlock.name : null,
-    promptChars,
   };
 }
 
 async function main() {
   let failures = 0;
+  // Two REPEATS passes per scenario — catches flaky/inconsistent behavior a
+  // single pass would miss, not just a single-shot pass/fail.
+  const REPEATS = 2;
   for (const scenario of SCENARIOS) {
-    const [oldRun, newRun] = await Promise.all([
-      runOne(scenario, false),
-      runOne(scenario, true),
-    ]);
-    const oldCheck = scenario.check(oldRun.text, oldRun.tool);
-    const newCheck = scenario.check(newRun.text, newRun.tool);
-    const savings = Math.round(100 * (1 - newRun.promptChars / oldRun.promptChars));
+    const runs = await Promise.all(Array.from({ length: REPEATS }, () => runOne(scenario)));
+    const checks = runs.map(r => scenario.check(r.text, r.tool));
+    const allPass = checks.every(c => c.pass);
 
     console.log(`\n━━━ ${scenario.label} ━━━`);
-    console.log(`  prompt size: old=${oldRun.promptChars} new=${newRun.promptChars} (${savings}% smaller)`);
-    console.log(`  OLD  [${oldCheck.pass ? "PASS" : "FAIL"}] ${oldCheck.note}`);
-    console.log(`       reply: ${oldRun.text.slice(0, 200).replace(/\n/g, " ")}`);
-    console.log(`  NEW  [${newCheck.pass ? "PASS" : "FAIL"}] ${newCheck.note}`);
-    console.log(`       reply: ${newRun.text.slice(0, 200).replace(/\n/g, " ")}`);
+    checks.forEach((c, i) => {
+      console.log(`  [${c.pass ? "PASS" : "FAIL"}] ${c.note}`);
+      console.log(`       reply: ${runs[i].text.slice(0, 200).replace(/\n/g, " ")}`);
+    });
 
-    if (!newCheck.pass) failures++;
-    if (oldCheck.pass && !newCheck.pass) {
-      console.log(`  ⚠️  REGRESSION: old prompt passed, new prompt failed`);
-    }
+    if (!allPass) failures++;
   }
-  console.log(`\n${failures === 0 ? "✅ All new-prompt checks passed" : `❌ ${failures} new-prompt check(s) failed`}`);
+  console.log(`\n${failures === 0 ? "✅ All checks passed" : `❌ ${failures} scenario(s) had a failing run`}`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

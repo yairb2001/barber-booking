@@ -69,8 +69,8 @@ const anthropic = new Anthropic({
 // ── Model router ────────────────────────────────────────────────────────────
 // Cheap model handles greetings + simple info queries; strong model handles
 // booking / cancellation / multi-step reasoning. Saves ~5-10x on the common case.
-const MODEL_FAST  = "claude-haiku-4-5";
-const MODEL_SMART = "claude-sonnet-4-6";
+export const MODEL_FAST  = "claude-haiku-4-5";
+export const MODEL_SMART = "claude-sonnet-4-6";
 const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 
 // Context window: the agent only "remembers" the last 24h of a conversation.
@@ -102,7 +102,10 @@ const SMART_TOOLS = new Set(["book_appointment", "cancel_appointment", "request_
 // barber?") requires Sonnet-level reasoning even though slot-listing itself doesn't.
 const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_available_slots", "find_next_available", "find_parallel_slots"]);
 
-function pickInitialModel(
+/** Exported (not just used internally) so test scripts can reuse the exact
+ *  production routing signal instead of re-implementing a second, possibly
+ *  drifting, copy of these regexes. */
+export function pickInitialModel(
   incomingText: string,
   recentToolNames: (string | null)[],
   recentMessages: string[] = []
@@ -115,6 +118,33 @@ function pickInitialModel(
   // next turn stays on Haiku and fabricates a slot or a booking.
   if (recentMessages.some(t => BOOKING_FLOW.test(t))) return MODEL_SMART;
   return MODEL_FAST;
+}
+
+// ─── Cache breakpoint helper ────────────────────────────────────────────────────
+
+/** Returns a copy of `messages` with a cache breakpoint on the last content
+ *  block of the last message — the standard multi-turn caching pattern. Each
+ *  iteration of the tool-calling loop resends the WHOLE conversation so far
+ *  (every prior tool_use/tool_result); without this, that growing history is
+ *  billed at full price on every single round trip within the same turn.
+ *  Doesn't mutate the original array/messages — `messages` stays clean (no
+ *  cache_control baked in) so the next iteration always marks fresh instead of
+ *  accumulating breakpoints (max 4 per request; tools+system already use 2). */
+function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  if (messages.length === 0) return messages;
+  const last = messages[messages.length - 1];
+  const content = typeof last.content === "string"
+    ? [{ type: "text" as const, text: last.content }]
+    : [...last.content];
+  if (content.length === 0) return messages;
+  const lastBlockIndex = content.length - 1;
+  // Thinking blocks can't carry cache_control, but this loop's messages are
+  // always text/tool_use/tool_result — cast reflects that runtime guarantee.
+  content[lastBlockIndex] = {
+    ...content[lastBlockIndex],
+    cache_control: { type: "ephemeral" },
+  } as Anthropic.ContentBlockParam;
+  return [...messages.slice(0, -1), { ...last, content }];
 }
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
@@ -366,15 +396,37 @@ export async function execTool(
         //      is indistinguishable from "fully booked", so we'd wrongly tell the
         //      customer there's no room. Surface it so the model re-fetches the
         //      list instead.
-        const byStaff = await computeDayAvailabilityRetrying(bizId, date, inputStaffId, inputServiceId);
+        let byStaff = await computeDayAvailabilityRetrying(bizId, date, inputStaffId, inputServiceId);
         if (!byStaff.length && inputStaffId) {
           const staffOk = await prisma.staff.findFirst({
             where: { id: inputStaffId, businessId: bizId, isAvailable: true },
             select: { id: true },
           });
           if (!staffOk) {
-            console.warn(`[agent] get_available_slots: unknown/unavailable staffId=${inputStaffId} biz=${bizId} date=${date}`);
-            return `לא זיהיתי את הספר הזה. קרא שוב ל-get_staff_list וקבע עם המזהה המדויק של הספר שהלקוח ביקש.`;
+            // The model often passes a name/nickname/slug instead of the exact
+            // UUID (e.g. "oriya", "אוריה אלקיים") even though it already fetched
+            // the real id earlier in this same conversation — costing a wasted
+            // round trip (error → re-call get_staff_list → retry) every time.
+            // Resolve it ourselves by name/nickname before giving up, so a
+            // near-miss guess just works instead of bouncing back to the model.
+            const byName = await prisma.staff.findFirst({
+              where: {
+                businessId: bizId,
+                isAvailable: true,
+                OR: [
+                  { name: { contains: inputStaffId, mode: "insensitive" } },
+                  { nickname: { contains: inputStaffId, mode: "insensitive" } },
+                ],
+              },
+              select: { id: true },
+            });
+            if (byName) {
+              console.warn(`[agent] get_available_slots: resolved staffId "${inputStaffId}" by name to ${byName.id} biz=${bizId} date=${date}`);
+              byStaff = await computeDayAvailabilityRetrying(bizId, date, byName.id, inputServiceId);
+            } else {
+              console.warn(`[agent] get_available_slots: unknown/unavailable staffId=${inputStaffId} biz=${bizId} date=${date}`);
+              return `לא זיהיתי את הספר הזה. קרא שוב ל-get_staff_list וקבע עם המזהה המדויק של הספר שהלקוח ביקש.`;
+            }
           }
         }
         if (!byStaff.length) {
@@ -1053,7 +1105,10 @@ function hebDayDate(iso: string): string {
   });
 }
 
-function buildSystemPrompt(params: {
+/** Exported so test scripts can build the exact same system prompt Anthropic
+ *  sees in production (including the hard guardrails + dynamic time block),
+ *  instead of re-implementing this assembly a second time. */
+export function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
@@ -1476,7 +1531,7 @@ export async function runCustomerAgent(opts: {
       max_tokens: 1024,
       system:     systemPrompt,
       tools:      AGENT_TOOLS,
-      messages,
+      messages:   withCacheBreakpoint(messages),
     });
 
     const u = response.usage;
@@ -1544,7 +1599,7 @@ export async function runCustomerAgent(opts: {
       model:    MODEL_SMART,
       max_tokens: 1024,
       system:   systemPrompt,
-      messages, // includes every tool result so far
+      messages: withCacheBreakpoint(messages), // includes every tool result so far
     });
     void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "customer", usage: closing.usage });
     for (const block of closing.content) {

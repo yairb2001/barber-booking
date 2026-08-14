@@ -3,7 +3,7 @@
  * route MORE of the conversation to Haiku instead of Sonnet — does it hold up
  * on the turns that currently get Sonnet specifically because they're risky
  * (exact booking-confirmation phrasing, jailbreak resistance, reschedule
- * logic)? Uses the NEW routed prompt in both arms — only the model differs.
+ * logic)? Same production prompt in both arms — only the model differs.
  *
  * Zero DB writes, zero WhatsApp sends. Real API calls.
  * Usage: npx tsx --env-file=.env scripts/test-cheap-model.ts
@@ -108,7 +108,6 @@ async function runOne(scenario: Scenario, model: string) {
     businessName: BUSINESS_NAME,
     faqs: [{ question: "כמה עולה תספורת?", answer: "תספורת רגילה עולה 90 ש\"ח." }],
     now: NOW,
-    routerSignals: { bookingActive: true, incomingText: scenario.incomingText }, // NEW routed prompt either way
   });
 
   const response = await anthropic.messages.create({
