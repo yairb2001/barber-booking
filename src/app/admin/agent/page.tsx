@@ -15,6 +15,11 @@ type Config = {
   requireSwapApproval: boolean;
   allowSwapOffers: boolean;
   escalateAfterMessages: number;
+  offerOtherBarberAtRequestedTime: boolean;
+  lateArrivalEnabled: boolean;
+  lateArrivalGraceMinutes: number;
+  lateArrivalSwapLeadMinutes: number;
+  lateArrivalOfferSwapWithNext: boolean;
   faqs: FAQ[];
 };
 
@@ -325,6 +330,126 @@ export default function AdminAgentPage() {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* Offer another barber at the exact requested time */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-neutral-800">הצעת ספר אחר באותה שעה בדיוק</h2>
+                <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                  כשפעיל — גם כשלקוח מבקש ספר מסוים והשעה תפוסה אצלו, הסוכן בודק אם לספר אחר יש בדיוק את אותה שעה פנויה ומציע את זה כאפשרות נוספת.
+                  <br />
+                  אם אין ספר אחר פנוי באותה שעה בדיוק — לא מוצע כלום, כרגיל.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm text-neutral-500">{config.offerOtherBarberAtRequestedTime ? "פעיל" : "כבוי"}</span>
+                <button
+                  onClick={() => setConfig(c => c ? { ...c, offerOtherBarberAtRequestedTime: !c.offerOtherBarberAtRequestedTime } : c)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                    config.offerOtherBarberAtRequestedTime ? "bg-emerald-500" : "bg-neutral-300"
+                  }`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                    config.offerOtherBarberAtRequestedTime ? "-translate-x-7" : "-translate-x-1"
+                  }`} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Late arrival policy */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-neutral-800">מדיניות איחור לתור</h2>
+                <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                  כשפעיל — לקוח שמודיע שהוא מתעכב מקבל טיפול אוטומטי: בתוך זמן הסבלנות זה עובר חלק (הספר רק מתעדכן), מעבר לזה הסוכן שואל את הספר אם לאשר את האיחור.
+                  <br />
+                  כשכבוי — אין תהליך מיוחד, הסוכן פשוט מגיב באופן טבעי.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <span className="text-sm text-neutral-500">{config.lateArrivalEnabled ? "פעיל" : "כבוי"}</span>
+                <button
+                  onClick={() => setConfig(c => c ? { ...c, lateArrivalEnabled: !c.lateArrivalEnabled } : c)}
+                  className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                    config.lateArrivalEnabled ? "bg-emerald-500" : "bg-neutral-300"
+                  }`}
+                >
+                  <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                    config.lateArrivalEnabled ? "-translate-x-7" : "-translate-x-1"
+                  }`} />
+                </button>
+              </div>
+            </div>
+
+            {config.lateArrivalEnabled && (
+              <div className="space-y-4 pt-2 border-t border-neutral-100">
+                <label className="block">
+                  <span className="text-xs text-neutral-500 block mb-1">
+                    זמן סבלנות לפני שאיחור נחשב הברזה (דקות)
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={120}
+                    value={config.lateArrivalGraceMinutes}
+                    onChange={e => setConfig(c => c ? { ...c, lateArrivalGraceMinutes: parseInt(e.target.value) || 0 } : c)}
+                    className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    dir="ltr"
+                  />
+                  <span className="text-[11px] text-neutral-400 block mt-1">
+                    עד כמה דקות איחור זה עדיין בסדר — הסוכן רק מעדכן את הספר, בלי לבקש אישור.
+                  </span>
+                </label>
+
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-medium text-neutral-700">הצעת החלפה עם התור הבא</h3>
+                    <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                      כשפעיל — אם הספר לא מאשר את האיחור, ונשאר מספיק זמן עד השעה המקורית, הסוכן מציע ללקוח להחליף עם מי שהתור שלו אחריו (באישור הספר והלקוח השני).
+                      <br />
+                      כשכבוי — אם הספר לא מאשר, התור פשוט נחשב הברזה.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm text-neutral-500">{config.lateArrivalOfferSwapWithNext ? "פעיל" : "כבוי"}</span>
+                    <button
+                      onClick={() => setConfig(c => c ? { ...c, lateArrivalOfferSwapWithNext: !c.lateArrivalOfferSwapWithNext } : c)}
+                      className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${
+                        config.lateArrivalOfferSwapWithNext ? "bg-emerald-500" : "bg-neutral-300"
+                      }`}
+                    >
+                      <span className={`inline-block h-6 w-6 transform rounded-full bg-white shadow transition-transform ${
+                        config.lateArrivalOfferSwapWithNext ? "-translate-x-7" : "-translate-x-1"
+                      }`} />
+                    </button>
+                  </div>
+                </div>
+
+                {config.lateArrivalOfferSwapWithNext && (
+                  <label className="block">
+                    <span className="text-xs text-neutral-500 block mb-1">
+                      זמן מינימלי לפני התור המקורי כדי להציע החלפה (דקות)
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={240}
+                      value={config.lateArrivalSwapLeadMinutes}
+                      onChange={e => setConfig(c => c ? { ...c, lateArrivalSwapLeadMinutes: parseInt(e.target.value) || 0 } : c)}
+                      className="w-32 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                      dir="ltr"
+                    />
+                    <span className="text-[11px] text-neutral-400 block mt-1">
+                      אם נשאר פחות מזה עד השעה המקורית של התור, לא מוצעת החלפה — רק הודעה שזה נחשב הברזה.
+                    </span>
+                  </label>
+                )}
+              </div>
+            )}
           </div>
 
           {/* System prompt */}

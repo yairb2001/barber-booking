@@ -665,6 +665,29 @@ model AgentConfig {
   // Hand a stuck conversation to a human after this many customer messages
   // without resolution. 0 = disabled (never auto-escalate on length).
   escalateAfterMessages Int @default(14) @map("escalate_after_messages")
+  // When true, request_appointment_move also checks OTHER barbers for the
+  // exact requested time (not just the requested barber) and offers that slot
+  // too, even when the customer asked for a specific barber by name. Default
+  // false (preserves existing behaviour — other-barber offers only happen
+  // when the customer says they don't mind who cuts their hair).
+  offerOtherBarberAtRequestedTime Boolean @default(false) @map("offer_other_barber_at_requested_time")
+  // Master switch for the "customer says they're running late" flow. When
+  // false the agent has no special handling for lateness — it just responds
+  // conversationally, no grace-period check, no barber approval, no swap.
+  lateArrivalEnabled Boolean @default(false) @map("late_arrival_enabled")
+  // Minutes of lateness still OK without asking the barber. Business-specific.
+  lateArrivalGraceMinutes Int @default(10) @map("late_arrival_grace_minutes")
+  // When the barber does NOT approve a late arrival, only offer to swap the
+  // customer into the next appointment's slot if at least this many minutes
+  // remain before the ORIGINAL appointment time (otherwise there's no real
+  // time to arrange it). Business-specific.
+  lateArrivalSwapLeadMinutes Int @default(40) @map("late_arrival_swap_lead_minutes")
+  // Secondary, off-by-default toggle: when the barber doesn't approve a late
+  // arrival AND there's enough lead time, offer to swap the late customer
+  // with whoever's appointment is right after theirs. Separate from
+  // lateArrivalEnabled so a business can use the grace-period/barber-approval
+  // part without this more disruptive swap option.
+  lateArrivalOfferSwapWithNext Boolean @default(false) @map("late_arrival_offer_swap_with_next")
   // Structured answers from the self-configuring setup interview (JSON string).
   // Compiled into a shop-specific prompt block by lib/agent/setup-fields.ts.
   // Only the prompt-shaping fields live here; system toggles use their own cols.

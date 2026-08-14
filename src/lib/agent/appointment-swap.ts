@@ -25,13 +25,14 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 import { sendMessage, swapProposalText, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
 import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
-import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
+import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, hoursUntilAppointment } from "@/lib/cancellation-policy";
 
 // Hebrew label for a change-request kind (used in owner alerts).
 function kindLabelHe(kind: string): string {
@@ -65,6 +66,31 @@ function nearestSlots(slots: string[], target: string, n = 3): string[] {
     .sort((a, b) => Math.abs(timeToMinutes(a) - t) - Math.abs(timeToMinutes(b) - t))
     .slice(0, n)
     .sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+}
+
+/**
+ * Per-business opt-in (AgentConfig.offerOtherBarberAtRequestedTime): when a
+ * customer requests a SPECIFIC barber and that exact time is taken, also
+ * check whether any OTHER barber has that exact time free and mention it as
+ * an option. Deliberately exact-match only (not nearest) — Yair: "if no
+ * other barber has that time, don't offer [anything]." Returns null when the
+ * setting is off or no other barber has that precise slot free.
+ */
+async function findOtherBarberExactMatch(
+  bizId: string,
+  targetDate: string,
+  targetStartTime: string,
+  excludeStaffId: string,
+  serviceId: string,
+): Promise<string | null> {
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { offerOtherBarberAtRequestedTime: true },
+  });
+  if (!cfg?.offerOtherBarberAtRequestedTime) return null;
+  const allAvail = await computeDayAvailability(bizId, targetDate, undefined, serviceId);
+  const match = allAvail.find(s => s.staffId !== excludeStaffId && s.slots.includes(targetStartTime));
+  return match?.name ?? null;
 }
 
 /** Robust-enough Hebrew yes/no detection for short WhatsApp replies. */
@@ -321,9 +347,20 @@ export async function requestAppointmentMove(opts: {
   // explicitly insists on the exact taken time (insistExactTime=true) do we fall
   // through to the swap-approval flow below.
   if (!insistExactTime) {
+    // Business opt-in: even when a SPECIFIC barber was requested, check if
+    // another barber has this EXACT time free and offer it too. Only when
+    // allowOtherBarber is false — the allowOtherBarber branch below already
+    // covers other barbers (via nearest-slots, which includes an exact match
+    // if there is one).
+    const otherBarberExact = allowOtherBarber
+      ? null
+      : await findOtherBarberExactMatch(bizId, targetDate, targetStartTime, appt.staffId, appt.serviceId);
+    const otherBarberLine = otherBarberExact
+      ? ` יש גם אפשרות לקבוע את אותה שעה בדיוק (${targetStartTime}) אצל ${otherBarberExact} — ציין את זה כאפשרות נוספת. אם הלקוח בוחר בה, קרא שוב ל-request_appointment_move עם אותם appointmentId/targetDate/targetStartTime ו-allowOtherBarber=true (בלי staffId) — המערכת תמצא ותקבע אצל ${otherBarberExact} אוטומטית.`
+      : "";
     const sameNearest = nearestSlots(sameSlots, targetStartTime);
     if (sameNearest.length) {
-      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן עד שיש תשובה, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור בעצמו: אם הוא בוחר אחד מהזמנים הפנויים, קרא שוב ל-request_appointment_move עם השעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime}, קרא שוב עם insistExactTime=true.`;
+      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן עד שיש תשובה, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור בעצמו: אם הוא בוחר אחד מהזמנים הפנויים, קרא שוב ל-request_appointment_move עם השעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime}, קרא שוב עם insistExactTime=true.${otherBarberLine}`;
     }
     if (allowOtherBarber) {
       const allAvail = await computeDayAvailability(bizId, targetDate, undefined, appt.serviceId);
@@ -340,7 +377,7 @@ export async function requestAppointmentMove(opts: {
     // flow only actually starts (barber gets asked) once the customer opts in
     // via insistExactTime=true — but proactively OFFER that option every time,
     // don't wait for the customer to insist on their own.
-    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או ספר אחר, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} שביקש — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. אם הלקוח בוחר באפשרות הזו, קרא שוב ל-request_appointment_move עם insistExactTime=true.`;
+    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או ספר אחר, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} שביקש — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. אם הלקוח בוחר באפשרות הזו, קרא שוב ל-request_appointment_move עם insistExactTime=true.${otherBarberLine}`;
   }
 
   // ── Master switch: swap offers disabled for this business ──────────────────
@@ -455,6 +492,101 @@ export async function requestAppointmentMove(opts: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1b) Tool entry: the customer says they're running late for an appointment.
+//     Per-business feature (AgentConfig.lateArrivalEnabled), off by default.
+//       • Within the grace period → tell the customer it's fine, FYI the barber.
+//       • Over the grace period → ask the barber to approve the delay (כן/לא),
+//         same pending_staff_approval mechanism as a swap request. See
+//         handleLateArrivalStaffReply for what happens after the barber answers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function reportRunningLate(opts: {
+  bizId: string;
+  conversationId: string;
+  callerPhone: string;
+  appointmentId: string;
+  delayMinutes: number;
+}): Promise<string> {
+  const { bizId, conversationId, callerPhone, appointmentId, delayMinutes } = opts;
+
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { lateArrivalEnabled: true, lateArrivalGraceMinutes: true },
+  });
+  if (!cfg?.lateArrivalEnabled) {
+    return "התכונה הזו לא מופעלת אצל העסק הזה. אין תהליך אוטומטי — פשוט הגב באופן טבעי ללקוח (למשל \"תודה שעדכנת\"), ואם צריך הפנה אותו ל-escalate_to_human כדי שהצוות ידע.";
+  }
+
+  const appt = await prisma.appointment.findUnique({
+    where: { id: appointmentId },
+    include: { customer: true, staff: true, service: true },
+  });
+  if (!appt || appt.businessId !== bizId) {
+    return "לא מצאתי את התור הזה. קרא ל-check_appointment כדי לקבל את מזהה התור הנכון של הלקוח, ואז נסה שוב.";
+  }
+  if (["cancelled_by_customer", "cancelled_by_staff"].includes(appt.status)) {
+    return "התור הזה כבר בוטל, אין מה לעדכן לגביו.";
+  }
+
+  const phone = normalizeIsraeliPhone(callerPhone);
+  const localPhone = phone.replace(/^972/, "0");
+  const custPhone = normalizeIsraeliPhone(appt.customer.phone);
+  if (custPhone !== phone && custPhone !== normalizeIsraeliPhone(localPhone)) {
+    return "התור הזה שייך ללקוח אחר — אי אפשר לעדכן איחור מהשיחה הזו.";
+  }
+
+  const live = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId: appt.id, status: { in: LIVE_STATUSES }, initiatedBy: "agent" },
+  });
+  if (live) {
+    return "כבר יש בקשה פעילה לתור הזה שמחכה לתשובה. אמור ללקוח שאתה עדיין בודק ותעדכן אותו ברגע שיש תשובה — אל תפתח בקשה נוספת.";
+  }
+
+  const grace = cfg.lateArrivalGraceMinutes;
+  const apptLabel = `${appt.startTime}`;
+
+  if (delayMinutes <= grace) {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: normalizeIsraeliPhone(appt.staff.phone ?? ""),
+      kind: "agent_reply",
+      body: `ℹ️ ${appt.customer.name} עדכן/ה שיאחר/תאחר בכ-${delayMinutes} דקות לתור היום ב-${apptLabel}. בגבול הזמן המקובל, אין צורך בפעולה.`,
+    }).catch(() => {});
+    return `✅ בתוך הזמן שמוגדר (${grace} דקות) — עדכנתי את ${appt.staff.name}. אמור ללקוח שאין בעיה, נתראה בקרוב.`;
+  }
+
+  if (!appt.staff.phone) {
+    return `האיחור (${delayMinutes} דק') מעל ${grace} הדקות המוגדרות, וזה בדרך כלל דורש אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום. אמור ללקוח שאתה מעביר את זה לצוות (קרא ל-escalate_to_human).`;
+  }
+
+  await prisma.swapProposal.create({
+    data: {
+      businessId: bizId,
+      primaryAppointmentId: appt.id,
+      kind: "late_arrival",
+      initiatedBy: "agent",
+      requesterConversationId: conversationId,
+      approvalStaffId: appt.staffId,
+      status: "pending_staff_approval",
+      expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+    },
+  });
+
+  await sendMessage({
+    businessId: bizId,
+    customerPhone: normalizeIsraeliPhone(appt.staff.phone),
+    kind: "swap_staff_request",
+    body:
+      `🔔 עדכון איחור\n` +
+      `${appt.customer.name} מודיע/ה שיאחר/תאחר בכ-${delayMinutes} דקות לתור היום ב-${apptLabel} (${appt.service.name}).\n` +
+      `זה מעל ${grace} הדקות שהוגדרו כברירת מחדל לפני שנחשב הברזה.\n` +
+      `אפשר לאשר את האיחור בכל זאת? ענה כן או לא.`,
+  }).catch(err => console.error("[agent-swap] late-arrival staff alert failed", err));
+
+  return `❌ מעל ${grace} הדקות שמוגדרות — זה בדרך כלל נחשב הברזה. שלחתי ל${appt.staff.name} בקשת אישור. אמור ללקוח בעדינות שמעל ${grace} דקות זה בדרך כלל נחשב הברזה, אבל אתה בודק מול ${appt.staff.name} אם אפשר לאשר את זה הפעם, ותעדכן ברגע שיש תשובה — בלי להבטיח שזה יאושר.`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2) Webhook: a BARBER replied to an approval request.
 //    Returns true if the reply was consumed (don't run the booking agent).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -480,6 +612,13 @@ export async function handleStaffApprovalReply(
     include: { primary: { include: { customer: true, staff: true, service: true } } },
   });
   if (!proposal || !proposal.primary) return false;
+
+  // Late-arrival approvals branch out entirely — different expiry message,
+  // different "no" behavior (lead-time-gated swap-with-next instead of a
+  // plain apology), no target slot to fall back on.
+  if (proposal.kind === "late_arrival") {
+    return handleLateArrivalStaffReply(bizId, staff, phone, proposal, text);
+  }
 
   // Expired (>2h)? Treat as a timeout and clean up.
   if (proposal.expiresAt.getTime() < Date.now()) {
@@ -597,6 +736,131 @@ export async function handleStaffApprovalReply(
     proposal.requesterConversationId,
     proposal.primary.customer.phone,
     `${proposal.primary.staff.name} אישר, ואני בודק עכשיו מול לקוח אחר אם הוא מוכן להחליף איתך לשעה הזו. אעדכן אותך ברגע שתהיה תשובה 🙏`,
+  );
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2b) A barber replied to a LATE-ARRIVAL approval request specifically.
+//     Called from handleStaffApprovalReply once it sees kind === "late_arrival".
+//       • כן  → approved, tell the customer, done.
+//       • לא  → if lateArrivalOfferSwapWithNext is on AND at least
+//               lateArrivalSwapLeadMinutes remain before the original time,
+//               reuse this row as a candidate-swap against the NEXT
+//               appointment for the same barber that day (same machinery as
+//               a regular swap — handleCandidateReply/executeApprovedProposal
+//               don't care how the proposal originated). Otherwise: no-show.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type LateArrivalProposal = Prisma.SwapProposalGetPayload<{
+  include: { primary: { include: { customer: true; staff: true; service: true } } };
+}>;
+
+async function handleLateArrivalStaffReply(
+  bizId: string,
+  staff: { id: string; name: string },
+  phone: string,
+  proposal: LateArrivalProposal,
+  text: string,
+): Promise<boolean> {
+  if (!proposal.primary) return false;
+
+  // Expired (>2h, barber never answered) — leave the appointment as-is rather
+  // than silently treating a non-answer as a no-show.
+  if (proposal.expiresAt.getTime() < Date.now()) {
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "expired" } });
+    await notifyRequester(
+      bizId,
+      proposal.requesterConversationId,
+      proposal.primary.customer.phone,
+      `לא הצלחתי לקבל תשובה מ${proposal.primary.staff.name} לגבי האיחור. התור שלך עדיין רשום כרגיל — מומלץ להגיע כמה שיותר קרוב לשעה שנקבעה 🙏`,
+    );
+    return true;
+  }
+
+  const ans = parseYesNo(text);
+  if (ans === "unclear") {
+    await sendMessage({
+      businessId: bizId,
+      customerPhone: phone,
+      kind: "swap_staff_request",
+      body: `לא הבנתי — לגבי האיחור של ${proposal.primary.customer.name}, ענה כן או לא בבקשה.`,
+    }).catch(() => {});
+    return true;
+  }
+
+  if (ans === "yes") {
+    await prisma.swapProposal.update({
+      where: { id: proposal.id },
+      data: { status: "approved", approvedAt: new Date(), respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+    });
+    await notifyStaffByPhone(bizId, phone, `סבבה, מעדכן את ${proposal.primary.customer.name} שאתה מאשר 🙏`);
+    await notifyRequester(
+      bizId,
+      proposal.requesterConversationId,
+      proposal.primary.customer.phone,
+      `${proposal.primary.staff.name} אישר את האיחור, נתראה בקרוב! 🙏`,
+    );
+    return true;
+  }
+
+  // ans === "no" — mark rejected, then decide whether the swap-with-next
+  // option even applies before telling the customer anything.
+  await prisma.swapProposal.update({
+    where: { id: proposal.id },
+    data: { status: "staff_rejected", respondedAt: new Date(), rawResponse: text.slice(0, 500) },
+  });
+
+  const cfg = await prisma.agentConfig.findUnique({
+    where: { businessId: bizId },
+    select: { lateArrivalOfferSwapWithNext: true, lateArrivalSwapLeadMinutes: true },
+  });
+  const leadMinutes = hoursUntilAppointment(proposal.primary.date, proposal.primary.startTime) * 60;
+
+  if (cfg?.lateArrivalOfferSwapWithNext && leadMinutes >= cfg.lateArrivalSwapLeadMinutes) {
+    const next = await prisma.appointment.findFirst({
+      where: {
+        businessId: bizId,
+        staffId: proposal.primary.staffId,
+        date: proposal.primary.date,
+        startTime: { gt: proposal.primary.startTime },
+        status: { in: ["pending", "confirmed"] },
+        customerId: { not: proposal.primary.customerId },
+      },
+      orderBy: { startTime: "asc" },
+      include: { customer: true, staff: true, service: true },
+    });
+
+    if (next) {
+      await prisma.swapProposal.update({
+        where: { id: proposal.id },
+        data: {
+          status: "pending_response",
+          candidateAppointmentId: next.id,
+          approvalStaffId: null,
+          expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+        },
+      });
+      await messageCandidate(proposal.id);
+      await notifyStaffByPhone(bizId, phone, `מבין, בודק עם ${next.customer.name} (התור הבא) אם אפשר להחליף.`);
+      await notifyRequester(
+        bizId,
+        proposal.requesterConversationId,
+        proposal.primary.customer.phone,
+        `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע, אבל אני בודק אם אפשר להחליף אותך עם הלקוח שאחריך בתור. אעדכן אותך ברגע שיש תשובה 🙏`,
+      );
+      return true;
+    }
+  }
+
+  // No swap-with-next possible (feature off, not enough lead time, or no one
+  // scheduled after this slot) — plain no-show outcome.
+  await notifyStaffByPhone(bizId, phone, `מבין, מעדכן את ${proposal.primary.customer.name} שהתור נחשב הברזה.`);
+  await notifyRequester(
+    bizId,
+    proposal.requesterConversationId,
+    proposal.primary.customer.phone,
+    `לצערי ${proposal.primary.staff.name} לא אישר איחור מעבר לזמן שנקבע, אז התור נחשב הברזה. מומלץ להגיע מוקדם יותר בפעם הבאה 🙏`,
   );
   return true;
 }

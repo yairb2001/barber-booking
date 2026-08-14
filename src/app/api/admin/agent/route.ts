@@ -32,6 +32,11 @@ export async function GET(req: NextRequest) {
       requireSwapApproval: true,
       allowSwapOffers: true,
       escalateAfterMessages: 14,
+      offerOtherBarberAtRequestedTime: false,
+      lateArrivalEnabled: false,
+      lateArrivalGraceMinutes: 10,
+      lateArrivalSwapLeadMinutes: 40,
+      lateArrivalOfferSwapWithNext: false,
       faqs:          [],
     });
   }
@@ -46,7 +51,12 @@ export async function PATCH(req: NextRequest) {
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
   const body = await req.json();
-  const { isEnabled, agentName, systemPrompt, greetingMsg, escalatePhone, maxIdleMinutes, requireSwapApproval, allowSwapOffers, escalateAfterMessages } = body;
+  const {
+    isEnabled, agentName, systemPrompt, greetingMsg, escalatePhone, maxIdleMinutes,
+    requireSwapApproval, allowSwapOffers, escalateAfterMessages,
+    offerOtherBarberAtRequestedTime,
+    lateArrivalEnabled, lateArrivalGraceMinutes, lateArrivalSwapLeadMinutes, lateArrivalOfferSwapWithNext,
+  } = body;
 
   const config = await prisma.agentConfig.upsert({
     where:  { businessId: biz.id },
@@ -61,6 +71,11 @@ export async function PATCH(req: NextRequest) {
       requireSwapApproval: requireSwapApproval ?? true,
       allowSwapOffers: allowSwapOffers ?? true,
       escalateAfterMessages: escalateAfterMessages ?? 14,
+      offerOtherBarberAtRequestedTime: offerOtherBarberAtRequestedTime ?? false,
+      lateArrivalEnabled: lateArrivalEnabled ?? false,
+      lateArrivalGraceMinutes: lateArrivalGraceMinutes ?? 10,
+      lateArrivalSwapLeadMinutes: lateArrivalSwapLeadMinutes ?? 40,
+      lateArrivalOfferSwapWithNext: lateArrivalOfferSwapWithNext ?? false,
     },
     update: {
       ...(isEnabled      !== undefined && { isEnabled }),
@@ -72,6 +87,11 @@ export async function PATCH(req: NextRequest) {
       ...(requireSwapApproval !== undefined && { requireSwapApproval }),
       ...(allowSwapOffers !== undefined && { allowSwapOffers }),
       ...(escalateAfterMessages !== undefined && { escalateAfterMessages }),
+      ...(offerOtherBarberAtRequestedTime !== undefined && { offerOtherBarberAtRequestedTime }),
+      ...(lateArrivalEnabled !== undefined && { lateArrivalEnabled }),
+      ...(lateArrivalGraceMinutes !== undefined && { lateArrivalGraceMinutes }),
+      ...(lateArrivalSwapLeadMinutes !== undefined && { lateArrivalSwapLeadMinutes }),
+      ...(lateArrivalOfferSwapWithNext !== undefined && { lateArrivalOfferSwapWithNext }),
     },
     include: { faqs: { orderBy: { sortOrder: "asc" } } },
   });
