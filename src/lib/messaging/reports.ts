@@ -250,6 +250,59 @@ export async function buildDailyReport(bizId: string): Promise<string> {
   return lines.join("\n");
 }
 
+// ── Daily report — staff personal view ──────────────────────────────────────
+
+/**
+ * One barber's own numbers for today. The manager daily report already breaks
+ * revenue down per barber; this is the same day scoped to a single barber, so it
+ * can be sent to them directly without exposing anyone else's figures.
+ */
+export async function buildDailyReportStaff(bizId: string, staffId: string): Promise<string> {
+  const { start: tStart, end: tEnd } = todayRange();
+  const { start: tomStart, end: tomEnd } = tomorrowRange();
+
+  const [curr, occ, staff, tomorrowAppts] = await Promise.all([
+    computeStaffStatsForPeriod(bizId, staffId, tStart, tEnd),
+    computeOccupancy({ businessId: bizId, from: tStart, to: tEnd, staffId }),
+    prisma.staff.findUnique({ where: { id: staffId }, select: { name: true } }),
+    prisma.appointment.findMany({
+      where: { businessId: bizId, staffId, status: { notIn: CANCELLED }, date: { gte: tomStart, lte: tomEnd } },
+      select: { startTime: true },
+      orderBy: { startTime: "asc" },
+    }),
+  ]);
+
+  const today = new Date();
+  const avgPerAppt = curr.appointments > 0 ? Math.round(curr.revenue / curr.appointments) : 0;
+
+  const lines: string[] = [];
+  lines.push(`📊 סיכום יום — ${staff?.name ?? ""}`);
+  lines.push(`יום ${DAY_NAMES_HE[today.getDay()]} ${fmtDateHe(today)}`);
+  lines.push("");
+
+  if (curr.appointments === 0) {
+    lines.push("לא היו לך תורים היום.");
+  } else {
+    lines.push(`✂️  תורים: *${curr.appointments}*`);
+    lines.push(`💰 מחזור: *${fmtMoney(curr.revenue)}*`);
+    lines.push(`📊 ממוצע לתור: ${fmtMoney(avgPerAppt)}`);
+    lines.push(`📈 תפוסה: ${occ.pct}%`);
+    if (curr.newToStaff > 0) {
+      const bizPart = curr.newAlsoToBusiness > 0 ? ` (${curr.newAlsoToBusiness} חדשים גם למספרה)` : "";
+      lines.push(`🆕 לקוחות חדשים אצלך: ${curr.newToStaff}${bizPart}`);
+    }
+  }
+
+  lines.push("");
+  if (tomorrowAppts.length > 0) {
+    lines.push(`📅 מחר: *${tomorrowAppts.length} תורים* (פתיחה ${tomorrowAppts[0].startTime})`);
+  } else {
+    lines.push("📅 מחר: אין תורים — יום חופש 🙌");
+  }
+
+  return lines.join("\n");
+}
+
 // ── Weekly report — manager view ────────────────────────────────────────────
 
 export async function buildWeeklyReportManager(bizId: string): Promise<string> {
