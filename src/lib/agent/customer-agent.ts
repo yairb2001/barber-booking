@@ -254,12 +254,13 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "find_next_available",
-    description: "מחזיר את התאריך הפנוי הקרוב ביותר ואת השעות בו, על ידי סריקה קדימה עד 30 יום. השתמש בו כשהלקוח מבקש 'התור הכי קרוב', 'הכי מהר שאפשר' או 'מתי יש מקום', במקום לבדוק יום-יום ידנית.",
+    description: "מחזיר את התאריך הפנוי הקרוב ביותר ואת השעות בו, על ידי סריקה קדימה עד 30 יום. השתמש בו כשהלקוח מבקש 'התור הכי קרוב', 'הכי מהר שאפשר' או 'מתי יש מקום', במקום לבדוק יום-יום ידנית. אם הלקוח דוחה את התאריך שכבר הוצע לו ורוצה יום מאוחר יותר (אותו ספר/שירות) — קרא שוב עם afterDate = התאריך שנדחה, כדי לקבל את התאריך הפנוי הבא אחריו.",
     input_schema: {
       type: "object" as const,
       properties: {
         staffId:   { type: "string", description: "מזהה ספר (אופציונלי)" },
         serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
+        afterDate: { type: "string", description: "תאריך YYYY-MM-DD לסרוק החל מהיום שאחריו (אופציונלי) — לשימוש כשהלקוח דוחה תאריך שכבר הוצע ורוצה מאוחר יותר" },
       },
       required: [],
     },
@@ -529,9 +530,47 @@ export async function execTool(
       // instead of the model probing get_available_slots day after day (which
       // blew the iteration budget and left the customer with no reply).
       case "find_next_available": {
-        const { staffId: inputStaffId, serviceId: inputServiceId } = input;
+        let { staffId: inputStaffId } = input;
+        const { serviceId: inputServiceId, afterDate: inputAfterDate } = input;
+        // Same hallucinated/stale-id guard as get_available_slots (see comment
+        // there): an invalid staffId makes computeDayAvailability return []
+        // for EVERY day scanned, indistinguishable from "no room in 30 days" —
+        // resolve by name first, or bail with a clear re-fetch instruction
+        // instead of silently telling the customer nothing's available.
+        if (inputStaffId) {
+          const staffOk = await prisma.staff.findFirst({
+            where: { id: inputStaffId, businessId: bizId, isAvailable: true },
+            select: { id: true },
+          });
+          if (!staffOk) {
+            const byName = await prisma.staff.findFirst({
+              where: {
+                businessId: bizId,
+                isAvailable: true,
+                OR: [
+                  { name: { contains: inputStaffId, mode: "insensitive" } },
+                  { nickname: { contains: inputStaffId, mode: "insensitive" } },
+                ],
+              },
+              select: { id: true },
+            });
+            if (byName) {
+              console.warn(`[agent] find_next_available: resolved staffId "${inputStaffId}" by name to ${byName.id} biz=${bizId}`);
+              inputStaffId = byName.id;
+            } else {
+              console.warn(`[agent] find_next_available: unknown/unavailable staffId=${inputStaffId} biz=${bizId}`);
+              return `לא זיהיתי את הספר הזה. קרא שוב ל-get_staff_list וקבע עם המזהה המדויק של הספר שהלקוח ביקש.`;
+            }
+          }
+        }
         const nowBiz = getBusinessNow();
-        const start = new Date(nowBiz.date + "T00:00:00.000Z");
+        const todayStart = new Date(nowBiz.date + "T00:00:00.000Z");
+        let start = todayStart;
+        if (typeof inputAfterDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(inputAfterDate)) {
+          const afterStart = new Date(inputAfterDate + "T00:00:00.000Z");
+          afterStart.setUTCDate(afterStart.getUTCDate() + 1);
+          if (afterStart > start) start = afterStart;
+        }
         const MAX_SCAN_DAYS = 30;
         for (let d = 0; d < MAX_SCAN_DAYS; d++) {
           const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
@@ -1226,7 +1265,7 @@ export function buildSystemPrompt(params: {
   // Per-turn chunk (current time + who's chatting). Changes every minute and
   // per customer, so it must stay OUTSIDE the cached prefix.
   let dynamic =
-    `התאריך והשעה כרגע: ${params.now} (אזור זמן ישראל). זו שעת האמת — התייחס אליה כפי שהיא. אל תגיד ללקוח מדעתך "היום כבר מאוחר" או "אין זמן היום": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שכבר עברו ולוקח בחשבון זמן הכנה. אם הלקוח מבקש היום — בדוק עם get_available_slots; אם חזרו שעות, הצע אותן כרגיל. אם לא חזרה אף שעה להיום, קרא ל-find_next_available כדי לקבל את התאריך הפנוי הקרוב ביותר בפועל, והצע אותו — אל תנחש יום ספציפי (כמו "מחר") מדעתך. find_next_available כבר סרק קדימה את כל הימים, אז אם הלקוח דוחה את התאריך שהוא החזיר, כל יום מוקדם יותר כבר נבדק ואין בו מקום — אל תציע יום מוקדם יותר (כולל "מחר") שוב, אלא אם הלקוח מבקש שירות או ספר אחר שטרם נבדק.`;
+    `התאריך והשעה כרגע: ${params.now} (אזור זמן ישראל). זו שעת האמת — התייחס אליה כפי שהיא. אל תגיד ללקוח מדעתך "היום כבר מאוחר" או "אין זמן היום": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שכבר עברו ולוקח בחשבון זמן הכנה. אם הלקוח מבקש היום — בדוק עם get_available_slots; אם חזרו שעות, הצע אותן כרגיל. אם לא חזרה אף שעה להיום, קרא ל-find_next_available כדי לקבל את התאריך הפנוי הקרוב ביותר בפועל, והצע אותו — אל תנחש יום ספציפי (כמו "מחר") מדעתך. find_next_available כבר סרק קדימה את כל הימים, אז אם הלקוח דוחה את התאריך שהוא החזיר, כל יום מוקדם יותר כבר נבדק ואין בו מקום — אל תציע יום מוקדם יותר (כולל "מחר") שוב, אלא אם הלקוח מבקש שירות או ספר אחר שטרם נבדק. אם הלקוח דוחה את התאריך ורוצה יום מאוחר יותר (אותו ספר/שירות) — קרא שוב ל-find_next_available עם afterDate=התאריך שנדחה, אל תחזור על אותה תוצאה ואל תשתוק.`;
   if (params.customerContext) dynamic += `\n${params.customerContext}`;
 
   return [
