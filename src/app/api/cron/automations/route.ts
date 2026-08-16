@@ -121,6 +121,31 @@ export async function GET(req: NextRequest) {
         body,
       }).catch(console.error);
 
+      // Also log it into the customer's actual chat thread — sendMessage only
+      // delivers over WhatsApp and logs to MessageLog, it never touches
+      // ConversationMessage. Without this, the booking agent has no idea a
+      // re-engagement nudge went out, so a reply like "כן, אשמח" or "מה יש
+      // פנוי?" a few minutes later looks like it came out of nowhere instead
+      // of being an answer to this message (Yair, 2026-08-14).
+      (async () => {
+        let conversation = await prisma.conversation.findFirst({
+          where: { businessId: auto.businessId, phone: customer.phone, agentType: { not: "owner" } },
+          orderBy: { createdAt: "desc" },
+        });
+        if (!conversation) {
+          conversation = await prisma.conversation.create({
+            data: { businessId: auto.businessId, phone: customer.phone, agentType: "customer", status: "active" },
+          });
+        }
+        await prisma.conversationMessage.create({
+          data: { conversationId: conversation.id, role: "assistant", content: body },
+        });
+        await prisma.conversation.update({
+          where: { id: conversation.id },
+          data: { lastMessageAt: new Date() },
+        });
+      })().catch(err => console.error("[reengage] failed to log to conversation history", err));
+
       results.push({
         businessId: auto.businessId,
         customerId: customer.id,

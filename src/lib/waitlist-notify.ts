@@ -14,6 +14,38 @@ const DECLINE_REPLY_WINDOW_MS = 3 * 60 * 60 * 1000; // 3 hours
 // don't re-notify the same entry within this window.
 const RENOTIFY_THROTTLE_MS = 20 * 60 * 1000; // 20 minutes
 
+/** sendMessage/enqueueMessage only deliver over WhatsApp + log to
+ *  MessageLog — they never touch ConversationMessage, so the booking agent
+ *  (which builds its context from ConversationMessage, not MessageLog) has no
+ *  idea these went out. Found 2026-08-14 (Yair, re-engagement cron) and it
+ *  turned out every message in this file had the same blind spot — a
+ *  customer replying "כן" to a waitlist ping looked like it came from
+ *  nowhere. Same find-or-create + log pattern as notifyRequester in
+ *  appointment-swap.ts. Best-effort: never let a logging failure block the
+ *  actual WhatsApp send. */
+async function logToConversationHistory(businessId: string, phone: string, body: string): Promise<void> {
+  try {
+    let conversation = await prisma.conversation.findFirst({
+      where: { businessId, phone, agentType: { not: "owner" } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!conversation) {
+      conversation = await prisma.conversation.create({
+        data: { businessId, phone, agentType: "customer", status: "active" },
+      });
+    }
+    await prisma.conversationMessage.create({
+      data: { conversationId: conversation.id, role: "assistant", content: body },
+    });
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: new Date() },
+    });
+  } catch (err) {
+    console.error("[waitlist-notify] failed to log to conversation history", err);
+  }
+}
+
 // ── Time preference helpers ───────────────────────────────────────────────────
 
 const TIME_PREF_RANGES: Record<string, [number, number]> = {
@@ -261,6 +293,8 @@ export function sendWaitlistEntryNotification(
       data: { notifiedAt: new Date() },
     }).catch(console.error);
 
+  void logToConversationHistory(entry.businessId, entry.customer.phone, body);
+
   if (immediate) {
     // Time-sensitive freed slot → send now (awaited by the caller).
     return sendMessage({
@@ -323,20 +357,18 @@ export async function handleWaitlistDeclineReply(
   if (awaiting) {
     const ans = parseYesNo(text);
     if (ans === "unclear") {
-      await sendMessage({
-        businessId, customerPhone: phone, kind: "waitlist_notify",
-        body: `לא הבנתי — רוצה שאעדכן אותך אם יתפנה משהו אחר? ענה כן או לא בבקשה.`,
-      }).catch(() => {});
+      const clarify = `לא הבנתי — רוצה שאעדכן אותך אם יתפנה משהו אחר? ענה כן או לא בבקשה.`;
+      void logToConversationHistory(businessId, phone, clarify);
+      await sendMessage({ businessId, customerPhone: phone, kind: "waitlist_notify", body: clarify }).catch(() => {});
       return true;
     }
     await prisma.waitlist.update({
       where: { id: awaiting.id },
       data: { status: ans === "yes" ? "waiting" : "expired" },
     });
-    await sendMessage({
-      businessId, customerPhone: phone, kind: "waitlist_notify",
-      body: ans === "yes" ? `מעולה, אעדכן אותך אם יתפנה משהו 🙏` : `סבבה, הבנתי 🙏`,
-    }).catch(() => {});
+    const ack = ans === "yes" ? `מעולה, אעדכן אותך אם יתפנה משהו 🙏` : `סבבה, הבנתי 🙏`;
+    void logToConversationHistory(businessId, phone, ack);
+    await sendMessage({ businessId, customerPhone: phone, kind: "waitlist_notify", body: ack }).catch(() => {});
     return true;
   }
 
@@ -359,9 +391,8 @@ export async function handleWaitlistDeclineReply(
     where: { id: recentlyNotified.id },
     data: { status: "awaiting_declined_confirm" },
   });
-  await sendMessage({
-    businessId, customerPhone: phone, kind: "waitlist_notify",
-    body: `בסדר גמור. רוצה בכל זאת שאעדכן אותך אם יתפנה משהו אחר?`,
-  }).catch(() => {});
+  const followup = `בסדר גמור. רוצה בכל זאת שאעדכן אותך אם יתפנה משהו אחר?`;
+  void logToConversationHistory(businessId, phone, followup);
+  await sendMessage({ businessId, customerPhone: phone, kind: "waitlist_notify", body: followup }).catch(() => {});
   return true;
 }

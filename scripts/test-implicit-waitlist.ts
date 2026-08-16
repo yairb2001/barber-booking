@@ -53,13 +53,18 @@ async function main() {
     );
     console.log("tool result:", result);
     console.log("expect: 'אין תורים פנויים' message");
-    await new Promise(r => setTimeout(r, 500)); // noteImplicitWaitlistInterest is fire-and-forget (void), give it time to land
 
     console.log("\n=== Step 2: check a Waitlist row was silently created ===");
-    const entry = await prisma.waitlist.findFirst({
-      where: { businessId: BIZ_ID, customerId: cust.id, date: new Date(`${FAR_DATE}T00:00:00.000Z`) },
-      include: { customer: true, service: true, staff: true },
-    });
+    // noteImplicitWaitlistInterest is fire-and-forget (void) — poll instead of
+    // a fixed sleep, a busy DB connection can make a single wait flaky.
+    let entry = null;
+    for (let i = 0; i < 10 && !entry; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      entry = await prisma.waitlist.findFirst({
+        where: { businessId: BIZ_ID, customerId: cust.id, date: new Date(`${FAR_DATE}T00:00:00.000Z`) },
+        include: { customer: true, service: true, staff: true },
+      });
+    }
     console.log("entry:", entry ? { id: entry.id, source: entry.source, status: entry.status, serviceId: entry.serviceId, staffId: entry.staffId } : null);
     if (!entry) throw new Error("FAIL: no implicit waitlist entry created");
     if (entry.source !== "declined_offer") throw new Error(`FAIL: expected source=declined_offer, got ${entry.source}`);
@@ -96,6 +101,19 @@ async function main() {
     }
     console.log("✅ casual, context-referencing message used (not the formal waitlist template)");
 
+    console.log("\n=== Step 4b: the notify message also lands in ConversationMessage (agent's context) ===");
+    await new Promise(r => setTimeout(r, 1000)); // logToConversationHistory is fire-and-forget (void)
+    const convForNotify = await prisma.conversation.findFirst({ where: { businessId: BIZ_ID, phone: TEST_PHONE } });
+    const loggedNotify = convForNotify
+      ? await prisma.conversationMessage.findFirst({
+          where: { conversationId: convForNotify.id, content: { contains: "שאלת אצלנו" } },
+          orderBy: { createdAt: "desc" },
+        })
+      : null;
+    console.log("logged in conversation history:", !!loggedNotify);
+    if (!loggedNotify) throw new Error("FAIL: waitlist notify message never landed in ConversationMessage — agent would have no context if the customer replies");
+    console.log("✅ agent will have context if the customer replies to this");
+
     console.log("\n=== Step 5: customer replies לא to the ping → asked a follow-up instead of silently dropped ===");
     const declineHandled = await handleWaitlistDeclineReply(BIZ_ID, TEST_PHONE, "לא");
     console.log("intercepted:", declineHandled, "(expect true)");
@@ -104,6 +122,15 @@ async function main() {
     console.log("status after לא:", entryAfterDecline?.status, "(expect awaiting_declined_confirm)");
     if (entryAfterDecline?.status !== "awaiting_declined_confirm") throw new Error("FAIL: expected awaiting_declined_confirm");
     console.log("✅ not silently dropped — follow-up question asked first");
+
+    await new Promise(r => setTimeout(r, 1000));
+    const loggedFollowup = convForNotify
+      ? await prisma.conversationMessage.findFirst({
+          where: { conversationId: convForNotify.id, content: { contains: "רוצה בכל זאת שאעדכן" } },
+        })
+      : null;
+    if (!loggedFollowup) throw new Error("FAIL: the follow-up question never landed in ConversationMessage either");
+    console.log("✅ follow-up question also logged to conversation history");
 
     console.log("\n=== Step 6a: answers כן to the follow-up → stays on the list ===");
     const followupYes = await handleWaitlistDeclineReply(BIZ_ID, TEST_PHONE, "כן");
