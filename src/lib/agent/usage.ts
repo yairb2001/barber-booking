@@ -42,6 +42,8 @@ export type AgentUsageInput = {
   model: string;
   /** which agent produced it: customer | owner | demo_sales | question_followup */
   kind?: string;
+  /** customer-agent booking thread id — enables per-conversation cost + counting */
+  conversationId?: string | null;
   usage: ProviderUsage | null | undefined;
 };
 
@@ -85,6 +87,7 @@ export async function recordAgentUsage(u: AgentUsageInput): Promise<void> {
         provider: u.provider,
         model: u.model,
         kind: u.kind ?? null,
+        conversationId: u.conversationId ?? null,
         inputTokens: input,
         outputTokens: output,
         cacheWriteTokens: cacheWrite,

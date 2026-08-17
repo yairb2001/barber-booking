@@ -126,7 +126,7 @@ export async function runOpenAiAgentLoop(opts: {
       `[agent:openai] model=${model} in=${usage.prompt_tokens ?? 0} out=${usage.completion_tokens ?? 0} ` +
       `cached=${usage.prompt_tokens_details?.cached_tokens ?? 0} finish=${choice?.finish_reason}`
     );
-    void recordAgentUsage({ businessId, provider: "openai", model, kind: "customer", usage });
+    void recordAgentUsage({ businessId, provider: "openai", model, kind: "customer", conversationId, usage });
     if (!msg) break;
 
     const toolCalls: OpenAiToolCall[] = msg.tool_calls ?? [];
