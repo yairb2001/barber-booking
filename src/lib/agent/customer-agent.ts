@@ -1652,7 +1652,7 @@ export async function runCustomerAgent(opts: {
       `[agent] model=${model} in=${u.input_tokens} out=${u.output_tokens} ` +
       `cacheWrite=${u.cache_creation_input_tokens ?? 0} cacheRead=${u.cache_read_input_tokens ?? 0}`
     );
-    void recordAgentUsage({ businessId, provider: "anthropic", model, kind: "customer", usage: u });
+    void recordAgentUsage({ businessId, provider: "anthropic", model, kind: "customer", conversationId: conversation.id, usage: u });
 
     // Append assistant response to messages
     messages.push({ role: "assistant", content: response.content });
@@ -1714,7 +1714,7 @@ export async function runCustomerAgent(opts: {
       system:   systemPrompt,
       messages: withCacheBreakpoint(messages), // includes every tool result so far
     });
-    void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "customer", usage: closing.usage });
+    void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "customer", conversationId: conversation.id, usage: closing.usage });
     for (const block of closing.content) {
       if (block.type === "text") assistantText += block.text;
     }

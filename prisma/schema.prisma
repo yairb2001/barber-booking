@@ -744,6 +744,7 @@ model AgentUsage {
   provider         String   // "anthropic" | "openai"
   model            String
   kind             String?  // which agent: customer | owner | demo_sales | question_followup
+  conversationId   String?  @map("conversation_id") // customer-agent booking thread (null for owner/demo/followup)
   inputTokens      Int      @default(0) @map("input_tokens")
   outputTokens     Int      @default(0) @map("output_tokens")
   cacheWriteTokens Int      @default(0) @map("cache_write_tokens")

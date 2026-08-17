@@ -106,18 +106,37 @@ export default function SuperAdminPage() {
   );
 }
 
-// ── Usage & cost (per business) ───────────────────────────────────────────────
+// ── Usage & cost + quota (per business) — the pricing system ──────────────────
 type UsageRow = {
-  businessId: string; name: string; calls: number;
-  inputTokens: number; outputTokens: number; cacheTokens: number;
-  costUsd: number; costUsdMonth: number; callsMonth: number;
+  businessId: string; name: string; tier: string; tierLabel: string;
+  calls: number; inputTokens: number; outputTokens: number;
+  costUsd: number; costUsdMonth: number;
+  conversations: number; aiQuota: number;
+  broadcasts: number; broadcastQuota: number;
 };
 type UsageData = {
   rows: UsageRow[];
-  totals: { costUsd: number; costUsdMonth: number; calls: number; businesses: number };
+  totals: { costUsd: number; costUsdMonth: number; conversations: number; broadcasts: number; businesses: number };
 };
 
 const USD_TO_ILS = 3.7; // approx, display only
+
+/** Usage-vs-quota cell: used / quota + a bar (teal, amber at 80%, red over). */
+function QuotaCell({ used, quota }: { used: number; quota: number }) {
+  const pct = quota > 0 ? Math.min(100, Math.round((used / quota) * 100)) : 0;
+  const over = used > quota;
+  const near = !over && pct >= 80;
+  const bar = over ? "bg-red-500" : near ? "bg-amber-500" : "bg-teal-500";
+  const txt = over ? "text-red-600 font-semibold" : near ? "text-amber-600" : "text-slate-600";
+  return (
+    <div className="min-w-[110px]">
+      <div className={`text-xs text-center ${txt}`} dir="ltr">{used.toLocaleString()} / {quota.toLocaleString()}</div>
+      <div className="mt-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 function Usage() {
   const [data, setData] = useState<UsageData | null>(null);
@@ -131,7 +150,6 @@ function Usage() {
   }, []);
 
   const ils = (usd: number) => `${NIS}${(usd * USD_TO_ILS).toFixed(2)}`;
-  const fmtTok = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
   if (loading) return <div className="p-6 text-slate-400">טוען…</div>;
   if (!data || !data.rows?.length) {
@@ -148,8 +166,8 @@ function Usage() {
   const cards = [
     { label: "עלות החודש", value: ils(totals.costUsdMonth), tone: "emerald" },
     { label: "עלות מצטברת", value: ils(totals.costUsd), tone: "teal" },
-    { label: "קריאות סוכן", value: totals.calls.toLocaleString(), tone: "slate" },
-    { label: "עסקים פעילים", value: totals.businesses, tone: "slate" },
+    { label: "שיחות החודש", value: totals.conversations.toLocaleString(), tone: "slate" },
+    { label: "תפוצה החודש", value: totals.broadcasts.toLocaleString(), tone: "slate" },
   ];
   const toneCls: Record<string, string> = {
     emerald: "text-emerald-600", teal: "text-teal-600", slate: "text-slate-700",
@@ -171,31 +189,29 @@ function Usage() {
           <thead>
             <tr className="text-slate-500 text-xs border-b border-slate-100">
               <th className="text-right font-medium p-3">עסק</th>
-              <th className="text-center font-medium p-3">קריאות (חודש / סה״כ)</th>
-              <th className="text-center font-medium p-3">טוקנים (קלט/פלט)</th>
+              <th className="text-center font-medium p-3">מסלול</th>
+              <th className="text-center font-medium p-3">שיחות / מכסה</th>
+              <th className="text-center font-medium p-3">תפוצה / מכסה</th>
               <th className="text-center font-medium p-3">עלות החודש</th>
-              <th className="text-center font-medium p-3">מצטבר</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.businessId} className="border-b border-slate-50 last:border-0">
                 <td className="p-3 font-medium text-slate-800">{r.name}</td>
-                <td className="p-3 text-center text-slate-600">
-                  {r.callsMonth.toLocaleString()}<span className="text-slate-300"> / {r.calls.toLocaleString()}</span>
+                <td className="p-3 text-center">
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{r.tierLabel}</span>
                 </td>
-                <td className="p-3 text-center text-slate-500 text-xs" dir="ltr">
-                  {fmtTok(r.inputTokens)} / {fmtTok(r.outputTokens)}
-                </td>
+                <td className="p-3"><QuotaCell used={r.conversations} quota={r.aiQuota} /></td>
+                <td className="p-3"><QuotaCell used={r.broadcasts} quota={r.broadcastQuota} /></td>
                 <td className="p-3 text-center font-semibold text-emerald-700">{ils(r.costUsdMonth)}</td>
-                <td className="p-3 text-center text-slate-600">{ils(r.costUsd)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       <p className="text-xs text-slate-400 text-center">
-        ₪ מחושב לפי ~{USD_TO_ILS}₪/$ (להמחשה). מחירי הטוקנים בקוד הם הערכה — לאמת מול המחירון העדכני.
+        ₪ לפי ~{USD_TO_ILS}₪/$ (להמחשה). המכסות והעלויות = הערכה לכיול מול נתוני אמת.
       </p>
     </div>
   );
