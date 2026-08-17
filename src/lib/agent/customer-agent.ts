@@ -758,6 +758,16 @@ export async function execTool(
           throw err;
         }
 
+        // Keep re-engagement eligibility in sync — this is the primary booking
+        // channel (most customers book via the WhatsApp agent, not the
+        // self-service link), so without this update lastVisitAt goes stale
+        // and the "haven't seen you in N weeks" automation fires on customers
+        // who actually booked/visited recently (Yair, 2026-08-17).
+        await prisma.customer.update({
+          where: { id: customer.id },
+          data: { lastVisitAt: new Date() },
+        });
+
         notifyOwnerWeb(bizId, "appointment", {
           title: "תור חדש נקבע 📅 (בוט)",
           body: `${service.name} אצל ${staff.name} · ${date} ${startTime}`,

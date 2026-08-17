@@ -219,6 +219,13 @@ export async function POST(req: NextRequest) {
     include: { customer: true, staff: true, service: true },
   });
 
+  // Keep re-engagement eligibility in sync — see the same update in the
+  // WhatsApp agent's booking path (Yair, 2026-08-17).
+  await prisma.customer.update({
+    where: { id: customer.id },
+    data: { lastVisitAt: new Date() },
+  });
+
   // Send WhatsApp confirmation only when the appointment is genuinely in the future.
   // Walk-in: the customer is physically present — no need for a "your appointment is booked" message.
   // Past/same-time: admin is recording an appointment that already happened — don't spam the customer.
