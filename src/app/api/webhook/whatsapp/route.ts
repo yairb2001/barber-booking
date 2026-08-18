@@ -77,7 +77,20 @@ function extractText(body: GreenApiWebhook): string | null {
   if (md.typeMessage === "textMessage" && md.textMessageData?.textMessage) {
     return md.textMessageData.textMessage;
   }
-  if (md.typeMessage === "extendedTextMessage" && md.extendedTextMessageData?.text) {
+  // "extendedTextMessage" = plain text with metadata (e.g. link preview).
+  // "quotedMessage" = customer used WhatsApp's swipe-to-reply on an earlier
+  // message (very natural when replying "כן"/"לא" to the bot's confirmation
+  // question). GreenAPI puts the actual reply text in the SAME
+  // extendedTextMessageData.text field for both — only typeMessage differs.
+  // Before this, "quotedMessage" matched neither branch here nor any case in
+  // mediaLabel(), so the message was silently dropped before being persisted:
+  // no ConversationMessage, no agent run, nothing in the inbox. A customer
+  // could swipe-reply "כן" to a booking confirmation and the appointment would
+  // just never be created, with no trace anywhere that they'd replied at all.
+  if (
+    (md.typeMessage === "extendedTextMessage" || md.typeMessage === "quotedMessage") &&
+    md.extendedTextMessageData?.text
+  ) {
     return md.extendedTextMessageData.text;
   }
   return null; // image, audio, sticker, etc. — ignore for now
