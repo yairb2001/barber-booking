@@ -335,13 +335,9 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
           </div>
         )}
 
-        {/* Mobile top header */}
+        {/* Mobile top header — hamburger on the right, business name/logo on the
+            left (links to the calendar, /admin — the default landing page). */}
         <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white text-slate-900 shrink-0 border-b border-slate-200">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-slate-900 font-bold text-sm shrink-0 tracking-tight">DOMINANT</span>
-            <span className="text-slate-300 text-xs shrink-0">·</span>
-            <span className="text-slate-600 text-sm truncate">{currentLabel}</span>
-          </div>
           <button
             onClick={() => setDrawerOpen(true)}
             className="text-slate-500 hover:text-slate-900 transition p-1.5 rounded-lg hover:bg-slate-100 shrink-0 text-xl leading-none"
@@ -349,6 +345,11 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
           >
             ☰
           </button>
+          <div className="flex items-center gap-2 min-w-0">
+            <Link href="/admin" className="text-slate-900 font-bold text-sm shrink-0 tracking-tight">DOMINANT</Link>
+            <span className="text-slate-300 text-xs shrink-0">·</span>
+            <span className="text-slate-600 text-sm truncate">{currentLabel}</span>
+          </div>
         </header>
 
         {/* Main content — fills all remaining height; bottom nav removed, navigation is via the ☰ hamburger */}
