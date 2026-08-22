@@ -1540,19 +1540,36 @@ export async function runCustomerAgent(opts: {
       },
     });
     if (userMsgCount >= escalateThreshold) {
-      await escalateToHuman({
-        bizId: businessId,
-        conversationId: conversation.id,
-        callerPhone: phone,
-        reason: `השיחה נמשכת מעבר לרגיל (${userMsgCount} הודעות מהלקוח) בלי שנסגרה — ייתכן שהסוכן נתקע. כדאי לחזור ללקוח.`,
+      // A reply to the agent's own final-confirm question ("...מאשר?", the one
+      // fixed phrasing defaultAgentBody mandates right before book_appointment)
+      // is almost always "כן"/"מאשר" closing out a booking that's already fully
+      // agreed — not a sign the agent is stuck. Real incident 2026-08-21: this
+      // guard fired on exactly that reply (message #14), silently dropping a
+      // fully-confirmed booking; a human had to redo it from scratch a minute
+      // later. Let a pending final-confirm turn through so book_appointment can
+      // actually run — the threshold re-applies on the NEXT customer message if
+      // the conversation keeps going past this one.
+      const lastAssistantMsg = await prisma.conversationMessage.findFirst({
+        where: { conversationId: conversation.id, role: "assistant" },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
       });
-      const handoffMsg = "אני מעביר אותך לטיפול אישי של אחד מהצוות — מישהו יחזור אליך בהקדם 🙏";
-      await prisma.conversationMessage.create({
-        data: { conversationId: conversation.id, role: "assistant", content: handoffMsg },
-      });
-      await sendMessage({ businessId, customerPhone: phone, kind: "agent_reply", body: handoffMsg })
-        .catch(e => console.error("[agent] handoff message send failed", e));
-      return;
+      const pendingFinalConfirm = lastAssistantMsg?.content.includes("מאשר?") ?? false;
+      if (!pendingFinalConfirm) {
+        await escalateToHuman({
+          bizId: businessId,
+          conversationId: conversation.id,
+          callerPhone: phone,
+          reason: `השיחה נמשכת מעבר לרגיל (${userMsgCount} הודעות מהלקוח) בלי שנסגרה — ייתכן שהסוכן נתקע. כדאי לחזור ללקוח.`,
+        });
+        const handoffMsg = "אני מעביר אותך לטיפול אישי של אחד מהצוות — מישהו יחזור אליך בהקדם 🙏";
+        await prisma.conversationMessage.create({
+          data: { conversationId: conversation.id, role: "assistant", content: handoffMsg },
+        });
+        await sendMessage({ businessId, customerPhone: phone, kind: "agent_reply", body: handoffMsg })
+          .catch(e => console.error("[agent] handoff message send failed", e));
+        return;
+      }
     }
   }
 
