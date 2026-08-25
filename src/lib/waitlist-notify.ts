@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { enqueueMessage, sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { parseYesNo } from "@/lib/agent/appointment-swap";
+import { computeDayAvailability } from "@/lib/agent/availability";
 
 // How long after pinging an implicit-waitlist customer ("a slot opened up,
 // interested?") a plain כן/לא reply is still treated as answering THAT
@@ -163,12 +164,35 @@ async function triggerWaitlist(opts: {
   const immediate = triggerType === "cancellation";
   const tasks: Promise<unknown>[] = [];
 
+  // For cancellations: the freed slot may no longer actually be bookable — the
+  // owner can shorten a day's hours (per-day StaffScheduleOverride) AFTER an
+  // appointment inside the now-closed window was booked. If that appointment
+  // is then cancelled, the slot it frees is outside the current schedule, so
+  // pinging the waitlist would send people a slot they can't actually take.
+  // computeDayAvailability is the same source of truth the booking agent uses
+  // (schedule + overrides + existing bookings), so re-check against it here.
+  // Cached per serviceId since staffId/date are fixed for this whole call but
+  // different waitlist entries can be waiting for different services.
+  const dateIso = dayStart.toISOString().slice(0, 10);
+  const availabilityByService = new Map<string, Promise<Set<string>>>();
+  const isSlotStillOpen = async (serviceId: string): Promise<boolean> => {
+    let pending = availabilityByService.get(serviceId);
+    if (!pending) {
+      pending = computeDayAvailability(businessId, dateIso, staffId, serviceId).then(
+        avail => new Set(avail.find(a => a.staffId === staffId)?.slots ?? []),
+      );
+      availabilityByService.set(serviceId, pending);
+    }
+    return (await pending).has(startTime!);
+  };
+
   for (const entry of entries) {
     const pref = entry.preferredTimeOfDay || "any";
 
     // For cancellations: only notify if the cancelled slot matches their preference
     if (triggerType === "cancellation" && startTime) {
       if (!matchesTimePreference(startTime, pref)) continue;
+      if (!(await isSlotStillOpen(entry.service.id))) continue;
     }
 
     tasks.push(
