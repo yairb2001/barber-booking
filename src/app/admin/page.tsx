@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { telHref } from "@/lib/messaging/phone";
 import { pickFriendSource } from "@/lib/referral";
+import { israeliHoliday } from "@/lib/israeli-holidays";
 import { useModalBack } from "@/lib/useModalBack";
 import { useRouter } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
@@ -3138,6 +3139,9 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         <div className="px-5 pt-5 pb-3 border-b border-neutral-100 flex items-center justify-between">
           <div>
             <h3 className="font-bold text-neutral-900">{dateLabel}</h3>
+            {israeliHoliday(date) && (
+              <p className="text-xs font-semibold text-amber-600 mt-0.5">🕎 {israeliHoliday(date)} — שימו לב לפני פתיחת שעות</p>
+            )}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">✕</button>
         </div>
@@ -5060,10 +5064,12 @@ export default function AdminCalendar() {
             if (!cell) return <div key={i} />;
             const dayAppts = appointments.filter(a => a.date.startsWith(cell));
             const isToday = cell === todayISO();
+            const holiday = israeliHoliday(cell);
             return (
               <div key={cell} className={`rounded-xl p-2 cursor-pointer min-h-[80px] transition ${isToday ? "bg-teal-50 border-2 border-teal-400" : "bg-white border border-neutral-200 hover:bg-neutral-50"}`}
                 onClick={() => { setDate(cell); setView("day"); setDayMenu({ date: cell, staffId: allStaff[0]?.id || "" }); }}>
                 <span className={`text-sm font-semibold ${isToday ? "text-teal-700" : "text-neutral-800"}`}>{new Date(cell).getDate()}</span>
+                {holiday && <div title={holiday} className="text-[9px] font-semibold text-amber-600 truncate leading-tight">{holiday}</div>}
                 <div className="mt-1 space-y-0.5">
                   {dayAppts.slice(0, 3).map((a) => (
                     <div key={a.id} className={`text-[10px] rounded px-1 truncate ${apptColorClass(a.staff.id, a.service.durationMinutes)}`}>
@@ -5123,9 +5129,15 @@ export default function AdminCalendar() {
                 // Beyond the booking horizon and not manually opened → greyed header.
                 const beyond = !weekOverride && !!staffForDay
                   && daysBetween(todayISO(), d) >= staffHorizonDays(staffForDay, bizHorizon);
+                const holiday = israeliHoliday(d);
                 return (
                   <div key={d} className={`flex-1 min-w-0 flex flex-col items-center py-1 border-r border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50 relative ${isDayClosed ? "bg-red-50/50" : beyond ? "bg-neutral-100/70" : ""}`}
                     onClick={() => staffForDay && setDayMenu({ date: d, staffId: staffForDay.id })}>
+                    {holiday && (
+                      <span title={holiday} className="text-[8px] font-semibold text-amber-600 leading-none truncate max-w-full px-0.5">
+                        {holiday}
+                      </span>
+                    )}
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                       isToday ? "bg-teal-600 text-white shadow-md ring-2 ring-teal-300" : isDayClosed ? "bg-red-100 text-red-400" : beyond ? "bg-neutral-200 text-neutral-400" : "bg-neutral-100 text-neutral-600"
                     }`}>
@@ -5552,6 +5564,9 @@ export default function AdminCalendar() {
               className="font-semibold text-neutral-800 text-xs flex-1 min-w-0 text-right hover:text-teal-700 transition leading-tight"
               onClick={() => setDayMenu({ date, staffId: displayedStaff[0]?.id || allStaff[0]?.id || "" })}>
               {dateLabel}
+              {israeliHoliday(date) && (
+                <span className="mr-1.5 text-[10px] font-semibold text-amber-600">🕎 {israeliHoliday(date)}</span>
+              )}
             </button>
           ) : (
             <span className="font-semibold text-neutral-800 text-xs flex-1 min-w-0 leading-tight text-right">{dateLabel}</span>
