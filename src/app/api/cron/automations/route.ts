@@ -8,7 +8,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage } from "@/lib/messaging";
+import { sendMessage, firstName } from "@/lib/messaging";
 
 export const dynamic = "force-dynamic";
 
@@ -106,11 +106,12 @@ export async function GET(req: NextRequest) {
     const template = auto.template ||
       `שלום {{name}} 👋\n\nהתגעגענו אליך ב*{{business}}* ✂️\nבוא נקבע תור ונשמח לראות אותך שוב 😊\n\nלקביעת תור: {{booking_url}}`;
 
-    const bookingUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}`;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const bookingUrl = `${baseUrl}${auto.business.slug ? `/${auto.business.slug}` : ""}/book`;
 
     for (const customer of customers) {
       const body = template
-        .replace(/\{\{name\}\}/g,        customer.name)
+        .replace(/\{\{name\}\}/g,        firstName(customer.name))
         .replace(/\{\{business\}\}/g,    auto.business.name)
         .replace(/\{\{booking_url\}\}/g, bookingUrl);
 
