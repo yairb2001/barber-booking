@@ -8,7 +8,15 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { sendMessage, firstName } from "@/lib/messaging";
+import { enqueueMessage, firstName } from "@/lib/messaging";
+
+// Ban-safety: never blast every due customer at once (same reasoning as
+// broadcast — see src/app/api/admin/messaging/broadcast/route.ts). Enqueue
+// each reengage message with a staggered scheduledFor instead of sending it
+// inline; the drip-queue cron (`/api/cron/drip-queue`) drains the queue at a
+// safe pace (Yair, 2026-08-28: saw ~20 reengage messages fire in the same
+// minute).
+const REENGAGE_INTERVAL_SEC = 60; // ~1 message per minute
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +42,18 @@ export async function GET(req: NextRequest) {
     try { settings = JSON.parse(auto.settings || "{}"); } catch { settings = {}; }
 
     const inactiveWeeks         = (settings.inactiveWeeks         as number)  ?? 6;
+    // Second and final nudge, sent once if the customer still hasn't come back.
+    // No nudge ever goes out after this one (Yair, 2026-08-28: was re-sending
+    // every `inactiveWeeks` indefinitely — see the per-customer count below).
+    const finalNudgeWeeks       = (settings.finalNudgeWeeks       as number)  ?? inactiveWeeks * 2;
     const excludeWithFutureAppt = (settings.excludeWithFutureAppt as boolean) ?? true;
     const segment               = (settings.segment               as string)  ?? "all";
 
     const cutoffDate = new Date(now);
     cutoffDate.setDate(cutoffDate.getDate() - inactiveWeeks * 7);
+
+    const finalCutoffDate = new Date(now);
+    finalCutoffDate.setDate(finalCutoffDate.getDate() - finalNudgeWeeks * 7);
 
     // Fence off the pre-existing backlog: only customers who *cross* the
     // inactivity threshold after this automation was (last) activated should
@@ -90,18 +105,35 @@ export async function GET(req: NextRequest) {
       customers = customers.filter(c => !futureIds.has(c.id));
     }
 
-    // Dedup: skip phones that already got a reengage message in this same window
-    const recentLogs = await prisma.messageLog.findMany({
+    // Dedup + cap: at most 2 nudges per inactivity stretch (one at
+    // `inactiveWeeks`, one final one at `finalNudgeWeeks`), then never again
+    // until the customer actually comes back (which bumps lastVisitAt and
+    // restarts the count at 0). The previous version only checked "did they
+    // get one within the last `inactiveWeeks`?", which re-fired forever every
+    // `inactiveWeeks` for as long as the customer stayed away (Yair,
+    // 2026-08-28: saw repeat sends to the same people).
+    const priorSends = await prisma.messageLog.findMany({
       where: {
         businessId: auto.businessId,
         kind: "reengage",
-        createdAt: { gte: cutoffDate },
         status: { not: "failed" },
+        customerPhone: { in: customers.map(c => c.phone) },
       },
-      select: { customerPhone: true },
+      select: { customerPhone: true, createdAt: true },
     });
-    const recentPhones = new Set(recentLogs.map(l => l.customerPhone));
-    customers = customers.filter(c => !recentPhones.has(c.phone));
+    const sendCountSinceVisit = new Map<string, number>();
+    for (const customer of customers) {
+      const count = priorSends.filter(
+        l => l.customerPhone === customer.phone && customer.lastVisitAt && l.createdAt > customer.lastVisitAt,
+      ).length;
+      sendCountSinceVisit.set(customer.id, count);
+    }
+    customers = customers.filter(c => {
+      const count = sendCountSinceVisit.get(c.id) ?? 0;
+      if (count === 0) return true; // first nudge — already past `inactiveWeeks` via the query above
+      if (count === 1) return c.lastVisitAt! <= finalCutoffDate; // final nudge only once truly at `finalNudgeWeeks`
+      return false; // already got both nudges this stretch
+    });
 
     const template = auto.template ||
       `שלום {{name}} 👋\n\nהתגעגענו אליך ב*{{business}}* ✂️\nבוא נקבע תור ונשמח לראות אותך שוב 😊\n\nלקביעת תור: {{booking_url}}`;
@@ -109,50 +141,31 @@ export async function GET(req: NextRequest) {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
     const bookingUrl = `${baseUrl}${auto.business.slug ? `/${auto.business.slug}` : ""}/book`;
 
-    for (const customer of customers) {
+    customers.forEach((customer, i) => {
       const body = template
         .replace(/\{\{name\}\}/g,        firstName(customer.name))
         .replace(/\{\{business\}\}/g,    auto.business.name)
         .replace(/\{\{booking_url\}\}/g, bookingUrl);
 
-      sendMessage({
+      // Ban-safety: enqueue with a staggered scheduledFor instead of sending
+      // inline. The drip-queue cron drains this at a safe pace and (see
+      // deliverMessageLog) mirrors it into the conversation thread once it
+      // actually goes out, so a later reply still has context.
+      const scheduledFor = new Date(now.getTime() + i * REENGAGE_INTERVAL_SEC * 1000);
+      enqueueMessage({
         businessId: auto.businessId,
         customerPhone: customer.phone,
         kind: "reengage",
         body,
-      }).catch(console.error);
-
-      // Also log it into the customer's actual chat thread — sendMessage only
-      // delivers over WhatsApp and logs to MessageLog, it never touches
-      // ConversationMessage. Without this, the booking agent has no idea a
-      // re-engagement nudge went out, so a reply like "כן, אשמח" or "מה יש
-      // פנוי?" a few minutes later looks like it came out of nowhere instead
-      // of being an answer to this message (Yair, 2026-08-14).
-      (async () => {
-        let conversation = await prisma.conversation.findFirst({
-          where: { businessId: auto.businessId, phone: customer.phone, agentType: { not: "owner" } },
-          orderBy: { createdAt: "desc" },
-        });
-        if (!conversation) {
-          conversation = await prisma.conversation.create({
-            data: { businessId: auto.businessId, phone: customer.phone, agentType: "customer", status: "active" },
-          });
-        }
-        await prisma.conversationMessage.create({
-          data: { conversationId: conversation.id, role: "assistant", content: body },
-        });
-        await prisma.conversation.update({
-          where: { id: conversation.id },
-          data: { lastMessageAt: new Date() },
-        });
-      })().catch(err => console.error("[reengage] failed to log to conversation history", err));
+        scheduledFor,
+      }).catch(err => console.error("[reengage] failed to enqueue", err));
 
       results.push({
         businessId: auto.businessId,
         customerId: customer.id,
         phone: customer.phone,
       });
-    }
+    });
   }
 
   return NextResponse.json({ sent: results.length, results });

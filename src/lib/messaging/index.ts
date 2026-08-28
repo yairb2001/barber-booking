@@ -353,7 +353,10 @@ export async function deliverMessageLog(
 
   // Mirror agent/owner free messages into the conversation thread at real send
   // time, so a later customer reply reaches the agent WITH context (Part 1).
-  if (result.ok && log.kind === "agent_broadcast") {
+  // "reengage" included (2026-08-28): the reengage cron used to log this
+  // itself at enqueue time regardless of whether the send actually succeeded;
+  // doing it here means it only lands once the message truly went out.
+  if (result.ok && (log.kind === "agent_broadcast" || log.kind === "reengage")) {
     await mirrorAgentMessageToConversation(business.id, log.customerPhone, log.body);
   }
 
