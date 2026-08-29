@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { israeliHoliday } from "@/lib/israeli-holidays";
 
 function formatDate(date: Date): string {
   // Use local date components (not toISOString which converts to UTC and can shift the date in Israel UTC+3)
@@ -443,14 +444,18 @@ function ChooseTimePageContent() {
             const isActive = selectedDate === ds;
             const isToday = ds === formatDate(today);
             const open = availability[ds] === true;
+            const holiday = inRange ? israeliHoliday(ds) : undefined;
             return (
-              <button key={ds} disabled={!inRange} onClick={() => setSelectedDate(ds)}
+              <button key={ds} disabled={!inRange} onClick={() => setSelectedDate(ds)} title={holiday}
                 className="relative aspect-square flex items-center justify-center rounded-xl transition-all active:scale-95 disabled:cursor-default"
                 style={{
                   background: isActive ? "var(--brand)" : inRange ? "var(--card)" : "transparent",
-                  border: `1.5px solid ${isActive ? "var(--brand)" : isToday ? "var(--brand)" : inRange ? "var(--divider)" : "transparent"}`,
+                  border: `1.5px solid ${isActive ? "var(--brand)" : holiday ? "#d97706" : isToday ? "var(--brand)" : inRange ? "var(--divider)" : "transparent"}`,
                   opacity: inRange ? 1 : 0.3,
                 }}>
+                {holiday && (
+                  <span className="absolute top-[2px] text-[8px] leading-none">🕎</span>
+                )}
                 <span className="text-[15px] font-bold leading-none"
                   style={{ color: isActive ? "#fff" : "var(--text-pri)" }}>
                   {d.getDate()}
@@ -467,9 +472,15 @@ function ChooseTimePageContent() {
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-1.5 mt-2.5">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
-          <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>יש תורים פנויים</span>
+        <div className="flex items-center gap-3 mt-2.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>יש תורים פנויים</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px]">🕎</span>
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>חג / ערב חג</span>
+          </div>
         </div>
       </div>
 
