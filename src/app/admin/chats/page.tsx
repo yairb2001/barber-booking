@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
 
 type ChatListItem = {
@@ -37,21 +37,41 @@ type ChatDetail = {
   messages: ChatMessage[];
 };
 
+// Chat-list timestamp, WhatsApp-style: the time today, "אתמול" yesterday, the
+// weekday within the last week, and a date for anything older — so a row shows
+// WHEN the last message was, not "X hours ago".
 function timeAgo(iso: string | null): string {
   if (!iso) return "";
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1)  return "עכשיו";
-  if (m < 60) return `לפני ${m} דק'`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `לפני ${h} שעות`;
-  const d = Math.floor(h / 24);
-  if (d < 7)  return `לפני ${d} ימים`;
-  return new Date(iso).toLocaleDateString("he-IL", { day: "numeric", month: "short" });
+  const d = new Date(iso);
+  const now = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (diffDays <= 0) return d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  if (diffDays === 1) return "אתמול";
+  if (diffDays < 7)  return d.toLocaleDateString("he-IL", { weekday: "long" });
+  return d.toLocaleDateString("he-IL", { day: "numeric", month: "short" });
 }
 
 function timeOnly(iso: string): string {
   return new Date(iso).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+}
+
+function dateKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+// WhatsApp-style date separator: היום / אתמול / weekday (within the last week) /
+// full date for anything older — so the owner always knows WHEN a message was.
+function dateSeparator(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (diffDays === 0) return "היום";
+  if (diffDays === 1) return "אתמול";
+  if (diffDays > 1 && diffDays < 7) return d.toLocaleDateString("he-IL", { weekday: "long" });
+  return d.toLocaleDateString("he-IL", { day: "numeric", month: "long", year: "numeric" });
 }
 
 export default function ChatsPage() {
@@ -319,8 +339,19 @@ export default function ChatsPage() {
               {detail.messages.length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-12">אין הודעות</p>
               ) : (
-                detail.messages.map(m => (
-                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
+                detail.messages.map((m, i) => {
+                  const prev = i > 0 ? detail.messages[i - 1] : null;
+                  const showDate = !prev || dateKey(prev.createdAt) !== dateKey(m.createdAt);
+                  return (
+                    <Fragment key={m.id}>
+                      {showDate && (
+                        <div className="flex justify-center my-2">
+                          <span className="text-[11px] text-slate-500 bg-slate-200/80 rounded-full px-3 py-0.5">
+                            {dateSeparator(m.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                  <div className={`flex ${m.role === "user" ? "justify-start" : "justify-end"}`}>
                     <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 shadow-sm ${
                       m.role === "user"
                         ? "bg-white border border-slate-200 text-slate-800"
@@ -343,7 +374,9 @@ export default function ChatsPage() {
                       </p>
                     </div>
                   </div>
-                ))
+                    </Fragment>
+                  );
+                })
               )}
               <div ref={messagesEndRef} />
             </div>
