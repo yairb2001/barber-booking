@@ -363,19 +363,21 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: "join_waitlist",
     description:
-      "רושם את הלקוח לרשימת המתנה לתאריך מסוים — כך שאם יתפנה תור באותו יום הוא יקבל הודעה אוטומטית. " +
-      "השתמש בו רק כשהלקוח מבקש במפורש שנעדכן אותו אם משהו יתפנה, או כשאין תור פנוי מתאים והלקוח רוצה להישאר ברשימה ליום הזה. " +
+      "רושם את הלקוח לרשימת המתנה לתאריך מסוים (או לטווח ימים) — כך שאם יתפנה תור מתאים הוא יקבל הודעה אוטומטית. " +
+      "השתמש בו רק כשהלקוח מבקש במפורש שנעדכן אותו אם משהו יתפנה, או כשאין תור פנוי מתאים והלקוח רוצה להישאר ברשימה. " +
       "אל תשתמש בו במקום לקבוע תור פנוי — אם יש שעה שמתאימה ללקוח, קבע אותה עם book_appointment. " +
       "צריך serviceId (מ-get_services) ותאריך. staffId אופציונלי — העבר אותו רק אם הלקוח רוצה ספר מסוים; אחרת השאר ריק והרישום יתאים לכל ספר. " +
-      "preferredTimeOfDay אופציונלי: 'morning' לבוקר, 'afternoon' לצהריים/אחר הצהריים, או 'any' (ברירת מחדל). " +
+      "אם הלקוח גמיש וללא העדפת יום ספציפי (למשל 'כל השבוע', 'לא משנה לי איזה יום', 'תעדכן אותי על מה שיתפנה השבוע') — אל תכריח אותו לבחור יום אחד: העבר גם endDate (התאריך האחרון בטווח, כולל), וזה ירשום אותו לכל יום בטווח שבין date ל-endDate. " +
+      "preferredTimeOfDay אופציונלי: 'morning' לבוקר, 'afternoon' לצהריים, 'evening' לערב, או 'any' (ברירת מחדל — כל שעות היום). אם הלקוח אומר שהוא גמיש/אין לו העדפת שעה — זו תשובה תקינה ומספקת, אל תכריח אותו לבחור בין בוקר לצהריים: פשוט השאר את זה ריק (='any'). " +
       "אם זה לקוח חדש שלא רשום, בקש קודם שם מלא והעבר אותו ב-customerName.",
     input_schema: {
       type: "object" as const,
       properties: {
         serviceId:          { type: "string", description: "מזהה השירות שהלקוח רוצה (מ-get_services)" },
-        date:               { type: "string", description: "התאריך הרצוי בפורמט YYYY-MM-DD" },
+        date:               { type: "string", description: "התאריך הרצוי (או הראשון בטווח) בפורמט YYYY-MM-DD" },
+        endDate:            { type: "string", description: "אופציונלי — תאריך אחרון בטווח (כולל), YYYY-MM-DD. השתמש רק כשהלקוח גמיש בין כמה ימים (למשל 'כל השבוע'); אחרת השאר ריק לרישום ליום אחד בלבד." },
         staffId:            { type: "string", description: "מזהה הספר, אם הלקוח רוצה ספר מסוים (אופציונלי — השאר ריק לכל ספר)" },
-        preferredTimeOfDay: { type: "string", description: "'morning' | 'afternoon' | 'any' — חלק היום המועדף (אופציונלי, ברירת מחדל 'any')" },
+        preferredTimeOfDay: { type: "string", description: "'morning' | 'afternoon' | 'evening' | 'any' — חלק היום המועדף (אופציונלי, ברירת מחדל 'any')" },
         customerName:       { type: "string", description: "שם מלא של הלקוח — דרוש רק אם הוא לקוח חדש שאינו רשום" },
       },
       required: ["serviceId", "date"],
@@ -955,7 +957,7 @@ export async function execTool(
         const customerName = input.customerName;
         const rawPref = (input.preferredTimeOfDay || "").trim();
         const preferredTimeOfDay =
-          ["morning", "afternoon", "any"].includes(rawPref) ? rawPref : "any";
+          ["morning", "afternoon", "evening", "any"].includes(rawPref) ? rawPref : "any";
 
         // Resolve the service (and optional staff) so we can fail clearly instead
         // of writing a dangling waitlist row the notifier can't render.
@@ -968,10 +970,28 @@ export async function execTool(
         if (!service) return "שגיאה: לא נמצא השירות לפי המזהה. קרא ל-get_services כדי לקבל מזהה תקף ונסה שוב.";
         if (staffId && !staff) return "שגיאה: לא נמצא הספר לפי המזהה. קרא ל-get_staff_list כדי לקבל מזהה תקף, או השאר staffId ריק לרישום לכל ספר.";
 
-        // Validate the date.
+        // Validate the date (and optional end-of-range date).
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "שגיאה: התאריך חייב להיות בפורמט YYYY-MM-DD.";
         const dateObj = new Date(`${date}T00:00:00.000Z`);
         if (isNaN(dateObj.getTime())) return "שגיאה: תאריך לא תקין.";
+
+        const rawEndDate = (input.endDate || "").trim();
+        let endDateObj = dateObj;
+        if (rawEndDate) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(rawEndDate)) return "שגיאה: endDate חייב להיות בפורמט YYYY-MM-DD.";
+          endDateObj = new Date(`${rawEndDate}T00:00:00.000Z`);
+          if (isNaN(endDateObj.getTime())) return "שגיאה: endDate לא תקין.";
+          if (endDateObj < dateObj) return "שגיאה: endDate לא יכול להיות לפני date.";
+        }
+        // Safety cap — a single conversational "flexible" request shouldn't be
+        // able to spawn a huge number of rows (typo in the year, or the model
+        // interpreting "גמיש" too broadly). A week+ of slack is already the
+        // point of this range; two weeks covers "the next two weeks" too.
+        const MAX_WAITLIST_RANGE_DAYS = 14;
+        const rangeDays = Math.round((endDateObj.getTime() - dateObj.getTime()) / 86400000) + 1;
+        if (rangeDays > MAX_WAITLIST_RANGE_DAYS) {
+          return `שגיאה: טווח של ${rangeDays} ימים גדול מדי לרשימת המתנה (מקסימום ${MAX_WAITLIST_RANGE_DAYS}). בקש מהלקוח לצמצם את הטווח.`;
+        }
 
         // The caller IS the customer — use their WhatsApp number. Upsert as in book.
         const phone = normalizeIsraeliPhone(callerPhone);
@@ -991,38 +1011,42 @@ export async function execTool(
           customer = await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } });
         }
 
-        // Dedup: don't stack identical active rows (same biz+customer+staff+service+date).
-        const existing = await prisma.waitlist.findFirst({
-          where: {
-            businessId: bizId,
-            customerId: customer.id,
-            staffId,
-            serviceId,
-            date: dateObj,
-            status: { in: ["waiting", "notified"] },
-          },
-        });
-        const dateLabel = dateObj.toLocaleDateString("he-IL", {
+        const staffLabel = staff ? ` אצל ${staff.name}` : "";
+        const fmt = (d: Date) => d.toLocaleDateString("he-IL", {
           weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
         });
-        const staffLabel = staff ? ` אצל ${staff.name}` : "";
-        if (existing) {
-          return `הלקוח כבר רשום ברשימת ההמתנה ל-${service.name}${staffLabel} ב-${dateLabel}. אין צורך לרשום שוב — הוא יקבל הודעה אם יתפנה תור.`;
+
+        // One Waitlist row per day in the range — the notify-matching logic
+        // (waitlist-notify.ts) already matches per exact day, battle-tested in
+        // production; fanning out on write keeps that logic untouched instead
+        // of teaching it to understand ranges.
+        const days: Date[] = [];
+        for (let d = new Date(dateObj); d <= endDateObj; d.setUTCDate(d.getUTCDate() + 1)) days.push(new Date(d));
+
+        let createdCount = 0;
+        let alreadyCount = 0;
+        for (const day of days) {
+          const existing = await prisma.waitlist.findFirst({
+            where: { businessId: bizId, customerId: customer.id, staffId, serviceId, date: day, status: { in: ["waiting", "notified"] } },
+          });
+          if (existing) { alreadyCount++; continue; }
+          await prisma.waitlist.create({
+            data: {
+              businessId: bizId, customerId: customer.id, staffId, serviceId,
+              date: day, isFlexible: true, preferredTimeOfDay, status: "waiting",
+            },
+          });
+          createdCount++;
         }
 
-        await prisma.waitlist.create({
-          data: {
-            businessId: bizId,
-            customerId: customer.id,
-            staffId,
-            serviceId,
-            date: dateObj,
-            isFlexible: true,
-            preferredTimeOfDay,
-            status: "waiting",
-          },
-        });
-        return `✅ רשמתי את הלקוח לרשימת המתנה ל-${service.name}${staffLabel} ב-${dateLabel}. אם יתפנה תור באותו יום הוא יקבל הודעה אוטומטית. עדכן את הלקוח בנימוס.`;
+        if (days.length === 1) {
+          const dateLabel = fmt(dateObj);
+          if (createdCount === 0) return `הלקוח כבר רשום ברשימת ההמתנה ל-${service.name}${staffLabel} ב-${dateLabel}. אין צורך לרשום שוב — הוא יקבל הודעה אם יתפנה תור.`;
+          return `✅ רשמתי את הלקוח לרשימת המתנה ל-${service.name}${staffLabel} ב-${dateLabel}. אם יתפנה תור באותו יום הוא יקבל הודעה אוטומטית. עדכן את הלקוח בנימוס.`;
+        }
+        const rangeLabel = `${fmt(dateObj)} עד ${fmt(endDateObj)}`;
+        if (createdCount === 0) return `הלקוח כבר רשום ברשימת ההמתנה ל-${service.name}${staffLabel} על כל הטווח (${rangeLabel}). אין צורך לרשום שוב.`;
+        return `✅ רשמתי את הלקוח לרשימת המתנה ל-${service.name}${staffLabel} לכל יום בטווח ${rangeLabel} (${createdCount} ימים חדשים${alreadyCount ? `, ${alreadyCount} כבר היו רשומים` : ""}). ברגע שיתפנה תור מתאים באחד הימים הוא יקבל הודעה אוטומטית. עדכן את הלקוח בנימוס, בלי לפרט מספרים טכניים.`;
       }
 
       // ── escalate_to_human ────────────────────────────────────────────────────
@@ -1208,7 +1232,9 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 כדי להזיז או לשנות תור קיים לזמן אחר: קודם מצא את התור עם check_appointment, ודא מול הלקוח לאיזה תאריך ושעה הוא רוצה לעבור, ואז קרא ל-request_appointment_move עם מזהה התור והזמן הרצוי. הכלי מטפל בהכל לבד — אם פנוי הוא מעביר מיד, ואם לא הוא מבקש אישור מהספר ומסדר החלפה מול לקוח אחר. אל תבטל ותקבע מחדש כדי להזיז זמן, ואל תבטיח ללקוח שעה תפוסה לפני שהכלי החזיר תשובה — קרא את מה שהכלי מחזיר ופעל לפיו. (לביטול מלא בלי זמן חלופי השתמש ב-cancel_appointment כרגיל.)
 
-אם אין שעה פנויה ביום שהלקוח רוצה, או שהוא מבקש שנעדכן אותו אם יתפנה משהו — הצע לו להירשם לרשימת המתנה ליום הזה, וברגע שהוא מסכים קרא ל-join_waitlist עם השירות והתאריך (ועם הספר רק אם ביקש ספר מסוים). אם יתפנה תור באותו יום הוא יקבל הודעה אוטומטית. אל תשתמש ברשימת המתנה במקום לקבוע — אם יש שעה שמתאימה ללקוח, תמיד עדיף לסגור אותה.
+אם אין שעה פנויה ביום שהלקוח רוצה, או שהוא מבקש שנעדכן אותו אם יתפנה משהו — הצע לו להירשם לרשימת המתנה, וברגע שהוא מסכים קרא ל-join_waitlist עם השירות והתאריך (ועם הספר רק אם ביקש ספר מסוים). אם יתפנה תור מתאים הוא יקבל הודעה אוטומטית. אל תשתמש ברשימת המתנה במקום לקבוע — אם יש שעה שמתאימה ללקוח, תמיד עדיף לסגור אותה.
+
+ברשימת המתנה (בניגוד לקביעת תור) הלקוח לא חייב לנעול יום ושעה מדויקים — "גמיש" הוא מענה תקין ומלא, לא משהו שצריך לצמצם. אם הוא אומר שהוא גמיש/לא משנה לו איזה יום (למשל "כל השבוע", "השבוע הקרוב", "מתי שיתפנה"), אל תכריח אותו לבחור יום ספציפי: קרא ל-join_waitlist עם date=היום הראשון הרלוונטי ו-endDate=סוף הטווח שהוא התכוון אליו (לדוגמה "כל השבוע" מהיום ועד סוף השבוע הקרוב). באותו אופן, אם הוא אומר שאין לו העדפת שעה ("גמיש", "לא משנה לי", "כל היום מתאים") — זו תשובה סופית ומספקת, אל תשאל "בוקר או צהריים?" כאילו זו בחירה חובה בין שתי אפשרויות בלבד; פשוט השאר את preferredTimeOfDay ריק.
 
 אם הלקוח ביקש קודם בשיחה יום/שעה מסוימים שלא היו פנויים, יש שני מצבים שבהם תציע לו (תמיד בשאלה, לעולם לא בשקט) להירשם לרשימת המתנה על הבחירה המקורית שלו:
 - הוא קבע במקום זאת שעה אחרת שכן הייתה פנויה — אחרי ש-book_appointment הצליח, שאל בקצרה וטבעי (למשל "דרך אגב, רוצה שאעדכן אותך אם יתפנה משהו ביום/בשעה שרצית קודם?").
