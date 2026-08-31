@@ -105,18 +105,28 @@ export async function GET(req: NextRequest) {
       customers = customers.filter(c => !futureIds.has(c.id));
     }
 
-    // Dedup + cap: at most 2 nudges per inactivity stretch (one at
+    // Dedup + cap: at most 2 nudge ATTEMPTS per inactivity stretch (one at
     // `inactiveWeeks`, one final one at `finalNudgeWeeks`), then never again
     // until the customer actually comes back (which bumps lastVisitAt and
     // restarts the count at 0). The previous version only checked "did they
     // get one within the last `inactiveWeeks`?", which re-fired forever every
     // `inactiveWeeks` for as long as the customer stayed away (Yair,
     // 2026-08-28: saw repeat sends to the same people).
+    //
+    // Counting only counts non-"failed" sends toward the cap re-opened the
+    // same hole one level down: the WhatsApp send call has a known recurring
+    // "operation aborted due to timeout" failure mode (unrelated to this
+    // cron), and every customer hit by it got logged as "failed" — so they
+    // never counted, and got a fresh attempt enqueued every single day with
+    // no limit (Yair, 2026-08-30: same ~30 customers re-attempted 3 days
+    // running). A timeout on our side doesn't prove WhatsApp never delivered
+    // it, so silently retrying forever risks real double-sends. Count every
+    // attempt (success or failure) toward the cap — one shot per nudge stage,
+    // matching "פעם אחת ואז להפסיק".
     const priorSends = await prisma.messageLog.findMany({
       where: {
         businessId: auto.businessId,
         kind: "reengage",
-        status: { not: "failed" },
         customerPhone: { in: customers.map(c => c.phone) },
       },
       select: { customerPhone: true, createdAt: true },
