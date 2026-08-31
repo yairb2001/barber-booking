@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { enqueueMessage, firstName } from "@/lib/messaging";
+import { getBusinessNow } from "@/lib/utils";
 
 // Ban-safety: never blast every due customer at once (same reasoning as
 // broadcast — see src/app/api/admin/messaging/broadcast/route.ts). Enqueue
@@ -62,6 +63,31 @@ export async function GET(req: NextRequest) {
     if (!auto.activatedAt) continue;
     const activationFloor = new Date(auto.activatedAt);
     activationFloor.setDate(activationFloor.getDate() - inactiveWeeks * 7);
+
+    // customer.lastVisitAt is stamped at BOOKING time (see customer-agent.ts /
+    // admin+public booking routes), not at the actual visit date — the "mark
+    // completed" flow that used to bump it to appointment.date was removed
+    // from the UI, so it never fires anymore. For a shop that books ~3 weeks
+    // ahead, that means lastVisitAt reflects when the appointment was BOOKED,
+    // which can be weeks earlier than when the customer actually came in —
+    // making them look more inactive than they are. Sync it forward (never
+    // backward) to the latest non-cancelled appointment that has already
+    // happened, right before computing who's actually inactive (Yair,
+    // 2026-08-31: customers who visited ~a week ago still got "we miss you").
+    const todayStart = new Date(`${getBusinessNow().date}T00:00:00.000Z`);
+    await prisma.$executeRaw`
+      UPDATE customers c
+      SET last_visit_at = sub.max_date
+      FROM (
+        SELECT customer_id, MAX(date) AS max_date
+        FROM appointments
+        WHERE business_id = ${auto.businessId} AND status IN ('confirmed', 'completed') AND date < ${todayStart}
+        GROUP BY customer_id
+      ) sub
+      WHERE c.id = sub.customer_id
+        AND c.business_id = ${auto.businessId}
+        AND (c.last_visit_at IS NULL OR c.last_visit_at < sub.max_date)
+    `;
 
     // Customers who haven't visited since cutoff, but were still "active"
     // (i.e. hadn't crossed the threshold yet) when the automation turned on.
