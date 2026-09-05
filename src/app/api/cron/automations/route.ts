@@ -28,6 +28,15 @@ export async function GET(req: NextRequest) {
   if (!secret || auth !== `Bearer ${secret}`)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  // Never send re-engagement nudges on Shabbat (Yair, 2026-09-05). Just skip
+  // the run entirely — the eligibility check below is threshold-based
+  // (lastVisitAt <= cutoff), not an exact-day match, so anyone who would've
+  // qualified today still qualifies tomorrow and gets picked up by Sunday's
+  // run automatically. Nothing needs to be queued or remembered here.
+  const isShabbatInIsrael = new Date(`${getBusinessNow().date}T12:00:00.000Z`)
+    .toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Jerusalem" }) === "Sat";
+  if (isShabbatInIsrael) return NextResponse.json({ sent: 0, skipped: "shabbat" });
+
   const automations = await prisma.automation.findMany({
     where: { type: "reengage", active: true },
     include: { business: true },
