@@ -2055,7 +2055,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   )}</button>
                 <a href={telHref(dispPhone)}
                   className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-sm hover:bg-white/30 transition">📞</a>
-                <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(dispPhone)}`)} title="פתח שיחה במערכת"
+                <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(dispPhone)}&name=${encodeURIComponent(dispName)}`)} title="פתח שיחה במערכת"
                   className="w-7 h-7 rounded-lg bg-white/25 flex items-center justify-center text-sm hover:bg-white/35 transition">💬</button>
               </div>
             </div>

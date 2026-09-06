@@ -79,6 +79,11 @@ export default function ChatsPage() {
   const [selId, setSelId] = useState<string | null>(null);
   const router = useRouter();
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  // A deep-linked customer who has no conversation yet: shown as an empty
+  // composer, but nothing is written to the database until a message is
+  // actually sent (see the "open" deep-link effect below).
+  const [virtualThread, setVirtualThread] = useState<{ phone: string; customerName: string | null } | null>(null);
   const [detail, setDetail] = useState<ChatDetail | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -102,14 +107,21 @@ export default function ChatsPage() {
     return () => { clearInterval(id); document.removeEventListener("visibilitychange", fetchList); };
   }, [fetchList]);
 
-  // Deep-link: /admin/chats?phone=<phone> opens that customer's thread
-  // (used by the customer card "open conversation in system" button).
+  // Deep-link: /admin/chats?phone=<phone>&name=<name> opens that customer's
+  // thread (used by the appointment card / customer card "open conversation
+  // in system" button).
   useEffect(() => {
-    const p = new URLSearchParams(window.location.search).get("phone");
+    const params = new URLSearchParams(window.location.search);
+    const p = params.get("phone");
     if (p) setPendingPhone(p);
+    const n = params.get("name");
+    if (n) setPendingName(n);
   }, []);
-  // Open (or create) the thread for the deep-linked phone — so the chat opens
-  // even when this customer has never messaged before.
+  // Look up (never create) the thread for the deep-linked phone. If one
+  // already exists, open it. Otherwise show an empty composer for that
+  // customer WITHOUT writing anything to the database — a conversation row
+  // is only created once a message is actually sent, so merely opening a
+  // customer's card never leaves a ghost empty thread in the inbox.
   useEffect(() => {
     if (!pendingPhone) return;
     let alive = true;
@@ -118,10 +130,16 @@ export default function ChatsPage() {
       body: JSON.stringify({ phone: pendingPhone }),
     })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!alive || !d?.id) return; setSelId(d.id); setPendingPhone(null); fetchList(); })
+      .then(d => {
+        if (!alive) return;
+        if (d?.id) { setVirtualThread(null); setSelId(d.id); fetchList(); }
+        else { setSelId(null); setVirtualThread({ phone: pendingPhone, customerName: pendingName }); }
+        setPendingPhone(null);
+        setPendingName(null);
+      })
       .catch(() => {});
     return () => { alive = false; };
-  }, [pendingPhone, fetchList]);
+  }, [pendingPhone, pendingName, fetchList]);
 
   // ── Detail polling ──────────────────────────────────────────────────────────
   const fetchDetail = useCallback((id: string) => {
@@ -145,23 +163,53 @@ export default function ChatsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [detail?.messages.length]);
 
+  // Clear the composer whenever the selected thread changes, so a draft
+  // typed for one customer never carries over and gets sent to another.
+  useEffect(() => {
+    setDraft("");
+    setError("");
+  }, [selId, virtualThread?.phone]);
+
   // ── Send message ────────────────────────────────────────────────────────────
   async function send() {
-    if (!selId || !draft.trim() || sending) return;
+    if ((!selId && !virtualThread) || !draft.trim() || sending) return;
     setSending(true);
     setError("");
     try {
-      const res = await fetch(`/api/admin/chats/${selId}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: draft.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) { setError(data.error || "שגיאה בשליחה"); }
-      else {
-        setDraft("");
-        fetchDetail(selId);
-        fetchList();
+      if (selId) {
+        const res = await fetch(`/api/admin/chats/${selId}/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: draft.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) { setError(data.error || "שגיאה בשליחה"); }
+        else {
+          setDraft("");
+          fetchDetail(selId);
+          fetchList();
+        }
+      } else if (virtualThread) {
+        // First message to a customer who never had a conversation — the
+        // conversation row is created here, atomically with the message,
+        // never just from opening the thread.
+        const res = await fetch("/api/admin/chats/send-quick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: virtualThread.phone,
+            customerName: virtualThread.customerName,
+            message: draft.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) { setError(data.error || "שגיאה בשליחה"); }
+        else {
+          setDraft("");
+          setVirtualThread(null);
+          setSelId(data.conversationId);
+          fetchList();
+        }
       }
     } catch {
       setError("שגיאת חיבור");
@@ -190,6 +238,12 @@ export default function ChatsPage() {
     fetchDetail(selId);
     fetchList();
   }
+
+  // Either a real (server-fetched) conversation, or a virtual not-yet-created
+  // one for a deep-linked customer with no history — same shape either way,
+  // so the detail pane below doesn't need to special-case it.
+  const activeThread: { id: string | null; phone: string; customerName: string | null; escalated: boolean; messages: ChatMessage[] } | null =
+    detail ?? (virtualThread ? { id: null, phone: virtualThread.phone, customerName: virtualThread.customerName, escalated: false, messages: [] } : null);
 
   const filteredChats = chats.filter(c => {
     if (!search.trim()) return true;
@@ -222,8 +276,8 @@ export default function ChatsPage() {
         key={c.id}
         role="button"
         tabIndex={0}
-        onClick={() => setSelId(c.id)}
-        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelId(c.id); } }}
+        onClick={() => { setVirtualThread(null); setSelId(c.id); }}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVirtualThread(null); setSelId(c.id); } }}
         className={`w-full text-right px-4 py-3 border-b border-slate-100 transition cursor-pointer ${
           selId === c.id
             ? "bg-teal-50"
@@ -308,8 +362,8 @@ export default function ChatsPage() {
       </aside>
 
       {/* ── Detail ── */}
-      <section className={`${selId ? "flex" : "hidden md:flex"} flex-col flex-1 min-w-0 bg-white`}>
-        {!detail ? (
+      <section className={`${selId || virtualThread ? "flex" : "hidden md:flex"} flex-col flex-1 min-w-0 bg-white`}>
+        {!activeThread ? (
           <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">
             בחר שיחה מהרשימה
           </div>
@@ -318,37 +372,39 @@ export default function ChatsPage() {
             {/* Header */}
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 shrink-0">
               <button
-                onClick={() => setSelId(null)}
+                onClick={() => { setSelId(null); setVirtualThread(null); }}
                 className="md:hidden text-slate-500 hover:text-slate-800 text-lg"
                 aria-label="חזרה"
               >
                 ←
               </button>
-              <button onClick={() => router.push(`/admin/customers?customer=${encodeURIComponent(detail.phone)}`)}
+              <button onClick={() => router.push(`/admin/customers?customer=${encodeURIComponent(activeThread.phone)}`)}
                 className="flex-1 min-w-0 text-right hover:opacity-70 transition" title="פתח כרטיס לקוח">
-                <p className="font-semibold text-slate-900 truncate">{detail.customerName || detail.phone}</p>
-                <p className="text-xs text-slate-400" dir="ltr">{detail.phone}</p>
+                <p className="font-semibold text-slate-900 truncate">{activeThread.customerName || activeThread.phone}</p>
+                <p className="text-xs text-slate-400" dir="ltr">{activeThread.phone}</p>
               </button>
-              <button
-                onClick={() => toggleAgent(detail.escalated)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${
-                  detail.escalated
-                    ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
-                    : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                }`}
-                title={detail.escalated ? "הסוכן כבוי לשיחה זו — לחץ להפעלה" : "הסוכן פעיל לשיחה זו — לחץ לכיבוי"}
-              >
-                🤖 {detail.escalated ? "כבוי" : "פעיל"}
-              </button>
+              {activeThread.id && (
+                <button
+                  onClick={() => toggleAgent(activeThread.escalated)}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${
+                    activeThread.escalated
+                      ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
+                      : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+                  }`}
+                  title={activeThread.escalated ? "הסוכן כבוי לשיחה זו — לחץ להפעלה" : "הסוכן פעיל לשיחה זו — לחץ לכיבוי"}
+                >
+                  🤖 {activeThread.escalated ? "כבוי" : "פעיל"}
+                </button>
+              )}
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">
-              {detail.messages.length === 0 ? (
+              {activeThread.messages.length === 0 ? (
                 <p className="text-center text-slate-400 text-sm py-12">אין הודעות</p>
               ) : (
-                detail.messages.map((m, i) => {
-                  const prev = i > 0 ? detail.messages[i - 1] : null;
+                activeThread.messages.map((m, i) => {
+                  const prev = i > 0 ? activeThread.messages[i - 1] : null;
                   const showDate = !prev || dateKey(prev.createdAt) !== dateKey(m.createdAt);
                   return (
                     <Fragment key={m.id}>
@@ -412,7 +468,7 @@ export default function ChatsPage() {
                 </button>
               </div>
               <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-                {detail.escalated
+                {activeThread.escalated
                   ? "🤖 הסוכן כבוי לשיחה זו (24 שעות מההודעה האחרונה שלך)"
                   : "💡 שליחה ידנית תכבה את הסוכן ל-24 שעות"
                 }

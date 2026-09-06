@@ -488,7 +488,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             className="flex items-center justify-center gap-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl py-3 text-sm">
             <span>🔁</span> תור קבוע
           </button>
-          <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(detail.phone)}`)}
+          <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(detail.phone)}${detail.name ? `&name=${encodeURIComponent(detail.name)}` : ""}`)}
             className="flex items-center justify-center gap-2 bg-teal-50 hover:bg-teal-100 text-teal-700 rounded-xl py-3 text-sm">
             <span>✉️</span> פתח שיחה במערכת
           </button>
