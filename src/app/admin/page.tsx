@@ -1902,18 +1902,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const cleanPhone = dispPhone.replace(/\D/g, "").replace(/^0/, "972");
   const router = useRouter();
 
-  if (editMode) {
-    return <ApptEditForm
-      appt={appt}
-      onCancel={() => setEditMode(false)}
-      onSaved={() => {
-        setEditMode(false);
-        onReload?.();
-        onClose();
-      }}
-      onClose={onClose}
-    />;
-  }
 
   return (
     <>
@@ -2012,6 +2000,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </button>
           </div>
         )}
+
+        {editMode ? (
+          <ApptEditForm
+            appt={appt}
+            embedded
+            onCancel={() => setEditMode(false)}
+            onSaved={() => { setEditMode(false); onReload?.(); onClose(); }}
+            onClose={onClose}
+          />
+        ) : (<>
 
         {/* Notes — 📌 permanent (on the customer, every visit) / customer's own / 🔒 internal (this appt only) */}
         {(permNote || appt.note || staffNote.trim()) && (
@@ -2634,6 +2632,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             פתח WhatsApp ישירות ↗
           </a>
         </div>
+        </>)}
       </div>
     </div>
     </>
@@ -2787,8 +2786,12 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
 }
 
 // ── Full appointment edit form ─────────────────────────────────────────────────
-function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
+function ApptEditForm({ appt, onCancel, onSaved, onClose, embedded = false }: {
   appt: Appt; onCancel: () => void; onSaved: () => void; onClose: () => void;
+  /** Render the bare fields (no overlay / own header) so the appointment card
+   *  can switch itself into edit mode in place, instead of stacking a second
+   *  modal on top of it. */
+  embedded?: boolean;
 }) {
   const initialDate = appt.date.split("T")[0];
   const initialDuration = toMin(appt.endTime) - toMin(appt.startTime);
@@ -2865,16 +2868,8 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
   const endMin = toMin(startTime) + Number(duration || 0);
   const endTime = minToTime(Math.min(endMin, 23 * 60 + 59));
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100 sticky top-0 bg-white z-10">
-          <div>
-            <h3 className="font-bold text-lg text-neutral-900">עריכת תור</h3>
-            <p className="text-xs text-neutral-500 mt-0.5">{appt.customer.name}</p>
-          </div>
-          <button onClick={onCancel} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200">✕</button>
-        </div>
+  const inner = (
+      <>
 
         <div className="p-5 space-y-4">
           {/* Date */}
@@ -2965,6 +2960,21 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose }: {
             {saving ? "שומר..." : "שמור שינויים"}
           </button>
         </div>
+      </>
+  );
+
+  if (embedded) return inner;
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-5 pt-5 pb-3 border-b border-neutral-100 sticky top-0 bg-white z-10">
+          <div>
+            <h3 className="font-bold text-lg text-neutral-900">עריכת תור</h3>
+            <p className="text-xs text-neutral-500 mt-0.5">{appt.customer.name}</p>
+          </div>
+          <button onClick={onCancel} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200">✕</button>
+        </div>
+        {inner}
       </div>
     </div>
   );
