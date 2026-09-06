@@ -130,6 +130,7 @@ const HEB_DAY_LETTERS = ["א","ב","ג","ד","ה","ו","ש"];
 const hebDayLetter = (iso: string) => HEB_DAY_LETTERS[new Date(iso).getDay()];
 const fmtDateShort = (iso: string) => { const d = new Date(iso); return `${d.getDate()}/${d.getMonth()+1}`; };
 const fmtDay = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+const fmtCompact = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { day: "numeric", month: "short" });
 const fmtShort = (iso: string) => new Date(iso).toLocaleDateString("he-IL", { weekday: "short", day: "numeric" });
 const apptTop = (t: string, hh: number, ds = DAY_START) => ((toMin(t) - ds * 60) / 60) * hh;
 // Height of an appointment block. We keep a minimum so tiny appointments stay
@@ -1548,6 +1549,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [permNote, setPermNote] = useState("");
   const [permDraft, setPermDraft] = useState("");
   const [permSaving, setPermSaving] = useState(false);
+  // Which note editor is open inside "עוד פעולות" (null = just the buttons).
+  const [noteOpen, setNoteOpen] = useState<null | "perm" | "staff">(null);
   const [noShowHidden, setNoShowHidden] = useState(false);
   const [dismissingNoShow, setDismissingNoShow] = useState(false);
   useEffect(() => {
@@ -2107,7 +2110,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">תאריך</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium text-neutral-800 text-sm leading-tight">{fmtDay(dispDate)}</p>
+                <p className="font-medium text-neutral-800 text-sm whitespace-nowrap">{fmtCompact(dispDate)}</p>
                 <button onClick={() => openInline("date")} title="ערוך תאריך"
                   className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
@@ -2115,7 +2118,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">שעה</p>
               <div className="flex items-center gap-1">
-                <p className="font-medium text-neutral-800 text-sm" dir="ltr">{dispStart}–{dispEnd}</p>
+                <p className="font-medium text-neutral-800 text-sm whitespace-nowrap" dir="ltr">{dispStart}</p>
                 <button onClick={() => openInline("time")} title="ערוך שעה"
                   className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
@@ -2123,7 +2126,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">מחיר</p>
               <div className="flex items-center gap-1">
-                <p className="font-bold text-slate-800 text-sm">₪{dispPrice}</p>
+                <p className="font-bold text-slate-800 text-sm whitespace-nowrap">₪{dispPrice}</p>
                 <button onClick={() => openInline("price")} title="ערוך מחיר"
                   className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
@@ -2132,7 +2135,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         )}
 
         {/* Referral source — blinks while missing so it's caught on the next visit too */}
-        <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
+        <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "bg-amber-50/60" : ""}`}>
           <div className="flex items-center justify-between mb-1">
             <p className={`text-xs ${!referralSource && !editingReferral ? "text-amber-700 font-semibold" : "text-neutral-400"}`}>
               מקור הגעה{!referralSource && !editingReferral ? " — ⚠ חסר" : ""}
@@ -2258,15 +2261,23 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           )}
         </div>
         <div className="px-4 py-2 border-b border-neutral-100">
-          <p className="text-xs text-neutral-400 mb-1.5">📌 הערה קבועה על הלקוח</p>
-          <textarea value={permDraft} onChange={e => setPermDraft(e.target.value)} rows={2}
-            placeholder="למשל: מכונה 2 בצדדים, אלרגי לג׳ל…"
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
-          {permDraft.trim() !== permNote && (
-            <button onClick={savePermNote} disabled={permSaving}
-              className="mt-1 text-xs text-teal-700 hover:underline disabled:opacity-50">
-              {permSaving ? "שומר..." : "שמור הערה קבועה"}
-            </button>
+          <button onClick={() => setNoteOpen(noteOpen === "perm" ? null : "perm")}
+            className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
+            📌 {permNote ? "ערוך הערה קבועה" : "הוסף הערה קבועה"}
+          </button>
+          {noteOpen === "perm" && (
+            <div className="mt-2">
+              <textarea value={permDraft} onChange={e => setPermDraft(e.target.value)} rows={2} autoFocus
+                placeholder="למשל: מכונה 2 בצדדים, אלרגי לג׳ל…"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              <p className="text-[10.5px] text-neutral-400 mt-1">נשמרת על הלקוח — תופיע בכל תור שהוא קובע.</p>
+              {permDraft.trim() !== permNote && (
+                <button onClick={savePermNote} disabled={permSaving}
+                  className="mt-1 text-xs text-teal-700 hover:underline disabled:opacity-50">
+                  {permSaving ? "שומר..." : "שמור הערה קבועה"}
+                </button>
+              )}
+            </div>
           )}
         </div>
         {/* Convert to recurring (תור קבוע) */}
@@ -2338,15 +2349,23 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Staff note */}
         <div className="px-4 py-2 border-b border-neutral-100">
-          <p className="text-xs text-neutral-400 mb-1.5">🔒 הערה פנימית לתור הזה</p>
-          <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
-            placeholder="הוסף הערה פנימית..."
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
-          {staffNote !== (appt.staffNote || "") && (
-            <button onClick={saveNote} disabled={savingNote}
-              className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
-              {savingNote ? "שומר..." : "שמור הערה"}
-            </button>
+          <button onClick={() => setNoteOpen(noteOpen === "staff" ? null : "staff")}
+            className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
+            🔒 {staffNote.trim() ? "ערוך הערה פנימית" : "הוסף הערה פנימית"}
+          </button>
+          {noteOpen === "staff" && (
+            <div className="mt-2">
+              <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2} autoFocus
+                placeholder="למשל: שילם 100₪ מזומן, יעביר את היתר מחר…"
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
+              <p className="text-[10.5px] text-neutral-400 mt-1">רק לתור הזה — לא עוברת לתורים הבאים.</p>
+              {staffNote !== (appt.staffNote || "") && (
+                <button onClick={saveNote} disabled={savingNote}
+                  className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
+                  {savingNote ? "שומר..." : "שמור הערה"}
+                </button>
+              )}
+            </div>
           )}
         </div>
 
