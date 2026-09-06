@@ -6,6 +6,32 @@ export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const staffId = req.nextUrl.searchParams.get("staffId");
+  if (staffId) {
+    // Per-barber resolved list — only services this barber actually offers
+    // (shared services they've been enabled for, plus their own private
+    // ones), with their custom name/price/duration overrides applied. Same
+    // merge as the customer-facing /api/services?staffId=, so editing an
+    // appointment shows exactly what that barber's own booking page shows.
+    const staffServices = await prisma.staffService.findMany({
+      where: { staffId, service: { businessId: session.businessId } },
+      include: { service: true },
+    });
+    const services = staffServices
+      .filter(ss => !(ss.service.name === "שירות זמני" && !ss.service.isVisible))
+      .map(ss => ({
+        ...ss.service,
+        name: ss.customName ?? ss.service.name,
+        description: ss.customDescription ?? ss.service.description,
+        note: ss.customNote ?? ss.service.note,
+        price: ss.customPrice ?? ss.service.price,
+        durationMinutes: ss.customDuration ?? ss.service.durationMinutes,
+      }))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return NextResponse.json(services);
+  }
+
   const services = await prisma.service.findMany({
     where: {
       businessId: session.businessId,

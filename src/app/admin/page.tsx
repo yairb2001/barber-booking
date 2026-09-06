@@ -1431,13 +1431,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [editCustomerId, setEditCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (inlineEdit !== "name" || editName.length < 1) { setCustSuggestions([]); return; }
+    // Runs both for the per-field name pencil AND the whole-card editor —
+    // previously gated on inlineEdit==="name" only, so typing a name inside
+    // the card-wide editor never looked up existing customers.
+    if ((inlineEdit !== "name" && !editMode) || editName.length < 1) { setCustSuggestions([]); return; }
     const t = setTimeout(() => {
       fetch(`/api/admin/customers?q=${encodeURIComponent(editName)}`)
         .then(r => r.json()).then(d => setCustSuggestions(Array.isArray(d) ? d.slice(0, 6) : []));
     }, 200);
     return () => clearTimeout(t);
-  }, [editName, inlineEdit]);
+  }, [editName, inlineEdit, editMode]);
 
   function openInline(field: "name" | "date" | "time" | "price") {
     setInlineErr(null);
@@ -1565,9 +1568,21 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     setEditServiceId("");
     setInlineErr(null); setInlineConflict(null);
     if (svcList.length === 0) {
-      fetch("/api/admin/services").then(r => r.json()).then(setSvcList).catch(() => {});
+      // Scoped to THIS appointment's barber — a shared service can have a
+      // per-barber custom name/price (StaffService override), and a barber
+      // can have their own private services nobody else offers. Editing must
+      // show exactly what that barber's own booking page shows, not the raw
+      // shared list.
+      fetch(`/api/admin/services?staffId=${appt.staff.id}`).then(r => r.json()).then(setSvcList).catch(() => {});
     }
     setEditMode(true);
+  }
+
+  // Header ✎ toggles: first press opens the whole-card editor, a second press
+  // (while already editing) closes it back to the normal view — same as ביטול.
+  function toggleEdit() {
+    if (editMode) { setEditMode(false); setInlineErr(null); setInlineConflict(null); }
+    else enterEdit();
   }
 
   async function saveAll(override = false) {
@@ -1972,7 +1987,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={enterEdit} title="ערוך תור — לקוח, שירות, תאריך, שעה, מחיר"
+            <button onClick={toggleEdit} title={editMode ? "סגור עריכה" : "ערוך תור — לקוח, שירות, תאריך, שעה, מחיר"}
               className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✎</button>
             <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✕</button>
           </div>
