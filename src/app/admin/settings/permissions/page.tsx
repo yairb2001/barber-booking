@@ -31,6 +31,10 @@ export default function PermissionsPage() {
   // Genuinely business-wide — these have no per-barber column.
   const [staffManageOwnServices, setStaffManageOwnServices] = useState(false);
   const [barbersCanViewAllCustomers, setBarbersCanViewAllCustomers] = useState(true);
+  // "owner" = one threshold for the whole team | "staff" = each barber sets their own.
+  // Mirrored here AND on the calendar-settings screen — same Business column, so the
+  // two screens can never disagree. The hours/customer-message live on that screen.
+  const [cancellationPolicyMode, setCancellationPolicyMode] = useState<"owner" | "staff">("owner");
   const [savingGlobal, setSavingGlobal] = useState(false);
 
   useEffect(() => {
@@ -40,6 +44,7 @@ export default function PermissionsPage() {
     ]).then(([biz, list]) => {
       if (biz) {
         setStaffManageOwnServices(biz.staffManageOwnServices ?? false);
+        setCancellationPolicyMode(biz.cancellationPolicyMode === "staff" ? "staff" : "owner");
         const s = biz.settings || {};
         if (typeof s.barbersCanViewAllCustomers === "boolean") setBarbersCanViewAllCustomers(s.barbersCanViewAllCustomers);
       }
@@ -55,10 +60,11 @@ export default function PermissionsPage() {
     });
   }, []);
 
-  async function saveGlobal(patch: { staffManageOwnServices?: boolean; barbersCanViewAllCustomers?: boolean }) {
+  async function saveGlobal(patch: { staffManageOwnServices?: boolean; barbersCanViewAllCustomers?: boolean; cancellationPolicyMode?: "owner" | "staff" }) {
     setSavingGlobal(true);
     const body: Record<string, unknown> = {};
     if (patch.staffManageOwnServices !== undefined) body.staffManageOwnServices = patch.staffManageOwnServices;
+    if (patch.cancellationPolicyMode !== undefined) body.cancellationPolicyMode = patch.cancellationPolicyMode;
     if (patch.barbersCanViewAllCustomers !== undefined) body.settingsPatch = { barbersCanViewAllCustomers: patch.barbersCanViewAllCustomers };
     await fetch("/api/admin/business", {
       method: "PATCH",
@@ -216,16 +222,37 @@ export default function PermissionsPage() {
                   </p>
                 </div>
               </label>
+
+              <label className="flex items-start gap-3 bg-neutral-50/70 rounded-xl px-3.5 py-3 cursor-pointer">
+                <button
+                  onClick={() => {
+                    const v = cancellationPolicyMode === "staff" ? "owner" : "staff";
+                    setCancellationPolicyMode(v);
+                    saveGlobal({ cancellationPolicyMode: v });
+                  }}
+                  disabled={savingGlobal}
+                  className={`relative w-10 h-5 rounded-full transition-colors shrink-0 mt-0.5 disabled:opacity-50 ${cancellationPolicyMode === "staff" ? "bg-teal-600" : "bg-neutral-300"}`}>
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${cancellationPolicyMode === "staff" ? "right-0.5" : "left-0.5"}`} />
+                </button>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-neutral-800">כל ספר קובע את מדיניות הביטולים שלו</p>
+                  <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
+                    {cancellationPolicyMode === "staff"
+                      ? "כל ספר קובע בהגדרות שלו כמה שעות מראש נדרשות לביטול. מי שלא הגדיר — הערך הכללי חל עליו."
+                      : "אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. הספרים לא יכולים לשנות אותו."}
+                  </p>
+                </div>
+              </label>
             </div>
           </section>
 
-          {/* Pointer — cancellation policy moved to the calendar page */}
+          {/* Pointer — the hours + customer-facing message live on the calendar page */}
           <Link href="/admin/settings/calendar"
             className="flex items-center gap-3 bg-white border border-neutral-200 rounded-xl px-4 py-3.5 hover:border-teal-300 hover:bg-teal-50/40 transition group">
             <span className="text-xl">📅</span>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-neutral-800">מדיניות ביטולים</p>
-              <p className="text-xs text-neutral-400 mt-0.5">נמצאת במסך &quot;יומן ותורים&quot;</p>
+              <p className="text-sm font-semibold text-neutral-800">שעות הביטול וההודעה ללקוח</p>
+              <p className="text-xs text-neutral-400 mt-0.5">במסך &quot;יומן ותורים&quot;</p>
             </div>
             <span className="text-neutral-300 group-hover:text-teal-500 transition">‹</span>
           </Link>
