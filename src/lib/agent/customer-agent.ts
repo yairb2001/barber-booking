@@ -1230,6 +1230,8 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
 
 לפני שאתה בכלל מחפש שעות, תוודא שהבנת עד הסוף מה הלקוח רוצה — איזה יום, ובוקר/צהריים/ערב או שעה מסוימת, ואם ביקש ספר מסוים. רק כשזה ברור, קרא פעם אחת ל-get_available_slots — אל תחפש שוב ושוב באמצע. אם הלקוח לא ביקש ספר מסוים, בדוק אצל כל הספרים; אסור להגיד שאין שעה לפני שבדקת אצל כולם, ואם אצל אחד אין אבל אצל אחר יש — תגיד שיש ואצל מי. הצג ללקוח רק את השעות שמתאימות למה שביקש (למשל רק שעות ערב אם ביקש ערב), לא רשימה ענקית. אם הוא מבקש "מה עוד יש" או אפשרויות נוספות — תן לו עוד מתוך אותן שעות שכבר קיבלת, בלי לחפש מחדש.
 
+⚠️ שם היום (ראשון/שני/שלישי...) שמופיע בתשובת הכלים (get_available_slots / find_next_available וכו') כבר מחושב נכון ומדויק — כשאתה מזכיר יום ותאריך ללקוח, העתק את שם היום בדיוק כפי שקיבלת אותו מהכלי, מילה במילה. אל תנסה לחשב או לנסח מחדש בעצמך איזה יום בשבוע זה מהתאריך — זה בדיוק המקום שבו אתה טועה (למשל קורא ליום שני "יום ראשון"), גם כשקיבלת את השם הנכון רגע קודם מהכלי.
+
 כדי להזיז או לשנות תור קיים לזמן אחר: קודם מצא את התור עם check_appointment, ודא מול הלקוח לאיזה תאריך ושעה הוא רוצה לעבור, ואז קרא ל-request_appointment_move עם מזהה התור והזמן הרצוי. הכלי מטפל בהכל לבד — אם פנוי הוא מעביר מיד, ואם לא הוא מבקש אישור מהספר ומסדר החלפה מול לקוח אחר. אל תבטל ותקבע מחדש כדי להזיז זמן, ואל תבטיח ללקוח שעה תפוסה לפני שהכלי החזיר תשובה — קרא את מה שהכלי מחזיר ופעל לפיו. (לביטול מלא בלי זמן חלופי השתמש ב-cancel_appointment כרגיל.)
 
 אם אין שעה פנויה ביום שהלקוח רוצה, או שהוא מבקש שנעדכן אותו אם יתפנה משהו — הצע לו להירשם לרשימת המתנה, וברגע שהוא מסכים קרא ל-join_waitlist עם השירות והתאריך (ועם הספר רק אם ביקש ספר מסוים). אם יתפנה תור מתאים הוא יקבל הודעה אוטומטית. אל תשתמש ברשימת המתנה במקום לקבוע — אם יש שעה שמתאימה ללקוח, תמיד עדיף לסגור אותה.
@@ -1259,6 +1261,51 @@ function hebDayDate(iso: string): string {
   return new Date(`${iso}T12:00:00.000Z`).toLocaleDateString("he-IL", {
     weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
   });
+}
+
+const HE_WEEKDAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const HE_MONTHS = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+// A weekday word next to a date ("יום ראשון, 7 בספטמבר" / "שני (7.9)") in the
+// FINAL customer-facing text — not a tool result. Tool results (hebDayDate)
+// are always correct; the prompt already tells the model to copy them
+// verbatim instead of re-deriving the weekday itself, but it still gets this
+// wrong routinely (confirmed against a real conversation — same date, same
+// tool answer three times, model said the wrong weekday twice). Prompting
+// alone wasn't enough, so this is a deterministic safety net: find any
+// weekday+date pair in the outgoing text and correct the weekday word if it
+// doesn't match the actual calendar for that day/month, picking whichever of
+// last/this/next year lands closest to "now" (dates here never have a year).
+const WEEKDAY_DATE_RE = new RegExp(
+  `(?<![\\u05D0-\\u05EA])(${HE_WEEKDAYS.join("|")})(?![\\u05D0-\\u05EA])(\\s*,?\\s*\\(?)` +
+  `(?:(\\d{1,2})\\s+ב(${HE_MONTHS.join("|")})|(\\d{1,2})\\.(\\d{1,2}))`,
+  "g",
+);
+function correctHebrewWeekdayLabels(text: string): string {
+  const anchor = new Date(`${getBusinessNow().date}T12:00:00.000Z`);
+  const anchorYear = anchor.getUTCFullYear();
+  return text.replace(
+    WEEKDAY_DATE_RE,
+    (full, weekdayWord, _sep, dayA, monthName, dayB, monthNumStr) => {
+      const day = parseInt(monthName ? dayA : dayB, 10);
+      const monthIdx = monthName ? HE_MONTHS.indexOf(monthName) : parseInt(monthNumStr, 10) - 1;
+      if (!(day >= 1 && day <= 31) || !(monthIdx >= 0 && monthIdx <= 11)) return full;
+
+      let best: { date: Date; diff: number } | null = null;
+      for (const y of [anchorYear - 1, anchorYear, anchorYear + 1]) {
+        const iso = `${y}-${String(monthIdx + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        const cand = new Date(`${iso}T12:00:00.000Z`);
+        if (isNaN(cand.getTime())) continue;
+        const diff = Math.abs(cand.getTime() - anchor.getTime());
+        if (!best || diff < best.diff) best = { date: cand, diff };
+      }
+      if (!best) return full;
+
+      const correctWeekday = best.date
+        .toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" })
+        .replace(/^יום\s+/, "");
+      return correctWeekday === weekdayWord ? full : full.replace(weekdayWord, correctWeekday);
+    },
+  );
 }
 
 /** Exported so test scripts can build the exact same system prompt Anthropic
@@ -1786,6 +1833,8 @@ export async function runCustomerAgent(opts: {
   // webhook's catch block can send the customer a fallback message instead of
   // leaving them with zero response and zero indication anything went wrong.
   if (!assistantText.trim()) throw new Error("[agent] produced empty reply after all iterations + safety net");
+
+  assistantText = correctHebrewWeekdayLabels(assistantText);
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
