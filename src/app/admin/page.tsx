@@ -88,6 +88,25 @@ function apptColorClass(staffId: string, durationMinutes: number): string {
   const family = STAFF_COLOR_FAMILIES[h % STAFF_COLOR_FAMILIES.length];
   return family[durationTier(durationMinutes)];
 }
+// Header gradient for the appointment card — the SAME hash + family index as
+// apptColorClass, so the card visibly matches the staff's calendar block color.
+const STAFF_GRADIENTS: string[] = [
+  "linear-gradient(135deg,#0369a1,#0ea5e9)", // sky
+  "linear-gradient(135deg,#047857,#10b981)", // emerald
+  "linear-gradient(135deg,#6d28d9,#8b5cf6)", // violet
+  "linear-gradient(135deg,#be123c,#f43f5e)", // rose
+  "linear-gradient(135deg,#b45309,#f59e0b)", // amber
+  "linear-gradient(135deg,#0e7490,#22d3ee)", // cyan
+  "linear-gradient(135deg,#a21caf,#e879f9)", // fuchsia
+  "linear-gradient(135deg,#c2410c,#fb923c)", // orange
+  "linear-gradient(135deg,#0b7a70,#14b8a4)", // teal
+  "linear-gradient(135deg,#3730a3,#6366f1)", // indigo
+];
+function staffGradient(staffId: string): string {
+  let h = 0;
+  for (let i = 0; i < staffId.length; i++) h = (h * 31 + staffId.charCodeAt(i)) >>> 0;
+  return STAFF_GRADIENTS[h % STAFF_GRADIENTS.length];
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const todayISO = () => new Date().toISOString().split("T")[0];
@@ -1524,6 +1543,11 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [showHistory, setShowHistory] = useState(false);
   // Red dot on the history button when this customer has a permanent note.
   const [hasNote, setHasNote] = useState(false);
+  // "עוד פעולות" fold + the permanent (per-customer) note editor state.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [permNote, setPermNote] = useState("");
+  const [permDraft, setPermDraft] = useState("");
+  const [permSaving, setPermSaving] = useState(false);
   const [noShowHidden, setNoShowHidden] = useState(false);
   const [dismissingNoShow, setDismissingNoShow] = useState(false);
   useEffect(() => {
@@ -1534,7 +1558,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         if (!alive) return;
         let n = "";
         try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
-        setHasNote(!!n.trim());
+        setHasNote(!!n.trim()); setPermNote(n.trim()); setPermDraft(n.trim());
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -1818,6 +1842,20 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     onClose();
   }
 
+  // Permanent note lives on the CUSTOMER (notificationPrefs.notes) — it shows on
+  // every appointment this customer books. Edited here (moved from the history).
+  async function savePermNote() {
+    setPermSaving(true);
+    try {
+      const r = await fetch(`/api/admin/customers/${appt.customer.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: permDraft }),
+      });
+      if (r.ok) { setPermNote(permDraft.trim()); setHasNote(!!permDraft.trim()); }
+    } catch { /* ignore */ }
+    setPermSaving(false);
+  }
+
   async function dismissNoShow() {
     setDismissingNoShow(true);
     try {
@@ -1886,26 +1924,22 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-[20rem] shadow-2xl max-h-[82vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
+        <div className="text-white" style={{ background: staffGradient(appt.staff.id) }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b border-neutral-100">
+        <div className="flex items-center justify-between px-4 pt-3 pb-2">
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <h3 className="font-bold text-base text-neutral-900 truncate">{appt.customServiceName || appt.service.name}</h3>
+            <h3 className="font-bold text-base text-white truncate">{appt.customServiceName || appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {appt.recurringId ? (
-              <button onClick={() => setShowCancelRecurring(v => !v)} title="תור קבוע — ניהול"
-                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showCancelRecurring ? "bg-blue-600 text-white" : "bg-blue-100 hover:bg-blue-200"}`}>🔁</button>
-            ) : (
-              <button onClick={() => { setShowRecurring(v => !v); setRecurError(null); }} title="הפוך לתור קבוע"
-                className={`w-7 h-7 rounded-full flex items-center justify-center transition text-sm ${showRecurring ? "bg-blue-600 text-white" : "bg-neutral-100 hover:bg-blue-50"}`}>🔁</button>
-            )}
-            <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center hover:bg-neutral-200 transition text-sm">✕</button>
+            <button onClick={() => setEditMode(true)} title="ערוך תור — שירות, תאריך, שעה, מחיר"
+              className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✎</button>
+            <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✕</button>
           </div>
         </div>
 
         {/* Customer — compact row with pencil to edit (name/phone only) */}
-        <div className="px-4 py-2 border-b border-neutral-100">
+        <div className="px-4 pt-1 pb-3">
           {inlineEdit === "name" ? (
             <div className="space-y-2">
               <div className="relative">
@@ -1936,32 +1970,34 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50">
                   {inlineSaving ? "שומר..." : "שמור"}
                 </button>
-                <button onClick={() => { setInlineEdit(null); setCustSuggestions([]); }} className="px-3 text-xs text-neutral-500">ביטול</button>
+                <button onClick={() => { setInlineEdit(null); setCustSuggestions([]); }} className="px-3 text-xs text-white/80">ביטול</button>
               </div>
             </div>
           ) : (
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-full bg-neutral-200 flex items-center justify-center text-neutral-700 font-bold shrink-0">
+              <div className="w-9 h-9 rounded-full bg-white/25 flex items-center justify-center text-white font-bold shrink-0">
                 {dispName[0]}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-neutral-900 text-sm truncate">{dispName}</p>
-                <p className="text-xs text-neutral-500" dir="ltr">{dispPhone}</p>
+                <p className="font-semibold text-white text-sm truncate">{dispName}</p>
+                <p className="text-xs text-white/80" dir="ltr">{dispPhone}</p>
               </div>
               <div className="flex items-center gap-1.5">
                 <button onClick={() => setShowHistory(true)} title={hasNote ? "יש הערה על הלקוח" : "היסטוריית לקוח"}
-                  className="relative w-7 h-7 rounded-lg bg-neutral-100 hover:bg-amber-50 hover:text-amber-700 flex items-center justify-center text-neutral-500 text-sm transition">🕘{hasNote && (
+                  className="relative w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm transition">🕘{hasNote && (
                     <span className="absolute -top-1 -right-1 min-w-[0.9rem] h-[0.9rem] px-0.5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center text-[8px] font-bold text-white leading-none">1</span>
                   )}</button>
                 <button onClick={() => openInline("name")} title="ערוך שם לקוח"
-                  className="w-7 h-7 rounded-lg bg-neutral-100 hover:bg-teal-50 hover:text-teal-700 flex items-center justify-center text-neutral-500 text-sm transition">✏️</button>
+                  className="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm transition">✏️</button>
                 <a href={telHref(dispPhone)}
-                  className="w-7 h-7 rounded-lg bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">📞</a>
+                  className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-sm hover:bg-white/30 transition">📞</a>
                 <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(dispPhone)}`)} title="פתח שיחה במערכת"
-                  className="w-7 h-7 rounded-lg bg-emerald-100 flex items-center justify-center text-sm hover:bg-emerald-200 transition">💬</button>
+                  className="w-7 h-7 rounded-lg bg-white/25 flex items-center justify-center text-sm hover:bg-white/35 transition">💬</button>
               </div>
             </div>
           )}
+        </div>
+
         </div>
 
         {!!appt.customerNoShows && !noShowHidden && (
@@ -1971,6 +2007,27 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               className="text-[11px] text-neutral-500 hover:text-neutral-800 underline disabled:opacity-40 shrink-0">
               {dismissingNoShow ? "מסתיר…" : "הסתר"}
             </button>
+          </div>
+        )}
+
+        {/* Notes — 📌 permanent (on the customer, every visit) / customer's own / 🔒 internal (this appt only) */}
+        {(permNote || appt.note || staffNote.trim()) && (
+          <div className="px-4 py-2 border-b border-neutral-100 space-y-1.5">
+            {permNote && (
+              <div className="flex gap-1.5 items-baseline text-[12.5px] leading-snug bg-teal-50 rounded-lg px-3 py-2 text-neutral-800">
+                <b className="text-teal-700 shrink-0">📌 הערה קבועה:</b><span>{permNote}</span>
+              </div>
+            )}
+            {appt.note && (
+              <div className="flex gap-1.5 items-baseline text-[12.5px] leading-snug bg-amber-50 rounded-lg px-3 py-2 text-neutral-800">
+                <b className="text-amber-700 shrink-0">הערת לקוח:</b><span>{appt.note}</span>
+              </div>
+            )}
+            {staffNote.trim() && (
+              <div className="flex gap-1.5 items-baseline text-[12.5px] leading-snug bg-neutral-100 border border-dashed border-neutral-300 rounded-lg px-3 py-2 text-neutral-800">
+                <b className="text-neutral-600 shrink-0">🔒 הערה פנימית:</b><span>{staffNote}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2074,73 +2131,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </div>
         )}
 
-        {/* Convert to recurring (תור קבוע) */}
-        {recurDone !== null && (
-          <div className="px-4 py-2 border-b border-neutral-100">
-            <p className="text-sm text-blue-700 font-medium text-center">
-              ✓ נוצר תור קבוע — {recurDone} תורים נקבעו קדימה
-            </p>
-          </div>
-        )}
-        {showRecurring && (
-          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
-            <p className="text-xs font-semibold text-blue-800">🔁 הפוך לתור קבוע</p>
-            <p className="text-[11px] text-neutral-500 leading-snug">
-              ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : "חודש"} באותו יום ושעה.
-            </p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([[1, "כל שבוע"], [2, "כל שבועיים"], [4, "כל חודש"]] as const).map(([f, label]) => (
-                <button key={f} onClick={() => setRecurFreq(f)}
-                  className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] text-neutral-500 leading-snug pt-0.5">למשך כמה זמן?</p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {([["12", "3 חודשים"], ["26", "חצי שנה"], ["52", "שנה"], ["forever", "לתמיד"]] as const).map(([h, label]) => (
-                <button key={h} onClick={() => setRecurHorizon(h)}
-                  className={`py-1.5 rounded-lg text-[11px] font-medium transition border ${recurHorizon === h ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            {recurHorizon === "forever" && (
-              <p className="text-[10px] text-neutral-400 leading-snug">
-                התורים ימשיכו להיקבע אוטומטית קדימה ללא הגבלת זמן.
-              </p>
-            )}
-            {recurError && <p className="text-xs text-red-600">{recurError}</p>}
-            <div className="flex gap-2 pt-0.5">
-              <button onClick={createRecurring} disabled={recurSaving}
-                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
-                {recurSaving ? "יוצר..." : "צור תור קבוע"}
-              </button>
-              <button onClick={() => { setShowRecurring(false); setRecurError(null); }}
-                className="px-3 text-xs text-neutral-500">ביטול</button>
-            </div>
-          </div>
-        )}
-        {/* Manage / cancel an existing recurring series */}
-        {showCancelRecurring && appt.recurringId && (
-          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
-            <p className="text-xs font-semibold text-blue-800">🔁 תור קבוע</p>
-            <p className="text-[11px] text-neutral-500 leading-snug">
-              התור הזה חלק מסדרה קבועה. ניתן לבטל את כל התורים העתידיים בלחיצה אחת.
-            </p>
-            <button onClick={cancelThisSeries} disabled={cancelRecurBusy}
-              className="w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
-              {cancelRecurBusy ? "מבטל..." : "בטל את הסדרה הזו"}
-            </button>
-            <button onClick={cancelAllRecurring} disabled={cancelRecurBusy}
-              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
-              בטל את כל התורים הקבועים
-            </button>
-            <button onClick={() => setShowCancelRecurring(false)}
-              className="w-full px-3 py-1 text-xs text-neutral-500">סגור</button>
-          </div>
-        )}
-
         {/* Referral source — blinks while missing so it's caught on the next visit too */}
         <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "referral-missing" : ""}`}>
           <div className="flex items-center justify-between mb-1">
@@ -2174,81 +2164,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <p className={`text-sm ${referralSource ? "text-neutral-800" : "text-amber-700 italic font-medium"}`}>
               {referralSource || "לא הוזן — לחץ \"הוסף עכשיו\""}
             </p>
-          )}
-        </div>
-
-        {/* Customer note */}
-        {appt.note && (
-          <div className="px-4 py-2 border-b border-neutral-100">
-            <p className="text-xs text-neutral-400 mb-1">הערת לקוח</p>
-            <p className="text-sm text-neutral-700 bg-neutral-50 rounded-lg px-3 py-2">{appt.note}</p>
-          </div>
-        )}
-
-        {/* Staff note */}
-        <div className="px-4 py-2 border-b border-neutral-100">
-          <p className="text-xs text-neutral-400 mb-1.5">הערת ספר</p>
-          <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
-            placeholder="הוסף הערה פנימית..."
-            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
-          {staffNote !== (appt.staffNote || "") && (
-            <button onClick={saveNote} disabled={savingNote}
-              className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
-              {savingNote ? "שומר..." : "שמור הערה"}
-            </button>
-          )}
-        </div>
-
-        {/* Product sales — קנה מוצר */}
-        <div className="px-4 py-2 border-b border-neutral-100">
-          <button type="button" onClick={() => setShowProducts(v => !v)}
-            className="w-full flex items-center justify-between text-right">
-            <span className="text-xs text-neutral-400">
-              🛍️ קנה מוצר{savedSoldItems.length > 0 ? ` (${savedSoldItems.reduce((s, i) => s + i.quantity, 0)})` : ""}
-            </span>
-            <span className="text-neutral-300 text-xs">{showProducts ? "▲" : "▼"}</span>
-          </button>
-
-          {showProducts && (
-            <div className="mt-2 space-y-2">
-              <select value=""
-                onChange={e => { addProduct(e.target.value); e.currentTarget.value = ""; }}
-                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300">
-                <option value="">+ הוסף מוצר שנקנה…</option>
-                {productCatalog
-                  .filter(c => !soldItems.some(s => s.productId === c.id))
-                  .map(c => <option key={c.id} value={c.id}>{c.name} — ₪{c.price}</option>)}
-              </select>
-
-              {productCatalog.length === 0 && (
-                <p className="text-xs text-neutral-400">אין מוצרים מוגדרים עדיין — הוסף אותם בעמוד ״מוצרים״.</p>
-              )}
-
-              {soldItems.map(item => (
-                <div key={item.productId} className="flex items-center gap-2 bg-amber-50/60 border border-amber-200 rounded-lg px-2.5 py-1.5">
-                  <span className="flex-1 text-sm text-slate-700 truncate">{item.name}</span>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onClick={() => setQty(item.productId, item.quantity - 1)}
-                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">−</button>
-                    <span className="w-5 text-center text-sm tabular-nums">{item.quantity}</span>
-                    <button type="button" onClick={() => setQty(item.productId, item.quantity + 1)}
-                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">+</button>
-                  </div>
-                  <button type="button" onClick={() => removeProduct(item.productId)}
-                    className="text-red-400 hover:text-red-600 text-xs shrink-0">הסר</button>
-                </div>
-              ))}
-
-              {productsDirty && (
-                <button onClick={saveProducts} disabled={savingProducts}
-                  className="w-full mt-1 bg-teal-600 text-white text-sm rounded-lg py-2 disabled:opacity-50">
-                  {savingProducts ? "שומר..." : "שמור מוצרים"}
-                </button>
-              )}
-              <p className="text-[11px] text-neutral-400 leading-snug">
-                מכירות מוצרים נספרות בנפרד למדידה בלבד — אינן משפיעות על המחזור.
-              </p>
-            </div>
           )}
         </div>
 
@@ -2321,6 +2236,169 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                 className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-red-50 text-red-600 border border-red-200">בטל תור</button>
               <button disabled={appt.status === "no_show" || updating} onClick={() => { setNoShowMessage("none"); setConfirmingNoShow(true); }}
                 className="py-1.5 rounded-lg text-xs font-medium transition disabled:opacity-40 disabled:cursor-default bg-neutral-100 text-neutral-600 border border-neutral-300">🚫 הבריז</button>
+            </div>
+          )}
+        </div>
+
+        {/* עוד פעולות — everything secondary folds in here */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <button onClick={() => setMoreOpen(v => !v)}
+            className="w-full flex items-center justify-between bg-neutral-100 hover:bg-neutral-200 rounded-lg px-3 py-2 text-xs font-semibold text-neutral-600 transition">
+            <span>עוד פעולות</span><span className="text-neutral-400">{moreOpen ? "▴" : "▾"}</span>
+          </button>
+        </div>
+        {moreOpen && (<>
+        <div className="px-4 py-2 border-b border-neutral-100">
+          {appt.recurringId ? (
+            <button onClick={() => setShowCancelRecurring(v => !v)}
+              className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">🔁 ניהול תור קבוע</button>
+          ) : (
+            <button onClick={() => { setShowRecurring(v => !v); setRecurError(null); }}
+              className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">🔁 הפוך לתור קבוע</button>
+          )}
+        </div>
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <p className="text-xs text-neutral-400 mb-1.5">📌 הערה קבועה על הלקוח</p>
+          <textarea value={permDraft} onChange={e => setPermDraft(e.target.value)} rows={2}
+            placeholder="למשל: מכונה 2 בצדדים, אלרגי לג׳ל…"
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
+          {permDraft.trim() !== permNote && (
+            <button onClick={savePermNote} disabled={permSaving}
+              className="mt-1 text-xs text-teal-700 hover:underline disabled:opacity-50">
+              {permSaving ? "שומר..." : "שמור הערה קבועה"}
+            </button>
+          )}
+        </div>
+        {/* Convert to recurring (תור קבוע) */}
+        {recurDone !== null && (
+          <div className="px-4 py-2 border-b border-neutral-100">
+            <p className="text-sm text-blue-700 font-medium text-center">
+              ✓ נוצר תור קבוע — {recurDone} תורים נקבעו קדימה
+            </p>
+          </div>
+        )}
+        {showRecurring && (
+          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">🔁 הפוך לתור קבוע</p>
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : "חודש"} באותו יום ושעה.
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {([[1, "כל שבוע"], [2, "כל שבועיים"], [4, "כל חודש"]] as const).map(([f, label]) => (
+                <button key={f} onClick={() => setRecurFreq(f)}
+                  className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-neutral-500 leading-snug pt-0.5">למשך כמה זמן?</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {([["12", "3 חודשים"], ["26", "חצי שנה"], ["52", "שנה"], ["forever", "לתמיד"]] as const).map(([h, label]) => (
+                <button key={h} onClick={() => setRecurHorizon(h)}
+                  className={`py-1.5 rounded-lg text-[11px] font-medium transition border ${recurHorizon === h ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {recurHorizon === "forever" && (
+              <p className="text-[10px] text-neutral-400 leading-snug">
+                התורים ימשיכו להיקבע אוטומטית קדימה ללא הגבלת זמן.
+              </p>
+            )}
+            {recurError && <p className="text-xs text-red-600">{recurError}</p>}
+            <div className="flex gap-2 pt-0.5">
+              <button onClick={createRecurring} disabled={recurSaving}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+                {recurSaving ? "יוצר..." : "צור תור קבוע"}
+              </button>
+              <button onClick={() => { setShowRecurring(false); setRecurError(null); }}
+                className="px-3 text-xs text-neutral-500">ביטול</button>
+            </div>
+          </div>
+        )}
+        {/* Manage / cancel an existing recurring series */}
+        {showCancelRecurring && appt.recurringId && (
+          <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
+            <p className="text-xs font-semibold text-blue-800">🔁 תור קבוע</p>
+            <p className="text-[11px] text-neutral-500 leading-snug">
+              התור הזה חלק מסדרה קבועה. ניתן לבטל את כל התורים העתידיים בלחיצה אחת.
+            </p>
+            <button onClick={cancelThisSeries} disabled={cancelRecurBusy}
+              className="w-full bg-white border border-red-200 text-red-600 hover:bg-red-50 rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+              {cancelRecurBusy ? "מבטל..." : "בטל את הסדרה הזו"}
+            </button>
+            <button onClick={cancelAllRecurring} disabled={cancelRecurBusy}
+              className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50 transition">
+              בטל את כל התורים הקבועים
+            </button>
+            <button onClick={() => setShowCancelRecurring(false)}
+              className="w-full px-3 py-1 text-xs text-neutral-500">סגור</button>
+          </div>
+        )}
+
+        {/* Staff note */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <p className="text-xs text-neutral-400 mb-1.5">🔒 הערה פנימית לתור הזה</p>
+          <textarea value={staffNote} onChange={e => setStaffNote(e.target.value)} rows={2}
+            placeholder="הוסף הערה פנימית..."
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300" />
+          {staffNote !== (appt.staffNote || "") && (
+            <button onClick={saveNote} disabled={savingNote}
+              className="mt-1 text-xs text-slate-800 hover:underline disabled:opacity-50">
+              {savingNote ? "שומר..." : "שמור הערה"}
+            </button>
+          )}
+        </div>
+
+        {/* Product sales — קנה מוצר */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <button type="button" onClick={() => setShowProducts(v => !v)}
+            className="w-full flex items-center justify-between text-right">
+            <span className="text-xs text-neutral-400">
+              🛍️ קנה מוצר{savedSoldItems.length > 0 ? ` (${savedSoldItems.reduce((s, i) => s + i.quantity, 0)})` : ""}
+            </span>
+            <span className="text-neutral-300 text-xs">{showProducts ? "▲" : "▼"}</span>
+          </button>
+
+          {showProducts && (
+            <div className="mt-2 space-y-2">
+              <select value=""
+                onChange={e => { addProduct(e.target.value); e.currentTarget.value = ""; }}
+                className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-300">
+                <option value="">+ הוסף מוצר שנקנה…</option>
+                {productCatalog
+                  .filter(c => !soldItems.some(s => s.productId === c.id))
+                  .map(c => <option key={c.id} value={c.id}>{c.name} — ₪{c.price}</option>)}
+              </select>
+
+              {productCatalog.length === 0 && (
+                <p className="text-xs text-neutral-400">אין מוצרים מוגדרים עדיין — הוסף אותם בעמוד ״מוצרים״.</p>
+              )}
+
+              {soldItems.map(item => (
+                <div key={item.productId} className="flex items-center gap-2 bg-amber-50/60 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                  <span className="flex-1 text-sm text-slate-700 truncate">{item.name}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onClick={() => setQty(item.productId, item.quantity - 1)}
+                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">−</button>
+                    <span className="w-5 text-center text-sm tabular-nums">{item.quantity}</span>
+                    <button type="button" onClick={() => setQty(item.productId, item.quantity + 1)}
+                      className="w-6 h-6 rounded-full bg-white border border-neutral-200 text-neutral-600 leading-none">+</button>
+                  </div>
+                  <button type="button" onClick={() => removeProduct(item.productId)}
+                    className="text-red-400 hover:text-red-600 text-xs shrink-0">הסר</button>
+                </div>
+              ))}
+
+              {productsDirty && (
+                <button onClick={saveProducts} disabled={savingProducts}
+                  className="w-full mt-1 bg-teal-600 text-white text-sm rounded-lg py-2 disabled:opacity-50">
+                  {savingProducts ? "שומר..." : "שמור מוצרים"}
+                </button>
+              )}
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                מכירות מוצרים נספרות בנפרד למדידה בלבד — אינן משפיעות על המחזור.
+              </p>
             </div>
           )}
         </div>
@@ -2481,6 +2559,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </button>
           )}
         </div>
+
+        </>)}
 
         {/* Actions */}
         <div className="px-4 py-3 space-y-2">

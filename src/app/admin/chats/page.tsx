@@ -108,12 +108,20 @@ export default function ChatsPage() {
     const p = new URLSearchParams(window.location.search).get("phone");
     if (p) setPendingPhone(p);
   }, []);
+  // Open (or create) the thread for the deep-linked phone — so the chat opens
+  // even when this customer has never messaged before.
   useEffect(() => {
-    if (!pendingPhone || chats.length === 0) return;
-    const norm = (x: string) => (x || "").replace(/\D/g, "").replace(/^0/, "972");
-    const conv = chats.find(c => norm(c.phone) === norm(pendingPhone));
-    if (conv) { setSelId(conv.id); setPendingPhone(null); }
-  }, [pendingPhone, chats]);
+    if (!pendingPhone) return;
+    let alive = true;
+    fetch("/api/admin/chats/open", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: pendingPhone }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!alive || !d?.id) return; setSelId(d.id); setPendingPhone(null); fetchList(); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [pendingPhone, fetchList]);
 
   // ── Detail polling ──────────────────────────────────────────────────────────
   const fetchDetail = useCallback((id: string) => {
