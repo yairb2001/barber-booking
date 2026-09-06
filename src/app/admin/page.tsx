@@ -1551,6 +1551,55 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [permSaving, setPermSaving] = useState(false);
   // Which note editor is open inside "עוד פעולות" (null = just the buttons).
   const [noteOpen, setNoteOpen] = useState<null | "perm" | "staff">(null);
+  // ── Card-wide edit mode ───────────────────────────────────────────────────
+  // One ✎ in the header turns THIS card's own rows into fields (no per-field
+  // pencils), and a single save writes customer + appointment together.
+  const [editServiceId, setEditServiceId] = useState("");
+  const [svcList, setSvcList] = useState<{ id: string; name: string; price: number }[]>([]);
+
+  function enterEdit() {
+    setEditName(dispName); setEditPhone(dispPhone); setEditCustomerId(null);
+    setEditDate(dispDate.split("T")[0]);
+    setEditStart(dispStart); setEditEnd(dispEnd);
+    setEditPrice(String(dispPrice));
+    setEditServiceId("");
+    setInlineErr(null); setInlineConflict(null);
+    if (svcList.length === 0) {
+      fetch("/api/admin/services").then(r => r.json()).then(setSvcList).catch(() => {});
+    }
+    setEditMode(true);
+  }
+
+  async function saveAll(override = false) {
+    setInlineErr(null);
+    // 1) Customer — either move the appointment to a different existing
+    //    customer (picked from the suggestions), or fix this one's name/phone.
+    if (editCustomerId && editCustomerId !== appt.customer.id) {
+      const r = await fetch(`/api/admin/appointments/${appt.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerId: editCustomerId }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setInlineErr(j.error || "שגיאה בשמירת הלקוח"); return; }
+      setDispName(editName.trim()); setDispPhone(editPhone.trim()); setEditCustomerId(null);
+    } else if (editName.trim() !== dispName || editPhone.trim() !== dispPhone) {
+      const r = await fetch(`/api/admin/customers/${appt.customer.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editName.trim(), phone: editPhone.trim() }),
+      });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setInlineErr(j.error || "שגיאה בשמירת הלקוח"); return; }
+      setDispName(editName.trim()); setDispPhone(editPhone.trim());
+    }
+    // 2) Appointment fields — one PATCH for date / time / price / service.
+    const updated = await patchApptField({
+      date: editDate, startTime: editStart, endTime: editEnd,
+      price: Number(editPrice),
+      ...(editServiceId ? { serviceId: editServiceId } : {}),
+    }, override);
+    if (!updated) return;                 // error/conflict already surfaced
+    setDispDate(updated.date); setDispStart(updated.startTime);
+    setDispEnd(updated.endTime); setDispPrice(updated.price);
+    setInlineConflict(null); setEditMode(false); onReload?.();
+  }
   const [noShowHidden, setNoShowHidden] = useState(false);
   const [dismissingNoShow, setDismissingNoShow] = useState(false);
   useEffect(() => {
@@ -1923,7 +1972,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            <button onClick={() => setEditMode(true)} title="ערוך תור — שירות, תאריך, שעה, מחיר"
+            <button onClick={enterEdit} title="ערוך תור — לקוח, שירות, תאריך, שעה, מחיר"
               className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✎</button>
             <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/20 hover:bg-white/30 flex items-center justify-center transition text-sm text-white">✕</button>
           </div>
@@ -1931,7 +1980,33 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Customer — compact row with pencil to edit (name/phone only) */}
         <div className="px-4 pt-1 pb-3">
-          {inlineEdit === "name" ? (
+          {editMode ? (
+            <div className="space-y-2">
+              <div className="relative">
+                <input value={editName} onChange={e => { setEditName(e.target.value); setEditCustomerId(null); }}
+                  placeholder="שם הלקוח" autoFocus
+                  className="w-full bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/50" />
+                {custSuggestions.length > 0 && (
+                  <div className="absolute right-0 left-0 top-full mt-1 bg-white border border-neutral-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                    {custSuggestions.map(c => (
+                      <button key={c.id} type="button"
+                        onPointerDown={e => { e.preventDefault(); setEditName(c.name); setEditPhone(c.phone); setEditCustomerId(c.id); setCustSuggestions([]); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-teal-50 text-right transition border-b border-neutral-50 last:border-0">
+                        <div className="w-7 h-7 rounded-full bg-neutral-200 text-neutral-700 flex items-center justify-center text-xs font-bold shrink-0">{c.name[0]}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-neutral-800 truncate">{c.name}</p>
+                          <p className="text-[11px] text-neutral-400" dir="ltr">{c.phone}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <input value={editPhone} onChange={e => { setEditPhone(e.target.value); setEditCustomerId(null); }}
+                placeholder="טלפון" dir="ltr"
+                className="w-full bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-white/50" />
+            </div>
+          ) : (            inlineEdit === "name" ? (
             <div className="space-y-2">
               <div className="relative">
                 <input value={editName} onChange={e => { setEditName(e.target.value); setEditCustomerId(null); }} placeholder="חפש לקוח..."
@@ -1978,15 +2053,13 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="relative w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm transition">🕘{hasNote && (
                     <span className="absolute -top-1 -right-1 min-w-[0.9rem] h-[0.9rem] px-0.5 rounded-full bg-red-500 border-2 border-white flex items-center justify-center text-[8px] font-bold text-white leading-none">1</span>
                   )}</button>
-                <button onClick={() => openInline("name")} title="ערוך שם לקוח"
-                  className="w-7 h-7 rounded-lg bg-white/20 hover:bg-white/30 flex items-center justify-center text-white text-sm transition">✏️</button>
                 <a href={telHref(dispPhone)}
                   className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-sm hover:bg-white/30 transition">📞</a>
                 <button onClick={() => router.push(`/admin/chats?phone=${encodeURIComponent(dispPhone)}`)} title="פתח שיחה במערכת"
                   className="w-7 h-7 rounded-lg bg-white/25 flex items-center justify-center text-sm hover:bg-white/35 transition">💬</button>
               </div>
             </div>
-          )}
+          ))}
         </div>
 
         </div>
@@ -2000,16 +2073,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </button>
           </div>
         )}
-
-        {editMode ? (
-          <ApptEditForm
-            appt={appt}
-            embedded
-            onCancel={() => setEditMode(false)}
-            onSaved={() => { setEditMode(false); onReload?.(); onClose(); }}
-            onClose={onClose}
-          />
-        ) : (<>
 
         {/* Notes — 📌 permanent (on the customer, every visit) / customer's own / 🔒 internal (this appt only) */}
         {(permNote || appt.note || staffNote.trim()) && (
@@ -2033,7 +2096,56 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         )}
 
         {/* Details row — תאריך / שעה / מחיר each with pencil (inline, per-field) */}
-        {inlineEdit === "date" || inlineEdit === "time" || inlineEdit === "price" ? (
+        {editMode ? (
+          <div className="px-4 py-3 border-b border-neutral-100 space-y-3">
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">תאריך</label>
+                <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} dir="ltr"
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">שעה</label>
+                <input type="time" step={600} value={editStart} dir="ltr"
+                  onChange={e => {
+                    const ns = e.target.value; const dur = toMin(editEnd) - toMin(editStart);
+                    setEditStart(ns);
+                    if (dur > 0 && ns) setEditEnd(minToTime(Math.min(toMin(ns) + dur, 23 * 60 + 59)));
+                  }}
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">מחיר</label>
+                <input type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)} dir="ltr"
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+            </div>
+            <div>
+              <label className="text-[11px] text-neutral-400 block mb-1">סוג שירות</label>
+              <select value={editServiceId} onChange={e => setEditServiceId(e.target.value)}
+                className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
+                <option value="">{appt.customServiceName || appt.service.name} (ללא שינוי)</option>
+                {svcList.map(sv => (<option key={sv.id} value={sv.id}>{sv.name}</option>))}
+              </select>
+            </div>
+            {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
+            {inlineConflict && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 space-y-2">
+                <p className="text-xs text-amber-800">{inlineConflict}</p>
+                <button onClick={() => saveAll(true)} disabled={inlineSaving}
+                  className="w-full bg-amber-600 text-white rounded-lg py-1.5 text-xs font-semibold disabled:opacity-50">שמור בכל זאת</button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={() => saveAll(false)} disabled={inlineSaving}
+                className="flex-1 bg-teal-600 text-white rounded-lg py-2 text-xs font-semibold disabled:opacity-50">
+                {inlineSaving ? "שומר..." : "שמור שינויים"}
+              </button>
+              <button onClick={() => { setEditMode(false); setInlineErr(null); setInlineConflict(null); }}
+                className="px-4 text-xs text-neutral-500">ביטול</button>
+            </div>
+          </div>
+        ) : (          inlineEdit === "date" || inlineEdit === "time" || inlineEdit === "price" ? (
           <div className="px-4 py-2 border-b border-neutral-100 space-y-2">
             {inlineEdit === "date" && (
               <>
@@ -2109,28 +2221,22 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               <p className="text-[11px] text-neutral-400">תאריך</p>
               <div className="flex items-center gap-1">
                 <p className="font-medium text-neutral-800 text-sm whitespace-nowrap">{fmtCompact(dispDate)}</p>
-                <button onClick={() => openInline("date")} title="ערוך תאריך"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">שעה</p>
               <div className="flex items-center gap-1">
                 <p className="font-medium text-neutral-800 text-sm whitespace-nowrap" dir="ltr">{dispStart}</p>
-                <button onClick={() => openInline("time")} title="ערוך שעה"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
             <div className="flex flex-col gap-0.5">
               <p className="text-[11px] text-neutral-400">מחיר</p>
               <div className="flex items-center gap-1">
                 <p className="font-bold text-slate-800 text-sm whitespace-nowrap">₪{dispPrice}</p>
-                <button onClick={() => openInline("price")} title="ערוך מחיר"
-                  className="shrink-0 text-neutral-400 hover:text-teal-600 text-sm transition">✏️</button>
               </div>
             </div>
           </div>
-        )}
+        ))}
 
         {/* Referral source — blinks while missing so it's caught on the next visit too */}
         <div className={`px-4 py-2 border-b border-neutral-100 ${!referralSource && !editingReferral ? "bg-amber-50/60" : ""}`}>
@@ -2369,12 +2475,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         {/* Product sales — קנה מוצר */}
         <div className="px-4 py-2 border-b border-neutral-100">
-          <button type="button" onClick={() => setShowProducts(v => !v)}
-            className="w-full flex items-center justify-between text-right">
-            <span className="text-xs text-neutral-400">
-              🛍️ קנה מוצר{savedSoldItems.length > 0 ? ` (${savedSoldItems.reduce((s, i) => s + i.quantity, 0)})` : ""}
-            </span>
-            <span className="text-neutral-300 text-xs">{showProducts ? "▲" : "▼"}</span>
+          <button type="button" onClick={() => setShowProducts(v => !v)} className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
+            🛍️ קנה מוצר{savedSoldItems.length > 0 ? ` (${savedSoldItems.reduce((s, i) => s + i.quantity, 0)})` : ""}
           </button>
 
           {showProducts && (
@@ -2528,7 +2630,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           {proposalsAsPrimary.length === 0 && !proposalAsCandidate && (
             <button
               onClick={() => onEnterSwapMode(appt.id)}
-              className="w-full py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-900 text-xs font-semibold transition flex items-center justify-center gap-2">
+              className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
               🔄 החלף / העבר תור
             </button>
           )}
@@ -2571,8 +2673,8 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           ) : (
             <button
               onClick={() => setShowDelayInput(true)}
-              className="w-full py-1.5 rounded-lg bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-medium transition flex items-center justify-center gap-2">
-              ⏱ עדכון עיכוב
+              className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
+              ⏱️ עדכון עיכוב
             </button>
           )}
         </div>
@@ -2632,7 +2734,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             פתח WhatsApp ישירות ↗
           </a>
         </div>
-        </>)}
       </div>
     </div>
     </>
