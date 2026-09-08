@@ -4298,21 +4298,22 @@ export default function AdminCalendar() {
   useEffect(() => { if (weekBarber && isOwner) savePrefs({ weekBarber }); }, [weekBarber, isOwner]);
 
   // Tapping the "DOMINANT" logo while already on this page is a same-URL Link —
-  // Next.js doesn't remount or navigate, so nothing would otherwise happen. A
-  // barber expects it to always jump back to THEIR OWN calendar in week view
-  // (same as fresh login), even after switching to another barber/view/day mid-
-  // session. AdminLayoutClient fires this event since it can't reach this
-  // component's state directly.
+  // Next.js doesn't remount or navigate, so nothing would otherwise happen.
+  // Anyone who is themselves a barber (owner or not — an owner can have their
+  // own bookable staff row) expects it to always jump back to THEIR OWN
+  // calendar in week view (same as fresh login), even after switching to
+  // another barber/view/day mid-session. AdminLayoutClient fires this event
+  // since it can't reach this component's state directly.
   useEffect(() => {
     function goHome() {
-      if (!myStaffId || isOwner) return;
+      if (!myStaffId) return;
       setView("week"); savePrefs({ view: "week" });
       setWeekBarber(myStaffId);
       setDayBarber(myStaffId);
     }
     window.addEventListener("dominant:go-home", goHome);
     return () => window.removeEventListener("dominant:go-home", goHome);
-  }, [myStaffId, isOwner]);
+  }, [myStaffId]);
 
   // Update nowY whenever hourHeight or calStart changes
   useEffect(() => {
@@ -4522,16 +4523,16 @@ export default function AdminCalendar() {
       setVisibleStaff(effectiveStaff.map((s: Staff) => s.id));
       if (effectiveStaff.length) {
         const saved = loadPrefs().weekBarber;
-        const iAmBarber = !!me && !me.isOwner;
         let defaultBarber = effectiveStaff[0].id;
-        if (iAmBarber && myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId)) {
-          // A barber always lands on their OWN calendar — never a remembered
-          // selection of someone else's. Switching to another barber is temporary.
+        if (myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId)) {
+          // Anyone who is ALSO a barber — owner or not (an owner can have their
+          // own bookable staff row, e.g. cutting hair themselves) — always lands
+          // on their OWN calendar on fresh login, never a remembered selection
+          // of someone else's. Switching to another barber mid-session is
+          // temporary.
           defaultBarber = myStaffId;
         } else if (saved && effectiveStaff.some((s: Staff) => s.id === saved)) {
           defaultBarber = saved;
-        } else if (myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId)) {
-          defaultBarber = myStaffId;
         }
         setWeekBarber(defaultBarber);
         setDayBarber(defaultBarber);
@@ -4540,8 +4541,10 @@ export default function AdminCalendar() {
     if (me) {
       setIsOwner(me.isOwner ?? true);
       setBarbersCanViewOthersCalendar(me.barbersCanViewOthersCalendar ?? false);
-      // Barbers always default to their own week view on first load
-      if (isFirstLoad && !me.isOwner) {
+      // Same rule as the calendar default above: a barber (owner or not)
+      // defaults to their own week view on first load.
+      const iAmAlsoBarber = !!myStaffId && effectiveStaff.some((s: Staff) => s.id === myStaffId);
+      if (isFirstLoad && (!me.isOwner || iAmAlsoBarber)) {
         setView("week");
         savePrefs({ view: "week" });
       }
@@ -4786,15 +4789,23 @@ export default function AdminCalendar() {
     // Week view always shows a single barber — scope the badge to that barber.
     const effectiveStaffId = weekBarber || allStaff[0]?.id || "";
     const staffParam = effectiveStaffId ? `&staffId=${effectiveStaffId}` : "";
+    // Guard against out-of-order responses: paging between barbers/weeks fires a
+    // new fetch before the previous one resolves, and without this check a
+    // slower earlier response could land AFTER the current one and overwrite it
+    // with a different barber's counts (real report: browsing to another
+    // barber's calendar showed a stale/wrong waitlist badge).
+    let stale = false;
     Promise.all(
       dates.map(d =>
         fetch(`/api/admin/waitlist?date=${d}${staffParam}`).then(r => r.json()).then(data => [d, data.length])
       )
     ).then(results => {
+      if (stale) return;
       const counts: Record<string, number> = {};
       for (const [d, count] of results) counts[d as string] = count as number;
       setWaitlistCounts(counts);
     }).catch(() => {});
+    return () => { stale = true; };
   }, [getDates, weekBarber, allStaff]);
 
   function saveLocalHours() {
