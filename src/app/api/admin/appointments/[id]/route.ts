@@ -54,6 +54,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.serviceId !== undefined) data.serviceId = body.serviceId;
   if (body.price     !== undefined) data.price     = Number(body.price);
 
+  // ── Temporary / ad-hoc service (שירות זמני) ────────────────────────────────
+  // Same placeholder pattern as creating a new appointment (POST /appointments):
+  // the Appointment.serviceId FK is required, so a free-text service reuses (or
+  // lazily creates) a single hidden placeholder Service per business, and the
+  // real name is stored on Appointment.customServiceName.
+  if (typeof body.customServiceName === "string") {
+    const trimmed = body.customServiceName.trim();
+    if (trimmed) {
+      const PLACEHOLDER_NAME = "שירות זמני";
+      let placeholder = await prisma.service.findFirst({
+        where: { businessId: before.businessId, name: PLACEHOLDER_NAME, isVisible: false },
+        select: { id: true },
+      });
+      if (!placeholder) {
+        placeholder = await prisma.service.create({
+          data: {
+            businessId: before.businessId, name: PLACEHOLDER_NAME,
+            price: 0, durationMinutes: 30, isVisible: false, sortOrder: 9999,
+          },
+          select: { id: true },
+        });
+      }
+      data.serviceId = placeholder.id;
+      data.customServiceName = trimmed;
+    } else {
+      // Explicitly cleared — switching back to a real, named service.
+      data.customServiceName = null;
+    }
+  }
+
   // Reassign the appointment to a DIFFERENT existing customer (chosen from the
   // customer pool in the edit modal). We move the appointment's customerId — we
   // do NOT rename the current customer. The target must belong to this business.
