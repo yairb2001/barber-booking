@@ -615,6 +615,15 @@ model Conversation {
   // for this conversation for 24h. Null = agent active. Logic is lazy:
   // checked on incoming message, cleared automatically when expired.
   escalatedAt   DateTime? @map("escalated_at")
+  // ── Manual reactivation marker: when an admin explicitly turns the agent
+  // back ON (toggle-agent, active:true) after it had auto-muted itself for
+  // running too long (escalateAfterMessages). The "too many messages" count
+  // below only counts messages from THIS point forward — otherwise every
+  // message the agent sent BEFORE the mute still counted, so reactivating
+  // an already-over-the-limit conversation immediately re-escalated it on
+  // the very next customer message, before the agent got a real chance to
+  // continue. Null = never manually reactivated (normal counting applies).
+  agentReactivatedAt DateTime? @map("agent_reactivated_at")
   // ── Read marker: when any admin opens the conversation. Used to surface
   // unread customer messages with a badge in the nav. Shared across all admins.
   lastReadAt    DateTime? @map("last_read_at")
