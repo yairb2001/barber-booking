@@ -1559,7 +1559,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   // pencils), and a single save writes customer + appointment together.
   const [editServiceId, setEditServiceId] = useState("");
   const [editCustomServiceName, setEditCustomServiceName] = useState("");
-  const [svcList, setSvcList] = useState<{ id: string; name: string; price: number }[]>([]);
+  const [svcList, setSvcList] = useState<{ id: string; name: string; price: number; durationMinutes: number }[]>([]);
 
   function enterEdit() {
     setEditName(dispName); setEditPhone(dispPhone); setEditCustomerId(null);
@@ -2164,7 +2164,24 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </p>
             <div>
               <label className="text-[11px] text-neutral-400 block mb-1">סוג שירות</label>
-              <select value={editServiceId} onChange={e => setEditServiceId(e.target.value)}
+              <select value={editServiceId} onChange={e => {
+                  const id = e.target.value;
+                  setEditServiceId(id);
+                  if (id && id !== "__custom__") {
+                    // Picking a real service pulls in ITS price/duration (this
+                    // barber's own override, from svcList) — same as the "new
+                    // appointment" form. Still editable afterwards below.
+                    const svc = svcList.find(sv => sv.id === id);
+                    if (svc) {
+                      setEditPrice(String(svc.price));
+                      setEditEnd(minToTime(Math.min(toMin(editStart) + svc.durationMinutes, 23 * 60 + 59)));
+                    }
+                  } else if (id === "") {
+                    // Back to "no change" — undo the auto-fill above.
+                    setEditPrice(String(dispPrice));
+                    setEditEnd(dispEnd);
+                  }
+                }}
                 className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
                 <option value="">{appt.customServiceName || appt.service.name} (ללא שינוי)</option>
                 {svcList.map(sv => (<option key={sv.id} value={sv.id}>{sv.name}</option>))}
