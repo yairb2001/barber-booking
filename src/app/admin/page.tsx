@@ -1558,6 +1558,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   // One ✎ in the header turns THIS card's own rows into fields (no per-field
   // pencils), and a single save writes customer + appointment together.
   const [editServiceId, setEditServiceId] = useState("");
+  const [editCustomServiceName, setEditCustomServiceName] = useState("");
   const [svcList, setSvcList] = useState<{ id: string; name: string; price: number }[]>([]);
 
   function enterEdit() {
@@ -1566,6 +1567,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     setEditStart(dispStart); setEditEnd(dispEnd);
     setEditPrice(String(dispPrice));
     setEditServiceId("");
+    setEditCustomServiceName(appt.customServiceName || "");
     setInlineErr(null); setInlineConflict(null);
     if (svcList.length === 0) {
       // Scoped to THIS appointment's barber — a shared service can have a
@@ -1605,10 +1607,20 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       setDispName(editName.trim()); setDispPhone(editPhone.trim());
     }
     // 2) Appointment fields — one PATCH for date / time / price / service.
+    //    editServiceId === "__custom__" → ad-hoc named service (name only; price
+    //    and duration are whatever the barber set in the price/time fields above).
+    //    A real id → switch to that service and clear any previous custom name.
+    //    "" → no change, keep whatever the appointment already had.
+    const svcPayload: Record<string, unknown> =
+      editServiceId === "__custom__"
+        ? { customServiceName: editCustomServiceName.trim() || "שירות זמני" }
+        : editServiceId
+        ? { serviceId: editServiceId, customServiceName: "" }
+        : {};
     const updated = await patchApptField({
       date: editDate, startTime: editStart, endTime: editEnd,
       price: Number(editPrice),
-      ...(editServiceId ? { serviceId: editServiceId } : {}),
+      ...svcPayload,
     }, override);
     if (!updated) return;                 // error/conflict already surfaced
     setDispDate(updated.date); setDispStart(updated.startTime);
@@ -2113,20 +2125,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         {/* Details row — תאריך / שעה / מחיר each with pencil (inline, per-field) */}
         {editMode ? (
           <div className="px-4 py-3 border-b border-neutral-100 space-y-3">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-[11px] text-neutral-400 block mb-1">תאריך</label>
                 <input type="date" value={editDate} onChange={e => setEditDate(e.target.value)} dir="ltr"
-                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-              </div>
-              <div>
-                <label className="text-[11px] text-neutral-400 block mb-1">שעה</label>
-                <input type="time" step={600} value={editStart} dir="ltr"
-                  onChange={e => {
-                    const ns = e.target.value; const dur = toMin(editEnd) - toMin(editStart);
-                    setEditStart(ns);
-                    if (dur > 0 && ns) setEditEnd(minToTime(Math.min(toMin(ns) + dur, 23 * 60 + 59)));
-                  }}
                   className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               </div>
               <div>
@@ -2135,13 +2137,44 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                   className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">שעת התחלה</label>
+                <input type="time" step={600} value={editStart} dir="ltr"
+                  onChange={e => {
+                    // Moving the start shifts the end by the same amount so the
+                    // appointment keeps its length — the end stays editable below,
+                    // so shortening/lengthening the appointment is still possible.
+                    const ns = e.target.value; const dur = toMin(editEnd) - toMin(editStart);
+                    setEditStart(ns);
+                    if (dur > 0 && ns) setEditEnd(minToTime(Math.min(toMin(ns) + dur, 23 * 60 + 59)));
+                  }}
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+              <div>
+                <label className="text-[11px] text-neutral-400 block mb-1">שעת סיום</label>
+                <input type="time" step={600} value={editEnd} onChange={e => setEditEnd(e.target.value)} dir="ltr"
+                  className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              </div>
+            </div>
+            <p className="text-[11px] text-neutral-400">
+              {toMin(editEnd) > toMin(editStart)
+                ? `אורך התור: ${toMin(editEnd) - toMin(editStart)} דקות`
+                : "⚠ שעת הסיום חייבת להיות אחרי שעת ההתחלה"}
+            </p>
             <div>
               <label className="text-[11px] text-neutral-400 block mb-1">סוג שירות</label>
               <select value={editServiceId} onChange={e => setEditServiceId(e.target.value)}
                 className="w-full border border-neutral-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-teal-400">
                 <option value="">{appt.customServiceName || appt.service.name} (ללא שינוי)</option>
                 {svcList.map(sv => (<option key={sv.id} value={sv.id}>{sv.name}</option>))}
+                <option value="__custom__">✏️ שירות זמני (שם משתנה)</option>
               </select>
+              {editServiceId === "__custom__" && (
+                <input value={editCustomServiceName} onChange={e => setEditCustomServiceName(e.target.value)}
+                  placeholder="שם השירות (למשל: תספורת + זקן מיוחד)" autoFocus
+                  className="w-full mt-1.5 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+              )}
             </div>
             {inlineErr && <p className="text-xs text-red-600">{inlineErr}</p>}
             {inlineConflict && (
