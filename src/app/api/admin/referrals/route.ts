@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, barbersCanSeeAllCustomers } from "@/lib/session";
-import { getReferralConfig } from "@/lib/referral";
+import { getReferralConfig, getReferralProgress, tiersUnlockedFor } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   const referrers = referrerIds.length
     ? await prisma.customer.findMany({
         where: { id: { in: referrerIds } },
-        select: { id: true, name: true, phone: true },
+        select: { id: true, name: true, phone: true, referralTiersGiven: true },
       })
     : [];
   const referrerMap = new Map(referrers.map(c => [c.id, c]));
@@ -62,15 +62,33 @@ export async function GET(req: NextRequest) {
       const friends = byReferrer.get(id)!;
       const ref = referrerMap.get(id);
       const count = friends.length;
+      // How many reward tiers this count has unlocked vs. how many the admin
+      // has actually marked as given — the gap is what's still owed. With no
+      // tier 2 configured this is the old "repeat every `goal`" behavior;
+      // with one configured, tiers cap at 2 (nothing past tier 2 to unlock).
+      const unlocked = tiersUnlockedFor(count, config);
+      const given = ref?.referralTiersGiven ?? 0;
+      const owed = Math.max(0, unlocked - given);
+      // Explicit list of which reward(s) are still owed, in order — with a
+      // tier 2 configured, tier 1 and tier 2 are DIFFERENT rewards (can't just
+      // say "2 × giftLabel"); without one, this is N copies of the same
+      // repeating giftLabel, exactly like before tiers existed.
+      const pendingLabels: string[] = [];
+      for (let t = given + 1; t <= unlocked; t++) {
+        pendingLabels.push(config.goal2 && t >= 2 ? (config.giftLabel2 || config.giftLabel) : config.giftLabel);
+      }
+      const progress = getReferralProgress(count, config);
       return {
         id,
         name: ref?.name ?? "לקוח",
         phone: ref?.phone ?? "",
         count,
-        // How many full gifts they've earned, and progress toward the next one.
-        giftsEarned: Math.floor(count / config.goal),
-        towardNext: count % config.goal,
-        reached: count >= config.goal,
+        tiersGiven: given,
+        giftsEarned: owed,
+        pendingLabels,
+        towardNext: Math.min(count, progress.goal),
+        activeGoal: progress.goal,
+        reached: unlocked > 0,
         friends: friends.map(f => ({ name: f.name, date: f.createdAt })),
       };
     })
@@ -82,6 +100,8 @@ export async function GET(req: NextRequest) {
     enabled: config.enabled,
     goal: config.goal,
     giftLabel: config.giftLabel,
+    goal2: config.goal2,
+    giftLabel2: config.giftLabel2,
     totalReferrers: rows.length,
     totalReferred: referred.length,
     owedCount,

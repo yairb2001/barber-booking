@@ -1029,7 +1029,7 @@ function ConfirmPageContent() {
               )}
 
               <p className="text-[11px] text-teal-600 leading-relaxed font-medium">
-                🎁 כל {referralProgram.goal} חברים שהוא מביא — {referralProgram.giftLabel} עליו!
+                🎁 כל {referralProgram.goal} חברים שהוא מביא — {referralProgram.giftLabel} מאיתנו!
               </p>
             </div>
           )}
