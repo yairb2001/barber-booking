@@ -219,39 +219,6 @@ function SummaryRow({ label, value, large, compact }: { label: string; value: Re
   );
 }
 
-// ── Returning-referrer thank-you + progress meter ──────────────────────────────
-function ReferralThankYou({ status }: { status: { name: string; referralCount: number; goal: number; giftLabel: string } }) {
-  const first = status.name.split(" ")[0];
-  const reached = status.referralCount >= status.goal;
-  const shown = Math.min(status.referralCount, status.goal);
-  const pct = Math.min(100, Math.round((status.referralCount / Math.max(1, status.goal)) * 100));
-  const remaining = Math.max(0, status.goal - status.referralCount);
-  return (
-    <div className="rounded-2xl p-5 text-white shadow-md" style={{ background: "var(--brand)" }}>
-      <div className="flex items-center gap-2 mb-1">
-        <span className="text-2xl">🙌</span>
-        <p className="text-[15px] font-bold text-white">תודה {first}!</p>
-      </div>
-      <p className="text-[12px] text-white/85 leading-relaxed mb-3">
-        {reached
-          ? `הבאת ${status.referralCount} חברים — מגיעה לך ${status.giftLabel}! 🎁`
-          : `כבר הבאת לנו ${status.referralCount} ${status.referralCount === 1 ? "חבר" : "חברים"} — אנחנו מעריכים אותך מאוד 🤩`}
-      </p>
-
-      {/* Progress meter */}
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-semibold text-white/85">
-          {reached ? "🎉 הגעת ליעד!" : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${status.giftLabel}`}
-        </span>
-        <span className="text-[13px] font-extrabold text-white" dir="ltr">{shown}/{status.goal}</span>
-      </div>
-      <div className="h-2.5 rounded-full bg-white/20 overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: reached ? "#fbbf24" : "rgba(255,255,255,0.9)" }} />
-      </div>
-    </div>
-  );
-}
-
 // ── Main page content ──────────────────────────────────────────────────────────
 function ConfirmPageContent() {
   const slug = useSlug();
@@ -416,7 +383,10 @@ function ConfirmPageContent() {
     fetch(apiWithSlug("/api/customers/referral-status", slug))
       .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data?.ok && data.referralCount > 0) {
+        // Kept even at referralCount 0 — the success screen shows a progress
+        // bar toward the goal regardless of whether the customer has referred
+        // anyone yet, to nudge them to start.
+        if (data?.ok) {
           setReferralStatus({ name: data.name, referralCount: data.referralCount, goal: data.goal, giftLabel: data.giftLabel });
         }
       })
@@ -657,6 +627,61 @@ function ConfirmPageContent() {
             </div>
           </div>
 
+          {/* Referral-program intro — pops/blinks a few times to draw the eye,
+              but never blocks the page: no backdrop, nothing to dismiss to
+              continue. Only for a customer who hasn't referred anyone yet;
+              an active referrer already has the progress bar below. */}
+          {referralProgram.enabled && showReferralPromo && (!referralStatus || referralStatus.referralCount === 0) && (
+            <div className="referral-toast relative rounded-2xl border px-4 py-3"
+              style={{ borderColor: "var(--brand)", background: "var(--card)" }}>
+              <button onClick={() => setShowReferralPromo(false)} aria-label="סגור"
+                className="absolute top-2 left-2 w-6 h-6 flex items-center justify-center rounded-full text-slate-400 text-sm leading-none">
+                ✕
+              </button>
+              <div className="flex items-center gap-2 pl-5">
+                <span className="text-2xl">🤝</span>
+                <p className="text-[14px] font-bold" style={{ color: "var(--text-pri)" }}>חבר מביא חבר!</p>
+              </div>
+              <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)" }}>
+                על כל {referralProgram.goal} חברים שתביא — {referralProgram.giftLabel} מאיתנו 🎁
+                {referralProgram.goal2 && referralProgram.giftLabel2 && (
+                  <> ומ-{referralProgram.goal2} חברים — {referralProgram.giftLabel2}!</>
+                )}
+              </p>
+              <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)", opacity: 0.8 }}>
+                💡 החבר שלך מציין באתר שהגיע דרכך — וככה נדע לזכות אותך
+              </p>
+            </div>
+          )}
+
+          {/* Referral progress bar — always visible while the program is on, to
+              nudge the customer toward the next gift even before they've
+              referred anyone (0/goal). */}
+          {referralProgram.enabled && (() => {
+            const count     = referralStatus?.referralCount ?? 0;
+            const goal      = referralStatus?.goal ?? referralProgram.goal;
+            const giftLabel = referralStatus?.giftLabel ?? referralProgram.giftLabel;
+            const reached   = count >= goal;
+            const shown     = Math.min(count, goal);
+            const pct       = Math.min(100, Math.round((count / Math.max(1, goal)) * 100));
+            const remaining = Math.max(0, goal - count);
+            return (
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[12px] font-bold text-slate-700">
+                    {reached
+                      ? `🎉 מגיעה לך ${giftLabel}!`
+                      : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${giftLabel}`}
+                  </span>
+                  <span className="text-[13px] font-extrabold" style={{ color: "var(--brand)" }} dir="ltr">{shown}/{goal}</span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Summary */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <SummaryRow label="ספר" value={searchParams.get("staffName")} />
@@ -699,56 +724,8 @@ function ConfirmPageContent() {
             style={{ background: "var(--brand)" }}>
             חזרה לדף הבית
           </Link>
-
-          {/* Returning referrer — compact thank-you, tucked at the very bottom */}
-          {referralStatus && (() => {
-            const first = referralStatus.name.split(" ")[0];
-            const reached = referralStatus.referralCount >= referralStatus.goal;
-            const remaining = Math.max(0, referralStatus.goal - referralStatus.referralCount);
-            return (
-              <div className="rounded-xl border px-4 py-2.5 text-center" style={{ borderColor: "var(--brand)" }}>
-                <p className="text-[12px] font-bold" style={{ color: "var(--brand)" }}>
-                  🙌 תודה {first}! כבר הבאת {referralStatus.referralCount} {referralStatus.referralCount === 1 ? "חבר" : "חברים"}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  {reached
-                    ? `מגיעה לך ${referralStatus.giftLabel}! 🎁`
-                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${referralStatus.giftLabel}`}
-                </p>
-              </div>
-            );
-          })()}
         </div>
       </div>
-
-      {/* Referral-program explainer popup — introduces the program to a customer
-          who hasn't referred anyone yet (an active referrer already sees their
-          own progress in the card above, so this would just be redundant). */}
-      {showReferralPromo && referralProgram.enabled && !referralStatus && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
-          onClick={() => setShowReferralPromo(false)}>
-          <div className="w-full max-w-xs rounded-3xl p-6 text-center shadow-2xl"
-            style={{ background: "var(--card)" }}
-            onClick={e => e.stopPropagation()}>
-            <div className="text-5xl mb-2">🤝</div>
-            <p className="text-[18px] font-bold" style={{ color: "var(--text-pri)" }}>
-              חבר מביא חבר!
-            </p>
-            <p className="text-[13px] mt-2 leading-relaxed" style={{ color: "var(--text-sec)" }}>
-              על כל {referralProgram.goal} חברים שתביא — {referralProgram.giftLabel} מאיתנו 🎁
-              {referralProgram.goal2 && referralProgram.giftLabel2 && (
-                <> ומ-{referralProgram.goal2} חברים — {referralProgram.giftLabel2}!</>
-              )}
-            </p>
-            <button onClick={() => setShowReferralPromo(false)}
-              className="mt-5 w-full py-3 rounded-full text-[13px] font-bold text-white"
-              style={{ background: "var(--brand)" }}>
-              הבנתי, מגניב! ✨
-            </button>
-          </div>
-        </div>
-      )}
       </>
     );
   }
