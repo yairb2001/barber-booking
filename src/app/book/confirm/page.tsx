@@ -15,81 +15,6 @@ type ProductInfo = {
   id: string; name: string; description: string | null; price: number; imageUrl: string | null;
 };
 
-// ── Waitlist card ──────────────────────────────────────────────────────────────
-function WaitlistCard({ phone, name, staffId, serviceId, date }: {
-  phone: string; name: string; staffId: string; serviceId: string; date: string;
-}) {
-  const slug = useSlug();
-  const [timeOfDay, setTimeOfDay]   = useState<"morning" | "afternoon" | "any">("morning");
-  const [isFlexible, setIsFlexible] = useState(true);
-  const [joining, setJoining]       = useState(false);
-  const [joined, setJoined]         = useState(false);
-  const [error, setError]           = useState("");
-
-  async function join() {
-    setJoining(true); setError("");
-    try {
-      const res = await fetch(apiWithSlug("/api/waitlist", slug), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, name, staffId, serviceId, date, isFlexible, preferredTimeOfDay: timeOfDay }),
-      });
-      if (!res.ok) { const d = await res.json(); setError(d.error || "שגיאה"); }
-      else setJoined(true);
-    } catch { setError("שגיאת חיבור"); }
-    setJoining(false);
-  }
-
-  if (joined) {
-    return (
-      <div className="bg-green-50 rounded-2xl border border-green-200 p-5 text-center">
-        <div className="text-2xl mb-2">🔔</div>
-        <p className="text-sm font-semibold text-green-700">הצטרפת לרשימת המתנה</p>
-        <p className="text-xs text-green-600 mt-1 leading-relaxed">נעדכן אותך ב-WhatsApp אם יתפנה מקום מוקדם יותר.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-      <div className="flex items-start gap-3 mb-4">
-        <span className="text-xl flex-shrink-0">🔔</span>
-        <div>
-          <p className="text-[13px] font-semibold text-slate-900">רוצה להגיע מוקדם יותר?</p>
-          <p className="text-[12px] text-slate-500 mt-1 leading-relaxed">הצטרף לרשימת המתנה — נשלח לך הודעה ב-WhatsApp אם יתפנה מקום.</p>
-        </div>
-      </div>
-      <p className="text-[10px] font-semibold tracking-[0.2em] text-slate-400 uppercase mb-2">שעה מועדפת</p>
-      <div className="flex gap-2 mb-4">
-        {([["morning","בוקר","09:00–12:00"],["afternoon","צהריים","12:00–17:00"],["any","כל שעה",""]] as const).map(([val, label, hint]) => (
-          <button key={val} onClick={() => setTimeOfDay(val)}
-            className="flex-1 border rounded-xl py-2 px-1 text-center transition-colors text-[11px]"
-            style={{
-              background: timeOfDay === val ? "var(--brand)" : "#F8FAFC",
-              border: `1.5px solid ${timeOfDay === val ? "var(--brand)" : "#E2E8F0"}`,
-              color: timeOfDay === val ? "#fff" : "#475569",
-              fontWeight: timeOfDay === val ? 700 : 500,
-            }}>
-            {label}
-            {hint && <div className="text-[9px] opacity-70 mt-0.5" dir="ltr">{hint}</div>}
-          </button>
-        ))}
-      </div>
-      <label className="flex items-center gap-3 mb-4 cursor-pointer">
-        <input type="checkbox" checked={isFlexible} onChange={e => setIsFlexible(e.target.checked)}
-          className="w-4 h-4 rounded accent-slate-700" />
-        <span className="text-[12px] text-slate-500">גמיש עם התאריך — כמה שיותר מוקדם</span>
-      </label>
-      {error && <p className="text-xs text-red-500 mb-3">{error}</p>}
-      <button onClick={join} disabled={joining}
-        className="w-full text-[12px] font-bold tracking-[0.12em] uppercase py-3 rounded-full border-2 transition-all disabled:opacity-40"
-        style={{ border: `2px solid var(--brand)`, color: "var(--brand)", background: "transparent" }}>
-        {joining ? "מצרף..." : "הצטרף לרשימת המתנה"}
-      </button>
-    </div>
-  );
-}
-
 // ── Leave-waitlist prompt (shown on the success screen) ──────────────────────
 // Now that the customer just booked a slot, ask whether they want to step out
 // of any waitlist days they're still registered for. Loads the active entries
@@ -379,7 +304,7 @@ function ConfirmPageContent() {
   const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
   // Referral program config (owner can disable the whole thing).
-  const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string }>({ enabled: true, goal: 3, giftLabel: "תספורת חינם" });
+  const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string; goal2: number | null; giftLabel2: string | null }>({ enabled: true, goal: 3, giftLabel: "תספורת חינם", goal2: null, giftLabel2: null });
   // Which referral source opens the friend picker (owner-renamable).
   const [friendSource, setFriendSource] = useState<string | null>(null);
   // Returning referrer: their thank-you + progress meter.
@@ -389,6 +314,12 @@ function ConfirmPageContent() {
   const [referralKnown, setReferralKnown] = useState(false);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
+
+  // Referral-program explainer popup — shown once on the success screen after
+  // booking, so every customer (not just returning referrers) learns about
+  // the program right when they're happiest. Dismissible; doesn't reappear
+  // once closed for this success screen visit.
+  const [showReferralPromo, setShowReferralPromo] = useState(true);
 
   // When the customer already has an upcoming appointment, the server stops and
   // returns its details so we can ask: add another, or cancel-and-rebook?
@@ -474,6 +405,8 @@ function ConfirmPageContent() {
           enabled: ref.enabled !== false,
           goal: Number(ref.goal) > 0 ? Math.round(Number(ref.goal)) : 3,
           giftLabel: (typeof ref.giftLabel === "string" && ref.giftLabel.trim()) ? ref.giftLabel.trim() : "תספורת חינם",
+          goal2: Number(ref.goal2) > 0 ? Math.round(Number(ref.goal2)) : null,
+          giftLabel2: (typeof ref.giftLabel2 === "string" && ref.giftLabel2.trim()) ? ref.giftLabel2.trim() : null,
         });
         setFriendSource(ref.friendSource ?? null);
       }
@@ -702,28 +635,25 @@ function ConfirmPageContent() {
     const successDate     = searchParams.get("date")         || "";
     const successTime     = searchParams.get("time")         || "";
     const successPrice    = searchParams.get("price")        || "";
-    const successStaffId  = searchParams.get("staffId")      || "";
-    const successSvcId    = searchParams.get("serviceId")    || "";
-    const successPhone    = searchParams.get("phone")        || "";
-    const successName     = searchParams.get("customerName") || "";
     const successDateLabel = successDate
       ? new Date(successDate + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })
       : "";
 
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-5 py-12" dir="rtl">
+      <>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-5 py-6" dir="rtl">
         <div className="w-full max-w-sm space-y-4">
-          {/* Success icon */}
-          <div className="text-center space-y-3 mb-2">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mx-auto shadow-md"
+          {/* Success header — compact: icon inline with the title, not stacked */}
+          <div className="flex items-center gap-2.5 mb-1">
+            <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 shadow-sm"
               style={{ background: "var(--brand)" }}>
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900">התור נקבע! 🎉</h1>
-              <p className="text-[12px] text-slate-500 mt-1">נשלחה הודעת אישור ב-WhatsApp</p>
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">התור נקבע! 🎉</h1>
+              <p className="text-[11px] text-slate-500 leading-tight">נשלחה הודעת אישור ב-WhatsApp</p>
             </div>
           </div>
 
@@ -764,11 +694,6 @@ function ConfirmPageContent() {
               that they've secured a slot. */}
           <LeaveWaitlistPrompt />
 
-          {successPhone && successStaffId && successSvcId && successDate && (
-            <WaitlistCard phone={successPhone} name={successName}
-              staffId={successStaffId} serviceId={successSvcId} date={successDate} />
-          )}
-
           <Link href={publicHref(slug, "/")}
             className="block text-center text-[13px] font-bold tracking-[0.15em] uppercase py-4 rounded-full text-white shadow-md"
             style={{ background: "var(--brand)" }}>
@@ -795,6 +720,36 @@ function ConfirmPageContent() {
           })()}
         </div>
       </div>
+
+      {/* Referral-program explainer popup — introduces the program to a customer
+          who hasn't referred anyone yet (an active referrer already sees their
+          own progress in the card above, so this would just be redundant). */}
+      {showReferralPromo && referralProgram.enabled && !referralStatus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(2px)" }}
+          onClick={() => setShowReferralPromo(false)}>
+          <div className="w-full max-w-xs rounded-3xl p-6 text-center shadow-2xl"
+            style={{ background: "var(--card)" }}
+            onClick={e => e.stopPropagation()}>
+            <div className="text-5xl mb-2">🤝</div>
+            <p className="text-[18px] font-bold" style={{ color: "var(--text-pri)" }}>
+              חבר מביא חבר!
+            </p>
+            <p className="text-[13px] mt-2 leading-relaxed" style={{ color: "var(--text-sec)" }}>
+              על כל {referralProgram.goal} חברים שתביא — {referralProgram.giftLabel} מאיתנו 🎁
+              {referralProgram.goal2 && referralProgram.giftLabel2 && (
+                <> ומ-{referralProgram.goal2} חברים — {referralProgram.giftLabel2}!</>
+              )}
+            </p>
+            <button onClick={() => setShowReferralPromo(false)}
+              className="mt-5 w-full py-3 rounded-full text-[13px] font-bold text-white"
+              style={{ background: "var(--brand)" }}>
+              הבנתי, מגניב! ✨
+            </button>
+          </div>
+        </div>
+      )}
+      </>
     );
   }
 
