@@ -282,12 +282,6 @@ function ConfirmPageContent() {
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
 
-  // Referral-program explainer popup — shown once on the success screen after
-  // booking, so every customer (not just returning referrers) learns about
-  // the program right when they're happiest. Dismissible; doesn't reappear
-  // once closed for this success screen visit.
-  const [showReferralPromo, setShowReferralPromo] = useState(true);
-
   // When the customer already has an upcoming appointment, the server stops and
   // returns its details so we can ask: add another, or cancel-and-rebook?
   const [existingAppts, setExistingAppts] = useState<
@@ -627,57 +621,77 @@ function ConfirmPageContent() {
             </div>
           </div>
 
-          {/* Referral-program intro — pops/blinks a few times to draw the eye,
-              but never blocks the page: no backdrop, nothing to dismiss to
-              continue. Only for a customer who hasn't referred anyone yet;
-              an active referrer already has the progress bar below. */}
-          {referralProgram.enabled && showReferralPromo && (!referralStatus || referralStatus.referralCount === 0) && (
-            <div className="referral-toast relative rounded-2xl border px-4 py-3"
-              style={{ borderColor: "var(--brand)", background: "var(--card)" }}>
-              <button onClick={() => setShowReferralPromo(false)} aria-label="סגור"
-                className="absolute top-2 left-2 w-6 h-6 flex items-center justify-center rounded-full text-slate-400 text-sm leading-none">
-                ✕
-              </button>
-              <div className="flex items-center gap-2 pl-5">
-                <span className="text-2xl">🤝</span>
-                <p className="text-[14px] font-bold" style={{ color: "var(--text-pri)" }}>חבר מביא חבר!</p>
-              </div>
-              <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)" }}>
-                על כל {referralProgram.goal} חברים שתביא — {referralProgram.giftLabel} מאיתנו 🎁
-                {referralProgram.goal2 && referralProgram.giftLabel2 && (
-                  <> ומ-{referralProgram.goal2} חברים — {referralProgram.giftLabel2}!</>
-                )}
-              </p>
-              <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)", opacity: 0.8 }}>
-                💡 החבר שלך מציין באתר שהגיע דרכך — וככה נדע לזכות אותך
-              </p>
-            </div>
-          )}
-
-          {/* Referral progress bar — always visible while the program is on, to
-              nudge the customer toward the next gift even before they've
-              referred anyone (0/goal). */}
+          {/* Referral program — one merged card: intro + both reward tiers as
+              progress bars (tier 2 shown locked/greyed until tier 1 is hit).
+              Pops/blinks a few times on mount to draw the eye, but never
+              blocks the page and always stays — it doubles as the persistent
+              progress nudge, so there's nothing to dismiss. */}
           {referralProgram.enabled && (() => {
-            const count     = referralStatus?.referralCount ?? 0;
-            const goal      = referralStatus?.goal ?? referralProgram.goal;
-            const giftLabel = referralStatus?.giftLabel ?? referralProgram.giftLabel;
-            const reached   = count >= goal;
-            const shown     = Math.min(count, goal);
-            const pct       = Math.min(100, Math.round((count / Math.max(1, goal)) * 100));
-            const remaining = Math.max(0, goal - count);
+            const count = referralStatus?.referralCount ?? 0;
+            const goal1 = referralProgram.goal;
+            const gift1 = referralProgram.giftLabel;
+            const goal2 = referralProgram.goal2;
+            const gift2 = referralProgram.giftLabel2;
+
+            const tier1Reached   = count >= goal1;
+            const tier1Remaining = Math.max(0, goal1 - count);
+            const tier1Pct       = Math.min(100, Math.round((count / Math.max(1, goal1)) * 100));
+
+            const tier2Span      = goal2 ? Math.max(1, goal2 - goal1) : 0;
+            const tier2Progress  = goal2 ? Math.min(Math.max(count - goal1, 0), tier2Span) : 0;
+            const tier2Pct       = goal2 ? Math.min(100, Math.round((tier2Progress / tier2Span) * 100)) : 0;
+            const tier2Reached   = !!goal2 && count >= goal2;
+            const tier2Remaining = goal2 ? Math.max(0, goal2 - count) : 0;
+            const friend = (n: number) => (n === 1 ? "חבר" : "חברים");
+
             return (
-              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="referral-toast rounded-3xl border-2 px-5 py-4"
+                style={{ borderColor: "var(--brand)", background: "var(--card)" }}>
+                <div className="flex items-center gap-2.5 mb-4">
+                  <span className="text-4xl leading-none">🤝</span>
+                  <p className="text-[19px] font-extrabold" style={{ color: "var(--text-pri)" }}>חבר מביא חבר!</p>
+                </div>
+
+                {/* Tier 1 */}
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[12px] font-bold text-slate-700">
-                    {reached
-                      ? `🎉 מגיעה לך ${giftLabel}!`
-                      : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ל${giftLabel}`}
+                  <span className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>
+                    {tier1Reached ? `🎉 מגיעה לך ${gift1} במתנה!` : `עוד ${tier1Remaining} ${friend(tier1Remaining)} ל${gift1} במתנה`}
                   </span>
-                  <span className="text-[13px] font-extrabold" style={{ color: "var(--brand)" }} dir="ltr">{shown}/{goal}</span>
+                  <span dir="ltr" className="text-[15px] font-extrabold flex-shrink-0" style={{ color: "var(--brand)" }}>
+                    {Math.min(count, goal1)}/{goal1}
+                  </span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                  <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "var(--brand)" }} />
+                <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
+                  <div className="h-full rounded-full transition-all" style={{ width: `${tier1Pct}%`, background: "var(--brand)" }} />
                 </div>
+
+                {/* Tier 2 — locked (dimmed, empty bar) until tier 1 is reached */}
+                {goal2 && gift2 && (
+                  <div className={tier1Reached ? "mt-3.5" : "mt-3.5 opacity-45"}>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>
+                        {!tier1Reached
+                          ? `🔒 שלב 2: ${gift2} במתנה`
+                          : tier2Reached
+                            ? `🎉 מגיעה לך גם ${gift2} במתנה!`
+                            : `עוד ${tier2Remaining} ${friend(tier2Remaining)} ל${gift2} במתנה`}
+                      </span>
+                      <span dir="ltr" className="text-[15px] font-extrabold flex-shrink-0"
+                        style={{ color: tier1Reached ? "var(--brand)" : "#94a3b8" }}>
+                        {tier2Progress}/{tier2Span}
+                      </span>
+                    </div>
+                    <div className="h-3 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${tier1Reached ? tier2Pct : 0}%`, background: tier1Reached ? "var(--brand)" : "#cbd5e1" }} />
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[11px] mt-3.5 pt-3 border-t leading-relaxed"
+                  style={{ color: "var(--text-sec)", opacity: 0.85, borderColor: "rgba(0,0,0,0.06)" }}>
+                  💡 החבר שלך מציין באתר שהגיע דרכך — וככה נדע לזכות אותך
+                </p>
               </div>
             );
           })()}
