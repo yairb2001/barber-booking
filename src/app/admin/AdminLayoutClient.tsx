@@ -346,7 +346,13 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             ☰
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <Link href="/admin" className="text-slate-900 font-bold text-sm shrink-0 tracking-tight">DOMINANT</Link>
+            <Link href="/admin" className="text-slate-900 font-bold text-sm shrink-0 tracking-tight"
+              onClick={() => {
+                // Same URL as the current page → Next.js won't navigate/remount, so
+                // the calendar page wouldn't otherwise know this was clicked. Tell it
+                // directly so a barber always lands back on their own week view.
+                if (pathname === "/admin") window.dispatchEvent(new Event("dominant:go-home"));
+              }}>DOMINANT</Link>
             <span className="text-slate-300 text-xs shrink-0">·</span>
             <span className="text-slate-600 text-sm truncate">{currentLabel}</span>
           </div>
