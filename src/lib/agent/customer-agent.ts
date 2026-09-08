@@ -1608,11 +1608,22 @@ export async function runCustomerAgent(opts: {
     // 3 full quiet days), so a lifetime count made chatty REGULARS trip the
     // "agent stuck" alarm after a week of normal use (real incident: 39 msgs
     // accumulated over days). "Stuck" means many messages in a SHORT window.
+    //
+    // If an admin manually reactivated the agent (turned it back on after it
+    // had auto-muted itself here), only count messages from THAT point on —
+    // otherwise messages sent before the mute still count, and a conversation
+    // already over the limit re-escalates itself on the very next customer
+    // message (real incident 2026-09-08: reactivated for Itai Daniel, agent
+    // immediately handed off again without getting to answer).
+    const windowStart = new Date(Date.now() - CONTEXT_WINDOW_MS);
+    const countSince = conversation.agentReactivatedAt && conversation.agentReactivatedAt > windowStart
+      ? conversation.agentReactivatedAt
+      : windowStart;
     const userMsgCount = await prisma.conversationMessage.count({
       where: {
         conversationId: conversation.id,
         role: "user",
-        createdAt: { gte: new Date(Date.now() - CONTEXT_WINDOW_MS) },
+        createdAt: { gte: countSince },
       },
     });
     if (userMsgCount >= escalateThreshold) {

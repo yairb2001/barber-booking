@@ -29,7 +29,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const updated = await prisma.conversation.update({
     where: { id: conv.id },
-    data: { escalatedAt: active ? null : new Date() },
+    data: {
+      escalatedAt: active ? null : new Date(),
+      // Reactivating resets the "too many messages" counter's starting point —
+      // otherwise messages sent before this mute still count, and a
+      // conversation already over the limit re-escalates itself on the very
+      // next customer message, before the agent gets a real chance to continue.
+      ...(active ? { agentReactivatedAt: new Date() } : {}),
+    },
   });
 
   return NextResponse.json({
