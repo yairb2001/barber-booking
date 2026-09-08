@@ -4297,6 +4297,23 @@ export default function AdminCalendar() {
   // they always reopen on their own calendar (handled in loadStaff).
   useEffect(() => { if (weekBarber && isOwner) savePrefs({ weekBarber }); }, [weekBarber, isOwner]);
 
+  // Tapping the "DOMINANT" logo while already on this page is a same-URL Link —
+  // Next.js doesn't remount or navigate, so nothing would otherwise happen. A
+  // barber expects it to always jump back to THEIR OWN calendar in week view
+  // (same as fresh login), even after switching to another barber/view/day mid-
+  // session. AdminLayoutClient fires this event since it can't reach this
+  // component's state directly.
+  useEffect(() => {
+    function goHome() {
+      if (!myStaffId || isOwner) return;
+      setView("week"); savePrefs({ view: "week" });
+      setWeekBarber(myStaffId);
+      setDayBarber(myStaffId);
+    }
+    window.addEventListener("dominant:go-home", goHome);
+    return () => window.removeEventListener("dominant:go-home", goHome);
+  }, [myStaffId, isOwner]);
+
   // Update nowY whenever hourHeight or calStart changes
   useEffect(() => {
     setNowY(nowPxFn(hourHeight, calStart));
