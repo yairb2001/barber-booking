@@ -5,6 +5,7 @@ import { getReferralConfig } from "@/lib/referral";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
     select: {
       chatsEnabled: true,
       settings: true,
+      phone: true,
       slug: true,
       tier: true,
       whatsappStatus: true,
@@ -88,6 +90,35 @@ export async function GET(req: NextRequest) {
   }
   const whatsappDown = waState === "notAuthorized" || waState === "blocked" || waState === "yellowCard";
 
+  // An OWNER login carries no staffId — signSession() for role:"owner" never
+  // sets one, since it's a business-level login, not tied to any Staff row.
+  // But an owner can ALSO be a bookable barber themselves (their own Staff
+  // row, same phone they log in with — e.g. business.settings.ownerLoginPhone
+  // matches a Staff.phone). Resolve that match here so the admin calendar can
+  // default an owner-who-is-also-a-barber to their own calendar on login,
+  // same as it already does for a plain barber login. Informational only —
+  // does not touch permissions (still isOwner:true, full access either way).
+  let ownStaffId: string | null = null;
+  if (session.isOwner && !session.staffId) {
+    let ownerLoginPhone: string | null = null;
+    if (business?.settings) {
+      try {
+        const s = JSON.parse(business.settings);
+        if (typeof s.ownerLoginPhone === "string") ownerLoginPhone = s.ownerLoginPhone;
+      } catch { /* ignore */ }
+    }
+    const candidatePhone = ownerLoginPhone || business?.phone || null;
+    const normalizedOwnerPhone = candidatePhone ? normalizeIsraeliPhone(candidatePhone) : "";
+    if (normalizedOwnerPhone) {
+      const allStaff = await prisma.staff.findMany({
+        where: { businessId: session.businessId },
+        select: { id: true, phone: true },
+      });
+      const match = allStaff.find(s => normalizeIsraeliPhone(s.phone || "") === normalizedOwnerPhone);
+      if (match) ownStaffId = match.id;
+    }
+  }
+
   // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
   const perms = await getEffectivePermissions(req);
 
@@ -104,7 +135,7 @@ export async function GET(req: NextRequest) {
     isOwner: session.isOwner,
     isSuperAdmin: session.isOwner && session.businessId === SUPER_ADMIN_BUSINESS_ID,
     impersonating: !!req.cookies.get("super_origin")?.value,
-    staffId: session.staffId || null,
+    staffId: session.staffId || ownStaffId,
     staff,
     chatsEnabled: business?.chatsEnabled ?? false,
     slug: business?.slug ?? null,
