@@ -8,8 +8,11 @@ type Row = {
   name: string;
   phone: string;
   count: number;
+  tiersGiven: number;
   giftsEarned: number;
+  pendingLabels: string[];
   towardNext: number;
+  activeGoal: number;
   reached: boolean;
   friends: Friend[];
 };
@@ -17,6 +20,8 @@ type Data = {
   enabled: boolean;
   goal: number;
   giftLabel: string;
+  goal2: number | null;
+  giftLabel2: string | null;
   totalReferrers: number;
   totalReferred: number;
   owedCount: number;
@@ -38,13 +43,22 @@ export default function AdminReferralsPage() {
   const [data, setData] = useState<Data | null>(null);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [marking, setMarking] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
     fetch("/api/admin/referrals")
       .then(r => r.ok ? r.json() : null)
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }
+  useEffect(load, []);
+
+  async function markGiven(id: string) {
+    setMarking(id);
+    await fetch(`/api/admin/referrals/${id}/mark-given`, { method: "POST" }).catch(() => {});
+    setMarking(null);
+    load();
+  }
 
   if (loading) {
     return <div className="p-6 text-center text-slate-400 text-sm">טוען…</div>;
@@ -66,6 +80,12 @@ export default function AdminReferralsPage() {
         <p className="text-sm text-slate-500 mt-1">
           כל <span className="font-semibold text-teal-700">{data.goal}</span> חברים שלקוח מביא — מגיע לו{" "}
           <span className="font-semibold text-teal-700">{data.giftLabel}</span>
+          {data.goal2 && data.giftLabel2 && (
+            <>
+              {" "}· ומ-<span className="font-semibold text-teal-700">{data.goal2}</span> חברים —{" "}
+              <span className="font-semibold text-teal-700">{data.giftLabel2}</span>
+            </>
+          )}
         </p>
       </div>
 
@@ -100,8 +120,12 @@ export default function AdminReferralsPage() {
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <span className="text-[11px] font-bold text-amber-700 bg-amber-100 rounded-full px-2.5 py-1 whitespace-nowrap">
-                    {r.giftsEarned} × {data.giftLabel}
+                    {r.pendingLabels[0]}{r.pendingLabels.length > 1 ? ` (+${r.pendingLabels.length - 1})` : ""}
                   </span>
+                  <button onClick={() => markGiven(r.id)} disabled={marking === r.id}
+                    className="text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-full px-3 py-1.5 whitespace-nowrap">
+                    {marking === r.id ? "מסמן…" : "✓ קיבל"}
+                  </button>
                   {r.phone && (
                     <a href={waLink(r.phone)} target="_blank" rel="noopener noreferrer"
                       className="text-[11px] font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-full px-3 py-1.5 whitespace-nowrap">
@@ -124,7 +148,7 @@ export default function AdminReferralsPage() {
       ) : (
         <div className="space-y-2">
           {data.rows.map(r => {
-            const pct = Math.round((r.towardNext / Math.max(1, data.goal)) * 100);
+            const pct = Math.round((r.towardNext / Math.max(1, r.activeGoal)) * 100);
             const isOpen = expanded === r.id;
             return (
               <div key={r.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
@@ -140,7 +164,7 @@ export default function AdminReferralsPage() {
                       <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden max-w-[160px]">
                         <div className="h-full rounded-full bg-teal-500" style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="text-[11px] text-slate-400" dir="ltr">{r.towardNext}/{data.goal}</span>
+                      <span className="text-[11px] text-slate-400" dir="ltr">{r.towardNext}/{r.activeGoal}</span>
                     </div>
                   </div>
                   <div className="flex-shrink-0 text-center">

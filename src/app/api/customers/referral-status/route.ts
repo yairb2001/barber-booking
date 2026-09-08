@@ -15,7 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { authSecret } from "@/lib/jwt-secret";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/prisma";
-import { getReferralConfig } from "@/lib/referral";
+import { getReferralConfig, getReferralProgress } from "@/lib/referral";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +58,16 @@ export async function GET(req: NextRequest) {
     where: { businessId, referredById: customer.id },
   });
 
+  // The milestone CURRENTLY being worked toward — once tier 1 is reached and
+  // a tier 2 is configured, this switches to tier 2's goal/gift automatically.
+  const progress = getReferralProgress(referralCount, config);
+
   return NextResponse.json({
     ok: true,
     enabled: true,
     name: customer.name,
     referralCount,
-    goal: config.goal,
-    giftLabel: config.giftLabel,
+    goal: progress.goal,
+    giftLabel: progress.giftLabel,
   });
 }

@@ -275,6 +275,14 @@ model Customer {
   utmCampaign       String?   @map("utm_campaign")   // campaign name
   utmContent        String?   @map("utm_content")    // specific ad name
   referredById      String?   @map("referred_by_id")
+  // ── Referral rewards fulfillment (as a REFERRER, not as the referred friend) ──
+  // How many reward tiers of the "חבר מביא חבר" program have actually been
+  // handed to this customer in person — admin-checked, not auto-derived from
+  // referral count. A customer can be ELIGIBLE for more tiers (per their
+  // referral count vs Business.settings referralGoal/referralGoal2) than have
+  // actually been given; this is what lets the admin mark a tier as given and
+  // stop being nagged about a reward already handed over.
+  referralTiersGiven Int      @default(0) @map("referral_tiers_given")
   isBlocked         Boolean   @default(false) @map("is_blocked")
   pushToken         String?   @map("push_token")
   notificationPrefs String?   @map("notification_prefs") // JSON

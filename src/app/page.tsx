@@ -861,7 +861,7 @@ export default function HomePage() {
                 <p className="text-[10.5px] text-white/85 leading-snug">
                   {reached
                     ? `הגעת ליעד — מגיעה לך ${referral.giftLabel}! 🎁`
-                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} עליך 💈`}
+                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} מאיתנו 💈`}
                 </p>
                 <span className="flex items-center gap-0.5 text-[10.5px] font-bold text-white whitespace-nowrap flex-shrink-0">
                   הזמינו חבר

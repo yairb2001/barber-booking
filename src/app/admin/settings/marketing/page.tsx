@@ -10,6 +10,10 @@ export default function MarketingReferralsPage() {
   const [referralEnabled, setReferralEnabled] = useState(true);
   const [referralGoal, setReferralGoal] = useState(3);
   const [referralGift, setReferralGift] = useState("תספורת חינם");
+  // Optional second, bigger tier — e.g. goal2=6 → a bigger gift on top of the
+  // first. Blank goal2 = tier 2 off (single repeating milestone, as before).
+  const [referralGoal2, setReferralGoal2] = useState("");
+  const [referralGift2, setReferralGift2] = useState("");
   const [savingProgram, setSavingProgram] = useState(false);
   const [savedProgram, setSavedProgram] = useState(false);
 
@@ -33,6 +37,8 @@ export default function MarketingReferralsPage() {
         setReferralEnabled(s.referralProgramEnabled !== false);
         if (Number(s.referralGoal) > 0) setReferralGoal(Math.round(Number(s.referralGoal)));
         if (typeof s.referralGiftLabel === "string" && s.referralGiftLabel.trim()) setReferralGift(s.referralGiftLabel.trim());
+        if (Number(s.referralGoal2) > 0) setReferralGoal2(String(Math.round(Number(s.referralGoal2))));
+        if (typeof s.referralGiftLabel2 === "string" && s.referralGiftLabel2.trim()) setReferralGift2(s.referralGiftLabel2.trim());
         if (typeof s.referralFriendSource === "string") setReferralFriendSource(s.referralFriendSource);
       }
       setLoading(false);
@@ -42,14 +48,21 @@ export default function MarketingReferralsPage() {
 
   async function saveReferralProgram() {
     setSavingProgram(true);
+    const goal = Math.max(1, Math.round(referralGoal) || 3);
+    const goal2Num = Math.round(Number(referralGoal2) || 0);
+    // Tier 2 needs BOTH a goal strictly past tier 1 and a gift — a half-filled
+    // pair is treated as "not configured" rather than saved broken.
+    const goal2Valid = goal2Num > goal && referralGift2.trim();
     await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         settingsPatch: {
           referralProgramEnabled: referralEnabled,
-          referralGoal: Math.max(1, Math.round(referralGoal) || 3),
+          referralGoal: goal,
           referralGiftLabel: referralGift.trim() || "תספורת חינם",
+          referralGoal2: goal2Valid ? goal2Num : null,
+          referralGiftLabel2: goal2Valid ? referralGift2.trim() : null,
         },
       }),
     });
@@ -169,6 +182,28 @@ export default function MarketingReferralsPage() {
             <p className="text-[11px] text-neutral-400 mt-2">
               לדוגמה: כל {Math.max(1, referralGoal)} חברים = {referralGift.trim() || "תספורת חינם"}.
             </p>
+
+            <div className={`mt-4 pt-4 border-t border-neutral-100 transition-opacity ${referralEnabled ? "" : "opacity-40 pointer-events-none"}`}>
+              <p className="text-xs font-medium text-neutral-600 mb-2">רמה שנייה (אופציונלי) — מתנה גדולה יותר ביעד רחוק יותר</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">כמה חברים = רמה 2?</label>
+                  <input type="number" min={referralGoal + 1} value={referralGoal2}
+                    onChange={e => setReferralGoal2(e.target.value)}
+                    placeholder="למשל 6"
+                    className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">המתנה ברמה 2</label>
+                  <input value={referralGift2} onChange={e => setReferralGift2(e.target.value)}
+                    placeholder="למשל: מוצר לשיער + תספורת חינם"
+                    className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                </div>
+              </div>
+              <p className="text-[11px] text-neutral-400 mt-2">
+                השאר ריק כדי לכבות — אז המתנה הראשונה פשוט חוזרת על עצמה בכל {Math.max(1, referralGoal)} חברים נוספים, כמו קודם.
+              </p>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-neutral-200 p-6">
