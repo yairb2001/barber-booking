@@ -160,7 +160,8 @@ export default function CustomersPage() {
   useEffect(() => {
     if (!pendingPhone || customers.length === 0) return;
     const norm = (x: string) => (x || "").replace(/\D/g, "").replace(/^0/, "972");
-    const target = customers.find(c => norm(c.phone) === norm(pendingPhone));
+    // Accepts a phone (chat deep-link) or a customer id (dashboard links).
+    const target = customers.find(c => c.id === pendingPhone || norm(c.phone) === norm(pendingPhone));
     if (target) { setSelectedId(target.id); setPendingPhone(null); }
   }, [pendingPhone, customers]);
 

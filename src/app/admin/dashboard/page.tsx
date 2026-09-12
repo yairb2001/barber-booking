@@ -22,10 +22,19 @@ type BarberStats = {
 
 type SourceRow = { source: string; new: number; returned: number };
 
+type Cancellations = {
+  total: number; booked: number; rate: number; byCustomerCount: number; byStaffCount: number;
+  late: number; lateRevenue: number;
+  byStaff: { staffId: string; name: string; cancelled: number; total: number; rate: number }[];
+  byWeekday: { weekday: number; cancelled: number; total: number; rate: number }[];
+  topCancellers: { customerId: string; name: string; count: number }[];
+};
+
 type Analytics = {
   totalRevenue:         number;
   totalAppointments:    number;
   periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
+  cancellations?:       Cancellations;
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1381,6 +1390,64 @@ export default function Dashboard() {
               />
             )}
           </div>
+
+          {/* ── Cancellations — where the money leaks ── */}
+          {!isFutureMonth && a.cancellations && a.cancellations.booked > 0 && (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <div className="flex items-baseline justify-between mb-3">
+                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">❌ ביטולים — {monthLabel}</h2>
+                <span className={`text-2xl font-extrabold ${a.cancellations.rate >= 25 ? "text-red-600" : a.cancellations.rate >= 15 ? "text-amber-600" : "text-neutral-800"}`}>{a.cancellations.rate}%</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div className="bg-neutral-50 rounded-xl py-2">
+                  <p className="text-lg font-bold text-neutral-800">{a.cancellations.byCustomerCount}</p>
+                  <p className="text-[10px] text-neutral-500">ביטלו לקוחות</p>
+                </div>
+                <div className="bg-neutral-50 rounded-xl py-2">
+                  <p className="text-lg font-bold text-neutral-800">{a.cancellations.byStaffCount}</p>
+                  <p className="text-[10px] text-neutral-500">ביטלו ספרים</p>
+                </div>
+                <div className="bg-red-50 rounded-xl py-2">
+                  <p className="text-lg font-bold text-red-700">{a.cancellations.late}</p>
+                  <p className="text-[10px] text-red-600">מאוחרים (&lt;24ש׳) · ₪{a.cancellations.lateRevenue.toLocaleString()}</p>
+                </div>
+              </div>
+              {/* by weekday */}
+              <div className="flex items-end gap-1 h-14 mb-1">
+                {a.cancellations.byWeekday.map(w => (
+                  <div key={w.weekday} className="flex-1 flex flex-col items-center justify-end h-full" title={`${w.cancelled} מתוך ${w.total}`}>
+                    <div className={`w-full rounded-t ${w.rate >= 25 ? "bg-red-400" : w.rate >= 15 ? "bg-amber-300" : "bg-teal-300"}`} style={{ height: `${Math.max(4, Math.min(100, w.rate * 2.5))}%` }} />
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-1 mb-3">
+                {["א","ב","ג","ד","ה","ו","ש"].map((d, i) => (
+                  <div key={d} className="flex-1 text-center text-[10px] text-neutral-500">{d}<span className="block text-[9px] text-neutral-400">{a.cancellations!.byWeekday[i].rate}%</span></div>
+                ))}
+              </div>
+              {a.cancellations.byStaff.length > 1 && (
+                <div className="space-y-1 mb-3">
+                  {a.cancellations.byStaff.map(s => (
+                    <div key={s.staffId} className="flex items-center gap-2 text-xs">
+                      <span className="w-20 truncate text-neutral-700">{s.name}</span>
+                      <div className="flex-1 h-2 bg-neutral-100 rounded-full overflow-hidden"><div className={`h-full ${s.rate >= 25 ? "bg-red-400" : s.rate >= 15 ? "bg-amber-300" : "bg-teal-300"}`} style={{ width: `${Math.min(100, s.rate)}%` }} /></div>
+                      <span className="w-14 text-left text-neutral-500 tabular-nums">{s.rate}% · {s.cancelled}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {a.cancellations.topCancellers.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-neutral-400 mb-1">מבטלים סדרתיים (2+ החודש)</p>
+                  <div className="flex flex-wrap gap-1">
+                    {a.cancellations.topCancellers.map(c => (
+                      <a key={c.customerId} href={`/admin/customers?customer=${c.customerId}`} className="text-[11px] bg-neutral-100 hover:bg-neutral-200 rounded-full px-2 py-0.5 text-neutral-700">{c.name} · {c.count}</a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Per-barber simple cards (owners, no filter) ── */}
           {isOwner && !selStaff && a.staffSummary.length > 1 && (

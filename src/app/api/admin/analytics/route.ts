@@ -109,8 +109,8 @@ export async function GET(req: NextRequest) {
     where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, ...sf },
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
-      startTime: true, serviceId: true,
-      customer: { select: { id: true, referralSource: true } },
+      startTime: true, serviceId: true, cancelledAt: true,
+      customer: { select: { id: true, referralSource: true, name: true } },
       staff:    { select: { id: true, name: true } },
       service:  { select: { id: true, name: true } },
     },
@@ -130,6 +130,44 @@ export async function GET(req: NextRequest) {
   // No-shows within the selected period (respects the month picker + staff
   // filter) — separate from `totalNoShows` below, which is all-time.
   const periodNoShows = periodAll.filter(a => a.status === "no_show").length;
+
+  // ── Cancellations — the metric that was missing ────────────────────────────
+  // Rate over everything booked in the period, split by who cancelled, by
+  // barber, by weekday, "late" (cancelledAt within 24h of the slot) and the
+  // customers who cancel most. Money lost = late cancellations × price.
+  const cancelled = periodAll.filter(a => CANCELLED.has(a.status) && a.status !== "no_show");
+  const byStaffCancel = new Map<string, { name: string; cancelled: number; total: number }>();
+  const byWeekday = Array.from({ length: 7 }, () => ({ cancelled: 0, total: 0 }));
+  const byCustomer = new Map<string, { name: string; count: number }>();
+  let lateCount = 0, lateRevenue = 0;
+  for (const a of periodAll) {
+    const st = byStaffCancel.get(a.staffId) || { name: a.staff.name, cancelled: 0, total: 0 };
+    st.total++;
+    const wd = new Date(a.date).getUTCDay();
+    byWeekday[wd].total++;
+    if (CANCELLED.has(a.status) && a.status !== "no_show") {
+      st.cancelled++;
+      byWeekday[wd].cancelled++;
+      const c = byCustomer.get(a.customerId) || { name: a.customer.name, count: 0 };
+      c.count++; byCustomer.set(a.customerId, c);
+      if (a.cancelledAt && appointmentInstant(a.date, a.startTime).getTime() - a.cancelledAt.getTime() < 24 * 3_600_000) {
+        lateCount++; lateRevenue += a.price;
+      }
+    }
+    byStaffCancel.set(a.staffId, st);
+  }
+  const cancellations = {
+    total: cancelled.length,
+    booked: periodAll.length,
+    rate: periodAll.length ? Math.round((cancelled.length / periodAll.length) * 100) : 0,
+    byCustomerCount: cancelled.filter(a => a.status === "cancelled_by_customer").length,
+    byStaffCount: cancelled.filter(a => a.status === "cancelled_by_staff").length,
+    late: lateCount,
+    lateRevenue: Math.round(lateRevenue),
+    byStaff: Array.from(byStaffCancel.entries()).map(([staffId, v]) => ({ staffId, ...v, rate: v.total ? Math.round((v.cancelled / v.total) * 100) : 0 })).sort((x, y) => y.rate - x.rate),
+    byWeekday: byWeekday.map((v, i) => ({ weekday: i, ...v, rate: v.total ? Math.round((v.cancelled / v.total) * 100) : 0 })),
+    topCancellers: Array.from(byCustomer.entries()).map(([customerId, v]) => ({ customerId, ...v })).filter(x => x.count >= 2).sort((x, y) => y.count - x.count).slice(0, 8),
+  };
 
   // ── Service breakdown (for the pie chart): appointments per service in period ──
   const svcMap = new Map<string, { name: string; count: number; revenue: number }>();
@@ -256,7 +294,7 @@ export async function GET(req: NextRequest) {
       computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
     ]);
     return NextResponse.json({
-      totalRevenue, totalAppointments, periodNoShows,
+      totalRevenue, totalAppointments, periodNoShows, cancellations,
       uniqueCustomers: 0,
       weekly,
       newCustomers: 0,           // legacy alias
@@ -547,6 +585,7 @@ export async function GET(req: NextRequest) {
     totalRevenue,
     totalAppointments,
     periodNoShows,
+    cancellations,
     // Unique customers served in the period (respects staff filter via sf)
     uniqueCustomers: periodCustIds.length,
     // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.
