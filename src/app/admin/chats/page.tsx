@@ -7,6 +7,9 @@ type ChatListItem = {
   id: string;
   phone: string;
   customerName: string | null;
+  whatsappName?: string | null;
+  customerId?: string | null;
+  snoozedUntil?: string | null;
   status: string;
   escalated: boolean;
   needsHuman: boolean;
@@ -227,6 +230,22 @@ export default function ChatsPage() {
     if (selId === id) fetchDetail(id);
   }
 
+  // ── "Remind me later" — hides the red alert until then ──────────────────────
+  const [snoozeFor, setSnoozeFor] = useState<string | null>(null);
+  async function snooze(id: string, hours: number) {
+    setSnoozeFor(null);
+    setChats(prev => prev.map(c => c.id === id ? { ...c, needsHandling: false, snoozedUntil: new Date(Date.now() + hours * 3_600_000).toISOString() } : c));
+    await fetch(`/api/admin/chats/${id}/mark-handled`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snoozeHours: hours }),
+    }).catch(() => {});
+    fetchList();
+  }
+  // Hours until tomorrow 09:00 / this evening 18:00 (Israel-local browser time).
+  function hoursUntil(hour: number, tomorrow: boolean): number {
+    const t = new Date(); if (tomorrow) t.setDate(t.getDate() + 1); t.setHours(hour, 0, 0, 0);
+    return Math.max(0.25, (t.getTime() - Date.now()) / 3_600_000);
+  }
+
   // ── Toggle agent for this conversation ──────────────────────────────────────
   async function toggleAgent(active: boolean) {
     if (!selId) return;
@@ -291,17 +310,41 @@ export default function ChatsPage() {
             needsHandling ? "font-bold text-slate-900" : "font-semibold text-slate-800"
           }`}>
             {needsHandling && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
-            {c.customerName || c.phone}
+            <span className="truncate">
+              {c.customerName || c.phone}
+              {c.whatsappName && <span className="block text-[10px] font-normal text-slate-400 truncate">בוואטסאפ: {c.whatsappName}</span>}
+            </span>
           </span>
           <div className="flex items-center gap-1 shrink-0">
             {needsHandling && (
-              <button
-                onClick={e => { e.stopPropagation(); markHandled(c.id); }}
-                className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-medium hover:bg-emerald-100 transition"
-                title="סמן כטופל — מסיר את ההתראה האדומה בלי לענות"
-              >
-                ✓ טופל
-              </button>
+              <>
+                <div className="relative">
+                  <button
+                    onClick={e => { e.stopPropagation(); setSnoozeFor(snoozeFor === c.id ? null : c.id); }}
+                    className="text-[10px] bg-slate-50 text-slate-600 border border-slate-200 px-1.5 py-0.5 rounded-full font-medium hover:bg-slate-100 transition"
+                    title="הזכר לי מאוחר יותר"
+                  >
+                    ⏰
+                  </button>
+                  {snoozeFor === c.id && (
+                    <div className="absolute left-0 top-6 z-20 bg-white border border-slate-200 rounded-lg shadow-lg p-1 w-36" onClick={e => e.stopPropagation()}>
+                      {([["בעוד שעה", 1], ["הערב 18:00", hoursUntil(18, false)], ["מחר 09:00", hoursUntil(9, true)]] as const).map(([label, h]) => (
+                        <button key={label} onClick={() => snooze(c.id, h)} className="w-full text-right text-xs px-2 py-1.5 rounded hover:bg-slate-50">{label}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={e => { e.stopPropagation(); markHandled(c.id); }}
+                  className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full font-medium hover:bg-emerald-100 transition"
+                  title="סמן כטופל — מסיר את ההתראה האדומה בלי לענות"
+                >
+                  ✓ טופל
+                </button>
+              </>
+            )}
+            {!needsHandling && c.snoozedUntil && (
+              <span className="text-[10px] text-slate-400" title="נודניק">⏰ {new Date(c.snoozedUntil).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })}</span>
             )}
             {handled && (
               <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">
@@ -382,6 +425,11 @@ export default function ChatsPage() {
                 className="flex-1 min-w-0 text-right hover:opacity-70 transition" title="פתח כרטיס לקוח">
                 <p className="font-semibold text-slate-900 truncate">{activeThread.customerName || activeThread.phone}</p>
                 <p className="text-xs text-slate-400" dir="ltr">{activeThread.phone}</p>
+              </button>
+              <button onClick={() => router.push(`/admin?book=${encodeURIComponent(activeThread.phone)}`)}
+                className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100 transition"
+                title="קבע תור ללקוח הזה — האישור יופיע גם כאן בשיחה">
+                📅 קבע תור
               </button>
               {activeThread.id && (
                 <button

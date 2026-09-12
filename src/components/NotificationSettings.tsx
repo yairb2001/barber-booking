@@ -11,7 +11,7 @@ function parseMaybeJson(raw: unknown): Record<string, unknown> {
   return raw as Record<string, unknown>;
 }
 
-type ToggleKey = "notifyOnAppointments" | "notifyOnCancellation" | "notifyOnWaitlist" | "notifyOnEscalation";
+type ToggleKey = "notifyOnAppointments" | "notifyOnCancellation" | "notifyOnWaitlist" | "notifyOnEscalation" | "notifyOnReply";
 
 // Self-contained "🔔 התראות" settings card: the enable button + one toggle
 // per event type (default ON). Loads/saves its own state via `endpoint`
@@ -36,6 +36,7 @@ export default function NotificationSettings({ endpoint = "/api/admin/business" 
     notifyOnCancellation: true,
     notifyOnWaitlist: true,
     notifyOnEscalation: true,
+    notifyOnReply: true,
   });
   const [loaded, setLoaded] = useState(false);
 
@@ -80,6 +81,7 @@ export default function NotificationSettings({ endpoint = "/api/admin/business" 
     { key: "notifyOnCancellation", icon: "❌", label: "תור בוטל", hint: "כשלקוח מבטל תור שכבר נקבע" },
     { key: "notifyOnWaitlist", icon: "⏳", label: "הצטרפות לרשימת המתנה", hint: "כשלקוח נרשם לרשימת המתנה לתור פנוי" },
     { key: "notifyOnEscalation", icon: "👤", label: "הופנה לטיפול אנושי", hint: "כששיחה מועברת אליך מהבוט" },
+    { key: "notifyOnReply", icon: "💬", label: "לקוח ענה לך בצ׳אט", hint: "רק בשיחות שאתה מטפל בהן — עם תוכן ההודעה" },
   ];
 
   return (

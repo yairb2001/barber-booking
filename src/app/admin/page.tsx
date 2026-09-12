@@ -828,8 +828,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
 
 // ── "הכי קרוב" — nearest open slots across all barbers (phone-call helper) ────
 type QuickSlotRow = { staffId: string; staffName: string; date: string; dayLabel: string; time: string; serviceName: string; duration: number };
-function NearestSlotsPopover({ staffFilter, allStaff, onPick, onClose }: {
-  staffFilter: string; allStaff: Staff[]; onPick: (s: QuickSlotRow) => void; onClose: () => void;
+function NearestSlotsPopover({ staffFilter, allStaff, onPick, onClose, forName }: {
+  staffFilter: string; allStaff: Staff[]; onPick: (s: QuickSlotRow) => void; onClose: () => void; forName?: string;
 }) {
   useModalBack(true, onClose);
   const [filter, setFilter] = useState(staffFilter);
@@ -847,7 +847,7 @@ function NearestSlotsPopover({ staffFilter, allStaff, onPick, onClose }: {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-neutral-100 sticky top-0 bg-white">
-          <h3 className="font-bold text-neutral-900 text-base">⚡ הכי קרוב</h3>
+          <h3 className="font-bold text-neutral-900 text-base">⚡ הכי קרוב{forName ? <span className="text-sm font-medium text-neutral-500"> · ל{forName}</span> : null}</h3>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">✕</button>
         </div>
         <div className="px-5 pt-3 pb-1 flex gap-1.5 overflow-x-auto">
@@ -936,8 +936,13 @@ function FindCustomerPopover({ onPick, onClose }: {
 }
 
 // ── New Appointment Modal ─────────────────────────────────────────────────────
-function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved }:
-  { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void }
+function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved, initialCustomer = null, mirrorToChat = false }:
+  { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void;
+    /** Pre-selected customer (booking started from the chat screen). */
+    initialCustomer?: Customer | null;
+    /** Also write the confirmation into the customer's chat thread. */
+    mirrorToChat?: boolean;
+  }
 ) {
   useModalBack(true, onClose);
   // fromGrid = opened by clicking a cell (staff + time pre-set)
@@ -958,7 +963,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   // offers, with their own custom name/price/duration. null = not loaded yet
   // (fall back to the global list). Reloaded whenever the chosen barber changes.
   const [staffServices, setStaffServices] = useState<Service[] | null>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(initialCustomer);
   const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
   // Referral tracking — required when creating a NEW customer (parity with /book/confirm)
   const [referralSource, setReferralSource] = useState("");
@@ -1118,6 +1123,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         walkIn,
         notifyCustomer,
         allowDuplicate,
+        mirrorToChat,
         override,
       }),
     });
@@ -4384,6 +4390,23 @@ export default function AdminCalendar() {
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
   const [swipeToast, setSwipeToast] = useState<string | null>(null);
   const [nearestOpen, setNearestOpen] = useState(false);
+  // /admin?book=<phone> (from the chat screen): pick a slot, then book for
+  // this customer with the confirmation mirrored into the chat.
+  const [bookFor, setBookFor] = useState<Customer | null>(null);
+  useEffect(() => {
+    const phone = new URLSearchParams(window.location.search).get("book");
+    if (!phone) return;
+    fetch(`/api/admin/customers?q=${encodeURIComponent(phone)}&limit=3`)
+      .then(r => (r.ok ? r.json() : []))
+      .then((d: Customer[]) => {
+        const norm = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
+        const c = Array.isArray(d) ? d.find(x => norm(x.phone) === norm(phone)) || d[0] : null;
+        if (c) setBookFor(c);
+        setNearestOpen(true);
+      })
+      .catch(() => setNearestOpen(true));
+    window.history.replaceState(null, "", "/admin");
+  }, []);
   const [findOpen, setFindOpen] = useState(false);
   // After "find customer" jumps to a date, open this appointment once loaded.
   const pendingOpenApptId = useRef<string | null>(null);
@@ -6404,6 +6427,7 @@ export default function AdminCalendar() {
           allStaff={allStaff}
           onClose={() => setNearestOpen(false)}
           onPick={r => { setNearestOpen(false); setNewAppt({ staffId: r.staffId, date: r.date, time: r.time }); }}
+          forName={bookFor?.name}
         />
       )}
       {findOpen && (
@@ -6464,7 +6488,8 @@ export default function AdminCalendar() {
           staff={allStaff.find(s => s.id === newAppt.staffId) || null}
           allStaff={allStaff} services={services}
           date={newAppt.date} time={newAppt.time}
-          onClose={() => setNewAppt(null)} onSaved={loadAppointments}
+          onClose={() => { setNewAppt(null); setBookFor(null); }} onSaved={loadAppointments}
+          initialCustomer={bookFor} mirrorToChat={!!bookFor}
         />
       )}
       {addBreak && (

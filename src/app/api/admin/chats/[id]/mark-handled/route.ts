@@ -3,7 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 
 // POST /api/admin/chats/[id]/mark-handled
-// Body: { handled?: boolean }  (defaults to true)
+// Body: { handled?: boolean, snoozeHours?: number }  (defaults to handled=true)
+// snoozeHours → "remind me later": the alert disappears and comes back red at
+// that time (snoozedUntil), without marking handled.
 //
 // Marks a conversation as handled without replying — it drops the red "needs
 // handling" alert while the customer hasn't written again. A newer customer
@@ -18,9 +20,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // Body is optional — default to marking handled.
   let handled = true;
+  let snoozeHours = 0;
   try {
     const body = await req.json();
     if (body && typeof body.handled === "boolean") handled = body.handled;
+    if (body && typeof body.snoozeHours === "number" && body.snoozeHours > 0) snoozeHours = Math.min(body.snoozeHours, 24 * 7);
   } catch {
     // no body → keep default true
   }
@@ -36,12 +40,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  if (snoozeHours > 0) {
+    const until = new Date(Date.now() + snoozeHours * 3_600_000);
+    await prisma.conversation.update({ where: { id: conv.id }, data: { snoozedUntil: until, lastReadAt: new Date() } });
+    return NextResponse.json({ ok: true, snoozedUntil: until });
+  }
+
   const updated = await prisma.conversation.update({
     where: { id: conv.id },
     // Marking handled also counts as reading it (clears the unread badge).
     data: handled
-      ? { handledAt: new Date(), lastReadAt: new Date() }
-      : { handledAt: null },
+      ? { handledAt: new Date(), lastReadAt: new Date(), snoozedUntil: null }
+      : { handledAt: null, snoozedUntil: null },
   });
 
   return NextResponse.json({ ok: true, handledAt: updated.handledAt });

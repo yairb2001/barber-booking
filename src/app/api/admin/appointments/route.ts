@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
-import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE, mirrorToConversation } from "@/lib/messaging";
 import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
 import { timeToMinutes, appointmentInstant } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -336,6 +336,10 @@ export async function POST(req: NextRequest) {
       kind: msgKind,
       body: msgBody,
     }).catch(err => console.error("confirmation send failed", err)));
+    // Booked from the chat screen → the confirmation belongs in that thread too.
+    if (body.mirrorToChat === true) {
+      notifyTasks.push(mirrorToConversation(business.id, normalizeIsraeliPhone(appointment.customer.phone) || appointment.customer.phone, msgBody));
+    }
   }
 
   // ── Walk-in thank-you — always sent, regardless of whether time has passed ────

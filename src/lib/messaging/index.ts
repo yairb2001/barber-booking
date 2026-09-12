@@ -1130,3 +1130,26 @@ export function noShowText(
     time:     params.startTime,
   });
 }
+
+/**
+ * Record an outgoing system message in the customer's WhatsApp conversation
+ * thread (ConversationMessage) so it shows up in the admin inbox and in the
+ * agent's context. sendMessage()/enqueueMessage() only write MessageLog —
+ * use this alongside them when the message belongs in the chat history.
+ * Never escalates. Best-effort: a logging failure never breaks the caller.
+ */
+export async function mirrorToConversation(businessId: string, phone: string, body: string, source: "admin" | "agent" = "admin"): Promise<void> {
+  try {
+    let conversation = await prisma.conversation.findFirst({
+      where: { businessId, phone, agentType: { not: "owner" } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!conversation) {
+      conversation = await prisma.conversation.create({ data: { businessId, phone, agentType: "customer", status: "active" } });
+    }
+    await prisma.conversationMessage.create({ data: { conversationId: conversation.id, role: "assistant", source, content: body } });
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date() } });
+  } catch (err) {
+    console.error("[messaging] mirrorToConversation failed", err);
+  }
+}

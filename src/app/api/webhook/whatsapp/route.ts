@@ -21,7 +21,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
 import { handleConfirmReply } from "@/lib/confirmations";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
@@ -33,6 +33,7 @@ import {
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage } from "@/lib/messaging";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
@@ -490,12 +491,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: null } });
   }
   if (isEscalated) {
-    // Conversation handed to a human → notify the owner of the new message.
-    pushToOwner(biz.id, {
-      title: `הודעה חדשה מ${senderName || phone}`,
-      body: previewText(text),
-      data: { type: "chat", conversationId: conv.id, phone },
-    }).catch(() => {});
+    // Conversation handed to a human → notify whoever handles the inbox, WITH
+    // the message text, so nobody has to open the app to see what was said.
+    const who = await prisma.customer.findFirst({ where: { businessId: biz.id, phone: { in: phoneVariants(phone) }, deletedAt: null }, select: { name: true } }).catch(() => null);
+    const title = `💬 ${who?.name || senderName || phone}`;
+    const bodyText = previewText(text);
+    pushToOwner(biz.id, { title: `הודעה חדשה מ${who?.name || senderName || phone}`, body: bodyText, data: { type: "chat", conversationId: conv.id, phone } }).catch(() => {});
+    notifyOwnerWeb(biz.id, "reply", { title, body: bodyText, url: `/admin/chats?phone=${encodeURIComponent(phone)}`, tag: `chat-${conv.id}` }).catch(() => {});
+    // Barbers who can see the shared inbox get it too (their own toggle applies).
+    prisma.staff.findMany({ where: { businessId: biz.id, role: "barber", canViewAllChats: true }, select: { id: true } })
+      .then(rows => rows.forEach(r => notifyStaffWeb(r.id, "reply", { title, body: bodyText, url: `/admin/chats?phone=${encodeURIComponent(phone)}`, tag: `chat-${conv.id}` }).catch(() => {})))
+      .catch(() => {});
     return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
   }
 

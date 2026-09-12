@@ -27,13 +27,14 @@ export const VAPID_PUBLIC_KEY =
   "BALFgMY0H30c5JqnYgWD7KtZrdgiHpAZKtqmzmFTVYAUUQMmMigPjy7STwMyjdCJmKNPtDk53Nk-un3YvNljU9M";
 
 export type WebPushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
-export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation";
+export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply";
 
 const TOGGLE_KEY: Record<NotifyType, string> = {
   appointment: "notifyOnAppointments",
   cancellation: "notifyOnCancellation",
   waitlist: "notifyOnWaitlist",
   escalation: "notifyOnEscalation",
+  reply: "notifyOnReply", // customer wrote back in a chat a human is handling
 };
 
 function parseSettings(raw: string | null): Record<string, unknown> {

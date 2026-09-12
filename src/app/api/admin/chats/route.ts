@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
   const convs = await prisma.conversation.findMany({
     where,
     orderBy: { lastMessageAt: "desc" },
-    take: 200,
+    take: 500,
     include: {
       customer: { select: { id: true, name: true } },
       messages: {
@@ -108,7 +108,10 @@ export async function GET(req: NextRequest) {
     // longer needs handling — even though the customer technically spoke last.
     // A newer customer message (createdAt > handledAt) re-flags it automatically.
     const handledCovered = !!c.handledAt && !!last && last.createdAt <= c.handledAt;
-    const needsHandling = needsHuman && last?.role === "user" && !handledCovered;
+    // Snoozed ("remind me later"): quiet until snoozedUntil, unless the
+    // customer wrote again after the snooze was set.
+    const snoozed = !!c.snoozedUntil && c.snoozedUntil.getTime() > now && !(last && last.role === "user" && c.lastReadAt && last.createdAt > c.lastReadAt);
+    const needsHandling = needsHuman && last?.role === "user" && !handledCovered && !snoozed;
 
     // Resolve display name in priority order:
     //   1. Linked customer in DB (most reliable — name they registered with)
@@ -117,11 +120,16 @@ export async function GET(req: NextRequest) {
     //   4. null → UI falls back to phone
     const matchedByPhone = phoneToCustomer.get(normalizeIsraeliPhone(c.phone));
     const customerName = c.customer?.name ?? matchedByPhone?.name ?? c.whatsappName ?? null;
+    const systemName = c.customer?.name ?? matchedByPhone?.name ?? null;
 
     return {
       id: c.id,
       phone: c.phone,
       customerName,
+      // WhatsApp profile name, shown small under the system name when they differ.
+      whatsappName: c.whatsappName && systemName && c.whatsappName.trim() !== systemName.trim() ? c.whatsappName : null,
+      customerId: c.customer?.id ?? matchedByPhone?.id ?? null,
+      snoozedUntil: snoozed ? c.snoozedUntil : null,
       status: c.status,
       escalated,
       needsHuman,

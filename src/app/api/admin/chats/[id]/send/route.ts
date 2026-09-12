@@ -46,6 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       escalatedAt: new Date(),
       lastMessageAt: new Date(),
       lastReadAt: new Date(),
+      snoozedUntil: null, // replying answers the reminder
     },
   });
 
