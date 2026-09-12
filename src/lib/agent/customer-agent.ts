@@ -15,6 +15,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
+import { computeCustomerInsights } from "@/lib/customer-insights";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -402,13 +403,25 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
+/** Tools that change the world — simulated in sandbox (owner test) runs. */
+const MUTATING_TOOLS = new Set([
+  "book_appointment", "book_for_customer", "cancel_appointment", "join_waitlist", "move_appointment",
+  "request_appointment_change", "request_appointment_move", "swap_appointments", "escalate_to_human",
+  "send_to_customer", "send_to_customers", "send_to_today_customers", "save_setup_field", "report_running_late",
+]);
+
 export async function execTool(
   name: string,
   input: Record<string, string>,
   bizId: string,
   conversationId: string,
-  callerPhone: string
+  callerPhone: string,
+  sandbox?: { toolLog: string[] },
 ): Promise<string> {
+  if (sandbox && MUTATING_TOOLS.has(name)) {
+    sandbox.toolLog.push(`${name}(${JSON.stringify(input)})`);
+    return `[מצב בדיקה] הפעולה ${name} בוצעה בהצלחה (סימולציה — שום דבר לא נשמר). ענה ללקוח כאילו הצליחה, עם הפרטים שביקש.`;
+  }
   try {
     switch (name) {
       // ── get_services ────────────────────────────────────────────────────────
@@ -1475,6 +1488,27 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
     parts.push(`ביקורים אחרונים שלו: ${visits}. אם זה רלוונטי אפשר להציע את אותו ספר או שירות, אבל אל תניח — תמיד תוודא איתו.`);
   }
 
+  // ── "כמו תמיד" — the customer's usual, computed from a wider history ────────
+  // A regular who writes "רוצה תור" should not be interrogated (which service?
+  // which barber?). Offer the usual as ONE question with real availability.
+  try {
+    const wide = await prisma.appointment.findMany({
+      where: { customerId: customer.id, businessId },
+      orderBy: { date: "desc" }, take: 30,
+      select: { date: true, startTime: true, endTime: true, status: true, staffId: true, serviceId: true, customServiceName: true,
+        staff: { select: { name: true, isAvailable: true } }, service: { select: { name: true } } },
+    });
+    const ins = computeCustomerInsights(wide);
+    if (ins.visits >= 2 && ins.usual && wide.find(w => w.staffId === ins.usual!.staffId)?.staff?.isAvailable) {
+      const tod = ins.usual.timeOfDay === "morning" ? "בבוקר" : ins.usual.timeOfDay === "afternoon" ? "בצהריים" : ins.usual.timeOfDay === "evening" ? "בערב" : "";
+      const rhythm = ins.avgIntervalDays ? ` הוא מגיע בערך כל ${ins.avgIntervalDays} יום${ins.expectedReturnInDays !== null && ins.expectedReturnInDays <= 3 ? " — והוא בדיוק בזמן לתספורת הבאה" : ""}.` : "";
+      parts.push(
+        `הרגיל שלו: ${ins.usual.serviceName} אצל ${ins.usual.staffName}${tod ? `, בדרך כלל ${tod}` : ""}${ins.usual.hour ? ` סביב ${ins.usual.hour}` : ""}.${rhythm} ` +
+        `כשהוא מבקש תור בלי לפרט — אל תשאל "איזה שירות" ו"אצל מי": בדוק זמינות עם הכלי ל${ins.usual.serviceName} אצל ${ins.usual.staffName}${tod ? ` ${tod}` : ""} והצע לו ישר 2-3 שעות קרובות במשפט אחד ("כמו תמיד, ${ins.usual.serviceName} אצל ${ins.usual.staffName}? יש לי ..."). אם הוא רוצה משהו אחר — הוא יגיד.`,
+      );
+    }
+  } catch { /* context enrichment is best-effort */ }
+
   // ── Preferred-barber signal (favorite vs. mixed) ─────────────────────────────
   // Over a wider window than the 3 shown above, decide whether the customer has a
   // clear go-to barber. A loyal customer should be offered their regular; a
@@ -1551,8 +1585,10 @@ export async function runCustomerAgent(opts: {
   phone: string;        // normalized E.164
   incomingText: string;
   alreadyPersisted?: boolean;  // when true, skip saving the user message (webhook already did)
+  /** Owner test run: no WhatsApp sends, mutating tools simulated; replies collected here. */
+  sandbox?: { replies: string[]; toolLog: string[] };
 }): Promise<void> {
-  const { businessId, phone, incomingText, alreadyPersisted = false } = opts;
+  const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -1642,7 +1678,7 @@ export async function runCustomerAgent(opts: {
         select: { content: true },
       });
       const pendingFinalConfirm = lastAssistantMsg?.content.includes("מאשר?") ?? false;
-      if (!pendingFinalConfirm) {
+      if (!pendingFinalConfirm && !sandbox) {
         await escalateToHuman({
           bizId: businessId,
           conversationId: conversation.id,
@@ -1794,7 +1830,8 @@ export async function runCustomerAgent(opts: {
           block.input as Record<string, string>,
           businessId,
           conversation.id,
-          phone
+          phone,
+          sandbox,
         );
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 
@@ -1857,6 +1894,7 @@ export async function runCustomerAgent(opts: {
     await prisma.conversationMessage.create({
       data: { conversationId: conversation.id, role: "assistant", content: bubbles[i] },
     });
+    if (sandbox) { sandbox.replies.push(bubbles[i]); continue; }
     await sendMessage({
       businessId,
       customerPhone: phone,

@@ -343,7 +343,35 @@ export async function buildWeeklyReportManager(bizId: string): Promise<string> {
     lines.push(`⚠️ ${atRiskCount} לקוחות לא חזרו 60+ יום — שווה לפנות אליהם`);
   }
 
+  // What the agent could not answer this week — the raw material for new FAQs.
+  // Every hand-off writes an "agent_escalation" MessageLog whose body carries
+  // "בעיה: <reason>"; group identical reasons and show the top ones.
+  const esc = await agentEscalationDigest(bizId, wStart, wEnd);
+  if (esc.total > 0) {
+    lines.push("");
+    lines.push(`🤖 הסוכן העביר ${esc.total} פניות לטיפול אנושי השבוע${esc.top.length ? ":" : ""}`);
+    esc.top.forEach(t => lines.push(`• ${t.reason}${t.count > 1 ? ` (×${t.count})` : ""}`));
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    lines.push(`תשובה קבועה לאחת מהן חוסכת את הפנייה הבאה: ${baseUrl}/admin/agent`);
+  }
+
   return lines.join("\n");
+}
+
+export async function agentEscalationDigest(bizId: string, from: Date, to: Date): Promise<{ total: number; top: { reason: string; count: number }[] }> {
+  const rows = await prisma.messageLog.findMany({
+    where: { businessId: bizId, kind: "agent_escalation", createdAt: { gte: from, lte: to } },
+    select: { body: true },
+  });
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const m = r.body.match(/בעיה:\s*(.+)/);
+    const reason = (m?.[1] || "").trim().replace(/\s+/g, " ").slice(0, 90);
+    if (!reason) continue;
+    counts.set(reason, (counts.get(reason) || 0) + 1);
+  }
+  const top = Array.from(counts.entries()).map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count).slice(0, 5);
+  return { total: rows.length, top };
 }
 
 // ── Weekly report — staff personal view ─────────────────────────────────────

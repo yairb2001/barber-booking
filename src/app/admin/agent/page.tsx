@@ -66,6 +66,18 @@ export default function AdminAgentPage() {
   // GreenAPI one-click webhook wiring
   const [connecting, setConnecting] = useState(false);
   const [connectMsg, setConnectMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Sandbox test scenarios — the real agent, nothing sent, nothing saved.
+  const [testRunning, setTestRunning] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<{ label: string; transcript: { role: string; text: string }[]; toolLog: string[]; error?: string } | null>(null);
+  async function runScenario(scenario: string) {
+    setTestRunning(scenario); setTestResult(null);
+    try {
+      const r = await fetch("/api/admin/agent/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario }) });
+      const d = await r.json();
+      setTestResult(r.ok ? d : { label: "שגיאה", transcript: d.transcript || [], toolLog: d.toolLog || [], error: d.error || "נכשל" });
+    } catch { setTestResult({ label: "שגיאה", transcript: [], toolLog: [], error: "שגיאת חיבור" }); }
+    setTestRunning(null);
+  }
 
   useEffect(() => {
     fetch("/api/admin/agent")
@@ -513,6 +525,34 @@ export default function AdminAgentPage() {
               >
                 × אפס לברירת מחדל
               </button>
+            )}
+          </div>
+
+          {/* Sandbox test — see the agent answer 3 typical situations in seconds */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
+            <div>
+              <h2 className="font-semibold text-neutral-800">🧪 בדיקה מהירה</h2>
+              <p className="text-xs text-neutral-400 mt-0.5">מריץ את הסוכן האמיתי על תרחיש מוכן. שום הודעה לא נשלחת ושום תור לא נקבע — רק רואים איך הוא עונה אחרי שינוי בהנחיות.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {([["new_price", "לקוח חדש שואל מחיר"], ["returning_move", "לקוח חוזר רוצה להזיז תור"], ["unknown", "שאלה שאין עליה תשובה"]] as const).map(([key, label]) => (
+                <button key={key} onClick={() => runScenario(key)} disabled={!!testRunning}
+                  className="text-right rounded-xl border border-neutral-200 px-3 py-2.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">
+                  {testRunning === key ? "מריץ… (עד 30 שנ׳)" : label}
+                </button>
+              ))}
+            </div>
+            {testResult && (
+              <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 space-y-2">
+                <p className="text-xs font-semibold text-neutral-600">{testResult.label}</p>
+                {testResult.error && <p className="text-xs text-red-600">{testResult.error}</p>}
+                {testResult.transcript.map((m, i) => (
+                  <div key={i} className={`text-sm rounded-lg px-3 py-2 max-w-[92%] ${m.role === "user" ? "bg-white border border-neutral-200 mr-auto" : "bg-teal-600 text-white ml-auto"}`}>{m.text}</div>
+                ))}
+                {testResult.toolLog.length > 0 && (
+                  <p className="text-[11px] text-neutral-500 pt-1" dir="ltr">🛠 {testResult.toolLog.join(" · ")}</p>
+                )}
+              </div>
             )}
           </div>
 
