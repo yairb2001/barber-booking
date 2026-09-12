@@ -70,6 +70,13 @@ export default function MessagingPage() {
 
   // Filter
   const [category,    setCategory]    = useState<FilterCategory>("all");
+  // Preset audience handed over from the customers screen (?fq=<customers query>&label=…).
+  const [preset, setPreset] = useState<{ fq: string; label: string } | null>(null);
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const fq = sp.get("fq");
+    if (fq) setPreset({ fq, label: sp.get("label") || "קהל מסונן ממסך הלקוחות" });
+  }, []);
   const [upcoming,    setUpcoming]    = useState<UpcomingPeriod>("today");
   const [activeDays,  setActiveDays]  = useState(30);
   const [inactiveDays,setInactiveDays]= useState(90);
@@ -109,12 +116,12 @@ export default function MessagingPage() {
   // Load customer count estimate whenever filter changes
   useEffect(() => {
     setLoadingCount(true);
-    const qs = buildParams(staffId, category, { upcoming, activeDays, inactiveDays, newDays });
+    const qs = preset ? preset.fq : buildParams(staffId, category, { upcoming, activeDays, inactiveDays, newDays });
     fetch(`/api/admin/customers?${qs}`)
       .then(r => r.json())
       .then(data => { setTotalCount(Array.isArray(data) ? data.length : 0); setLoadingCount(false); })
       .catch(() => setLoadingCount(false));
-  }, [staffId, category, upcoming, activeDays, inactiveDays, newDays]);
+  }, [staffId, category, upcoming, activeDays, inactiveDays, newDays, preset]);
 
   // Load history
   useEffect(() => {
@@ -131,7 +138,7 @@ export default function MessagingPage() {
     setSending(true);
     setResult(null);
     try {
-      const qs = buildParams(staffId, category, { upcoming, activeDays, inactiveDays, newDays });
+      const qs = preset ? preset.fq : buildParams(staffId, category, { upcoming, activeDays, inactiveDays, newDays });
       const res = await fetch("/api/admin/messaging/broadcast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -154,6 +161,7 @@ export default function MessagingPage() {
 
   // Human-readable summary of current filter
   function filterSummary() {
+    if (preset) return preset.label;
     const who = staffId ? (allStaff.find(s => s.id === staffId)?.name || "ספר") : "כל הלקוחות";
     if (category === "all")      return who;
     if (category === "upcoming") return `${who} · ממתינים לתור — ${UPCOMING_OPTIONS.find(o => o.value === upcoming)?.label}`;
@@ -211,6 +219,15 @@ export default function MessagingPage() {
           )}
 
           {/* ── 2. Filter ── */}
+          {preset ? (
+            <div className="bg-teal-50 rounded-2xl border border-teal-200 p-4 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs text-teal-700">קהל מוכן ממסך הלקוחות</p>
+                <p className="text-sm font-semibold text-teal-900">{preset.label}</p>
+              </div>
+              <button onClick={() => setPreset(null)} className="text-xs text-teal-700 underline">שנה סינון</button>
+            </div>
+          ) : (
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <h2 className="font-semibold text-neutral-800 mb-4 text-sm">🎯 סינון לקוחות</h2>
 
@@ -312,6 +329,7 @@ export default function MessagingPage() {
               ) : null}
             </div>
           </div>
+          )}
 
           {/* ── 3. Message ── */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">

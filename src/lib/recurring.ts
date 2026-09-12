@@ -23,7 +23,7 @@ export async function generateOccurrences(
   });
   if (!rule || !rule.active) return { created: 0, skipped: 0 };
 
-  const freq = [1, 2, 4].includes(rule.frequencyWeeks) ? rule.frequencyWeeks : 1;
+  const freq = [1, 2, 3, 4].includes(rule.frequencyWeeks) ? rule.frequencyWeeks : 1;
   const duration = rule.service.durationMinutes;
   const [sh, sm] = rule.startTime.split(":").map(Number);
   const startMins = sh * 60 + sm;

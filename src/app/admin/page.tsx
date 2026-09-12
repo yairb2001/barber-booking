@@ -1956,7 +1956,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
   // Convert this single appointment into a recurring (fixed) appointment.
   const [showRecurring, setShowRecurring] = useState(false);
-  const [recurFreq, setRecurFreq] = useState<1 | 2 | 4>(1);
+  const [recurFreq, setRecurFreq] = useState<1 | 2 | 3 | 4>(1);
   // How far ahead to schedule: "12" (3 חודשים) | "26" (חצי שנה) | "52" (שנה) | "forever" (לתמיד)
   const [recurHorizon, setRecurHorizon] = useState<"12" | "26" | "52" | "forever">("forever");
   const [recurSaving, setRecurSaving] = useState(false);
@@ -2836,10 +2836,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <div className="px-4 py-2.5 border-b border-neutral-100 bg-blue-50/50 space-y-2">
             <p className="text-xs font-semibold text-blue-800">🔁 הפוך לתור קבוע</p>
             <p className="text-[11px] text-neutral-500 leading-snug">
-              ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : "חודש"} באותו יום ושעה.
+              ייקבעו תורים נוספים ל{dispName} בכל {recurFreq === 1 ? "שבוע" : recurFreq === 2 ? "שבועיים" : recurFreq === 3 ? "3 שבועות" : "חודש"} באותו יום ושעה.
             </p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {([[1, "כל שבוע"], [2, "כל שבועיים"], [4, "כל חודש"]] as const).map(([f, label]) => (
+            <div className="grid grid-cols-4 gap-1.5">
+              {([[1, "כל שבוע"], [2, "שבועיים"], [3, "3 שבועות"], [4, "חודש"]] as const).map(([f, label]) => (
                 <button key={f} onClick={() => setRecurFreq(f)}
                   className={`py-1.5 rounded-lg text-xs font-medium transition border ${recurFreq === f ? "bg-blue-600 text-white border-blue-600" : "bg-white text-neutral-600 border-neutral-200 hover:border-blue-300"}`}>
                   {label}

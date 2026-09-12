@@ -1,4 +1,5 @@
 "use client";
+import { insightsSummaryLine, usualLine, type CustomerInsights } from "@/lib/customer-insights";
 
 import { useEffect, useState } from "react";
 import { telHref } from "@/lib/messaging/phone";
@@ -15,7 +16,72 @@ type Customer = {
   notificationPrefs?: string | null;
   notes?: string | null;
   lastVisitAt?: string | null;
+  // From ?stats=1
+  visits?: number;
+  lastVisit?: string | null;
+  nextAppt?: { date: string; startTime: string } | null;
+  noShows?: number;
 };
+
+type ListFilter = "all" | "no_future" | "inactive" | "new" | "no_shows" | "mine";
+type ListSort = "name" | "last_visit" | "visits";
+const FILTER_CHIPS: { key: ListFilter; label: string; hint: string }[] = [
+  { key: "all",       label: "הכל",              hint: "" },
+  { key: "no_future", label: "בלי תור עתידי",    hint: "לקוחות שאין להם תור קרוב — הכי שווה לשלוח להם" },
+  { key: "inactive",  label: "לא היו 6+ שבועות", hint: "לא ביקרו 42 יום ומעלה" },
+  { key: "new",       label: "חדשים החודש",       hint: "הצטרפו ב-30 הימים האחרונים" },
+  { key: "no_shows",  label: "הבריזו",            hint: "לקוחות שסומנו כלא הגיעו" },
+  { key: "mine",      label: "רק שלי",            hint: "לקוחות שהיו אצלי" },
+];
+function filterQuery(filter: ListFilter, sort: ListSort, myStaffId: string | null): string {
+  const p = new URLSearchParams({ limit: "2000", stats: "1", sort });
+  if (filter === "no_future") p.set("no_future", "1");
+  if (filter === "inactive") p.set("inactive_days", "42");
+  if (filter === "new") p.set("new_days", "30");
+  if (filter === "no_shows") p.set("no_shows", "1");
+  if (filter === "mine" && myStaffId) p.set("staffId", myStaffId);
+  return p.toString();
+}
+type DupGroup = { phone: string; customers: { id: string; name: string; phone: string; createdAt: string; notes: string | null; visits: number }[] };
+function DupRow({ group, onMerged }: { group: DupGroup; onMerged: () => void }) {
+  const [keepId, setKeepId] = useState(group.customers[0]?.id || "");
+  const [busy, setBusy] = useState(false);
+  async function merge() {
+    setBusy(true);
+    const r = await fetch("/api/admin/customers/duplicates", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keepId, mergeIds: group.customers.filter(c => c.id !== keepId).map(c => c.id) }),
+    });
+    setBusy(false);
+    if (r.ok) onMerged();
+  }
+  return (
+    <li className="bg-white border border-amber-100 rounded-xl p-3">
+      <div className="flex flex-wrap gap-2 items-center">
+        {group.customers.map(c => (
+          <label key={c.id} className={`flex items-center gap-2 text-xs rounded-lg border px-2.5 py-1.5 cursor-pointer ${keepId === c.id ? "border-teal-500 bg-teal-50" : "border-neutral-200"}`}>
+            <input type="radio" name={`keep-${group.phone}`} checked={keepId === c.id} onChange={() => setKeepId(c.id)} />
+            <span className="font-medium">{c.name}</span>
+            <span className="text-neutral-400" dir="ltr">{c.phone}</span>
+            <span className="text-neutral-500">· {c.visits} תורים</span>
+          </label>
+        ))}
+        <button onClick={merge} disabled={busy} className="mr-auto px-3 py-1.5 rounded-lg text-xs font-semibold bg-teal-600 text-white disabled:opacity-50">
+          {busy ? "ממזג…" : "מזג לנבחר"}
+        </button>
+      </div>
+    </li>
+  );
+}
+function daysAgoLabel(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 86_400_000);
+  if (d <= 0) return "היום";
+  if (d === 1) return "אתמול";
+  if (d < 7) return `לפני ${d} ימים`;
+  if (d < 60) return `לפני ${Math.round(d / 7)} שבועות`;
+  return `לפני ${Math.round(d / 30)} חודשים`;
+}
 
 type Appt = {
   id: string;
@@ -44,6 +110,7 @@ type CustomerDetail = Customer & {
   upcoming: Appt[];
   past: Appt[];
   totalVisits: number;
+  insights?: CustomerInsights | null;
   referrals: ReferralInfo[];
   rewards: Rewards;
   blockedStaffIds: string[];
@@ -56,18 +123,32 @@ export default function CustomersPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<{ id: string; name: string } | null>(null);
+  const [filter, setFilter] = useState<ListFilter>("all");
+  const [sort, setSort] = useState<ListSort>("name");
+  const [myStaffId, setMyStaffId] = useState<string | null>(null);
+  const [isOwner, setIsOwner] = useState(false);
+  const [dupGroups, setDupGroups] = useState<DupGroup[] | null>(null);
+  const [dupOpen, setDupOpen] = useState(false);
+  useEffect(() => {
+    fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(d => {
+      setMyStaffId(d?.staffId || null);
+      setIsOwner(!!d?.isOwner);
+      if (d?.isOwner) fetch("/api/admin/customers/duplicates").then(r => (r.ok ? r.json() : [])).then(g => setDupGroups(Array.isArray(g) ? g : [])).catch(() => {});
+    }).catch(() => {});
+  }, []);
 
   const reload = () => {
     setLoading(true);
-    fetch(`/api/admin/customers?limit=2000&q=${encodeURIComponent(q)}`)
+    fetch(`/api/admin/customers?${filterQuery(filter, sort, myStaffId)}&q=${encodeURIComponent(q)}`)
       .then(r => r.json())
-      .then(d => { setCustomers(d); setLoading(false); });
+      .then(d => { setCustomers(Array.isArray(d) ? d : []); setLoading(false); });
   };
 
   useEffect(() => {
     const t = setTimeout(reload, 300);
     return () => clearTimeout(t);
-  }, [q]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, filter, sort, myStaffId]);
 
   // Deep-link: /admin/customers?customer=<phone> opens that customer's card
   // (used by the WhatsApp inbox "open customer card" link).
@@ -99,10 +180,53 @@ export default function CustomersPage() {
         </button>
       </div>
 
-      <div className="mb-4">
+      {/* Duplicate customers (same phone in two spellings) — owner only */}
+      {isOwner && dupGroups && dupGroups.length > 0 && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-900">⚠ {dupGroups.length} לקוחות כפולים</p>
+              <p className="text-xs text-amber-800 mt-0.5">אותו טלפון נשמר פעמיים (פעם ב-05 ופעם ב-972). המיזוג מאחד היסטוריה, הערות והפניות — לא מוחק כלום.</p>
+            </div>
+            <button onClick={() => setDupOpen(v => !v)} className="text-xs font-semibold text-amber-900 underline shrink-0">{dupOpen ? "סגור" : "טפל"}</button>
+          </div>
+          {dupOpen && (
+            <ul className="mt-3 space-y-2">
+              {dupGroups.map(g => (
+                <DupRow key={g.phone} group={g} onMerged={() => { setDupGroups(gs => (gs || []).filter(x => x.phone !== g.phone)); reload(); }} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div className="mb-3">
         <input value={q} onChange={e => setQ(e.target.value)}
-          placeholder="חפש לפי שם או טלפון..."
+          placeholder="חפש לפי שם, טלפון או הערה..."
           className="w-full max-w-sm border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white" />
+      </div>
+
+      {/* Filter chips + sort + "send to this group" */}
+      <div className="mb-4 flex flex-wrap items-center gap-1.5">
+        {FILTER_CHIPS.filter(c => c.key !== "mine" || myStaffId).map(c => (
+          <button key={c.key} onClick={() => setFilter(c.key)} title={c.hint}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${filter === c.key ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50"}`}>
+            {c.label}
+          </button>
+        ))}
+        <span className="mx-1 text-neutral-300">|</span>
+        <select value={sort} onChange={e => setSort(e.target.value as ListSort)}
+          className="text-xs border border-neutral-200 rounded-full px-3 py-1.5 bg-white text-neutral-700">
+          <option value="name">מיון: שם</option>
+          <option value="last_visit">מיון: ביקור אחרון</option>
+          <option value="visits">מיון: מספר ביקורים</option>
+        </select>
+        {filter !== "all" && !loading && customers.length > 0 && (
+          <a href={`/admin/messaging?fq=${encodeURIComponent(filterQuery(filter, sort, myStaffId))}&label=${encodeURIComponent(`${FILTER_CHIPS.find(c => c.key === filter)?.label} · ${customers.length} לקוחות`)}`}
+            className="mr-auto px-3 py-1.5 rounded-full text-xs font-semibold bg-neutral-900 text-white hover:bg-neutral-800">
+            📢 שלח הודעה ל-{customers.length}
+          </a>
+        )}
       </div>
 
       <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
@@ -116,7 +240,8 @@ export default function CustomersPage() {
               <tr className="border-b border-neutral-100 bg-neutral-50">
                 <th className="text-right px-3 sm:px-5 py-3 text-neutral-500 font-medium">שם</th>
                 <th className="text-right px-3 sm:px-5 py-3 text-neutral-500 font-medium">טלפון</th>
-                <th className="text-right px-5 py-3 text-neutral-500 font-medium hidden sm:table-cell">תאריך הצטרפות</th>
+                <th className="text-right px-3 sm:px-5 py-3 text-neutral-500 font-medium whitespace-nowrap">ביקור אחרון</th>
+                <th className="text-right px-5 py-3 text-neutral-500 font-medium hidden sm:table-cell">ביקורים</th>
                 <th className="px-3 sm:px-5 py-3"></th>
               </tr>
             </thead>
@@ -132,9 +257,12 @@ export default function CustomersPage() {
                     {c.isBlocked && <span className="mr-2 text-xs text-red-500">🚫 חסום</span>}
                   </td>
                   <td className="px-3 sm:px-5 py-4 text-neutral-600 whitespace-nowrap" dir="ltr">{c.phone}</td>
-                  <td className="px-5 py-4 text-neutral-400 text-xs hidden sm:table-cell">
-                    {new Date(c.createdAt).toLocaleDateString("he-IL")}
+                  <td className="px-3 sm:px-5 py-4 text-xs whitespace-nowrap">
+                    <span className={c.lastVisit ? "text-neutral-600" : "text-neutral-300"}>{daysAgoLabel(c.lastVisit)}</span>
+                    {c.nextAppt && <span className="block text-[10px] text-teal-600">תור: {new Date(c.nextAppt.date + "T00:00:00").toLocaleDateString("he-IL", { day: "numeric", month: "numeric" })} {c.nextAppt.startTime}</span>}
+                    {!!c.noShows && <span className="block text-[10px] text-neutral-500">⚠ הבריז {c.noShows}</span>}
                   </td>
+                  <td className="px-5 py-4 text-neutral-500 text-xs hidden sm:table-cell">{c.visits ?? "—"}</td>
                   <td className="px-3 sm:px-5 py-4" onClick={e => e.stopPropagation()}>
                     <div className="flex gap-2 sm:gap-3 items-center">
                       <a href={telHref(c.phone)} className="text-base text-neutral-500 hover:text-neutral-800">📞</a>
@@ -471,6 +599,21 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl ml-2">✕</button>
         </div>
 
+        {/* "הרגיל שלו" — computed from history, nothing to type */}
+        {detail.insights && (detail.insights.visits > 0) && (
+          <div className="px-5 py-3 border-b border-neutral-100 bg-teal-50/60">
+            <p className="text-sm font-semibold text-teal-900 leading-snug">{insightsSummaryLine(detail.insights)}</p>
+            {usualLine(detail.insights) && (
+              <p className="text-xs text-teal-700 mt-1">הרגיל שלו: {usualLine(detail.insights)}</p>
+            )}
+            {detail.insights.switchedBarber && (
+              <p className="text-xs text-amber-700 mt-1">
+                עבר מ{detail.insights.switchedBarber.fromName} ל{detail.insights.switchedBarber.toName} ({new Date(detail.insights.switchedBarber.sinceISO).toLocaleDateString("he-IL", { month: "short", year: "2-digit" })})
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Quick action buttons */}
         <div className="p-5 grid grid-cols-2 gap-2 border-b border-neutral-100">
           <a href={telHref(detail.phone)}
@@ -721,7 +864,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
   const [serviceId, setServiceId] = useState("");
   const [dayOfWeek, setDayOfWeek] = useState<number>(0);
   const [startTime, setStartTime] = useState("14:00");
-  const [frequencyWeeks, setFrequencyWeeks] = useState<1 | 2 | 4>(1);
+  const [frequencyWeeks, setFrequencyWeeks] = useState<1 | 2 | 3 | 4>(1);
   const [startDate, setStartDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [horizonWeeks, setHorizonWeeks] = useState(12);
   const [note, setNote] = useState("");
@@ -731,15 +874,27 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
   useModalBack(true, onClose);
 
   useEffect(() => {
-    fetch("/api/admin/staff").then(r => r.json()).then((d: StaffItem[]) => {
-      setAllStaff(d.map(s => ({ id: s.id, name: s.name })));
-      if (d[0]) setStaffId(d[0].id);
-    });
-    fetch("/api/admin/services").then(r => r.json()).then((d: ServiceItem[]) => {
-      setAllServices(d);
-      if (d[0]) setServiceId(d[0].id);
-    });
-  }, []);
+    // Defaults come from the customer's own history ("הרגיל שלו"): their
+    // barber, service, weekday, hour and rhythm — the barber just confirms.
+    Promise.all([
+      fetch("/api/admin/staff").then(r => r.json()),
+      fetch("/api/admin/services").then(r => r.json()),
+      fetch(`/api/admin/customers/${customerId}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]).then(([staffD, svcD, cust]: [StaffItem[], ServiceItem[], { insights?: { usual?: { staffId: string; serviceId: string; weekday: number | null; hour: string | null }; avgIntervalDays?: number | null } } | null]) => {
+      setAllStaff(staffD.map(s => ({ id: s.id, name: s.name })));
+      setAllServices(svcD);
+      const u = cust?.insights?.usual;
+      setStaffId(u?.staffId && staffD.some(s => s.id === u.staffId) ? u.staffId : (staffD[0]?.id || ""));
+      setServiceId(u?.serviceId && svcD.some(s => s.id === u.serviceId) ? u.serviceId : (svcD[0]?.id || ""));
+      if (u?.weekday !== null && u?.weekday !== undefined) setDayOfWeek(u.weekday);
+      if (u?.hour) setStartTime(u.hour);
+      const avg = cust?.insights?.avgIntervalDays;
+      if (typeof avg === "number" && avg > 0) {
+        const w = Math.round(avg / 7);
+        setFrequencyWeeks(w <= 1 ? 1 : w === 2 ? 2 : w === 3 ? 3 : 4);
+      }
+    }).catch(() => {});
+  }, [customerId]);
 
   const save = async () => {
     setErr(null);
@@ -841,8 +996,9 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
             <div className="flex gap-2">
               {([
                 { v: 1, l: "כל שבוע" },
-                { v: 2, l: "פעמיים בחודש" },
-                { v: 4, l: "פעם בחודש" },
+                { v: 2, l: "שבועיים" },
+                { v: 3, l: "3 שבועות" },
+                { v: 4, l: "חודש" },
               ] as const).map(({ v, l }) => (
                 <button key={v} onClick={() => setFrequencyWeeks(v)}
                   className={`flex-1 border rounded-xl py-2 text-xs font-medium ${

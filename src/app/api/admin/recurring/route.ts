@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
 // Body: {
 //   customerId, staffId, serviceId,
 //   dayOfWeek (0-6), startTime "HH:MM",
-//   frequencyWeeks (1|2|4),
+//   frequencyWeeks (1|2|3|4),
 //   startDate "YYYY-MM-DD",
 //   endDate? "YYYY-MM-DD",
 //   price?, note?,
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   if (!staff)    return NextResponse.json({ error: "staff not found" }, { status: 400 });
   if (!service)  return NextResponse.json({ error: "service not found" }, { status: 400 });
 
-  const freq = [1, 2, 4].includes(Number(body.frequencyWeeks)) ? Number(body.frequencyWeeks) : 1;
+  const freq = [1, 2, 3, 4].includes(Number(body.frequencyWeeks)) ? Number(body.frequencyWeeks) : 1;
   const startDate = new Date(String(body.startDate).split("T")[0] + "T00:00:00.000Z");
 
   // Duration / horizon resolution.

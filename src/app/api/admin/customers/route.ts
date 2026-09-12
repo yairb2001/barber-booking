@@ -74,6 +74,11 @@ export async function GET(req: NextRequest) {
   const activeDays    = searchParams.get("active_days") || "";  // visited in last N days
   const inactiveDays  = searchParams.get("inactive_days") || "";// no visit for N+ days
   const newDays       = searchParams.get("new_days") || "";     // created in last N days
+  // ── Customers-screen extras ──
+  const stats         = searchParams.get("stats") === "1";      // attach visits / lastVisit / nextAppt / noShows
+  const noFuture      = searchParams.get("no_future") === "1";  // only customers WITHOUT a live upcoming appointment
+  const noShowsOnly   = searchParams.get("no_shows") === "1";   // only customers with an un-acked no-show
+  const sort          = searchParams.get("sort") || "name";     // name | last_visit | visits
 
   // Load the business first so we can honor the "barbers can view all
   // customers" setting (default ON) before deciding whether to scope this barber.
@@ -198,10 +203,57 @@ export async function GET(req: NextRequest) {
     ];
   }
 
-  const customers = await prisma.customer.findMany({
+  let customers = await prisma.customer.findMany({
     where,
     orderBy: { name: "asc" },
     take: limit,
   });
-  return NextResponse.json(customers);
+  if (!stats && !noFuture && !noShowsOnly && sort === "name") return NextResponse.json(customers);
+
+  // ── Per-customer stats in three grouped queries (not N+1) ──
+  const ids = customers.map(c => c.id);
+  const todayUTC = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
+  const scope = staffId ? { staffId } : {};
+  const [pastGroups, futureRows, noShowGroups] = await Promise.all([
+    ids.length ? prisma.appointment.groupBy({
+      by: ["customerId"],
+      where: { businessId: business.id, customerId: { in: ids }, date: { lt: todayUTC }, status: { notIn: ["cancelled_by_customer", "cancelled_by_staff", "no_show"] }, ...scope },
+      _count: { _all: true }, _max: { date: true },
+    }) : [],
+    ids.length ? prisma.appointment.findMany({
+      where: { businessId: business.id, customerId: { in: ids }, date: { gte: todayUTC }, status: { in: ["pending", "confirmed"] }, ...scope },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      select: { customerId: true, date: true, startTime: true },
+    }) : [],
+    ids.length ? prisma.appointment.groupBy({
+      by: ["customerId"],
+      where: { businessId: business.id, customerId: { in: ids }, status: "no_show", ...scope },
+      _count: { _all: true },
+    }) : [],
+  ]);
+  const past = new Map(pastGroups.map(g => [g.customerId, { visits: g._count._all, lastVisit: g._max.date }]));
+  const next = new Map<string, { date: Date; startTime: string }>();
+  for (const r of futureRows) if (!next.has(r.customerId)) next.set(r.customerId, { date: r.date, startTime: r.startTime });
+  const noShows = new Map(noShowGroups.map(g => [g.customerId, g._count._all]));
+
+  type Row = (typeof customers)[number] & { visits: number; lastVisit: string | null; nextAppt: { date: string; startTime: string } | null; noShows: number };
+  let rows: Row[] = customers.map(c => {
+    let acked = false;
+    try { acked = c.notificationPrefs ? !!JSON.parse(c.notificationPrefs).noShowAck : false; } catch { /* ignore */ }
+    const p = past.get(c.id);
+    const n = next.get(c.id);
+    return {
+      ...c,
+      visits: p?.visits ?? 0,
+      lastVisit: p?.lastVisit ? p.lastVisit.toISOString().slice(0, 10) : null,
+      nextAppt: n ? { date: n.date.toISOString().slice(0, 10), startTime: n.startTime } : null,
+      noShows: acked ? 0 : (noShows.get(c.id) ?? 0),
+    };
+  });
+  if (noFuture) rows = rows.filter(r => !r.nextAppt);
+  if (noShowsOnly) rows = rows.filter(r => r.noShows > 0);
+  if (sort === "last_visit") rows.sort((a, b) => (b.lastVisit ?? "").localeCompare(a.lastVisit ?? ""));
+  else if (sort === "visits") rows.sort((a, b) => b.visits - a.visits);
+  customers = rows;
+  return NextResponse.json(rows);
 }
