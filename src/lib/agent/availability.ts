@@ -24,6 +24,8 @@ export async function computeDayAvailability(
   date: string,
   inputStaffId?: string,
   inputServiceId?: string,
+  /** Admin use: ignore the customer-facing booking horizon and lead times. */
+  opts: { ignoreLimits?: boolean } = {},
 ): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
   const dateObj = new Date(date + "T00:00:00.000Z");
   const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
@@ -65,7 +67,7 @@ export async function computeDayAvailability(
     const horizonCfg = numFromCfg("bookingHorizonDays");
     const horizonDays = horizonCfg !== undefined && horizonCfg > 0 ? horizonCfg : defaultHorizon;
     const lastBookableDate = addDaysISO(nowBiz.date, Math.max(0, horizonDays - 1));
-    if (date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
+    if (!opts.ignoreLimits && date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
 
     let duration = 30;
     if (inputServiceId) {
@@ -145,7 +147,10 @@ export async function computeDayAvailability(
 
     let slots = generateSlots(scheduleSlots, breaks, duration, booked);
 
-    if (nowBiz.date === date) {
+    if (nowBiz.date === date && opts.ignoreLimits) {
+      slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes); // only the past is off-limits
+    }
+    if (nowBiz.date === date && !opts.ignoreLimits) {
       const leadMinutes =
         numFromCfg("minBookingLeadMinutes") ?? biz?.minBookingLeadMinutes ?? 0;
       const firstLeadMinutes =

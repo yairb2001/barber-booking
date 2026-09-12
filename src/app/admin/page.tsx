@@ -826,6 +826,115 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   );
 }
 
+// ── "הכי קרוב" — nearest open slots across all barbers (phone-call helper) ────
+type QuickSlotRow = { staffId: string; staffName: string; date: string; dayLabel: string; time: string; serviceName: string; duration: number };
+function NearestSlotsPopover({ staffFilter, allStaff, onPick, onClose }: {
+  staffFilter: string; allStaff: Staff[]; onPick: (s: QuickSlotRow) => void; onClose: () => void;
+}) {
+  useModalBack(true, onClose);
+  const [filter, setFilter] = useState(staffFilter);
+  const [rows, setRows] = useState<QuickSlotRow[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    fetch(`/api/admin/quick-slots${filter ? `?staffId=${filter}` : ""}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (alive) setRows(Array.isArray(d) ? d : []); })
+      .catch(() => { if (alive) setRows([]); });
+    return () => { alive = false; };
+  }, [filter]);
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-neutral-100 sticky top-0 bg-white">
+          <h3 className="font-bold text-neutral-900 text-base">⚡ הכי קרוב</h3>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-sm hover:bg-neutral-200 transition">✕</button>
+        </div>
+        <div className="px-5 pt-3 pb-1 flex gap-1.5 overflow-x-auto">
+          <button onClick={() => setFilter("")} className={`px-2.5 py-1 rounded-full text-[11px] font-medium border shrink-0 ${!filter ? "bg-teal-600 text-white border-teal-600" : "border-neutral-200 text-neutral-600"}`}>כולם</button>
+          {allStaff.map(st => (
+            <button key={st.id} onClick={() => setFilter(st.id)} className={`px-2.5 py-1 rounded-full text-[11px] font-medium border shrink-0 ${filter === st.id ? "bg-teal-600 text-white border-teal-600" : "border-neutral-200 text-neutral-600"}`}>{st.name}</button>
+          ))}
+        </div>
+        <div className="px-5 py-3">
+          {rows === null ? (
+            <p className="text-sm text-neutral-400 text-center py-6">מחפש…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-neutral-400 text-center py-6">אין תורים פנויים בטווח ההזמנה</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {rows.map((r, i) => (
+                <li key={i}>
+                  <button onClick={() => onPick(r)}
+                    className="w-full flex items-center gap-3 border border-neutral-200 rounded-lg px-3 py-2 hover:bg-teal-50 hover:border-teal-200 transition text-right">
+                    <div className="w-14 shrink-0 text-center">
+                      <p className="text-base font-bold text-neutral-900 leading-tight" dir="ltr">{r.time}</p>
+                      <p className="text-[10px] text-neutral-500 leading-tight">{r.dayLabel}</p>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 truncate">{r.staffName}</p>
+                      <p className="text-[11px] text-neutral-500 truncate">{r.serviceName} · {r.duration} דק׳</p>
+                    </div>
+                    <span className="text-teal-600 text-xs font-semibold shrink-0">קבע ←</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── "מתי X קבוע?" — find a customer and jump to their next appointment ────────
+function FindCustomerPopover({ onPick, onClose }: {
+  onPick: (r: { customerId: string; name: string; appt: { id: string; date: string; startTime: string; staffName: string } | null }) => void;
+  onClose: () => void;
+}) {
+  useModalBack(true, onClose);
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<Customer[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => {
+    if (!q.trim()) { setRows([]); return; }
+    let alive = true;
+    const t = setTimeout(() => {
+      fetch(`/api/admin/customers?q=${encodeURIComponent(q)}&limit=8`).then(r => r.json()).then(d => { if (alive && Array.isArray(d)) setRows(d); }).catch(() => {});
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q]);
+  async function pick(c: Customer) {
+    setBusy(c.id);
+    const d = await fetch(`/api/admin/customers/${c.id}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
+    const up = Array.isArray(d?.upcoming) ? d.upcoming[0] : null;
+    onPick({ customerId: c.id, name: c.name, appt: up ? { id: up.id, date: String(up.date).slice(0, 10), startTime: up.startTime, staffName: up.staff?.name || "" } : null });
+  }
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 pt-16" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="px-4 pt-4 pb-2">
+          <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="מתי יש תור ל…? חפש לפי שם או טלפון"
+            className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+        </div>
+        <div className="px-4 pb-3 max-h-72 overflow-y-auto">
+          {rows.map(c => (
+            <button key={c.id} onClick={() => pick(c)} disabled={busy === c.id}
+              className="w-full text-right px-2 py-2 hover:bg-neutral-50 rounded-lg flex items-center gap-2 border-b border-neutral-50 last:border-0">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{c.name}</p>
+                <p className="text-xs text-neutral-400" dir="ltr">{c.phone}</p>
+              </div>
+              <span className="text-xs text-teal-600">{busy === c.id ? "…" : "לתור הבא ←"}</span>
+            </button>
+          ))}
+          {q && rows.length === 0 && <p className="text-xs text-neutral-400 text-center py-4">לא נמצא</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── New Appointment Modal ─────────────────────────────────────────────────────
 function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved }:
   { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void }
@@ -1752,10 +1861,57 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         let n = "";
         n = d?.notes || "";
         setHasNote(!!n.trim()); setPermNote(n.trim()); setPermDraft(n.trim());
+        const avg = d?.insights?.avgIntervalDays;
+        if (typeof avg === "number" && avg > 0) setRhythmDays(avg);
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [appt.customer.id, showHistory]);
+
+  // ── "קבע שוב" — the next appointment, from this card ─────────────────────
+  // Interval defaults to the customer's own rhythm (avg gap between visits);
+  // the barber can shift the day ±3 and pick any free time that day. Same
+  // barber, same service, same price; the customer gets the usual confirmation.
+  const [rebookOpen, setRebookOpen] = useState(false);
+  const [rhythmDays, setRhythmDays] = useState<number | null>(null);
+  const [rebookDate, setRebookDate] = useState("");
+  const [rebookSlots, setRebookSlots] = useState<string[] | null>(null);
+  const [rebookSaving, setRebookSaving] = useState<string | null>(null);
+  const [rebookDone, setRebookDone] = useState<string | null>(null);
+  const [rebookErr, setRebookErr] = useState<string | null>(null);
+  const baseDateISO = dispDate.split("T")[0];
+  const addDays = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const rebookWeeks = [2, 3, 4, 5, 6];
+  const defaultWeeks = rhythmDays ? Math.min(6, Math.max(2, Math.round(rhythmDays / 7))) : 3;
+  function openRebook() {
+    setRebookOpen(true); setRebookDone(null); setRebookErr(null);
+    setRebookDate(addDays(baseDateISO, defaultWeeks * 7));
+  }
+  useEffect(() => {
+    if (!rebookOpen || !rebookDate) return;
+    let alive = true;
+    setRebookSlots(null);
+    fetch(`/api/admin/slots?staffId=${appt.staff.id}&date=${rebookDate}&serviceId=${appt.service.id}`)
+      .then(r => (r.ok ? r.json() : { slots: [] }))
+      .then(d => { if (alive) setRebookSlots(Array.isArray(d.slots) ? d.slots : []); })
+      .catch(() => { if (alive) setRebookSlots([]); });
+    return () => { alive = false; };
+  }, [rebookOpen, rebookDate, appt.staff.id, appt.service.id]);
+  async function rebookAt(time: string) {
+    setRebookSaving(time); setRebookErr(null);
+    const res = await fetch("/api/admin/appointments", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        staffId: appt.staff.id, serviceId: appt.service.id, customServiceName: appt.customServiceName || undefined,
+        date: rebookDate, startTime: time, phone: dispPhone, customerName: dispName,
+        price: dispPrice, notifyCustomer: true, allowDuplicate: true,
+      }),
+    });
+    setRebookSaving(null);
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setRebookErr(j.error || "לא הצלחתי לקבוע"); return; }
+    setRebookDone(`${new Date(rebookDate + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })} · ${time}`);
+    onReload?.();
+  }
 
   // Active swap proposals where this appointment is involved
   const [proposalsAsPrimary, setProposalsAsPrimary] = useState<SwapProposal[]>([]);
@@ -2531,6 +2687,82 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
             </div>
           )}
         </div>
+
+        {/* קבע שוב — next appointment in one tap */}
+        {!appt.status.startsWith("cancelled") && (
+          <div className="px-4 py-2 border-b border-neutral-100">
+            {!rebookOpen ? (
+              <button onClick={openRebook}
+                className="w-full flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50 hover:bg-teal-100 px-3 py-2 text-xs font-semibold text-teal-800 transition">
+                <span>↻ קבע את התור הבא</span>
+                <span className="text-teal-600 font-normal">{rhythmDays ? `בדרך כלל כל ${rhythmDays} יום` : "בעוד 3 שבועות"}</span>
+              </button>
+            ) : rebookDone ? (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 flex items-center justify-between">
+                <span>✓ נקבע: {rebookDone}</span>
+                <button onClick={() => setRebookOpen(false)} className="text-emerald-700 font-semibold">סגור</button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-teal-200 bg-teal-50/60 p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-teal-900">↻ התור הבא של {dispName.split(" ")[0]}</p>
+                  <button onClick={() => setRebookOpen(false)} className="text-xs text-neutral-500">✕</button>
+                </div>
+                {/* interval */}
+                <div className="flex gap-1.5">
+                  {rebookWeeks.map(w => {
+                    const iso = addDays(baseDateISO, w * 7);
+                    const active = rebookDate === iso;
+                    return (
+                      <button key={w} onClick={() => setRebookDate(iso)}
+                        className={`flex-1 py-1 rounded-md text-[11px] font-medium border transition ${active ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-700 border-neutral-200"}`}>
+                        {w} שב׳{w === defaultWeeks && rhythmDays ? " ★" : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* day picker ±3 around the chosen date */}
+                <div className="flex gap-1">
+                  {[-3, -2, -1, 0, 1, 2, 3].map(off => {
+                    const iso = addDays(rebookDate, off);
+                    const d = new Date(iso + "T00:00:00");
+                    const active = off === 0;
+                    return (
+                      <button key={off} onClick={() => setRebookDate(iso)}
+                        className={`flex-1 py-1 rounded-md text-center border transition ${active ? "bg-white border-teal-500 shadow-sm" : "bg-white/60 border-neutral-200 hover:bg-white"}`}>
+                        <p className="text-[10px] text-neutral-500 leading-none">{HEB_DAY_LETTERS[d.getDay()]}</p>
+                        <p className="text-xs font-semibold text-neutral-800 leading-tight">{d.getDate()}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  {new Date(rebookDate + "T00:00:00").toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" })} · {appt.customServiceName || appt.service.name} · אצל {appt.staff.name}
+                </p>
+                {/* free times that day */}
+                {rebookSlots === null ? (
+                  <p className="text-xs text-neutral-400">בודק זמינות…</p>
+                ) : rebookSlots.length === 0 ? (
+                  <p className="text-xs text-amber-700">אין זמן פנוי ביום הזה — נסה יום אחר</p>
+                ) : (
+                  <div className="grid grid-cols-4 gap-1.5 max-h-40 overflow-y-auto">
+                    {(() => {
+                      // Same time as this appointment first, then the rest in order.
+                      const sorted = [...rebookSlots].sort((a, b) => (a === dispStart ? -1 : b === dispStart ? 1 : a.localeCompare(b)));
+                      return sorted.map(t => (
+                        <button key={t} onClick={() => rebookAt(t)} disabled={!!rebookSaving}
+                          className={`py-1.5 rounded-md text-xs font-semibold border transition disabled:opacity-50 ${t === dispStart ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-800 border-neutral-200 hover:border-teal-400"}`} dir="ltr">
+                          {rebookSaving === t ? "…" : t}
+                        </button>
+                      ));
+                    })()}
+                  </div>
+                )}
+                {rebookErr && <p className="text-xs text-red-600">{rebookErr}</p>}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* עוד פעולות — everything secondary folds in here */}
         <div className="px-4 py-2 border-b border-neutral-100">
@@ -4118,6 +4350,10 @@ export default function AdminCalendar() {
   const [dayMenu, setDayMenu] = useState<{ date: string; staffId: string } | null>(null);
   const [waitlistCounts, setWaitlistCounts] = useState<Record<string, number>>({});
   const [swipeToast, setSwipeToast] = useState<string | null>(null);
+  const [nearestOpen, setNearestOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  // After "find customer" jumps to a date, open this appointment once loaded.
+  const pendingOpenApptId = useRef<string | null>(null);
   const isMobile = useIsMobile();
   // ── Zoom & drag ──────────────────────────────────────────────────────────────
   const [hourHeight, setHourHeight] = useState(DEFAULT_HOUR_HEIGHT);
@@ -4750,7 +4986,12 @@ export default function AdminCalendar() {
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);
-    setAppointments(apptResults.flat());
+    const flat = apptResults.flat() as Appt[];
+    setAppointments(flat);
+    if (pendingOpenApptId.current) {
+      const target = flat.find(a => a.id === pendingOpenApptId.current);
+      if (target) { pendingOpenApptId.current = null; setSelectedAppt(target); }
+    }
     // Build override map keyed by `${staffId}|YYYY-MM-DD`
     const map: Record<string, { isWorking: boolean; slots: string | null; breaks: string | null }> = {};
     for (const ov of (overridesRaw as Array<{ staffId: string; date: string; isWorking: boolean; slots: string | null; breaks: string | null }>)) {
@@ -5986,6 +6227,10 @@ export default function AdminCalendar() {
             className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
             + תור
           </button>
+          <button onClick={() => setNearestOpen(true)} title="התורים הפנויים הקרובים ביותר — אצל כל הספרים"
+            className="w-9 h-9 rounded-lg border border-teal-200 text-teal-700 hover:bg-teal-50 flex items-center justify-center shrink-0 text-sm">⚡</button>
+          <button onClick={() => setFindOpen(true)} title="מתי יש ללקוח תור?"
+            className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-100 flex items-center justify-center shrink-0 text-sm">🔍</button>
 
           {/* Notifications bell — own bookings/cancellations (barber) or all (owner) */}
           <NotificationsBell />
@@ -6120,6 +6365,28 @@ export default function AdminCalendar() {
       </div>
 
       {/* ── Modals ── */}
+      {nearestOpen && (
+        <NearestSlotsPopover
+          staffFilter={(view === "week" || view === "3day") ? (weekBarber || "") : ""}
+          allStaff={allStaff}
+          onClose={() => setNearestOpen(false)}
+          onPick={r => { setNearestOpen(false); setNewAppt({ staffId: r.staffId, date: r.date, time: r.time }); }}
+        />
+      )}
+      {findOpen && (
+        <FindCustomerPopover
+          onClose={() => setFindOpen(false)}
+          onPick={r => {
+            setFindOpen(false);
+            if (!r.appt) { setSwipeToast(`ל${r.name} אין תור קרוב`); setTimeout(() => setSwipeToast(null), 2500); return; }
+            pendingOpenApptId.current = r.appt.id;
+            const already = appointments.find(a => a.id === r.appt!.id);
+            setDate(r.appt.date);
+            setView("day");
+            if (already) { pendingOpenApptId.current = null; setSelectedAppt(already); }
+          }}
+        />
+      )}
       {selectedAppt && <ApptModal
         confirmationsOn={confirmationsOn}
         appt={selectedAppt}
