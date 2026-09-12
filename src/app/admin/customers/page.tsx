@@ -13,6 +13,7 @@ type Customer = {
   isBlocked: boolean;
   referralSource?: string | null;
   notificationPrefs?: string | null;
+  notes?: string | null;
   lastVisitAt?: string | null;
 };
 
@@ -356,10 +357,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
     const d = await r.json();
     setDetail(d);
     setNameDraft(d.name || "");
-    try {
-      const prefs = d.notificationPrefs ? JSON.parse(d.notificationPrefs) : {};
-      setNotesDraft(prefs.notes || "");
-    } catch { setNotesDraft(""); }
+    setNotesDraft(d.notes || "");
     setLoading(false);
   };
 
@@ -442,12 +440,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
     );
   }
 
-  const notesValue = (() => {
-    try {
-      const p = detail.notificationPrefs ? JSON.parse(detail.notificationPrefs) : {};
-      return p.notes || "";
-    } catch { return ""; }
-  })();
+  const notesValue = detail.notes || "";
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">

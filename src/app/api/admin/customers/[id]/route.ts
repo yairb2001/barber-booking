@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwner, barbersCanSeeAllCustomers } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { computeCustomerInsights } from "@/lib/customer-insights";
 
 // GET — full customer record + upcoming appointments + past appointments summary
 export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
@@ -52,6 +53,8 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     a => a.date < todayUTC || a.status === "completed" || a.status.startsWith("cancelled")
   );
 
+  const insights = computeCustomerInsights(customer.appointments, now);
+
   // Count referrals that have actually made at least one completed appointment
   const confirmedReferrals = customer.referrals.filter(r => r.appointments.length > 0).length;
 
@@ -72,7 +75,8 @@ export async function GET(req: NextRequest, ctx: { params: { id: string } }) {
     referrals: customer.referrals.map(r => ({ ...r, appointments: undefined, completedVisits: r.appointments.length })),
     upcoming,
     past,
-    totalVisits: past.filter(a => a.status === "completed").length,
+    totalVisits: insights.visits,
+    insights,
     rewards,
     blockedStaffIds: customer.staffBlocks.map(b => b.staffId),
     staffBlocks: undefined,
@@ -109,12 +113,12 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   if (typeof body.phone === "string" && body.phone.trim()) data.phone = normalizeIsraeliPhone(body.phone) || body.phone.replace(/\s/g, "");
   if (typeof body.isBlocked === "boolean") data.isBlocked = body.isBlocked;
   if (body.referralSource !== undefined) data.referralSource = body.referralSource || null;
-  if (body.notes !== undefined || body.noShowAck !== undefined) {
+  if (body.notes !== undefined) data.notes = body.notes ? String(body.notes) : null;
+  if (body.noShowAck !== undefined) {
     const cur = await prisma.customer.findUnique({ where: { id }, select: { notificationPrefs: true } });
     let prefs: Record<string, unknown> = {};
     try { prefs = cur?.notificationPrefs ? JSON.parse(cur.notificationPrefs) : {}; } catch { prefs = {}; }
-    if (body.notes !== undefined) { if (body.notes) prefs.notes = String(body.notes); else delete prefs.notes; }
-    if (body.noShowAck !== undefined) { if (body.noShowAck) prefs.noShowAck = true; else delete prefs.noShowAck; }
+    { if (body.noShowAck) prefs.noShowAck = true; else delete prefs.noShowAck; }
     data.notificationPrefs = Object.keys(prefs).length ? JSON.stringify(prefs) : null;
   }
 

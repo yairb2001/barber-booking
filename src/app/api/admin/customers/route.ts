@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
           isBlocked: false,
           name,
           referralSource: body.referralSource || existing.referralSource || null,
-          notificationPrefs: body.notes ? JSON.stringify({ notes: String(body.notes) }) : existing.notificationPrefs,
+          notes: body.notes ? String(body.notes) : existing.notes,
         },
       });
       return NextResponse.json(revived, { status: 200 });
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       name,
       phone,
       referralSource: body.referralSource || null,
-      notificationPrefs: body.notes ? JSON.stringify({ notes: String(body.notes) }) : null,
+      notes: body.notes ? String(body.notes) : null,
     },
   });
   return NextResponse.json(customer, { status: 201 });
@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lt?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
-    OR?: Array<{ name: { contains: string; mode?: "insensitive" | "default" } } | { phone: { contains: string } }>;
+    OR?: Array<{ name: { contains: string; mode?: "insensitive" | "default" } } | { notes: { contains: string; mode?: "insensitive" | "default" } } | { phone: { contains: string } }>;
   };
 
   const where: WhereClause = {
@@ -193,6 +193,7 @@ export async function GET(req: NextRequest) {
     }
     where.OR = [
       { name: { contains: q, mode: "insensitive" } },
+      { notes: { contains: q, mode: "insensitive" } },
       ...phoneVariants.map(v => ({ phone: { contains: v } })),
     ];
   }

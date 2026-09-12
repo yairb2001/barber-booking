@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { telHref } from "@/lib/messaging/phone";
 import { pickFriendSource } from "@/lib/referral";
 import { israeliHoliday } from "@/lib/israeli-holidays";
+import { insightsSummaryLine, usualLine } from "@/lib/customer-insights";
 import { useModalBack } from "@/lib/useModalBack";
 import { useRouter } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
@@ -1636,7 +1637,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       .then(d => {
         if (!alive) return;
         let n = "";
-        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
+        n = d?.notes || "";
         setHasNote(!!n.trim()); setPermNote(n.trim()); setPermDraft(n.trim());
       })
       .catch(() => {});
@@ -2813,6 +2814,7 @@ type CustomerHistory = {
   notificationPrefs?: string | null;
   totalVisits?: number;
   past?: Array<{ id: string; date: string; startTime: string; status: string; customServiceName?: string | null; staff?: { name: string } | null; service?: { name: string } | null }>;
+  insights?: import("@/lib/customer-insights").CustomerInsights | null;
 };
 
 function CustomerHistoryModal({ customerId, customerName, onClose }:
@@ -2820,10 +2822,6 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
 ) {
   useModalBack(true, onClose);
   const [data, setData] = useState<CustomerHistory | null>(null);
-  const [noteDraft, setNoteDraft] = useState("");
-  const [savedNote, setSavedNote] = useState("");
-  const [savingNote, setSavingNote] = useState(false);
-  const [noteSaved, setNoteSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2834,32 +2832,10 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
         if (!alive) return;
         setData(d);
         setLoading(false);
-        let n = "";
-        try { n = d?.notificationPrefs ? (JSON.parse(d.notificationPrefs)?.notes || "") : ""; } catch { /* ignore */ }
-        setNoteDraft(n);
-        setSavedNote(n);
       })
       .catch(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [customerId]);
-
-  // Permanent note about the customer, persisted in notificationPrefs JSON.
-  async function saveNote() {
-    setSavingNote(true);
-    try {
-      const res = await fetch(`/api/admin/customers/${customerId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: noteDraft }),
-      });
-      if (res.ok) {
-        setSavedNote(noteDraft);
-        setNoteSaved(true);
-        setTimeout(() => setNoteSaved(false), 1800);
-      }
-    } catch { /* ignore */ }
-    setSavingNote(false);
-  }
 
   // Distinct barbers visited (from past appointments)
   const past = data?.past || [];
@@ -2884,25 +2860,26 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
           <div className="px-5 py-10 text-center text-neutral-400 text-sm">לא נמצאו נתונים</div>
         ) : (
           <div className="px-5 py-4 space-y-4">
-            {/* Permanent note about the customer — editable */}
-            <div>
-              <p className="text-xs text-neutral-400 mb-1">הערה קבועה על הלקוח</p>
-              <textarea
-                value={noteDraft}
-                onChange={e => setNoteDraft(e.target.value)}
-                rows={3}
-                placeholder="למשל: מכונה מס' 2 בצדדים, פוני קצר, אלרגי לג'ל…"
-                className="w-full text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none placeholder:text-neutral-300" />
-              <div className="flex items-center gap-2 mt-1.5 min-h-[1.5rem]">
-                {noteDraft !== savedNote && (
-                  <button onClick={saveNote} disabled={savingNote}
-                    className="px-3 py-1 rounded-lg text-xs font-semibold bg-teal-600 text-white disabled:opacity-40 hover:bg-teal-700 transition">
-                    {savingNote ? "שומר…" : "שמור הערה"}
-                  </button>
+            {/* Summary — what the history actually says */}
+            {data.insights && (
+              <div className="bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5">
+                <p className="text-sm font-semibold text-teal-900 leading-snug">{insightsSummaryLine(data.insights)}</p>
+                {usualLine(data.insights) && (
+                  <p className="text-xs text-teal-700 mt-1">הרגיל שלו: {usualLine(data.insights)}</p>
                 )}
-                {noteSaved && <span className="text-xs text-emerald-600 font-medium">✓ נשמר</span>}
+                {data.insights.switchedBarber && (
+                  <p className="text-xs text-amber-700 mt-1">
+                    עבר מ{data.insights.switchedBarber.fromName} ל{data.insights.switchedBarber.toName} ({new Date(data.insights.switchedBarber.sinceISO).toLocaleDateString("he-IL", { month: "short", year: "2-digit" })})
+                  </p>
+                )}
               </div>
-            </div>
+            )}
+            {data.notes && (
+              <div>
+                <p className="text-xs text-neutral-400 mb-1">📌 הערה קבועה</p>
+                <p className="text-sm text-neutral-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 whitespace-pre-wrap">{data.notes}</p>
+              </div>
+            )}
 
             {/* Barbers visited */}
             <div>

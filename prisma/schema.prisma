@@ -286,6 +286,9 @@ model Customer {
   isBlocked         Boolean   @default(false) @map("is_blocked")
   pushToken         String?   @map("push_token")
   notificationPrefs String?   @map("notification_prefs") // JSON
+  // Free-text permanent note about the customer (haircut numbers, preferences).
+  // Own column so it is searchable; older data lived in notificationPrefs.notes.
+  notes             String?
   createdAt         DateTime  @default(now()) @map("created_at")
   lastVisitAt       DateTime? @map("last_visit_at")
   deletedAt         DateTime? @map("deleted_at")
@@ -346,6 +349,9 @@ model Appointment {
   // not notified back to them.
   source         String   @default("customer") @map("source")
   cancelledAt    DateTime? @map("cancelled_at")
+  // Customer replied "1" to the 24h reminder (only when the business enables
+  // appointment confirmations). Null = not (yet) confirmed.
+  confirmedAt    DateTime? @map("confirmed_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
@@ -639,6 +645,9 @@ model Conversation {
   // needed). It loses the red "needs handling" alert while the customer hasn't
   // written again. A newer customer message (createdAt > handledAt) re-flags it.
   handledAt     DateTime? @map("handled_at")
+  // "Remind me later": hides the needs-handling alert until this time, then it
+  // comes back red. Cleared when the admin replies or marks handled.
+  snoozedUntil  DateTime? @map("snoozed_until")
   // ── WhatsApp display name (from senderData.senderName). Captured by the
   // webhook on every incoming message — used as a fallback when the customer
   // is not in our DB so the chat list shows something meaningful.
