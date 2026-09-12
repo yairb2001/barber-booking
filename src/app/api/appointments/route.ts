@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes, getBusinessNow, appointmentInstant } from "@/lib/utils";
@@ -31,6 +32,9 @@ async function verifyOtpToken(token: string, phone: string): Promise<string | nu
 }
 
 export async function POST(request: NextRequest) {
+  // Per-IP: a person books a handful of appointments, not dozens.
+  const limited = rateLimit(request, "book", { max: 12, windowMs: 10 * 60_000 });
+  if (limited) return limited;
   const body = await request.json();
   const {
     staffId, serviceId, date, startTime,

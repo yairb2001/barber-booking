@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { resolveBusiness } from "@/lib/tenant";
@@ -13,6 +14,9 @@ function generateCode(): string {
 // Body: { phone: string, businessId?: string }
 // Creates a 4-digit OTP, stores it in DB, sends via WhatsApp, returns { ok: true }
 export async function POST(req: NextRequest) {
+  // Per-IP: 6 codes / 10 min (per-phone limit below still applies).
+  const limited = rateLimit(req, "otp-send", { max: 6, windowMs: 10 * 60_000 });
+  if (limited) return limited;
   const { phone, businessId: reqBusinessId } = await req.json();
   if (!phone) return NextResponse.json({ error: "phone required" }, { status: 400 });
 

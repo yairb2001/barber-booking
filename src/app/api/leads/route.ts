@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 
@@ -9,6 +10,8 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
  * prospect and fires a WhatsApp alert to the platform owner so no lead is lost.
  */
 export async function POST(req: NextRequest) {
+  const limited = rateLimit(req, "leads", { max: 5, windowMs: 10 * 60_000 });
+  if (limited) return limited;
   const body = await req.json().catch(() => null);
   const name = typeof body?.name === "string" ? body.name.trim() : "";
   const phone = typeof body?.phone === "string" ? body.phone.trim() : "";

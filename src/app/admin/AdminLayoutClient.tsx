@@ -1,4 +1,5 @@
 "use client";
+import { BUILD_ID } from "@/lib/build-id";
 
 import NotificationBanner from "@/components/NotificationBanner";
 
@@ -74,6 +75,23 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null } | null>(null);
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
+  // "A newer build is live" — polled every 5 min + on tab focus. The native
+  // shell keeps stale JS after a deploy; this is how the barber finds out.
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  useEffect(() => {
+    if (BUILD_ID === "dev") return;
+    let cancelled = false;
+    const check = () => {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/version", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(d => {
+        if (!cancelled && d?.build && d.build !== BUILD_ID) setUpdateAvailable(true);
+      }).catch(() => {});
+    };
+    check();
+    const id = setInterval(check, 5 * 60_000);
+    document.addEventListener("visibilitychange", check);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", check); };
+  }, []);
   const [qrOpen, setQrOpen] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
   // No-op on the regular web browser.
@@ -319,6 +337,12 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             <span className="font-bold leading-tight flex items-center gap-2"><span>👁️</span>מחובר כמנהל של עסק אחר (מצב צפייה)</span>
             <button onClick={stopImpersonating} className="shrink-0 bg-white text-blue-700 font-bold rounded-lg px-3 py-1.5 hover:bg-blue-50 transition whitespace-nowrap">חזרה לפלטפורמה ←</button>
           </div>
+        )}
+        {updateAvailable && (
+          <button onClick={() => window.location.reload()}
+            className="shrink-0 bg-teal-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-teal-700">
+            ⬆️ יש גרסה חדשה של המערכת — לחץ לרענון
+          </button>
         )}
         {me?.whatsappDown && (
           <div className="shrink-0 animate-alert-blink text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm shadow-md">

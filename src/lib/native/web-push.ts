@@ -27,6 +27,12 @@ export const VAPID_PUBLIC_KEY =
   "BALFgMY0H30c5JqnYgWD7KtZrdgiHpAZKtqmzmFTVYAUUQMmMigPjy7STwMyjdCJmKNPtDk53Nk-un3YvNljU9M";
 
 export type WebPushSub = { endpoint: string; keys: { p256dh: string; auth: string } };
+/** Optional action buttons: [{ action: "reply", title: "ענה" }] with per-action target URLs. */
+export type PushPayload = {
+  title: string; body: string; url?: string; tag?: string;
+  actions?: { action: string; title: string }[];
+  actionUrls?: Record<string, string>;
+};
 export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply";
 
 const TOGGLE_KEY: Record<NotifyType, string> = {
@@ -92,7 +98,7 @@ export async function removeStaffWebPushSub(staffId: string, endpoint: string): 
 async function sendToSubs(
   subs: WebPushSub[],
   privateKey: string,
-  payload: { title: string; body: string; url?: string; tag?: string },
+  payload: PushPayload,
 ): Promise<string[]> {
   // NOTE: the VAPID "subject" must be a real, non-reserved contact — Apple's
   // web push gateway (web.push.apple.com) hard-rejects a placeholder/reserved
@@ -104,6 +110,8 @@ async function sendToSubs(
     body: payload.body,
     url: payload.url || "/admin",
     tag: payload.tag,
+    actions: payload.actions,
+    actionUrls: payload.actionUrls,
   });
 
   const dead: string[] = [];
@@ -126,7 +134,7 @@ async function sendToSubs(
 export async function notifyOwnerWeb(
   businessId: string,
   type: NotifyType,
-  payload: { title: string; body: string; url?: string; tag?: string },
+  payload: PushPayload,
   eventStaffId?: string | null,
 ): Promise<void> {
   try {
@@ -166,7 +174,7 @@ export async function notifyOwnerWeb(
 export async function notifyStaffWeb(
   staffId: string,
   type: NotifyType,
-  payload: { title: string; body: string; url?: string; tag?: string },
+  payload: PushPayload,
 ): Promise<void> {
   try {
     const staff = await prisma.staff.findUnique({ where: { id: staffId }, select: { businessId: true, settings: true } });

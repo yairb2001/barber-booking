@@ -1,4 +1,5 @@
 "use client";
+import { BUILD_LABEL } from "@/lib/build-id";
 
 import Link from "next/link";
 
@@ -90,6 +91,9 @@ export default function SettingsHubPage() {
             </div>
           </section>
         ))}
+        {/* Which build this device is running — the first question when
+            "something looks old" after a deploy. */}
+        <p className="text-[11px] text-neutral-400 text-center pt-2" dir="ltr">Cutor · build {BUILD_LABEL}</p>
       </div>
     </div>
   );

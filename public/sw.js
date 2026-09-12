@@ -13,7 +13,9 @@ self.addEventListener("push", (event) => {
     icon: "/icon-192.png",
     badge: "/icon-192.png",
     tag: data.tag || undefined,
-    data: { url: data.url || "/admin" },
+    data: { url: data.url || "/admin", actionUrls: data.actionUrls || null },
+    // Action buttons (Android/desktop; iOS shows the notification without them).
+    actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : undefined,
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
@@ -21,7 +23,11 @@ self.addEventListener("push", (event) => {
 // Tapping the notification → focus the app (or open it) at the target URL.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/admin";
+  let url = (event.notification.data && event.notification.data.url) || "/admin";
+  // An action button carries its own target (e.g. "reply" → the chat thread).
+  if (event.action && event.notification.data && event.notification.data.actionUrls && event.notification.data.actionUrls[event.action]) {
+    url = event.notification.data.actionUrls[event.action];
+  }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
       for (const client of clientList) {
