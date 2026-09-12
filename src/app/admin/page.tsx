@@ -1868,6 +1868,29 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     return () => { alive = false; };
   }, [appt.customer.id, showHistory]);
 
+  // ── 📸 story from the chair: upload + create, tagged to this barber ───────
+  const storyFileRef = useRef<HTMLInputElement>(null);
+  const [storyBusy, setStoryBusy] = useState(false);
+  const [storyDone, setStoryDone] = useState(false);
+  async function addStory(file: File) {
+    setStoryBusy(true); setStoryDone(false);
+    try {
+      const { compressImage } = await import("@/lib/image-compress");
+      const compressed = await compressImage(file, "story");
+      const fd = new FormData(); fd.append("file", compressed);
+      const up = await fetch("/api/admin/upload", { method: "POST", body: fd }).then(r => r.json());
+      if (!up?.url) throw new Error(up?.error || "upload failed");
+      const expires = new Date(); expires.setDate(expires.getDate() + 7);
+      const r = await fetch("/api/admin/stories", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mediaUrl: up.url, staffId: appt.staff.id, caption: appt.customServiceName || appt.service.name, expiresAt: expires.toISOString() }),
+      });
+      if (!r.ok) throw new Error("story failed");
+      setStoryDone(true); setTimeout(() => setStoryDone(false), 2500);
+    } catch { /* best effort — the stories screen is the fallback */ }
+    setStoryBusy(false);
+  }
+
   // ── "קבע שוב" — the next appointment, from this card ─────────────────────
   // Interval defaults to the customer's own rhythm (avg gap between visits);
   // the barber can shift the day ±3 and pick any free time that day. Same
@@ -2888,6 +2911,16 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               )}
             </div>
           )}
+        </div>
+
+        {/* 📸 Add to story — photo of this haircut, auto-tagged to this barber */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <input ref={storyFileRef} type="file" accept="image/*" capture="environment" className="hidden"
+            onChange={e => { const file = e.target.files?.[0]; if (file) addStory(file); e.currentTarget.value = ""; }} />
+          <button type="button" onClick={() => storyFileRef.current?.click()} disabled={storyBusy}
+            className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition disabled:opacity-50">
+            {storyBusy ? "מעלה…" : storyDone ? "✓ נוסף לסטורי" : "📸 הוסף לסטורי"}
+          </button>
         </div>
 
         {/* Product sales — קנה מוצר */}
