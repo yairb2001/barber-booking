@@ -833,6 +833,11 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   useModalBack(true, onClose);
   // fromGrid = opened by clicking a cell (staff + time pre-set)
   const fromGrid = !!staff;
+  // Quick mode (grid tap): customer → save. Service/duration/price come from
+  // the customer's usual booking with this barber; everything else stays
+  // hidden behind "עוד אפשרויות". A new customer always uses the full form.
+  const [quick, setQuick] = useState(fromGrid);
+  const [usualHint, setUsualHint] = useState<string | null>(null);
   const [form, setForm] = useState({ staffId: staff?.id || "", serviceId: "", date, time, note: "" });
   // Ad-hoc "temporary service" (שירות זמני): free-text name + price + duration
   // the barber types on the fly instead of picking a predefined service.
@@ -857,11 +862,66 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   const [saving, setSaving] = useState(false);
   const [conflictMsg, setConflictMsg] = useState<string | null>(null);
   const [errMsg, setErrMsg] = useState<string | null>(null);
+  // The customer already has a live appointment nearby → offer to move it.
+  const [dupExisting, setDupExisting] = useState<{ id: string; date: string; startTime: string; staffName: string; msg: string } | null>(null);
 
+  // Debounced customer search — one request per pause, and a stale response
+  // never overwrites a newer one.
   useEffect(() => {
     if (customerQuery.length < 1) { setCustomers([]); return; }
-    fetch(`/api/admin/customers?q=${encodeURIComponent(customerQuery)}`).then(r => r.json()).then(setCustomers);
+    let alive = true;
+    const t = setTimeout(() => {
+      fetch(`/api/admin/customers?q=${encodeURIComponent(customerQuery)}`)
+        .then(r => r.json())
+        .then(d => { if (alive && Array.isArray(d)) setCustomers(d); })
+        .catch(() => {});
+    }, 250);
+    return () => { alive = false; clearTimeout(t); };
   }, [customerQuery]);
+
+  // When a customer is picked, pre-select their usual service (with this barber
+  // when they have one; otherwise the most frequent). Only fills an EMPTY
+  // service so a manual choice is never overridden.
+  useEffect(() => {
+    if (!selectedCustomer) { setUsualHint(null); return; }
+    let alive = true;
+    fetch(`/api/admin/customers/${selectedCustomer.id}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!alive || !d) return;
+        const past: Array<{ staffId: string; serviceId: string; status: string; date: string }> = Array.isArray(d.past) ? d.past : [];
+        const live = past.filter(a => !a.status.startsWith("cancelled") && a.status !== "no_show");
+        const withBarber = live.filter(a => a.staffId === form.staffId);
+        const pool = (withBarber.length ? withBarber : live).slice(0, 12);
+        const counts = new Map<string, number>();
+        for (const a of pool) counts.set(a.serviceId, (counts.get(a.serviceId) || 0) + 1);
+        const usualId = Array.from(counts.entries()).sort((x, y) => y[1] - x[1])[0]?.[0];
+        if (usualId && availableServices.some(sv => sv.id === usualId)) {
+          setForm(p => (p.serviceId ? p : { ...p, serviceId: usualId }));
+          setUsualHint(d.insights?.lastVisitDaysAgo != null ? `ביקור אחרון לפני ${d.insights.lastVisitDaysAgo} יום` : null);
+        } else {
+          // No history with any offered service → first service of this barber.
+          setForm(p => (p.serviceId || !availableServices[0] ? p : { ...p, serviceId: availableServices[0].id }));
+          setUsualHint(null);
+        }
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomer?.id, form.staffId, staffServices]);
+
+  // "Move the existing appointment here" instead of creating a second one.
+  async function moveExistingHere() {
+    if (!dupExisting) return;
+    setSaving(true);
+    const res = await fetch(`/api/admin/appointments/${dupExisting.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: form.date, startTime: form.time, staffId: form.staffId, ...(isCustomSvc ? {} : { serviceId: form.serviceId }) }),
+    });
+    setSaving(false);
+    if (!res.ok) { const j = await res.json().catch(() => ({})); setErrMsg(j.error || "שגיאה בהזזה"); return; }
+    onSaved(); onClose();
+  }
 
   // Load referral source options once (same list as the customer-facing booking flow)
   useEffect(() => {
@@ -914,7 +974,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
   // Which source (owner-renamable) opens the referrer field.
   const friendSource = pickFriendSource(referralOptions);
 
-  async function save(override = false) {
+  async function save(override = false, allowDuplicate = false) {
     if (!form.staffId || !form.serviceId || !form.date || !form.time) return;
     // Temporary service requires a name + a positive duration before it can be saved.
     if (isCustomSvc && (!customSvc.name.trim() || customDurationNum <= 0)) {
@@ -948,12 +1008,14 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         referrerPhone:  customerMode === "new" && !!friendSource && referralSource === friendSource ? referrerPhone.trim() : undefined,
         walkIn,
         notifyCustomer,
+        allowDuplicate,
         override,
       }),
     });
     setSaving(false);
     if (res.status === 409) {
       const j = await res.json().catch(() => ({}));
+      if (j.duplicate && j.existing) { setDupExisting({ ...j.existing, msg: j.error }); return; }
       setConflictMsg(j.error || "השעה כבר תפוסה");
       return;
     }
@@ -996,7 +1058,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           )}
 
           {/* Date & time — shown collapsed/editable based on context */}
-          {!fromGrid && (
+          {!quick && !fromGrid && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
@@ -1022,7 +1084,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               </div>
             </div>
           )}
-          {fromGrid && (
+          {!quick && fromGrid && (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">תאריך</label>
@@ -1050,7 +1112,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
           )}
 
           {/* Staff — always a dropdown so the barber can be changed */}
-          <div>
+          {!quick && <div>
             <label className="text-xs text-neutral-500 block mb-1">
               ספר
               {fromGrid && <span className="text-teal-600 font-medium"> · ניתן לשנות</span>}
@@ -1060,10 +1122,10 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               {!fromGrid && <option value="">בחר ספר...</option>}
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </div>
+          </div>}
 
           {/* Service */}
-          <div>
+          {!quick && <div>
             <label className="text-xs text-neutral-500 block mb-1">שירות</label>
             <select value={form.serviceId} onChange={e => setForm(p => ({ ...p, serviceId: e.target.value }))}
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm">
@@ -1104,7 +1166,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
               </div>
             )}
             {endTime && <p className="text-xs text-neutral-400 mt-1">יסתיים בשעה {endTime}</p>}
-          </div>
+          </div>}
 
           {/* Customer */}
           <div>
@@ -1115,7 +1177,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                   className={`px-2 py-0.5 rounded-full ${customerMode === "search" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
                   חיפוש
                 </button>
-                <button onClick={() => setCustomerMode("new")}
+                <button onClick={() => { setCustomerMode("new"); setQuick(false); }}
                   className={`px-2 py-0.5 rounded-full ${customerMode === "new" ? "bg-slate-100 text-slate-700" : "text-neutral-400"}`}>
                   לקוח חדש
                 </button>
@@ -1133,7 +1195,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
                 ) : (
                   <>
                     <input value={customerQuery} onChange={e => setCustomerQuery(e.target.value)}
-                      placeholder="חפש לפי שם או טלפון..."
+                      placeholder="חפש לפי שם או טלפון..." autoFocus={quick}
                       className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
                     {customers.length > 0 && (
                       <div className="border border-neutral-200 rounded-lg mt-1 max-h-40 overflow-y-auto">
@@ -1200,12 +1262,35 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
             )}
           </div>
 
+          {/* Quick mode: one-line service summary + "more options" */}
+          {quick && (
+            <div className="space-y-2">
+              {selectedCustomer && selectedService ? (
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <span className="text-base">✂️</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{selectedService.name}</p>
+                    <p className="text-[11px] text-slate-600">
+                      {selectedService.durationMinutes} דק׳ · ₪{selectedService.price}{endTime ? ` · עד ${endTime}` : ""}{usualHint ? ` · ${usualHint}` : ""}
+                    </p>
+                  </div>
+                  <button type="button" onClick={() => setQuick(false)} className="text-xs text-teal-700 font-medium">שנה</button>
+                </div>
+              ) : selectedCustomer ? (
+                <p className="text-xs text-neutral-400">בוחר שירות…</p>
+              ) : null}
+              <button type="button" onClick={() => setQuick(false)} className="text-xs text-neutral-500 hover:text-neutral-800">
+                עוד אפשרויות — שירות, שעה, הערה, לקוח חדש ↓
+              </button>
+            </div>
+          )}
+
           {/* Note */}
-          <div>
+          {!quick && <div>
             <label className="text-xs text-neutral-500 block mb-1">הערה (אופציונלי)</label>
             <input value={form.note} onChange={e => setForm(p => ({ ...p, note: e.target.value }))}
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" />
-          </div>
+          </div>}
 
           {/* Walk-in toggle — only for new customers */}
           {customerMode === "new" && (
@@ -1231,7 +1316,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
 
           {/* Notify customer toggle — sends a WhatsApp confirmation. Hidden for
               walk-ins (those get their own thank-you message at the end). */}
-          {!walkIn && (
+          {!walkIn && !quick && (
             <button
               type="button"
               onClick={() => setNotifyCustomer(v => !v)}
@@ -1256,6 +1341,26 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved 
         <div className="px-5 pb-5 space-y-3">
           {errMsg && (
             <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-2">{errMsg}</div>
+          )}
+          {dupExisting && (
+            <div className="text-xs bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+              <p className="text-amber-900 font-medium">{dupExisting.msg}</p>
+              <p className="text-amber-800">להזיז את התור הקיים לכאן, או לקבוע תור נוסף?</p>
+              <div className="flex gap-2">
+                <button onClick={moveExistingHere} disabled={saving}
+                  className="flex-1 bg-teal-600 text-white rounded-lg py-1.5 text-xs font-medium hover:bg-teal-700">
+                  הזז את הקיים לכאן
+                </button>
+                <button onClick={() => { setDupExisting(null); save(false, true); }} disabled={saving}
+                  className="flex-1 bg-white border border-amber-300 text-amber-800 rounded-lg py-1.5 text-xs">
+                  קבע תור נוסף
+                </button>
+                <button onClick={() => setDupExisting(null)}
+                  className="px-3 bg-white border border-slate-300 text-slate-700 rounded-lg py-1.5 text-xs">
+                  ביטול
+                </button>
+              </div>
+            </div>
           )}
           {conflictMsg && (
             <div className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
@@ -4766,7 +4871,7 @@ export default function AdminCalendar() {
 
   // Auto-refresh every 3 minutes
   useEffect(() => {
-    refreshTimer.current = setInterval(loadAppointments, 3 * 60_000);
+    refreshTimer.current = setInterval(loadAppointments, 60_000);
     return () => clearInterval(refreshTimer.current);
   }, [loadAppointments]);
 

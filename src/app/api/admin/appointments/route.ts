@@ -175,6 +175,32 @@ export async function POST(req: NextRequest) {
   // inside `date` are still caught by the conflict check (avoids double-booking).
   const dayEnd = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
 
+  // Duplicate check: the customer already has a live appointment within a week
+  // of this one. Usually the barber meant to MOVE it ("תזיז לי") — offer that
+  // instead of silently creating a second booking (a common source of
+  // cancelled-by-staff rows). Bypassed with allowDuplicate: true.
+  if (!body.override && !body.allowDuplicate) {
+    const weekMs = 7 * 24 * 60 * 60 * 1000;
+    const dup = await prisma.appointment.findFirst({
+      where: {
+        businessId: business.id,
+        customerId: customer.id,
+        status: { in: ["pending", "confirmed"] },
+        date: { gte: new Date(dateObj.getTime() - weekMs), lte: new Date(dateObj.getTime() + weekMs) },
+      },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      select: { id: true, date: true, startTime: true, staff: { select: { name: true } } },
+    });
+    if (dup) {
+      const dupLabel = dup.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric", timeZone: "UTC" });
+      return NextResponse.json({
+        error: `ל${customer.name} כבר יש תור ב${dupLabel} בשעה ${dup.startTime} אצל ${dup.staff.name}.`,
+        duplicate: true,
+        existing: { id: dup.id, date: dup.date.toISOString().slice(0, 10), startTime: dup.startTime, staffName: dup.staff.name },
+      }, { status: 409 });
+    }
+  }
+
   // Conflict check (unless explicitly bypassed with override: true)
   if (!body.override) {
     const existing = await prisma.appointment.findMany({
