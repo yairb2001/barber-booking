@@ -12,6 +12,7 @@ import {
 } from "@/lib/messaging";
 import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
 import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
+import { customerManageLink } from "@/lib/customer-link";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +101,6 @@ export async function GET(req: NextRequest) {
       else if (priorVisits === 1) template = appt.business.reminder24hReturningTemplate || DEFAULT_24H_RETURNING_TEMPLATE;
       else                        template = appt.business.reminder24hTemplate || DEFAULT_24H_TEMPLATE;
 
-      const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
       let body = applyTemplate(template, reminderVars({
         customerName: appt.customer.name,
         businessName: appt.business.name,
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
         startTime:    appt.startTime,
         dateLabel,
         address:      appt.business.address,
-        cancelLink:   `${baseUrl}/book/my-appointments`,
+        cancelLink:   await customerManageLink(appt.businessId, appt.customer.phone, appt.business.slug),
       }));
       if (confirmationsEnabled(appt.business.settings) && !appt.confirmedAt) body = withConfirmAsk(body);
 

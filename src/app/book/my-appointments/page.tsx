@@ -99,8 +99,15 @@ export default function MyAppointmentsPage() {
   useEffect(() => {
     (async () => {
       try {
-        // 1) Exchange the bk_session cookie for a fresh OTP token (no SMS).
-        const authRes = await fetch(apiWithSlug("/api/otp/auto-token", slug), { method: "POST" });
+        // 1) Exchange the bk_session cookie — or the personal link token from a
+        //    WhatsApp message (?k=) — for a fresh OTP token (no SMS).
+        const linkToken = new URLSearchParams(window.location.search).get("k");
+        const authRes = await fetch(apiWithSlug("/api/otp/auto-token", slug), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(linkToken ? { link: linkToken } : {}),
+        });
+        if (linkToken) window.history.replaceState(null, "", window.location.pathname);
         if (!authRes.ok) {
           // No session (incognito / different browser) → offer phone+OTP login.
           setError("not-signed-in");
@@ -175,6 +182,58 @@ export default function MyAppointmentsPage() {
       setLoginError("האימות נכשל, נסה שוב");
       setLoginBusy(false);
     }
+  }
+
+  // ── Move (reschedule) one appointment — same barber & service ─────────────
+  const [moveId, setMoveId] = useState<string | null>(null);
+  const [moveDate, setMoveDate] = useState("");
+  const [moveDays, setMoveDays] = useState<Record<string, boolean>>({});
+  const [moveSlots, setMoveSlots] = useState<string[] | null>(null);
+  const [moveBusy, setMoveBusy] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState("");
+  const [moveDone, setMoveDone] = useState<string | null>(null);
+  function openMove(a: Appt) {
+    setMoveId(a.id); setMoveError(""); setMoveDone(null); setMoveSlots(null);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const from = today.toISOString().slice(0, 10);
+    const to = new Date(today.getTime() + 20 * 86_400_000).toISOString().slice(0, 10);
+    setMoveDate(a.date.slice(0, 10));
+    fetch(apiWithSlug(`/api/slots/availability?staffId=${a.staff.id}&serviceId=${a.service.id}&from=${from}&to=${to}`, slug))
+      .then(r => r.json()).then(d => setMoveDays(d?.days || {})).catch(() => setMoveDays({}));
+  }
+  useEffect(() => {
+    if (!moveId || !moveDate) return;
+    const a = upcoming.find(x => x.id === moveId); if (!a) return;
+    let alive = true; setMoveSlots(null);
+    fetch(apiWithSlug(`/api/slots?staffId=${a.staff.id}&serviceId=${a.service.id}&date=${moveDate}`, slug))
+      .then(r => r.json())
+      .then(d => {
+        if (!alive) return;
+        let slots: string[] = Array.isArray(d?.slots) ? d.slots : [];
+        // Same day: the appointment's own time is "taken" by itself — hide it,
+        // it makes no sense to move to where you already are.
+        if (moveDate === a.date.slice(0, 10)) slots = slots.filter(t => t !== a.startTime);
+        setMoveSlots(slots);
+      })
+      .catch(() => { if (alive) setMoveSlots([]); });
+    return () => { alive = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moveId, moveDate]);
+  async function handleMove(a: Appt, time: string) {
+    if (!auth) { setMoveError("פג תוקף הסשן — רענן את הדף"); return; }
+    setMoveBusy(time); setMoveError("");
+    try {
+      const res = await fetch(apiWithSlug("/api/my-appointments/move", slug), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appointmentId: a.id, phone: auth.phone, token: auth.token, date: moveDate, startTime: time }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setMoveError(data?.error || "ההזזה נכשלה, נסה שוב"); setMoveBusy(null); return; }
+      setUpcoming(prev => prev.map(x => x.id === a.id ? { ...x, date: moveDate + "T00:00:00.000Z", startTime: data.startTime, endTime: data.endTime } : x)
+        .sort((x, y) => x.date.localeCompare(y.date) || x.startTime.localeCompare(y.startTime)));
+      setMoveDone(a.id); setMoveId(null); setMoveBusy(null);
+      setTimeout(() => setMoveDone(null), 3000);
+    } catch { setMoveError("שגיאת חיבור"); setMoveBusy(null); }
   }
 
   // Cancel an upcoming appointment (after the user confirms).
@@ -419,14 +478,66 @@ export default function MyAppointmentsPage() {
                           </button>
                         </div>
                       </div>
+                    ) : moveId === a.id ? (
+                      <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--divider)" }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[12px] font-semibold" style={{ color: "var(--text-pri)" }}>לאיזה יום להזיז?</p>
+                          <button onClick={() => setMoveId(null)} className="text-[12px]" style={{ color: "var(--text-muted)" }}>✕</button>
+                        </div>
+                        {/* Next 3 weeks — only days with an open slot are tappable */}
+                        <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+                          {Array.from({ length: 21 }, (_, i) => {
+                            const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i);
+                            const iso = d.toISOString().slice(0, 10);
+                            const ok = moveDays[iso] === true || iso === a.date.slice(0, 10);
+                            const active = iso === moveDate;
+                            return (
+                              <button key={iso} disabled={!ok} onClick={() => setMoveDate(iso)}
+                                className="shrink-0 w-11 rounded-xl py-1.5 text-center disabled:opacity-30"
+                                style={{ background: active ? "var(--brand)" : "var(--bg-alt)", color: active ? "#fff" : "var(--text-pri)", border: "1px solid var(--divider)" }}>
+                                <p className="text-[10px] leading-none">{["א","ב","ג","ד","ה","ו","ש"][d.getDay()]}</p>
+                                <p className="text-[13px] font-bold leading-tight">{d.getDate()}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {moveSlots === null ? (
+                          <p className="text-[12px] text-center py-3" style={{ color: "var(--text-muted)" }}>בודק שעות פנויות…</p>
+                        ) : moveSlots.length === 0 ? (
+                          <p className="text-[12px] text-center py-3" style={{ color: "var(--text-muted)" }}>אין שעות פנויות ביום הזה</p>
+                        ) : (
+                          <div className="grid grid-cols-4 gap-1.5 mt-2 max-h-40 overflow-y-auto">
+                            {moveSlots.map(t => (
+                              <button key={t} onClick={() => handleMove(a, t)} disabled={!!moveBusy}
+                                className="py-2 rounded-xl text-[13px] font-bold active:scale-95 transition-transform disabled:opacity-50" dir="ltr"
+                                style={{ background: "var(--bg-alt)", color: "var(--brand)", border: "1px solid var(--divider)" }}>
+                                {moveBusy === t ? "…" : t}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {moveError && <p className="text-[11px] text-center mt-2" style={{ color: "#dc2626" }}>{moveError}</p>}
+                        {policyMessage && <p className="text-[10px] text-center mt-2" style={{ color: "var(--text-muted)" }}>{policyMessage}</p>}
+                      </div>
                     ) : (
-                      <div className="mt-3 pt-3 flex justify-end" style={{ borderTop: "1px solid var(--divider)" }}>
-                        <button
-                          onClick={() => { setConfirmId(a.id); setCancelError(""); }}
-                          className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
-                          style={{ color: "#dc2626" }}>
-                          ביטול תור
-                        </button>
+                      <div className="mt-3 pt-3 flex items-center justify-between" style={{ borderTop: "1px solid var(--divider)" }}>
+                        {moveDone === a.id ? (
+                          <span className="text-[12px] font-semibold" style={{ color: "#059669" }}>✓ התור הוזז</span>
+                        ) : <span />}
+                        <div className="flex gap-1">
+                          <button
+                            onClick={() => openMove(a)}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+                            style={{ color: "var(--brand)" }}>
+                            הזז תור
+                          </button>
+                          <button
+                            onClick={() => { setConfirmId(a.id); setCancelError(""); }}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+                            style={{ color: "#dc2626" }}>
+                            ביטול תור
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

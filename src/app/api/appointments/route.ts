@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { minutesToTime, timeToMinutes, getBusinessNow, appointmentInstant } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
 import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
+import { customerManageLink } from "@/lib/customer-link";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
@@ -45,7 +46,12 @@ export async function POST(request: NextRequest) {
     // (in the UI) whether they want this as an EXTRA appointment ("additional")
     // or to cancel the existing one(s) and book this instead ("cancel").
     existingDecision, // undefined | "additional" | "cancel"
-  } = body as typeof body & { existingDecision?: "additional" | "cancel" };
+    // With "cancel": WHICH existing appointment(s) to replace. A customer with
+    // two upcoming appointments who moves one must not lose the other. Missing
+    // → legacy behaviour (all upcoming) is NOT applied any more: we only cancel
+    // the explicitly chosen ids, or — when there is exactly one — that one.
+    replaceAppointmentIds,
+  } = body as typeof body & { existingDecision?: "additional" | "cancel"; replaceAppointmentIds?: unknown };
 
   if (!staffId || !serviceId || !date || !startTime || !customerPhone || !customerName) {
     return NextResponse.json(
@@ -291,7 +297,13 @@ export async function POST(request: NextRequest) {
   // now (stamp cancelledAt so they surface in the admin notifications feed) and
   // tell the waitlist their slots opened up.
   if (existingDecision === "cancel" && upcomingAppts.length > 0) {
-    for (const a of upcomingAppts) {
+    const chosen = Array.isArray(replaceAppointmentIds) ? new Set(replaceAppointmentIds.filter((x): x is string => typeof x === "string")) : null;
+    const toCancel = chosen ? upcomingAppts.filter(a => chosen.has(a.id))
+      : upcomingAppts.length === 1 ? upcomingAppts : [];
+    if (toCancel.length === 0) {
+      return NextResponse.json({ error: "יש לבחור איזה תור להחליף" }, { status: 400 });
+    }
+    for (const a of toCancel) {
       await prisma.appointment.update({
         where: { id: a.id },
         data:  { status: "cancelled_by_customer", cancelledAt: new Date() },
@@ -388,7 +400,7 @@ export async function POST(request: NextRequest) {
 
     // Link to the customer's "my appointments" page, where they can view/cancel.
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
-    const cancelLink = `${baseUrl}/book/my-appointments`;
+    const cancelLink = await customerManageLink(staff.businessId, canonicalPhone, business.slug);
 
     if (isFirstBooking && business.firstBookingTemplate !== null) {
       // Owner has customised the first-booking template → use it
@@ -436,6 +448,8 @@ export async function POST(request: NextRequest) {
         price,
         address: business.address,
         cancelLink,
+        dateISO: appointment.date.toISOString().slice(0, 10),
+        durationMinutes: timeToMinutes(endTime) - timeToMinutes(startTime),
       }, business.confirmationTemplate);
       msgKind = "confirmation";
     }

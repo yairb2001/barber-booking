@@ -20,12 +20,12 @@ import {
 } from "@/lib/messaging";
 import { appointmentInstant } from "@/lib/utils";
 import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
+import { customerManageLink } from "@/lib/customer-link";
 
 const CANCELLED = ["cancelled_by_customer", "cancelled_by_staff", "no_show"];
 const H = 3_600_000;
 
 export async function sweepReminders(now = new Date()): Promise<{ enqueued24: number; enqueued2: number }> {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
   // Appointments whose calendar day is today or tomorrow (UTC-midnight rows).
   const dayStart = new Date(now.toISOString().slice(0, 10) + "T00:00:00.000Z");
   const dayEnd = new Date(dayStart.getTime() + 2 * 86_400_000 - 1);
@@ -52,7 +52,7 @@ export async function sweepReminders(now = new Date()): Promise<{ enqueued24: nu
     const dateLabel = appt.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
     const vars = reminderVars({
       customerName: appt.customer.name, businessName: appt.business.name, staffName: appt.staff.name,
-      startTime: appt.startTime, dateLabel, address: appt.business.address, cancelLink: `${baseUrl}/book/my-appointments`,
+      startTime: appt.startTime, dateLabel, address: appt.business.address, cancelLink: await customerManageLink(appt.businessId, appt.customer.phone, appt.business.slug),
     });
 
     // 24h

@@ -92,7 +92,12 @@ export function applyTemplate(
   template: string,
   vars: Record<string, string>
 ): string {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "");
+  return template
+    .replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? "")
+    // An optional "_line" variable that rendered empty must not leave a hole:
+    // collapse 3+ consecutive newlines back to one blank line.
+    .replace(/\n{3,}/g, "\n\n")
+    .trimEnd();
 }
 
 /** Default template for 24-hour reminder. Uses {{variable}} placeholders. */
@@ -513,6 +518,7 @@ export const DEFAULT_CONFIRMATION_TEMPLATE =
 
 נתראה!
 
+{{calendar_line}}
 {{cancel_line}}`;
 
 export const DEFAULT_SWAP_PROPOSAL_TEMPLATE =
@@ -691,6 +697,7 @@ export const TEMPLATE_DEFS = {
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "calendar_line", label: "קישור להוספה ליומן" },
     ],
   },
   reminder_24h: {
@@ -933,10 +940,18 @@ export function confirmationText(
     price: number;
     address?: string | null;
     cancelLink?: string | null;
+    /** ISO date (YYYY-MM-DD) + duration → builds the add-to-calendar link. */
+    dateISO?: string;
+    durationMinutes?: number;
   },
   customTemplate?: string | null,
 ): string {
   const tmpl = customTemplate || DEFAULT_CONFIRMATION_TEMPLATE;
+  const calendarLink = params.dateISO ? calendarIcsLink({
+    title: `${params.serviceName} — ${formatBusinessName(params.businessName)}`,
+    date: params.dateISO, time: params.startTime, duration: params.durationMinutes || 30,
+    details: `אצל ${params.staffName}`, location: params.address || "",
+  }) : "";
   return applyTemplate(tmpl, {
     name:         firstName(params.customerName),
     business:     formatBusinessName(params.businessName),
@@ -949,7 +964,18 @@ export function confirmationText(
     address_line: params.address ? `\n📍 ${params.address}` : "",
     cancel_link:  params.cancelLink ?? "",
     cancel_line:  cancelLine(params.cancelLink),
+    calendar_link: calendarLink,
+    calendar_line: calendarLink ? `📆 להוספה ליומן:\n${calendarLink}` : "",
   });
+}
+
+/** Add-to-calendar (.ics) link served by /api/calendar/ics. */
+export function calendarIcsLink(p: { title: string; date: string; time: string; duration: number; details?: string; location?: string }): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const q = new URLSearchParams({ title: p.title, date: p.date, time: p.time, duration: String(p.duration) });
+  if (p.details) q.set("details", p.details);
+  if (p.location) q.set("location", p.location);
+  return `${baseUrl}/api/calendar/ics?${q.toString()}`;
 }
 
 /**

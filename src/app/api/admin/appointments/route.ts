@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE, mirrorToConversation } from "@/lib/messaging";
 import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
+import { customerManageLink } from "@/lib/customer-link";
 import { timeToMinutes, appointmentInstant } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
@@ -288,7 +289,7 @@ export async function POST(req: NextRequest) {
     let msgKind: "confirmation" | "first_booking";
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
-    const cancelLink = `${baseUrl}/book/my-appointments`;
+    const cancelLink = await customerManageLink(business.id, appointment.customer.phone, business.slug);
 
     if (isFirstBooking) {
       const tmpl = business.firstBookingTemplate || DEFAULT_FIRST_BOOKING_TEMPLATE;
@@ -318,6 +319,8 @@ export async function POST(req: NextRequest) {
         price: appointment.price,
         address: business.address,
         cancelLink,
+        dateISO: appointment.date.toISOString().slice(0, 10),
+        durationMinutes: timeToMinutes(appointment.endTime) - timeToMinutes(appointment.startTime),
       }, business.confirmationTemplate);
       msgKind = "confirmation";
     }

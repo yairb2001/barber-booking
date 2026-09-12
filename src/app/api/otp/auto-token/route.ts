@@ -9,20 +9,26 @@
  *   { ok: true, token: string, phone: string }   — phone is in display format (05...)
  *   { error: string }  with status 401           — session missing or expired
  *
- * Also renews the session cookie (sliding 40-day window).
+ * Also renews the session cookie (sliding 180-day window).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { authSecret } from "@/lib/jwt-secret";
 import { jwtVerify, SignJWT } from "jose";
 import { prisma } from "@/lib/prisma";
+import { CUSTOMER_LINK_TYPE } from "@/lib/customer-link";
 
 
 const OTP_TOKEN_TTL = 60 * 30; // 30 minutes — same as regular OTP
 
 export async function POST(req: NextRequest) {
+  // Either the bk_session cookie, or a personal link token (?k= from a
+  // confirmation/reminder message — see src/lib/customer-link.ts). The link
+  // also signs the browser in by setting the cookie below.
+  const body = await req.json().catch(() => ({})) as { link?: unknown };
+  const linkToken = typeof body.link === "string" ? body.link : null;
   const sessionCookie = req.cookies.get("bk_session")?.value;
-  if (!sessionCookie) {
+  if (!sessionCookie && !linkToken) {
     return NextResponse.json({ error: "no session" }, { status: 401 });
   }
 
@@ -30,8 +36,8 @@ export async function POST(req: NextRequest) {
   let businessId: string;
 
   try {
-    const { payload } = await jwtVerify(sessionCookie, authSecret());
-    if (payload.type !== "customer_session") {
+    const { payload } = await jwtVerify((linkToken || sessionCookie)!, authSecret());
+    if (payload.type !== "customer_session" && payload.type !== CUSTOMER_LINK_TYPE) {
       return NextResponse.json({ error: "invalid session type" }, { status: 401 });
     }
     phone      = payload.phone      as string;
@@ -51,7 +57,7 @@ export async function POST(req: NextRequest) {
   const newSession = await new SignJWT({ phone, businessId, type: "customer_session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("40d")
+    .setExpirationTime("180d")
     .sign(authSecret());
 
   // Convert stored phone (972...) → display format (05...)
@@ -80,7 +86,7 @@ export async function POST(req: NextRequest) {
     // (e.g. reopening the shop from WhatsApp). Must match the value set in
     // /api/otp/verify — see the note there.
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 40, // 40 days
+    maxAge: 60 * 60 * 24 * 180, // 180 days — a 6-week rhythm must not force re-verification
     path: "/",
     secure: process.env.NODE_ENV === "production",
   });

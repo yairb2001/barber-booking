@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
   const sessionToken = await new SignJWT({ phone: normalized, businessId: business.id, type: "customer_session" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("40d")
+    .setExpirationTime("180d")
     .sign(authSecret());
 
   const response = NextResponse.json({ ok: true, token, customerName: existingCustomer?.name || null });
@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     // cross-site, the session wasn't sent, and the booking flow forced a
     // redundant WhatsApp re-verification. "lax" still blocks cross-site POST.
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 40, // 40 days
+    maxAge: 60 * 60 * 24 * 180, // 180 days — a 6-week rhythm must not force re-verification
     path: "/",
     secure: process.env.NODE_ENV === "production",
   });

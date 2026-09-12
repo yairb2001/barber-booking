@@ -505,6 +505,8 @@ function ConfirmPageContent() {
     setOtpVerifying(false);
   }
 
+  // Which existing appointment(s) the customer wants to replace (multi-appt case).
+  const [replaceIds, setReplaceIds] = useState<string[]>([]);
   async function handleSubmit(existingDecision?: "additional" | "cancel") {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
     if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
@@ -531,6 +533,7 @@ function ConfirmPageContent() {
           note: combinedNote || undefined,
           otpToken,
           existingDecision,
+          replaceAppointmentIds: existingDecision === "cancel" ? (replaceIds.length ? replaceIds : (existingAppts?.length === 1 ? [existingAppts[0].id] : [])) : undefined,
           // Marketing attribution captured from the booking-link URL (?ref/?utm_*).
           attribution: getStoredAttribution() || undefined,
         }),
@@ -1071,16 +1074,29 @@ function ConfirmPageContent() {
               {existingAppts.length === 1 ? "נמצא לך תור קרוב:" : "נמצאו לך תורים קרובים:"}
             </p>
             <div className="space-y-2 mb-5 text-right">
-              {existingAppts.map((a) => (
-                <div key={a.id} className="rounded-xl bg-slate-50 border border-slate-200 px-3 py-2">
-                  <p className="text-[13px] font-semibold text-slate-700">
-                    {a.dateLabel} בשעה {a.startTime}
-                  </p>
-                  <p className="text-[12px] text-slate-500">
-                    {a.serviceName}{a.staffName ? ` · ${a.staffName}` : ""}
-                  </p>
-                </div>
-              ))}
+              {existingAppts.map((a) => {
+                const multi = existingAppts.length > 1;
+                const checked = multi ? replaceIds.includes(a.id) : true;
+                return (
+                  <label key={a.id} className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${multi ? "cursor-pointer" : ""} ${checked && multi ? "bg-red-50 border-red-200" : "bg-slate-50 border-slate-200"}`}>
+                    {multi && (
+                      <input type="checkbox" className="mt-1" checked={checked}
+                        onChange={e => setReplaceIds(ids => e.target.checked ? [...ids, a.id] : ids.filter(x => x !== a.id))} />
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-slate-700">
+                        {a.dateLabel} בשעה {a.startTime}
+                      </p>
+                      <p className="text-[12px] text-slate-500">
+                        {a.serviceName}{a.staffName ? ` · ${a.staffName}` : ""}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+              {existingAppts.length > 1 && (
+                <p className="text-[11px] text-slate-400">סמן איזה תור להחליף — השאר יישארו כמו שהם</p>
+              )}
             </div>
             <p className="text-[13px] text-slate-600 mb-4">מה תרצה לעשות?</p>
             <div className="space-y-2">
@@ -1089,9 +1105,9 @@ function ConfirmPageContent() {
                 style={{ background: "var(--brand)" }}>
                 {submitting ? "קובע..." : "לקבוע תור נוסף ➕"}
               </button>
-              <button onClick={() => handleSubmit("cancel")} disabled={submitting}
+              <button onClick={() => handleSubmit("cancel")} disabled={submitting || (existingAppts.length > 1 && replaceIds.length === 0)}
                 className="w-full text-[14px] font-semibold py-3 rounded-full text-red-600 bg-red-50 border border-red-200 transition-all active:scale-[0.99] disabled:opacity-40">
-                {submitting ? "מבטל וקובע..." : "לבטל את הקיים ולקבוע חדש 🔄"}
+                {submitting ? "מבטל וקובע..." : existingAppts.length > 1 ? `להחליף את ${replaceIds.length === 1 ? "התור שסימנתי" : "התורים שסימנתי"} בתור הזה 🔄` : "לבטל את הקיים ולקבוע חדש 🔄"}
               </button>
               <button onClick={() => { if (!submitting) setExistingAppts(null); }} disabled={submitting}
                 className="w-full text-[13px] text-slate-400 py-2 disabled:opacity-40">
