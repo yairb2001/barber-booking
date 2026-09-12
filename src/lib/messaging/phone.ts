@@ -43,3 +43,14 @@ export function telHref(phone: string | null | undefined): string {
   if (raw.startsWith("+") || digits.startsWith("972")) return `tel:+${digits}`;
   return `tel:${digits}`;
 }
+
+/**
+ * Every stored spelling of one phone number. Customer.phone is stored in
+ * either "0..." or "972..." form (see CLAUDE.md) — use this in `phone: { in }`
+ * clauses instead of comparing a single format.
+ */
+export function phoneVariants(raw: string): string[] {
+  const normalized = normalizeIsraeliPhone(raw);
+  const local = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
+  return Array.from(new Set([raw.trim(), normalized, local].filter(Boolean)));
+}

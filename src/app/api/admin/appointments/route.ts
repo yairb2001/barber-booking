@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
-import { timeToMinutes } from "@/lib/utils";
+import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
+import { timeToMinutes, appointmentInstant } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
@@ -293,6 +294,13 @@ export async function POST(req: NextRequest) {
         cancelLink,
       }, business.confirmationTemplate);
       msgKind = "confirmation";
+    }
+
+    // Appointment confirmations: a booking made less than ~27h before the slot
+    // will never get the 24h reminder (and its "reply 1" ask), so ask here.
+    if (confirmationsEnabled(business.settings)) {
+      const hoursAhead = (appointmentInstant(appointment.date, appointment.startTime).getTime() - Date.now()) / 3_600_000;
+      if (hoursAhead > 0 && hoursAhead < 27) msgBody = withConfirmAsk(msgBody);
     }
 
     notifyTasks.push(sendMessage({

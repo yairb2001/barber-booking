@@ -22,7 +22,7 @@
     },
     {
       "path": "/api/cron/automations-post-visit",
-      "schedule": "0 10 * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/cron/automations",

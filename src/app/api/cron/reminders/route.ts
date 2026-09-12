@@ -11,6 +11,7 @@ import {
   reminderVars,
 } from "@/lib/messaging";
 import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
+import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +101,7 @@ export async function GET(req: NextRequest) {
       else                        template = appt.business.reminder24hTemplate || DEFAULT_24H_TEMPLATE;
 
       const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
-      const body = applyTemplate(template, reminderVars({
+      let body = applyTemplate(template, reminderVars({
         customerName: appt.customer.name,
         businessName: appt.business.name,
         staffName:    appt.staff.name,
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
         address:      appt.business.address,
         cancelLink:   `${baseUrl}/book/my-appointments`,
       }));
+      if (confirmationsEnabled(appt.business.settings) && !appt.confirmedAt) body = withConfirmAsk(body);
 
       // Fire exactly 24h before the appointment instant.
       const scheduledFor = new Date(appointmentInstant(appt.date, appt.startTime).getTime() - 24 * 60 * 60 * 1000);

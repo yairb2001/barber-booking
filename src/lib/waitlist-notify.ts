@@ -3,6 +3,9 @@ import { enqueueMessage, sendMessage, applyTemplate, firstName, formatBusinessNa
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { parseYesNo } from "@/lib/agent/appointment-swap";
 import { computeDayAvailability } from "@/lib/agent/availability";
+import { pushToStaff, pushToOwner } from "@/lib/native/push";
+import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
+import { timeToMinutes, minutesToTime } from "@/lib/utils";
 
 // How long after pinging an implicit-waitlist customer ("a slot opened up,
 // interested?") a plain כן/לא reply is still treated as answering THAT
@@ -164,6 +167,25 @@ async function triggerWaitlist(opts: {
   const immediate = triggerType === "cancellation";
   const tasks: Promise<unknown>[] = [];
 
+  // ── Auto-book mode (Business.settings.waitlistMode === "auto") ─────────────
+  // On a cancellation, the first matching explicit entry gets the freed slot
+  // right away instead of a "hurry and book" message. The customer is told
+  // they can cancel if it doesn't suit them (which frees the slot again and
+  // re-runs this for the next person). Falls back to notify mode when the
+  // slot can't be created (conflict, missing data).
+  let waitlistMode: "notify" | "auto" = "notify";
+  try { waitlistMode = JSON.parse(business.settings || "{}").waitlistMode === "auto" ? "auto" : "notify"; } catch { /* default */ }
+  if (waitlistMode === "auto" && triggerType === "cancellation" && startTime) {
+    const candidates = entries
+      .filter(e => e.source === "explicit" && matchesTimePreference(startTime, e.preferredTimeOfDay || "any") && e.customer.phone)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    for (const entry of candidates) {
+      const booked = await autoBookWaitlistEntry(business, entry, staffId, dayStart, startTime).catch(err => { console.error("[waitlist auto-book]", err); return false; });
+      if (booked) return; // slot taken — nobody else to notify
+    }
+    // Nobody could be auto-booked → fall through to normal notifications.
+  }
+
   // For cancellations: the freed slot may no longer actually be bookable — the
   // owner can shorten a day's hours (per-day StaffScheduleOverride) AFTER an
   // appointment inside the now-closed window was booked. If that appointment
@@ -210,6 +232,58 @@ async function triggerWaitlist(opts: {
   // Await so immediate sends actually complete before the (serverless) caller
   // is frozen. Enqueue-only sends resolve instantly, so this is cheap.
   await Promise.allSettled(tasks);
+}
+
+/**
+ * Create the appointment for one waitlist entry in the freed slot. Returns
+ * false (and changes nothing) when the slot no longer fits.
+ */
+async function autoBookWaitlistEntry(
+  business: { id: string; name: string; slug: string | null; address: string | null },
+  entry: WaitlistEntryForNotify & { customerId: string; serviceId: string },
+  staffId: string,
+  dayStart: Date,
+  startTime: string,
+): Promise<boolean> {
+  const ss = await prisma.staffService.findFirst({ where: { staffId, serviceId: entry.serviceId }, select: { customDuration: true, customPrice: true } });
+  const svc = await prisma.service.findUnique({ where: { id: entry.serviceId }, select: { durationMinutes: true, price: true, name: true } });
+  if (!svc) return false;
+  const duration = ss?.customDuration ?? svc.durationMinutes;
+  const price = ss?.customPrice ?? svc.price;
+  const startMin = timeToMinutes(startTime);
+  const endTime = minutesToTime(startMin + duration);
+
+  // The freed slot must still be open for the WHOLE service duration.
+  const dateIso = dayStart.toISOString().slice(0, 10);
+  const avail = await computeDayAvailability(business.id, dateIso, staffId, entry.serviceId);
+  const open = new Set(avail.find(a => a.staffId === staffId)?.slots ?? []);
+  if (!open.has(startTime)) return false;
+
+  const appt = await prisma.appointment.create({
+    data: {
+      businessId: business.id, customerId: entry.customerId, staffId, serviceId: entry.serviceId,
+      date: dayStart, startTime, endTime, status: "confirmed", price, source: "waitlist",
+    },
+    include: { staff: { select: { name: true } } },
+  });
+  await prisma.waitlist.update({ where: { id: entry.id }, data: { status: "booked", notifiedAt: new Date() } });
+
+  const dateLabel = dayStart.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const body =
+    `היי ${firstName(entry.customer.name)}, התפנה מקום ותפסנו אותו בשבילך 🎉\n` +
+    `📅 ${dateLabel}\n🕒 ${startTime}\n💈 ${svc.name} אצל ${appt.staff.name}${business.address ? `\n📍 ${business.address}` : ""}\n\n` +
+    `אם זה לא מתאים לך — אפשר לבטל כאן והמקום יעבור לבא בתור:\n${baseUrl}/book/my-appointments`;
+  void logToConversationHistory(business.id, entry.customer.phone, body);
+  await sendMessage({ businessId: business.id, appointmentId: appt.id, customerPhone: entry.customer.phone, kind: "waitlist_notify", body }).catch(console.error);
+
+  const title = "תור נתפס מרשימת ההמתנה ✅";
+  const pushBody = `${entry.customer.name} · ${dateLabel} בשעה ${startTime}`;
+  pushToStaff(staffId, { title, body: pushBody, data: { type: "appointment_created", appointmentId: appt.id } }).catch(() => {});
+  pushToOwner(business.id, { title, body: pushBody, data: { type: "appointment_created", appointmentId: appt.id } }, staffId).catch(() => {});
+  notifyOwnerWeb(business.id, "appointment", { title, body: pushBody, url: "/admin", tag: `wl-${appt.id}` }, staffId).catch(() => {});
+  notifyStaffWeb(staffId, "appointment", { title, body: pushBody, url: "/admin", tag: `wl-${appt.id}` }).catch(() => {});
+  return true;
 }
 
 /** A waitlist row joined with the relations the message template needs. */

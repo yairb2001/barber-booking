@@ -30,6 +30,9 @@ const TapGuardCtx = React.createContext<React.MutableRefObject<number> | null>(n
 // starts a scroll/pan gesture, fires pointercancel, and the drag dies mid-move
 // ("stuck", can't cross into other days/barbers, calendar still scrolls).
 const DragActiveCtx = React.createContext<boolean>(false);
+// Business feature: appointment confirmations ("reply 1"). When on, upcoming
+// appointments without confirmedAt render with a dashed border.
+const ConfirmationsCtx = React.createContext<boolean>(false);
 
 // Detects narrow viewports so draft blocks etc. can switch to a vertical
 // stacked layout instead of the squished horizontal pill that happens in
@@ -217,6 +220,7 @@ type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
   customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
+  confirmedAt?: string | null; // customer replied "1" to the reminder (confirmations feature)
   customServiceName?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
@@ -734,7 +738,10 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
 
   // Gray out the whole block for a customer who has no-showed ("הבריז") before.
   const flaked = !!appt.customerNoShows;
-  const blockColor = flaked ? "bg-neutral-200 text-neutral-700 border-neutral-300" : colorClass;
+  const confirmationsOn = React.useContext(ConfirmationsCtx);
+  // Unconfirmed = confirmations feature on, appointment still ahead, no "1" yet.
+  const unconfirmed = confirmationsOn && !appt.confirmedAt && !appt.status.startsWith("cancelled") && appt.status !== "no_show";
+  const blockColor = (flaked ? "bg-neutral-200 text-neutral-700 border-neutral-300" : colorClass) + (unconfirmed ? " border-dashed border-2" : "");
   if (swapState.kind === "swap-mode-primary") {
     ringClass = "ring-2 ring-slate-900 ring-offset-1";
     badge = { text: "המקור", cls: "bg-teal-600 text-white" };
@@ -1371,7 +1378,8 @@ const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   no_show:             { label: "לא הגיע", badgeClass: "bg-neutral-100 text-neutral-500" },
 };
 
-function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkSwap, onApproveSwap }: {
+function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkSwap, onApproveSwap, confirmationsOn = false }: {
+  confirmationsOn?: boolean;
   appt: Appt; onClose: () => void;
   onChange: (id: string, status: string) => void;
   onReload?: () => void;
@@ -1998,6 +2006,12 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <h3 className="font-bold text-base text-white truncate">{appt.customServiceName || appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
+            {confirmationsOn && !appt.status.startsWith("cancelled") && appt.status !== "no_show" && (
+              <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${appt.confirmedAt ? "bg-white/25 text-white" : "bg-white/15 text-white/80 border border-dashed border-white/60"}`}
+                title={appt.confirmedAt ? "הלקוח אישר את התור בתשובה לתזכורת" : "הלקוח עדיין לא אישר את התור"}>
+                {appt.confirmedAt ? "✓ אישר" : "לא אישר"}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={toggleEdit} title={editMode ? "סגור עריכה" : "ערוך תור — לקוח, שירות, תאריך, שעה, מחיר"}
@@ -3973,6 +3987,7 @@ export default function AdminCalendar() {
   const [dayBarber, setDayBarber] = useState<string>("");
   // Calendar display hours — loaded from business settings
   const [calStart, setCalStart] = useState(DAY_START);
+  const [confirmationsOn, setConfirmationsOn] = useState(false);
   const [calEnd, setCalEnd] = useState(DAY_END);
   // Business-default booking horizon (days). Per-staff overrides live in staff.settings.
   const [bizHorizon, setBizHorizon] = useState(30);
@@ -4528,6 +4543,7 @@ export default function AdminCalendar() {
     }
     setServices(sv);
     if (biz && typeof biz.bookingHorizonDays === "number") setBizHorizon(biz.bookingHorizonDays);
+    if (biz?.settings) { try { setConfirmationsOn(JSON.parse(biz.settings).apptConfirmations === true); } catch { /* ignore */ } }
     if (isFirstLoad) {
       let serverStart = DAY_START;
       let serverEnd = DAY_END;
@@ -5445,6 +5461,7 @@ export default function AdminCalendar() {
         {/* calendar can't slide out from under the finger mid-move.          */}
         <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto"
           style={(dragMove || breakDrag) ? { touchAction: "none", overscrollBehavior: "contain" } : undefined}>
+          <ConfirmationsCtx.Provider value={confirmationsOn}>
           <DragActiveCtx.Provider value={dragMove !== null || breakDrag !== null}>
           <TapGuardCtx.Provider value={tapGuardUntil}>
           <HHCtx.Provider value={hourHeight}>
@@ -5732,6 +5749,7 @@ export default function AdminCalendar() {
           </HHCtx.Provider>
           </TapGuardCtx.Provider>
           </DragActiveCtx.Provider>
+          </ConfirmationsCtx.Provider>
         </div>
       </div>
     );
@@ -5998,6 +6016,7 @@ export default function AdminCalendar() {
 
       {/* ── Modals ── */}
       {selectedAppt && <ApptModal
+        confirmationsOn={confirmationsOn}
         appt={selectedAppt}
         onClose={() => setSelectedAppt(null)}
         onChange={handleStatusChange}

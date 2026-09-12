@@ -35,6 +35,26 @@ import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
+import { sweepReminders } from "@/lib/reminders-sweep";
+import { notifyOwnerWeb } from "@/lib/native/web-push";
+
+// Quiet hours (Israel time): nothing in this queue is urgent enough to wake a
+// customer. Rows that come due at night simply wait for the morning. OTP and
+// booking confirmations never pass through this queue, so they are unaffected.
+const QUIET_START_MIN = 21 * 60 + 30; // 21:30
+const QUIET_END_MIN   = 8 * 60;       // 08:00
+const inQuietHours = (israelMinutes: number) => israelMinutes >= QUIET_START_MIN || israelMinutes < QUIET_END_MIN;
+
+// Rolling reminder sweep (catches bookings made after the nightly scan).
+const REMINDER_SWEEP_EVERY_MS = 10 * 60 * 1000;
+let lastReminderSweep = 0;
+
+// Stuck-queue watchdog: work is due but nobody is sending → the external
+// minute-cron probably stopped. Alerts each affected business's owner once
+// per hour at most.
+const STUCK_CHECK_EVERY_MS = 30 * 60 * 1000;
+let lastStuckCheck = 0;
+const stuckAlertedAt = new Map<string, number>();
 
 export const dynamic = "force-dynamic";
 
@@ -117,6 +137,12 @@ export async function GET(req: NextRequest) {
   const { minutes: israelMinutes } = getBusinessNow();
   if (israelMinutes < 6 * 60 && israelMinutes % 15 !== 0) {
     return NextResponse.json({ ok: true, skipped: "night-throttle" });
+  }
+  if (inQuietHours(israelMinutes)) {
+    // Still run the piggybacked scans (they only enqueue / check health), but
+    // do not deliver anything until 08:00.
+    await runPiggybackTasks(now);
+    return NextResponse.json({ ok: true, skipped: "quiet-hours" });
   }
 
   // Run the piggybacked scans (question follow-up, link-nudge, LLM health) here,
@@ -299,6 +325,40 @@ export async function GET(req: NextRequest) {
  *  separately, higher up in GET) is the critical path and must never be blocked
  *  or delayed by these. Must be called on every non-night-throttled tick,
  *  regardless of whether the drip queue itself has anything due to send. */
+/**
+ * "Work is due, nothing is moving" detector. If the oldest scheduled row is
+ * >30 min overdue during active hours AND no message at all was sent in the
+ * last 15 min, the drainer is not running (external cron down, or every send
+ * failing). Push the owner of each affected business so someone looks.
+ */
+async function checkStuckQueue(now: Date): Promise<void> {
+  const { minutes } = getBusinessNow();
+  if (inQuietHours(minutes) || minutes < QUIET_END_MIN + 45) return; // let the morning backlog drain first
+  const overdue = await prisma.messageLog.findMany({
+    where: { status: "scheduled", scheduledFor: { lt: new Date(now.getTime() - 30 * 60_000) } },
+    select: { businessId: true },
+    distinct: ["businessId"],
+    take: 20,
+  });
+  if (!overdue.length) return;
+  const recentSend = await prisma.messageLog.findFirst({
+    where: { sentAt: { gte: new Date(now.getTime() - 15 * 60_000) } },
+    select: { id: true },
+  });
+  if (recentSend) return;
+  for (const { businessId } of overdue) {
+    const last = stuckAlertedAt.get(businessId) || 0;
+    if (now.getTime() - last < 60 * 60_000) continue;
+    stuckAlertedAt.set(businessId, now.getTime());
+    await notifyOwnerWeb(businessId, "escalation", {
+      title: "תור ההודעות תקוע",
+      body: "יש הודעות שהיו אמורות לצאת ולא נשלחו כבר חצי שעה. כדאי לבדוק את החיבור לוואטסאפ ואת ה-cron החיצוני.",
+      url: "/admin/settings/whatsapp",
+      tag: "stuck-queue",
+    });
+  }
+}
+
 async function runPiggybackTasks(now: Date): Promise<void> {
   const nowMs = now.getTime();
 
@@ -323,6 +383,16 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   if (nowMs - lastLlmHealthCheck >= LLM_HEALTH_EVERY_MS) {
     lastLlmHealthCheck = nowMs;
     try { await checkAndRecordLlmHealth(); } catch (err) { console.error("[drip-queue] llm-health failed:", err); }
+  }
+
+  if (nowMs - lastReminderSweep >= REMINDER_SWEEP_EVERY_MS) {
+    lastReminderSweep = nowMs;
+    try { await sweepReminders(now); } catch (err) { console.error("[drip-queue] reminder-sweep failed:", err); }
+  }
+
+  if (nowMs - lastStuckCheck >= STUCK_CHECK_EVERY_MS) {
+    lastStuckCheck = nowMs;
+    try { await checkStuckQueue(now); } catch (err) { console.error("[drip-queue] stuck-check failed:", err); }
   }
 
   if (nowMs - lastDemoSalesAgentRun >= DEMO_SALES_AGENT_EVERY_MS) {

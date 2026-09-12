@@ -31,6 +31,26 @@ export default function CalendarBookingPage() {
   const [cancellationPolicyText, setCancellationPolicyText] = useState("");
   const [policySaving, setPolicySaving] = useState(false);
   const [policySaved, setPolicySaved] = useState(false);
+  // Feature toggles stored in Business.settings — saved immediately on tap.
+  const [apptConfirmations, setApptConfirmations] = useState(false);
+  const [waitlistMode, setWaitlistMode] = useState<"notify" | "auto">("notify");
+  const [toggleSaving, setToggleSaving] = useState<string | null>(null);
+
+  async function patchSettings(patch: Record<string, unknown>, key: string) {
+    setToggleSaving(key);
+    await fetch("/api/admin/business", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settingsPatch: patch }),
+    }).catch(() => {});
+    setToggleSaving(null);
+  }
+
+  // Live examples — what a setting means for a customer booking right now.
+  const nowLocal = new Date();
+  const fmtHM = (d: Date) => d.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+  const leadExample = fmtHM(new Date(nowLocal.getTime() + minBookingLeadMinutes * 60_000));
+  const firstLeadExample = fmtHM(new Date(nowLocal.getTime() + firstApptLeadMinutes * 60_000));
+  const horizonExample = new Date(nowLocal.getTime() + bookingHorizonDays * 86_400_000).toLocaleDateString("he-IL", { day: "numeric", month: "long" });
 
   useEffect(() => {
     fetch("/api/admin/business").then(r => r.json()).then(data => {
@@ -44,6 +64,8 @@ export default function CalendarBookingPage() {
         const s = data.settings || {};
         if (typeof s.calendarStartHour === "number") setCalStartHour(s.calendarStartHour);
         if (typeof s.calendarEndHour === "number") setCalEndHour(s.calendarEndHour);
+        setApptConfirmations(s.apptConfirmations === true);
+        setWaitlistMode(s.waitlistMode === "auto" ? "auto" : "notify");
       }
       setLoading(false);
     });
@@ -108,7 +130,7 @@ export default function CalendarBookingPage() {
                   <span className="text-sm text-neutral-500">ימים</span>
                 </div>
                 <p className="text-xs text-neutral-400 mt-1">
-                  לקוחות יכולים לקבוע תור עד {bookingHorizonDays} ימים מהיום (ברירת מחדל: 30)
+                  לקוחות יכולים לקבוע תור עד {bookingHorizonDays} ימים מהיום (ברירת מחדל: 30) — כלומר עד {horizonExample}
                 </p>
               </div>
 
@@ -126,7 +148,7 @@ export default function CalendarBookingPage() {
                 <p className="text-xs text-neutral-400 mt-1">
                   {minBookingLeadMinutes === 0
                     ? "לקוחות יכולים לקבוע תור ״מעכשיו לעכשיו״"
-                    : `לקוחות לא יוכלו לקבוע תור פחות מ-${minBookingLeadMinutes} דקות מעכשיו`}
+                    : `לקוחות לא יוכלו לקבוע תור פחות מ-${minBookingLeadMinutes} דקות מעכשיו. עכשיו ${fmtHM(nowLocal)} → התור הכי מוקדם שלקוח יראה: ${leadExample}`}
                 </p>
               </div>
 
@@ -144,7 +166,7 @@ export default function CalendarBookingPage() {
                 <p className="text-xs text-neutral-400 mt-1">
                   {firstApptLeadMinutes === 0
                     ? "אין הגבלה מיוחדת לתור הראשון של היום"
-                    : `כשאין עדיין תורים באותו יום, לא ניתן לקבוע את התור הראשון פחות מ-${firstApptLeadMinutes} דקות מעכשיו`}
+                    : `כשאין עדיין תורים באותו יום, לא ניתן לקבוע את התור הראשון פחות מ-${firstApptLeadMinutes} דקות מעכשיו. עכשיו ${fmtHM(nowLocal)} → הראשון ייפתח ב-${firstLeadExample}`}
                 </p>
               </div>
             </div>
@@ -191,6 +213,46 @@ export default function CalendarBookingPage() {
             className={`w-full py-3 rounded-xl text-sm font-semibold transition ${saved ? "bg-emerald-500 text-white" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>
             {saving ? "שומר..." : saved ? "✓ נשמר!" : "שמור שינויים"}
           </button>
+
+          {/* Appointment confirmations (reply 1 / 2) */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+            <div className="flex items-start gap-3">
+              <button
+                onClick={() => { const v = !apptConfirmations; setApptConfirmations(v); patchSettings({ apptConfirmations: v }, "conf"); }}
+                disabled={toggleSaving === "conf"}
+                className={`relative w-10 h-5 rounded-full transition-colors shrink-0 mt-0.5 ${apptConfirmations ? "bg-teal-500" : "bg-neutral-200"}`}>
+                <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${apptConfirmations ? "right-0.5" : "left-0.5"}`} />
+              </button>
+              <div className="min-w-0">
+                <h2 className="font-semibold text-neutral-800">אישורי תורים</h2>
+                <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+                  תזכורת 24 השעות מסתיימת ב״לאישור השב 1 · לביטול השב 2״. תשובה ״1״ מסמנת את התור כמאושר, ״2״ מבטלת אותו ומשחררת את המקום לרשימת ההמתנה — בלי מעורבות הסוכן.
+                  ביומן, תור שעדיין לא אושר מסומן במסגרת מקווקוות.
+                </p>
+                {apptConfirmations && (
+                  <p className="text-xs text-teal-700 mt-2">פעיל — תורים שנקבעים פחות מיום מראש מקבלים את השאלה כבר בהודעת האישור.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Waitlist behaviour when a slot frees up */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+            <h2 className="font-semibold text-neutral-800 mb-1">רשימת המתנה — כשמתפנה תור</h2>
+            <p className="text-xs text-neutral-400 mb-3">מה קורה כשתור מתבטל ויש לקוח ברשימת ההמתנה של אותו יום.</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                ["notify", "רק להודיע", "הלקוח מקבל הודעה שהתפנה מקום עם קישור לקביעה. המקום נשאר פנוי עד שמישהו קובע."],
+                ["auto", "לתפוס אוטומטית", "הראשון ברשימה מקבל את התור ישר. ההודעה אומרת לו שאם לא מתאים — יבטל, והמקום עובר הלאה."],
+              ] as const).map(([mode, title, desc]) => (
+                <button key={mode} onClick={() => { setWaitlistMode(mode); patchSettings({ waitlistMode: mode }, "wl"); }}
+                  className={`text-right rounded-xl border p-3 transition ${waitlistMode === mode ? "border-teal-500 bg-teal-50" : "border-neutral-200 hover:bg-neutral-50"}`}>
+                  <p className="text-sm font-semibold text-neutral-800">{title}</p>
+                  <p className="text-[11px] text-neutral-500 mt-1 leading-relaxed">{desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Cancellation policy */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-6">

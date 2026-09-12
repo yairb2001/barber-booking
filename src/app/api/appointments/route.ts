@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
-import { minutesToTime, timeToMinutes, getBusinessNow } from "@/lib/utils";
+import { minutesToTime, timeToMinutes, getBusinessNow, appointmentInstant } from "@/lib/utils";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_FIRST_BOOKING_TEMPLATE } from "@/lib/messaging";
+import { confirmationsEnabled, withConfirmAsk } from "@/lib/confirmations";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { getReferralConfig, getReferralFriendSource } from "@/lib/referral";
@@ -437,6 +438,13 @@ export async function POST(request: NextRequest) {
         cancelLink,
       }, business.confirmationTemplate);
       msgKind = "confirmation";
+    }
+
+    // Appointment confirmations: a booking made less than ~27h before the slot
+    // will never get the 24h reminder (and its "reply 1" ask), so ask here.
+    if (confirmationsEnabled(business.settings)) {
+      const hoursAhead = (appointmentInstant(appointment.date, startTime).getTime() - Date.now()) / 3_600_000;
+      if (hoursAhead > 0 && hoursAhead < 27) msgBody = withConfirmAsk(msgBody);
     }
 
     notifyTasks.push(sendMessage({

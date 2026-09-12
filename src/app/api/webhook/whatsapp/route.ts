@@ -23,6 +23,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
+import { handleConfirmReply } from "@/lib/confirmations";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
 import {
   handleStaffApprovalReply,
@@ -422,6 +423,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // intercepts "לא", not "כן".
     if (await handleWaitlistDeclineReply(biz.id, phone, text)) {
       return NextResponse.json({ ok: true, handled: "waitlist_decline_reply" });
+    }
+    // "1" / "2" answer to the 24h reminder (appointment confirmations feature).
+    // Pure code — the agent is never involved in confirm/cancel-by-reply.
+    if (await handleConfirmReply(biz, phone, text)) {
+      return NextResponse.json({ ok: true, handled: "confirm_reply" });
     }
   } catch (e) {
     console.error("[swap reply routing]", e);
