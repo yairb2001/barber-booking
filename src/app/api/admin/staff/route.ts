@@ -56,5 +56,33 @@ export async function POST(req: NextRequest) {
       sortOrder: body.sortOrder ?? 0,
     },
   });
+
+  // "Copy from <barber>": services (with per-barber overrides) and weekly
+  // hours cloned from an existing colleague so the new barber is bookable at
+  // once instead of after five more screens.
+  if (typeof body.copyFromStaffId === "string" && body.copyFromStaffId) {
+    const src = await prisma.staff.findFirst({
+      where: { id: body.copyFromStaffId, businessId: business.id },
+      include: { staffServices: true, schedules: true },
+    });
+    if (src) {
+      if (src.staffServices.length) {
+        await prisma.staffService.createMany({
+          data: src.staffServices.map(ss => ({
+            staffId: staff.id, serviceId: ss.serviceId,
+            customPrice: ss.customPrice, customDuration: ss.customDuration,
+            customName: ss.customName, customDescription: ss.customDescription, customNote: ss.customNote,
+          })),
+          skipDuplicates: true,
+        });
+      }
+      if (src.schedules.length) {
+        await prisma.staffSchedule.createMany({
+          data: src.schedules.map(sc => ({ staffId: staff.id, dayOfWeek: sc.dayOfWeek, isWorking: sc.isWorking, slots: sc.slots, breaks: sc.breaks })),
+          skipDuplicates: true,
+        });
+      }
+    }
+  }
   return NextResponse.json(staff, { status: 201 });
 }

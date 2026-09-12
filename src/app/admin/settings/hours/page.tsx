@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import VacationRange from "@/components/VacationRange";
 
 type Schedule = { dayOfWeek: number; isWorking: boolean; slots: string; breaks: string | null };
 type StaffMember = { id: string; name: string; settings: string | null; schedules: Schedule[] };
@@ -210,11 +211,26 @@ export default function WorkingHoursPage() {
 
       {staffLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
         <div className="space-y-4 max-w-xl">
+          {/* Vacation range — pick the barber, then the dates */}
+          <VacationPicker staffList={staffList} />
           {staffList.map(staff => (
             <StaffScheduleEditor key={staff.id} staff={staff} onSaved={reloadStaff} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function VacationPicker({ staffList }: { staffList: { id: string; name: string }[] }) {
+  const [staffId, setStaffId] = useState(staffList[0]?.id || "");
+  if (!staffList.length) return null;
+  return (
+    <div className="space-y-2">
+      <select value={staffId} onChange={e => setStaffId(e.target.value)} className="border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white">
+        {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      {staffId && <VacationRange staffId={staffId} />}
     </div>
   );
 }

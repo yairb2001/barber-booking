@@ -64,7 +64,7 @@ export default function AdminStaffPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState(emptySchedule());
-  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true });
+  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "" });
   const [saving, setSaving] = useState(false);
   const [setPasswordFor, setSetPasswordFor] = useState<Staff | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -108,7 +108,7 @@ export default function AdminStaffPage() {
         body: JSON.stringify({ password: DEFAULT_PASSWORD }),
       });
     }
-    setNewStaff({ name: "", phone: "", avatarUrl: "", inQuickPool: true });
+    setNewStaff({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "" });
     setShowAdd(false);
     setSaving(false);
     load();
@@ -322,7 +322,7 @@ export default function AdminStaffPage() {
                     </div>
                   )}
                   {s.staffServices?.length === 0 && (
-                    <div className="text-[11px] text-orange-600 mt-0.5">⚠️ לא מוצג ללקוחות — אין שירותים</div>
+                    <a href={`/admin/staff/${s.id}`} className="inline-block text-[11px] text-orange-700 mt-0.5 underline underline-offset-2">⚠️ לא מוצג ללקוחות — אין שירותים · הוסף שירותים ←</a>
                   )}
                 </div>
               </div>
@@ -504,6 +504,15 @@ export default function AdminStaffPage() {
                 <input value={newStaff.avatarUrl} onChange={(e) => setNewStaff((p) => ({ ...p, avatarUrl: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   dir="ltr" placeholder="https://..." />
+              </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">העתק שירותים ושעות מ…</label>
+                <select value={newStaff.copyFromStaffId} onChange={(e) => setNewStaff((p) => ({ ...p, copyFromStaffId: e.target.value }))}
+                  className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm bg-white">
+                  <option value="">להתחיל מאפס</option>
+                  {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <p className="text-[11px] text-neutral-400 mt-1">השירותים (כולל מחירים מותאמים) ולוח השעות השבועי יועתקו — אפשר לשנות אחר כך.</p>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={newStaff.inQuickPool}

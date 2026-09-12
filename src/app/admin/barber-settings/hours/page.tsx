@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import VacationRange from "@/components/VacationRange";
 
 type BreakRange = { start: string; end: string };
 type ScheduleDay = {
@@ -131,6 +132,7 @@ export default function BarberHoursPage() {
 
       {loading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
         <div className="space-y-6 max-w-2xl">
+          {myId && <VacationRange staffId={myId} />}
           {/* ── Working hours ── */}
           <div>
             <h2 className="text-sm font-semibold text-neutral-700 mb-3">שעות עבודה קבועות</h2>

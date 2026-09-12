@@ -4394,8 +4394,11 @@ export default function AdminCalendar() {
   // this customer with the confirmation mirrored into the chat.
   const [bookFor, setBookFor] = useState<Customer | null>(null);
   useEffect(() => {
-    const phone = new URLSearchParams(window.location.search).get("book");
-    if (!phone) return;
+    const sp = new URLSearchParams(window.location.search);
+    const jumpDate = sp.get("date");
+    if (jumpDate && /^\d{4}-\d{2}-\d{2}$/.test(jumpDate)) { setDate(jumpDate); setView("day"); }
+    const phone = sp.get("book");
+    if (!phone) { if (jumpDate) window.history.replaceState(null, "", "/admin"); return; }
     fetch(`/api/admin/customers?q=${encodeURIComponent(phone)}&limit=3`)
       .then(r => (r.ok ? r.json() : []))
       .then((d: Customer[]) => {
