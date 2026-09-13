@@ -6454,7 +6454,7 @@ export default function AdminCalendar() {
         <NearestSlotsPopover
           staffFilter={(view === "week" || view === "3day") ? (weekBarber || "") : ""}
           allStaff={allStaff}
-          onClose={() => setNearestOpen(false)}
+          onClose={() => { setNearestOpen(false); setBookFor(null); }}
           onPick={r => { setNearestOpen(false); setNewAppt({ staffId: r.staffId, date: r.date, time: r.time }); }}
           forName={bookFor?.name}
         />
