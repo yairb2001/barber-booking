@@ -49,7 +49,9 @@ export type MessageKind =
   | "barber_daily_summary"
   // Public /for-business live demo widget (see src/lib/demo-widget.ts)
   | "demo_sales_pitch"      // personalized "want this for your business?" pitch after demo interaction
-  | "demo_lead_captured";   // dedupe marker once a demo visitor's contact info was captured as a lead
+  | "demo_lead_captured"    // dedupe marker once a demo visitor's contact info was captured as a lead
+  | "rhythm_nudge"          // "הגיע הזמן לתור": first nudge when the customer's rhythm says it's time and they have no appointment
+  | "rhythm_nudge_2";       // second (and last) nudge 5 days later
 
 export type MessageStatus =
   | "scheduled" // enqueued in the drip queue, waiting for its scheduledFor time

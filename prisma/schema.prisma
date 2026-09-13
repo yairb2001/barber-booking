@@ -52,6 +52,11 @@ model Business {
   reengageEnabled       Boolean  @default(false) @map("reengage_enabled")
   reengageWeeks         Int      @default(6)     @map("reengage_weeks")
   reengageTemplate      String?  @map("reengage_template")
+  // "הגיע הזמן לתור" (rhythm nudge) — see specs/rhythm-nudge.md
+  rhythmNudgeTemplate          String?  @map("rhythm_nudge_template")
+  rhythmNudgeCancelledTemplate String?  @map("rhythm_nudge_cancelled_template")
+  rhythmNudgeSecondTemplate    String?  @map("rhythm_nudge_second_template")
+  rhythmNudgeNewTemplate       String?  @map("rhythm_nudge_new_template")
   // ── Theme / branding ──
   secondaryColor  String?  @default("#ffffff") @map("secondary_color")
   bgColor         String?  @default("#faf9f7") @map("bg_color")

@@ -118,6 +118,10 @@ export async function PATCH(req: NextRequest) {
       ...(body.walkInTemplate !== undefined && {
         walkInTemplate: body.walkInTemplate || null,
       }),
+      ...(body.rhythmNudgeTemplate !== undefined && { rhythmNudgeTemplate: body.rhythmNudgeTemplate || null }),
+      ...(body.rhythmNudgeCancelledTemplate !== undefined && { rhythmNudgeCancelledTemplate: body.rhythmNudgeCancelledTemplate || null }),
+      ...(body.rhythmNudgeSecondTemplate !== undefined && { rhythmNudgeSecondTemplate: body.rhythmNudgeSecondTemplate || null }),
+      ...(body.rhythmNudgeNewTemplate !== undefined && { rhythmNudgeNewTemplate: body.rhythmNudgeNewTemplate || null }),
       ...(body.waitlistNotifyTemplate !== undefined && {
         waitlistNotifyTemplate: body.waitlistNotifyTemplate || null,
       }),

@@ -16,6 +16,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { computeCustomerInsights } from "@/lib/customer-insights";
+import { recentNudgeContext } from "@/lib/automations/rhythm-nudge";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -1508,6 +1509,12 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
       );
     }
   } catch { /* context enrichment is best-effort */ }
+
+  // ── "הגיע הזמן לתור" — did we just offer him slots? ─────────────────────
+  try {
+    const nudge = await recentNudgeContext(businessId, phone);
+    if (nudge) parts.push(nudge);
+  } catch { /* best-effort */ }
 
   // ── Preferred-barber signal (favorite vs. mixed) ─────────────────────────────
   // Over a wider window than the 3 shown above, decide whether the customer has a

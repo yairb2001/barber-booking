@@ -37,6 +37,13 @@ import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 import { sweepReminders } from "@/lib/reminders-sweep";
 import { runPostVisitAutomations } from "@/lib/automations/post-visit";
+import { runRhythmNudge } from "@/lib/automations/rhythm-nudge";
+import { getDayOfWeekISO } from "@/lib/utils";
+
+// "הגיע הזמן לתור" — once a day inside the 10:00–10:59 window (Israel), never
+// on Saturday. Keyed by date so a warm instance runs it once; a second
+// instance in the same window is harmless (per-customer de-dup in the run).
+let lastRhythmRunDate = "";
 import { notifyOwnerWeb } from "@/lib/native/web-push";
 
 // Quiet hours (Israel time): nothing in this queue is urgent enough to wake a
@@ -149,6 +156,12 @@ export async function GET(req: NextRequest) {
     // do not deliver anything until 08:00.
     await runPiggybackTasks(now);
     return NextResponse.json({ ok: true, skipped: "quiet-hours" });
+  }
+  // Shabbat: no outgoing messages at all (owner's rule). Everything queued
+  // waits for Sunday 08:00. OTP/booking confirmations bypass this queue.
+  if (getDayOfWeekISO(getBusinessNow().date) === 6) {
+    await runPiggybackTasks(now);
+    return NextResponse.json({ ok: true, skipped: "shabbat" });
   }
 
   // Run the piggybacked scans (question follow-up, link-nudge, LLM health) here,
@@ -394,6 +407,17 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   if (nowMs - lastPostVisitRun >= POST_VISIT_EVERY_MS) {
     lastPostVisitRun = nowMs;
     try { await runPostVisitAutomations(); } catch (err) { console.error("[drip-queue] post-visit failed:", err); }
+  }
+
+  {
+    const { date, minutes } = getBusinessNow();
+    if (minutes >= 10 * 60 && minutes < 11 * 60 && lastRhythmRunDate !== date && getDayOfWeekISO(date) !== 6) {
+      lastRhythmRunDate = date;
+      try {
+        const r = await runRhythmNudge(now);
+        for (const b of r) console.log(`[rhythm-nudge] ${b.businessId}: scanned ${b.scanned}, planned ${b.planned.length}`, b.skipped);
+      } catch (err) { console.error("[drip-queue] rhythm-nudge failed:", err); }
+    }
   }
 
   if (nowMs - lastReminderSweep >= REMINDER_SWEEP_EVERY_MS) {

@@ -156,6 +156,29 @@ export async function GET(req: NextRequest) {
     }
     byStaffCancel.set(a.staffId, st);
   }
+  // ── "הגיע הזמן לתור" — sent in period, booked within 72h of the message ──
+  const nudgeLogs = await prisma.messageLog.findMany({
+    where: { businessId: bizId, kind: { in: ["rhythm_nudge", "rhythm_nudge_2"] }, createdAt: { gte: fromDate, lte: toDate }, status: { not: "failed" } },
+    select: { customerPhone: true, createdAt: true },
+  });
+  let nudgeBooked = 0;
+  if (nudgeLogs.length) {
+    const norm = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
+    const phones = Array.from(new Set(nudgeLogs.map(l => norm(l.customerPhone))));
+    const custs = await prisma.customer.findMany({ where: { businessId: bizId, OR: [{ phone: { in: phones } }, { phone: { in: phones.map(p => "0" + p.slice(3)) } }] }, select: { id: true, phone: true } });
+    const idByPhone = new Map(custs.map(c => [norm(c.phone), c.id]));
+    const created = await prisma.appointment.findMany({
+      where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + 3 * 86_400_000) }, status: { in: ["pending", "confirmed", "completed"] } },
+      select: { customerId: true, createdAt: true },
+    });
+    const seen = new Set<string>();
+    for (const l of nudgeLogs) {
+      const cid = idByPhone.get(norm(l.customerPhone)); if (!cid || seen.has(cid)) continue;
+      if (created.some(a => a.customerId === cid && a.createdAt >= l.createdAt && a.createdAt.getTime() - l.createdAt.getTime() <= 3 * 86_400_000)) { nudgeBooked++; seen.add(cid); }
+    }
+  }
+  const rhythmNudge = { sent: nudgeLogs.length, booked: nudgeBooked, rate: nudgeLogs.length ? Math.round((nudgeBooked / nudgeLogs.length) * 100) : 0 };
+
   const cancellations = {
     total: cancelled.length,
     booked: periodAll.length,
@@ -294,7 +317,7 @@ export async function GET(req: NextRequest) {
       computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
     ]);
     return NextResponse.json({
-      totalRevenue, totalAppointments, periodNoShows, cancellations,
+      totalRevenue, totalAppointments, periodNoShows, cancellations, rhythmNudge,
       uniqueCustomers: 0,
       weekly,
       newCustomers: 0,           // legacy alias
@@ -586,6 +609,7 @@ export async function GET(req: NextRequest) {
     totalAppointments,
     periodNoShows,
     cancellations,
+    rhythmNudge,
     // Unique customers served in the period (respects staff filter via sf)
     uniqueCustomers: periodCustIds.length,
     // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.

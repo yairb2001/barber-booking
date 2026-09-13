@@ -35,6 +35,7 @@ type Analytics = {
   totalAppointments:    number;
   periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
   cancellations?:       Cancellations;
+  rhythmNudge?:         { sent: number; booked: number; rate: number };
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1390,6 +1391,17 @@ export default function Dashboard() {
               />
             )}
           </div>
+
+          {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
+          {!isFutureMonth && a.rhythmNudge && a.rhythmNudge.sent > 0 && (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
+                <p className="text-sm text-neutral-700 mt-1">נשלחו <b>{a.rhythmNudge.sent}</b> · קבעו תוך 3 ימים <b>{a.rhythmNudge.booked}</b></p>
+              </div>
+              <span className={`text-2xl font-extrabold ${a.rhythmNudge.rate >= 20 ? "text-teal-700" : "text-neutral-500"}`}>{a.rhythmNudge.rate}%</span>
+            </div>
+          )}
 
           {/* ── Cancellations — where the money leaks ── */}
           {!isFutureMonth && a.cancellations && a.cancellations.booked > 0 && (

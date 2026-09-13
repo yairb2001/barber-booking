@@ -408,6 +408,8 @@ export default function AutomationsSettingsPage() {
             האוטומציות שולחות הודעות WhatsApp. ודא שהחיבור מוגדר בעמוד וואטסאפ.
           </p>
 
+          <RhythmNudgeCard />
+
           <AutoPanel
             emoji="🔄" title="החזרת לקוחות לא פעילים"
             subtitle="שולח ללקוחות שלא ביקרו זמן רב — דורש cron יומי"
@@ -469,6 +471,132 @@ export default function AutomationsSettingsPage() {
             ✓ <strong>cron אוטומטי</strong> — החזרת לקוחות רץ יומית ב-11:00,
             אוטומציות אחרי ביקור נבדקות כל 15 דקות. כפתור 🧪 שולח הודעת בדיקה לטלפון שלך.
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// ── "הגיע הזמן לתור" — rhythm nudge (specs/rhythm-nudge.md) ──────────────────
+type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null };
+const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null };
+
+function RhythmNudgeCard() {
+  const [cfg, setCfg] = useState<RhythmCfg>(RHYTHM_DEFAULTS);
+  const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [preview, setPreview] = useState<{ planned: { name: string; reason: string; body: string }[]; skipped: Record<string, number>; scanned: number } | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/admin/business").then(r => r.json()),
+      fetch("/api/admin/staff").then(r => r.json()),
+    ]).then(([biz, st]) => {
+      const r = biz?.settings?.rhythmNudge || {};
+      setCfg({ ...RHYTHM_DEFAULTS, ...r, excludedStaffIds: Array.isArray(r.excludedStaffIds) ? r.excludedStaffIds : [] });
+      setStaff((Array.isArray(st) ? st : []).map((x: { id: string; name: string }) => ({ id: x.id, name: x.name })));
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  async function save(next: RhythmCfg) {
+    setCfg(next); setSaving(true);
+    await fetch("/api/admin/business", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settingsPatch: { rhythmNudge: next } }) }).catch(() => {});
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 1800);
+  }
+  async function runPreview() {
+    setPreviewing(true); setPreview(null);
+    const r = await fetch("/api/admin/automations/rhythm-preview", { method: "POST" }).then(x => x.json()).catch(() => null);
+    setPreview(r?.result ?? null); setPreviewing(false);
+  }
+  const num = (label: string, key: "leadDays" | "earlyWindowDays" | "fillThreshold", hint: string) => (
+    <div>
+      <label className="text-xs text-neutral-500 block mb-1">{label}</label>
+      <input type="number" min={0} max={30} value={cfg[key]} onChange={e => setCfg(c => ({ ...c, [key]: Number(e.target.value) }))} onBlur={() => save(cfg)}
+        className="w-20 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm" dir="ltr" />
+      <p className="text-[11px] text-neutral-400 mt-1">{hint}</p>
+    </div>
+  );
+  const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
+    <button onClick={onClick} disabled={saving} className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${on ? "bg-teal-500" : "bg-neutral-200"}`}>
+      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? "right-0.5" : "left-0.5"}`} />
+    </button>
+  );
+
+  if (!loaded) return null;
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
+      <div className="flex items-start gap-3">
+        <Toggle on={cfg.enabled} onClick={() => save({ ...cfg, enabled: !cfg.enabled })} />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-semibold text-neutral-800">✂️ הגיע הזמן לתור</h2>
+          <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+            כל בוקר ב-10:00 (לא בשבת): לקוח שלפי הקצב שלו הגיע הזמן לתספורת ואין לו תור מקבל הודעה אחת עם 3 שעות פנויות אצל הספר הקבוע שלו, ושאלה מה נוח. תשובה חופשית מגיעה לסוכן. שליחה בפעימה של דקה.
+          </p>
+          {saved && <span className="text-xs text-emerald-600">✓ נשמר</span>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {num("ימים לפני היעד", "leadDays", "היעד = ביקור אחרון + הקצב שלו")}
+        {num("לבדוק מוקדם מ-", "earlyWindowDays", "ימים לפני היעד — מתחילים לבדוק אם השעות שלו נתפסות")}
+        {num("נשארו X או פחות", "fillThreshold", "שעות פנויות בטווח שלו ביום היעד → שולחים כבר היום")}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Toggle on={cfg.secondNudge} onClick={() => save({ ...cfg, secondNudge: !cfg.secondNudge })} />
+        <p className="text-sm text-neutral-700">הודעה שנייה אחרי 5 ימים אם לא ענה ולא קבע (ואז משחררים)</p>
+      </div>
+      <div className="flex items-center gap-3">
+        <Toggle on={cfg.includeNewCustomers} onClick={() => save({ ...cfg, includeNewCustomers: !cfg.includeNewCustomers })} />
+        <p className="text-sm text-neutral-700">גם לקוחות אחרי ביקור ראשון (פעם אחת, לפי הקצב הממוצע של המספרה)</p>
+      </div>
+
+      {staff.length > 1 && (
+        <div>
+          <p className="text-xs text-neutral-500 mb-1.5">לא לשלוח ללקוחות הקבועים של:</p>
+          <div className="flex flex-wrap gap-1.5">
+            {staff.map(s => {
+              const off = cfg.excludedStaffIds.includes(s.id);
+              return (
+                <button key={s.id} onClick={() => save({ ...cfg, excludedStaffIds: off ? cfg.excludedStaffIds.filter(x => x !== s.id) : [...cfg.excludedStaffIds, s.id] })}
+                  className={`px-2.5 py-1 rounded-full text-xs border ${off ? "bg-neutral-800 text-white border-neutral-800" : "bg-white text-neutral-600 border-neutral-200"}`}>
+                  {off ? "⛔ " : ""}{s.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <label className="text-xs text-neutral-500 block mb-1">לא לשלוח לפני</label>
+        <input type="date" value={cfg.notBefore || ""} onChange={e => save({ ...cfg, notBefore: e.target.value || null })}
+          className="border border-neutral-200 rounded-lg px-3 py-1.5 text-sm" dir="ltr" />
+        <p className="text-[11px] text-neutral-400 mt-1">מגן להפעלה ראשונה — ריק = מהיום.</p>
+      </div>
+
+      <div className="flex items-center gap-3 pt-2 border-t border-neutral-100">
+        <button onClick={runPreview} disabled={previewing}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-teal-200 text-teal-700 hover:bg-teal-50 disabled:opacity-50">
+          {previewing ? "מחשב…" : "👀 למי היה נשלח היום? (בלי לשלוח)"}
+        </button>
+        <a href="/admin/templates" className="text-xs text-neutral-500 underline underline-offset-2">עריכת הנוסחים</a>
+      </div>
+      {preview && (
+        <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-xs space-y-2 max-h-80 overflow-y-auto">
+          <p className="font-semibold text-neutral-700">{preview.planned.length} היו מקבלים היום (נסרקו {preview.scanned})</p>
+          {preview.planned.slice(0, 40).map((p, i) => (
+            <div key={i} className="bg-white border border-neutral-100 rounded-lg p-2">
+              <p className="font-medium text-neutral-800">{p.name} <span className="text-neutral-400 font-normal" dir="ltr">· {p.reason}</span></p>
+              <p className="text-neutral-600 whitespace-pre-line mt-1">{p.body}</p>
+            </div>
+          ))}
+          <p className="text-neutral-400" dir="ltr">skipped: {Object.entries(preview.skipped).map(([k, v]) => `${k} ${v}`).join(" · ")}</p>
         </div>
       )}
     </div>

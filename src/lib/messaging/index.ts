@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-nudge";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { normalizeIsraeliPhone } from "./phone";
@@ -844,6 +845,51 @@ export const TEMPLATE_DEFS = {
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+    ],
+  },
+  rhythm_nudge: {
+    label: "הגיע הזמן לתור — לקוח קבוע",
+    description: "נשלחת מיוזמתנו כשלפי הקצב של הלקוח הגיע הזמן לתספורת ואין לו תור. {{at_staff}} = \"אצל שימי \" (ריק ללקוח מעורב), {{options}} = עד 3 שעות פנויות.",
+    field: "rhythmNudgeTemplate" as const,
+    default: DEFAULT_RHYTHM_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "staff",    label: "שם הספר הקבוע" },
+      { key: "options",  label: "השעות המוצעות" },
+    ],
+  },
+  rhythm_nudge_cancelled: {
+    label: "הגיע הזמן לתור — ביטל ולא קבע",
+    description: "אותו מנגנון, ללקוח שהתור האחרון שלו בוטל ולא נקבע חדש.",
+    field: "rhythmNudgeCancelledTemplate" as const,
+    default: DEFAULT_RHYTHM_CANCELLED_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "options",  label: "השעות המוצעות" },
+    ],
+  },
+  rhythm_nudge_second: {
+    label: "הגיע הזמן לתור — הודעה שנייה",
+    description: "נשלחת פעם אחת, 5 ימים אחרי הראשונה, אם לא ענה ולא קבע.",
+    field: "rhythmNudgeSecondTemplate" as const,
+    default: DEFAULT_RHYTHM_SECOND_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "options",  label: "השעות המוצעות" },
+    ],
+  },
+  rhythm_nudge_new: {
+    label: "הגיע הזמן לתור — לקוח אחרי ביקור ראשון",
+    description: "שלב 2 (מתג נפרד באוטומציות): פעם אחת, אחרי הקצב הממוצע של המספרה.",
+    field: "rhythmNudgeNewTemplate" as const,
+    default: DEFAULT_RHYTHM_NEW_TEMPLATE,
+    variables: [
+      { key: "name",         label: "שם הלקוח" },
+      { key: "options",      label: "השעות המוצעות (עם שם ספר)" },
+      { key: "booking_link", label: "קישור לקביעת תור" },
     ],
   },
   walk_in: {
