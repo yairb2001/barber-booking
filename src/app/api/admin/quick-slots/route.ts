@@ -18,7 +18,9 @@ export async function GET(req: NextRequest) {
     staffIdFilter: staffId || null,
     allStaff: true,
     leadOverride: 0,
-    perBarber: 4,
+    perBarber: 12,
+    singleLimit: 30,
   });
-  return NextResponse.json(slots.slice(0, 14));
+  // One barber → up to 30 of their next slots; everyone → the 30 nearest overall.
+  return NextResponse.json(slots.slice(0, 30));
 }

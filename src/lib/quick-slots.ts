@@ -50,11 +50,16 @@ export async function computeQuickSlots(opts: {
   leadOverride?: number;
   /** Max slots per barber in the multi-barber result (default 5). */
   perBarber?: number;
+  /** Max slots for a single-barber query (default 6; the admin list asks for 30). */
+  singleLimit?: number;
 }): Promise<QuickSlot[]> {
   const resolvedBusinessId = opts.businessId;
   const staffIdFilter = opts.staffIdFilter ?? null;
   const preferredServiceId = opts.preferredServiceId ?? null;
   const perBarber = opts.perBarber ?? 5;
+  const singleLimit = opts.singleLimit ?? 6;
+  // Collect enough raw slots per barber to satisfy the requested list length.
+  const rawPerStaff = Math.max(RAW_PER_STAFF, (staffIdFilter ? singleLimit : perBarber) * 3);
   // Business-wide booking defaults: min lead time + how far ahead bookings open.
   const biz = await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
   const leadMinutes = opts.leadOverride ?? (biz?.minBookingLeadMinutes ?? 0);
@@ -290,7 +295,7 @@ export async function computeQuickSlots(opts: {
 
       const c = (countByStaff.get(staff.id) || 0) + available.length;
       countByStaff.set(staff.id, c);
-      if (c >= RAW_PER_STAFF) doneStaff.add(staff.id);
+      if (c >= rawPerStaff) doneStaff.add(staff.id);
     }
   }
 
@@ -308,7 +313,7 @@ export async function computeQuickSlots(opts: {
       if (c.timeMinutes - lastTime >= c.duration) {
         selected.push(c);
         lastTime = c.timeMinutes;
-        if (selected.length >= 6) break;
+        if (selected.length >= singleLimit) break;
       }
     }
     return selected;
