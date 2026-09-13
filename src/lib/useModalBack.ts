@@ -33,6 +33,37 @@ import { useEffect, useRef } from "react";
  *   useModalBack(true, onClose);           // component is mounted only while open
  *   useModalBack(isOpen, () => setOpen(false));  // component stays mounted
  */
+// ── Programmatic pops ─────────────────────────────────────────────────────────
+// Closing an overlay through its UI pops its sentinel with history.back(). That
+// pop is ASYNC: the popstate lands a tick later — by then a NEXT overlay may
+// already have mounted and pushed its own sentinel (⚡ nearest-slots → new
+// appointment card, 🔍 find → appointment card). The late popstate then popped
+// the new overlay's entry and its listener closed it immediately ("I pick a
+// slot and nothing opens"). So: a pop we start ourselves is tracked here, the
+// popstate it produces is stamped (capture listener runs first) and ignored by
+// every overlay, and an overlay that mounts while one is in flight waits for it
+// before pushing its own entry.
+let programmaticPop: Promise<void> | null = null;
+const ignoredPops = new WeakSet<Event>();
+
+function popProgrammatically(): void {
+  programmaticPop = new Promise<void>(resolve => {
+    let settled = false;
+    const done = (e: Event) => {
+      if (settled) return;
+      settled = true;
+      ignoredPops.add(e);
+      window.removeEventListener("popstate", done, true);
+      programmaticPop = null;
+      resolve();
+    };
+    window.addEventListener("popstate", done, true);
+    // Safety: if no popstate ever arrives (unusual), unblock waiters.
+    setTimeout(() => { if (!settled) { settled = true; window.removeEventListener("popstate", done, true); programmaticPop = null; resolve(); } }, 400);
+    window.history.back();
+  });
+}
+
 export function useModalBack(open: boolean, onClose: () => void) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -41,12 +72,14 @@ export function useModalBack(open: boolean, onClose: () => void) {
     if (!open || typeof window === "undefined") return;
 
     const id = Math.random().toString(36).slice(2);
-    window.history.pushState({ __modal: id }, "");
+    let pushed = false;
+    let cancelled = false;
     // Set when a back gesture (not the overlay's own UI) closed us, so cleanup
     // knows the sentinel entry is already gone and must not be popped again.
     let closedByBack = false;
 
-    const onPop = () => {
+    const onPop = (e: PopStateEvent) => {
+      if (ignoredPops.has(e)) return; // a pop WE started for another overlay
       const state = window.history.state as { __modal?: string } | null;
       // Ignore pops that landed us back ON our own entry — that means an INNER
       // overlay was dismissed and ours is still the active one.
@@ -54,9 +87,18 @@ export function useModalBack(open: boolean, onClose: () => void) {
       closedByBack = true;
       onCloseRef.current();
     };
-    window.addEventListener("popstate", onPop);
+
+    const push = () => {
+      if (cancelled) return;
+      window.history.pushState({ __modal: id }, "");
+      pushed = true;
+      window.addEventListener("popstate", onPop);
+    };
+    if (programmaticPop) programmaticPop.then(push); else push();
 
     return () => {
+      cancelled = true;
+      if (!pushed) return;
       window.removeEventListener("popstate", onPop);
       // Overlay closed via its own UI while our sentinel is still the current
       // top entry → pop it so history doesn't accumulate a dead state and the
@@ -64,9 +106,7 @@ export function useModalBack(open: boolean, onClose: () => void) {
       // gesture already popped it, or if the user navigated away via a link
       // (our entry is no longer on top).
       const state = window.history.state as { __modal?: string } | null;
-      if (!closedByBack && state?.__modal === id) {
-        window.history.back();
-      }
+      if (!closedByBack && state?.__modal === id) popProgrammatically();
     };
   }, [open]);
 }
