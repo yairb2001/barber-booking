@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
@@ -302,6 +302,11 @@ function ConfirmPageContent() {
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpError,     setOtpError]     = useState("");
   const [autoVerified, setAutoVerified] = useState(false); // true = session cookie did the work
+  // Phone that the session/link verified. The "phone changed → reset OTP"
+  // effect below must NOT fire for this value — on a fresh device the session
+  // fills the phone field itself, which used to wipe the verification it had
+  // just granted (customer saw "send code" although the link signed them in).
+  const sessionPhoneRef = useRef<string | null>(null);
 
   const [businessId,   setBusinessId]   = useState("");
   const [appStoreUrl,  setAppStoreUrl]  = useState("");
@@ -402,7 +407,7 @@ function ConfirmPageContent() {
           setOtpToken(data.token);
           setAutoVerified(true);
           // Pre-fill phone from session if localStorage didn't have it
-          if (data.phone) setPhone(prev => prev || data.phone);
+          if (data.phone) { sessionPhoneRef.current = data.phone; setPhone(prev => prev || data.phone); }
           // Phone is the identity → always use the originally registered name,
           // overriding whatever may be in localStorage.
           if (data.name) {
@@ -452,6 +457,8 @@ function ConfirmPageContent() {
   }
 
   useEffect(() => {
+    const digits = (s: string) => s.replace(/\D/g, "").replace(/^0/, "972");
+    if (sessionPhoneRef.current && digits(phone) === digits(sessionPhoneRef.current)) return; // session-verified phone
     setOtpSent(false); setOtpCode(""); setOtpVerified(false); setOtpToken(""); setOtpError("");
   }, [phone]);
 
