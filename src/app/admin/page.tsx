@@ -7,7 +7,7 @@ import { israeliHoliday } from "@/lib/israeli-holidays";
 import { insightsSummaryLine, usualLine } from "@/lib/customer-insights";
 import { localISODate } from "@/lib/utils";
 import { useModalBack } from "@/lib/useModalBack";
-import { useRouter } from "next/navigation";
+import { useRouter , useSearchParams } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -939,8 +939,10 @@ function FindCustomerPopover({ onPick, onClose }: {
 }
 
 // ── New Appointment Modal ─────────────────────────────────────────────────────
-function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved, initialCustomer = null, mirrorToChat = false }:
+function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved, initialCustomer = null, mirrorToChat = false, quickStart = true }:
   { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void;
+    /** false → open the full form (the "+ תור" header button: no slot chosen yet). */
+    quickStart?: boolean;
     /** Pre-selected customer (booking started from the chat screen). */
     initialCustomer?: Customer | null;
     /** Also write the confirmation into the customer's chat thread. */
@@ -953,7 +955,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
   // Quick mode (grid tap): customer → save. Service/duration/price come from
   // the customer's usual booking with this barber; everything else stays
   // hidden behind "עוד אפשרויות". A new customer always uses the full form.
-  const [quick, setQuick] = useState(fromGrid);
+  const [quick, setQuick] = useState(fromGrid && quickStart);
   const [usualHint, setUsualHint] = useState<string | null>(null);
   const [form, setForm] = useState({ staffId: staff?.id || "", serviceId: "", date, time, note: "" });
   // Ad-hoc "temporary service" (שירות זמני): free-text name + price + duration
@@ -4384,7 +4386,9 @@ export default function AdminCalendar() {
   const [loading, setLoading] = useState(true);
   const [showFilter, setShowFilter] = useState(false);
   const [selectedAppt, setSelectedAppt] = useState<Appt | null>(null);
-  const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string } | null>(null);
+  // quick:false → the full form (date/time editable); default = quick mode,
+  // used when the slot is already known (grid tap, ⚡ nearest, chat).
+  const [newAppt, setNewAppt] = useState<{ staffId: string; date: string; time: string; quick?: boolean } | null>(null);
   const [addBreak, setAddBreak] = useState<{ staffId: string; date: string; time: string } | null>(null);
   const [editingBreak, setEditingBreak] = useState<{ staffId: string; date: string; breakIdx: number; initial: RawBreak } | null>(null);
   const [draftAppt, setDraftAppt] = useState<{ staffId: string; date: string; startY: number } | null>(null);
@@ -4396,6 +4400,9 @@ export default function AdminCalendar() {
   // /admin?book=<phone> (from the chat screen): pick a slot, then book for
   // this customer with the confirmation mirrored into the chat.
   const [bookFor, setBookFor] = useState<Customer | null>(null);
+  const searchParams = useSearchParams();
+  const bookParam = searchParams?.get("book") ?? null;
+  const dateParam = searchParams?.get("date") ?? null;
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
     const jumpDate = sp.get("date");
@@ -4412,7 +4419,10 @@ export default function AdminCalendar() {
       })
       .catch(() => setNearestOpen(true));
     window.history.replaceState(null, "", "/admin");
-  }, []);
+  // Re-run when the URL gains ?book= / ?date= while the calendar is already
+  // mounted (client-side navigation from the chat screen).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookParam, dateParam]);
   const [findOpen, setFindOpen] = useState(false);
   // After "find customer" jumps to a date, open this appointment once loaded.
   const pendingOpenApptId = useRef<string | null>(null);
@@ -6284,7 +6294,7 @@ export default function AdminCalendar() {
               (view === "week" || view === "3day") ? (weekBarber || allStaff[0]?.id || "") :
               view === "day" ? (dayBarber || displayedStaff[0]?.id || allStaff[0]?.id || "") :
               (allStaff[0]?.id || "");
-            setNewAppt({ staffId: defaultStaffId, date, time: "10:00" });
+            setNewAppt({ staffId: defaultStaffId, date, time: "10:00", quick: false });
           }}
             className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
             + תור
@@ -6509,6 +6519,7 @@ export default function AdminCalendar() {
           date={newAppt.date} time={newAppt.time}
           onClose={() => { setNewAppt(null); setBookFor(null); }} onSaved={loadAppointments}
           initialCustomer={bookFor} mirrorToChat={!!bookFor}
+          quickStart={newAppt.quick !== false}
         />
       )}
       {addBreak && (
