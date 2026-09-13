@@ -36,6 +36,7 @@ import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 import { sweepReminders } from "@/lib/reminders-sweep";
+import { runPostVisitAutomations } from "@/lib/automations/post-visit";
 import { notifyOwnerWeb } from "@/lib/native/web-push";
 
 // Quiet hours (Israel time): nothing in this queue is urgent enough to wake a
@@ -44,6 +45,11 @@ import { notifyOwnerWeb } from "@/lib/native/web-push";
 const QUIET_START_MIN = 21 * 60 + 30; // 21:30
 const QUIET_END_MIN   = 8 * 60;       // 08:00
 const inQuietHours = (israelMinutes: number) => israelMinutes >= QUIET_START_MIN || israelMinutes < QUIET_END_MIN;
+
+// Post-visit automations (delayMinutes after the appointment) — needs a
+// frequent tick; vercel.json is limited to daily schedules on this plan.
+const POST_VISIT_EVERY_MS = 15 * 60 * 1000;
+let lastPostVisitRun = 0;
 
 // Rolling reminder sweep (catches bookings made after the nightly scan).
 const REMINDER_SWEEP_EVERY_MS = 10 * 60 * 1000;
@@ -383,6 +389,11 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   if (nowMs - lastLlmHealthCheck >= LLM_HEALTH_EVERY_MS) {
     lastLlmHealthCheck = nowMs;
     try { await checkAndRecordLlmHealth(); } catch (err) { console.error("[drip-queue] llm-health failed:", err); }
+  }
+
+  if (nowMs - lastPostVisitRun >= POST_VISIT_EVERY_MS) {
+    lastPostVisitRun = nowMs;
+    try { await runPostVisitAutomations(); } catch (err) { console.error("[drip-queue] post-visit failed:", err); }
   }
 
   if (nowMs - lastReminderSweep >= REMINDER_SWEEP_EVERY_MS) {

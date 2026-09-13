@@ -1,0 +1,265 @@
+/**
+ * Post-visit automations sweep — fires post-visit automations (post_first_visit,
+ * post_every_visit) for appointments whose endTime + delayMinutes has passed.
+ *
+ * Replaces the old immediate-on-completed trigger:
+ * - Honors `settings.delayMinutes` (no longer fires instantly)
+ * - Doesn't depend on the admin clicking "completed" — appointments are
+ *   considered "done" once their endTime is in the past (and they aren't cancelled)
+ *
+ * Logic per appointment:
+ * 1. Find appointments where (now - apptEnd) >= delayMinutes AND apptEnd was
+ *    in the last 7 days (don't retroactively spam old data when an automation
+ *    is just turned on).
+ * 2. Skip cancelled appointments (cancelled_by_customer / cancelled_by_staff).
+ * 3. Skip if a MessageLog with (appointmentId, kind) already exists.
+ */
+
+import { prisma } from "@/lib/prisma";
+import { sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE } from "@/lib/messaging";
+
+
+function combineDateTime(date: Date, hhmm: string): Date {
+  const [h, m] = hhmm.split(":").map(Number);
+  // Date is stored UTC midnight; add Israeli time (UTC+2/+3)
+  // Simpler: rebuild from local representation. The DB stores `date` as
+  // UTC midnight of the day; we treat the time as local.
+  const d = new Date(date);
+  d.setUTCHours(h - 3, m, 0, 0); // approximate Israel offset; fine for delay logic
+  return d;
+}
+
+/**
+ * The actual sweep. Called by the daily Vercel cron above AND every 15 minutes
+ * from the drip-queue tick (external minute-cron) — Vercel's plan only allows
+ * daily schedules in vercel.json, but `delayMinutes` needs a frequent run.
+ * Idempotent: MessageLog (appointmentId, kind) de-dup.
+ */
+export async function runPostVisitAutomations(): Promise<{ fired: number; skipped: number }> {
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // Public booking link — replaces {{booking_url}} / {{booking_link}}
+  // placeholders that owners put in their automation templates.
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  const bookingLink = `${baseUrl}/book`;
+
+  // Pull all active post-visit automations (across all businesses)
+  const automations = await prisma.automation.findMany({
+    where: {
+      type: { in: ["post_first_visit", "post_every_visit"] },
+      active: true,
+    },
+  });
+
+  if (automations.length === 0) {
+    return { fired: 0, skipped: 0 };
+  }
+
+  let fired = 0;
+  let skipped = 0;
+
+  for (const auto of automations) {
+    let settings: Record<string, unknown>;
+    try { settings = JSON.parse(auto.settings || "{}"); } catch { settings = {}; }
+    const delayMinutes = Math.max(0, Number(settings.delayMinutes ?? (auto.type === "post_first_visit" ? 30 : 60)));
+
+    // Time-window: appointments whose end+delay has passed in the last 7 days
+    const cutoffEnd = new Date(now.getTime() - delayMinutes * 60 * 1000);
+
+    const candidates = await prisma.appointment.findMany({
+      where: {
+        businessId: auto.businessId,
+        status: { in: ["confirmed", "completed"] },
+        date: { gte: sevenDaysAgo, lte: now },
+      },
+      include: { customer: true, staff: true, service: true },
+      take: 500,
+    });
+
+    const business = await prisma.business.findUnique({ where: { id: auto.businessId } });
+    if (!business) continue;
+
+    for (const appt of candidates) {
+      // Compute end timestamp from date + endTime
+      const apptEnd = combineDateTime(appt.date, appt.endTime);
+      if (apptEnd > cutoffEnd) { skipped++; continue; } // delay not yet passed
+      if (apptEnd < sevenDaysAgo) { skipped++; continue; } // too old
+
+      // Dedup: already sent for this appointment + kind
+      const already = await prisma.messageLog.findFirst({
+        where: {
+          businessId: auto.businessId,
+          appointmentId: appt.id,
+          kind: auto.type,
+          status: { not: "failed" },
+        },
+      });
+      if (already) { skipped++; continue; }
+
+      // Count completed appointments for the customer (treat past confirmed/completed as done)
+      const completedCount = await prisma.appointment.count({
+        where: {
+          customerId: appt.customerId,
+          businessId: auto.businessId,
+          status: { in: ["confirmed", "completed"] },
+          OR: [
+            { date: { lt: new Date(now.getFullYear(), now.getMonth(), now.getDate()) } },
+            { AND: [
+              { date: { equals: new Date(now.getFullYear(), now.getMonth(), now.getDate()) } },
+            ]},
+          ],
+        },
+      });
+
+      // ── post_first_visit ─────────────────────────────────────────────────────
+      if (auto.type === "post_first_visit") {
+        if (completedCount !== 1) { skipped++; continue; }
+
+        const ctaType = (settings.ctaType as string) ?? "google_review";
+        const ctaUrl  = (settings.ctaUrl  as string) ?? "";
+        let ctaLine = "";
+        if (ctaType === "google_review" && ctaUrl) ctaLine = `\n\n⭐ נשמח לביקורת קצרה בגוגל — זה עוזר לנו המון:\n${ctaUrl}`;
+        else if (ctaType === "instagram"  && ctaUrl) ctaLine = `\n\n📸 עקוב אחרינו באינסטגרם:\n${ctaUrl}`;
+        else if (ctaType === "custom"     && ctaUrl) ctaLine = `\n\n${ctaUrl}`;
+
+        const template = (auto.template as string | null) ||
+          `שלום {{name}} 👋\n\nתודה שביקרת אצלנו ב*{{business}}* לראשונה ✂️\nנהנינו מאוד לטפל בך 😊{{cta}}\n\nנתראה בפעם הבאה!`;
+
+        const body = template
+          .replace(/\{\{name\}\}/g, appt.customer.name)
+          .replace(/\{\{business\}\}/g, business.name)
+          .replace(/\{\{staff\}\}/g, appt.staff?.name ?? "")
+          .replace(/\{\{service\}\}/g, appt.service?.name ?? "")
+          .replace(/\{\{cta\}\}/g, ctaLine)
+          .replace(/\{\{booking_url\}\}/g, bookingLink)
+          .replace(/\{\{booking_link\}\}/g, bookingLink)
+          // Strip any remaining unknown placeholders so they never leak literally
+          .replace(/\{\{\w+\}\}/g, "");
+
+        await sendMessage({
+          businessId: auto.businessId,
+          appointmentId: appt.id,
+          customerPhone: appt.customer.phone,
+          kind: "post_first_visit",
+          body,
+        });
+        fired++;
+      }
+
+      // ── post_every_visit ─────────────────────────────────────────────────────
+      if (auto.type === "post_every_visit") {
+        const segment   = (settings.segment   as string) ?? "regular_only";
+        const minVisits = (settings.minVisits as number) ?? 2;
+
+        if (segment === "regular_only" && completedCount < minVisits) { skipped++; continue; }
+        if (segment === "new_only"     && completedCount !== 1)        { skipped++; continue; }
+        // "exact_visit" — fire ONLY after the customer's Nth visit (e.g. their
+        // 2nd). Use this appointment's chronological position (not the live
+        // total) so it fires exactly once for the right appointment, even when
+        // the cron reprocesses earlier appointments still inside the 7-day window.
+        if (segment === "exact_visit") {
+          const exactVisit = Math.max(2, Number(settings.exactVisit ?? 2));
+          const visitIndex = await prisma.appointment.count({
+            where: {
+              customerId: appt.customerId,
+              businessId: auto.businessId,
+              status: { in: ["confirmed", "completed"] },
+              OR: [
+                { date: { lt: appt.date } },
+                { AND: [{ date: appt.date }, { startTime: { lte: appt.startTime } }] },
+              ],
+            },
+          });
+          if (visitIndex !== exactVisit) { skipped++; continue; }
+        }
+
+        // CTA — same logic as post_first_visit
+        const ctaType = (settings.ctaType as string) ?? "";
+        const ctaUrl  = (settings.ctaUrl  as string) ?? "";
+        let ctaLine = "";
+        if (ctaType === "google_review" && ctaUrl) ctaLine = `\n\n⭐ נשמח לביקורת קצרה בגוגל — זה עוזר לנו המון:\n${ctaUrl}`;
+        else if (ctaType === "instagram" && ctaUrl) ctaLine = `\n\n📸 עקוב אחרינו באינסטגרם:\n${ctaUrl}`;
+        else if (ctaType === "custom"    && ctaUrl) ctaLine = `\n\n${ctaUrl}`;
+
+        const template = (auto.template as string | null) ||
+          `שלום {{name}} 👋\n\nתודה שחזרת ל*{{business}}* ✂️\nנהנינו לטפל בך שוב 😊{{cta}}\n\nנתראה בפעם הבאה!`;
+
+        const body = template
+          .replace(/\{\{name\}\}/g, appt.customer.name)
+          .replace(/\{\{business\}\}/g, business.name)
+          .replace(/\{\{staff\}\}/g, appt.staff?.name ?? "")
+          .replace(/\{\{service\}\}/g, appt.service?.name ?? "")
+          .replace(/\{\{cta\}\}/g, ctaLine)
+          .replace(/\{\{booking_url\}\}/g, bookingLink)
+          .replace(/\{\{booking_link\}\}/g, bookingLink)
+          // Strip any remaining unknown placeholders so they never leak literally
+          .replace(/\{\{\w+\}\}/g, "");
+
+        await sendMessage({
+          businessId: auto.businessId,
+          appointmentId: appt.id,
+          customerPhone: appt.customer.phone,
+          kind: "post_every_visit",
+          body,
+        });
+        fired++;
+      }
+    }
+  }
+
+  // ── Walk-in customers — send thank-you + booking link ──────────────────────
+  // Any appointment where walkIn=true and endTime has passed in the last 7 days,
+  // and no "walk_in" MessageLog entry yet.
+  const walkInDelay = 30; // minutes after appointment ends before sending
+  const walkInCutoff = new Date(now.getTime() - walkInDelay * 60 * 1000);
+
+  // Group walk-in appointments by business so we only fetch each business once
+  const walkInAppts = await prisma.appointment.findMany({
+    where: {
+      walkIn: true,
+      status: { in: ["confirmed", "completed"] },
+      date: { gte: sevenDaysAgo, lte: now },
+    },
+    include: { customer: true, staff: true, service: true, business: true },
+    take: 500,
+  });
+
+  for (const appt of walkInAppts) {
+    const apptEnd = combineDateTime(appt.date, appt.endTime);
+    if (apptEnd > walkInCutoff) { skipped++; continue; } // not done yet
+    if (apptEnd < sevenDaysAgo) { skipped++; continue; }  // too old
+
+    // Dedup
+    const already = await prisma.messageLog.findFirst({
+      where: {
+        businessId: appt.businessId,
+        appointmentId: appt.id,
+        kind: "walk_in",
+        status: { not: "failed" },
+      },
+    });
+    if (already) { skipped++; continue; }
+
+    const biz = appt.business;
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+    const bookingLink = `${baseUrl}/book`;
+    const tmpl = biz.walkInTemplate || DEFAULT_WALK_IN_TEMPLATE;
+    const msgBody = applyTemplate(tmpl, {
+      name:         firstName(appt.customer.name),
+      business:     formatBusinessName(biz.name),
+      booking_link: bookingLink,
+    });
+
+    await sendMessage({
+      businessId: appt.businessId,
+      appointmentId: appt.id,
+      customerPhone: appt.customer.phone,
+      kind: "walk_in",
+      body: msgBody,
+    });
+    fired++;
+  }
+
+  return { fired, skipped };
+}

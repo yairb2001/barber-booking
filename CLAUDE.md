@@ -95,7 +95,7 @@ Helpers in `src/lib/session.ts`:
 | `/api/cron/report-weekly` | `0 6 * * 0` | Weekly summary |
 | `/api/cron/report-monthly` | `0 6 1 * *` | Monthly summary |
 | `/api/cron/cleanup-conversations` | `0 4 * * *` | Delete chat threads older than 7 days |
-| `/api/cron/automations-post-visit` | `*/15 * * * *` | Fires `post_first_visit` / `post_every_visit` honoring `delayMinutes` |
+| `/api/cron/automations-post-visit` | `0 10 * * *` (+ every 15 min via drip-queue piggyback) | Fires `post_first_visit` / `post_every_visit` honoring `delayMinutes` |
 | `/api/cron/automations` | `0 11 * * *` | "We miss you" (reengage) message to inactive customers |
 | `/api/cron/cleanup-conversations` | `0 4 * * *` | Delete chat threads idle for 90 days |
 
@@ -177,6 +177,6 @@ vercel.json                               # Cron schedule
 
 - **Conversation-customer linking** — `Conversation.customerId` is only set when the agent identifies the customer via `book_appointment`. Cold conversations have no link. The chats API does a phone-based fallback lookup. If you need the name elsewhere, do the same — or use `Conversation.whatsappName` (always populated by the webhook).
 - **Customer.phone format inconsistency** — see Schema highlights. Try multiple formats in `OR` clauses or use `normalizeIsraeliPhone()` on both sides.
-- **Vercel cron limits** — Pro plan is active (sub-hour schedules in use: post-visit every 15 min).
+- **Vercel cron limits** — `vercel.json` crons must stay DAILY (a sub-hour schedule failed the deploy on 2026-09-13). Anything that needs to run often is piggybacked on the drip-queue tick, which cron-job.org hits every minute.
 - **Editing this repo from a Hebrew path** — the checkout under `Documents/קלוד` is iCloud-synced (NFC/NFD duplicate folders, stray `.git/* 2` files). Prefer a worktree outside iCloud (`git worktree add /private/tmp/... origin/main`).
 - **Status field is no longer the source of truth for completion** — use `date + endTime` past + `status not in cancelled`.
