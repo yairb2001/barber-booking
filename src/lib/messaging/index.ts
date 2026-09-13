@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-nudge";
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { normalizeIsraeliPhone } from "./phone";
