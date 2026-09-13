@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { localISODate } from "@/lib/utils";
 
 type Appt = {
   id: string;
@@ -195,8 +196,8 @@ export default function MyAppointmentsPage() {
   function openMove(a: Appt) {
     setMoveId(a.id); setMoveError(""); setMoveDone(null); setMoveSlots(null);
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    const from = today.toISOString().slice(0, 10);
-    const to = new Date(today.getTime() + 20 * 86_400_000).toISOString().slice(0, 10);
+    const from = localISODate(today);
+    const to = localISODate(new Date(today.getTime() + 20 * 86_400_000));
     setMoveDate(a.date.slice(0, 10));
     fetch(apiWithSlug(`/api/slots/availability?staffId=${a.staff.id}&serviceId=${a.service.id}&from=${from}&to=${to}`, slug))
       .then(r => r.json()).then(d => setMoveDays(d?.days || {})).catch(() => setMoveDays({}));
@@ -488,7 +489,7 @@ export default function MyAppointmentsPage() {
                         <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
                           {Array.from({ length: 21 }, (_, i) => {
                             const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + i);
-                            const iso = d.toISOString().slice(0, 10);
+                            const iso = localISODate(d);
                             const ok = moveDays[iso] === true || iso === a.date.slice(0, 10);
                             const active = iso === moveDate;
                             return (

@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { localISODate } from "@/lib/utils";
 
 /**
  * "חופשה": mark a whole date range as not working for one barber, in one go
@@ -8,7 +9,7 @@ import { useEffect, useState } from "react";
  * NOT cancel or move anything automatically here.
  */
 export default function VacationRange({ staffId }: { staffId: string }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localISODate(new Date());
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [affected, setAffected] = useState<{ id: string; date: string; startTime: string; customerName: string }[] | null>(null);
@@ -21,7 +22,7 @@ export default function VacationRange({ staffId }: { staffId: string }) {
     if (!from || !to || from > to) return out;
     const d = new Date(from + "T00:00:00");
     const end = new Date(to + "T00:00:00");
-    while (d <= end && out.length < 60) { out.push(d.toISOString().slice(0, 10)); d.setDate(d.getDate() + 1); }
+    while (d <= end && out.length < 60) { out.push(localISODate(d)); d.setDate(d.getDate() + 1); }
     return out;
   })();
 

@@ -142,3 +142,12 @@ export function addDaysISO(iso: string, n: number): string {
 export function getDayOfWeekISO(iso: string): number {
   return new Date(iso + "T00:00:00.000Z").getUTCDay();
 }
+
+/**
+ * YYYY-MM-DD of a Date in the BROWSER'S local calendar (getFullYear/getMonth/
+ * getDate) — never via toISOString(), which converts to UTC and, in Israel
+ * (UTC+2/+3), turns local midnight into the previous day.
+ */
+export function localISODate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

@@ -5,6 +5,7 @@ import { telHref } from "@/lib/messaging/phone";
 import { pickFriendSource } from "@/lib/referral";
 import { israeliHoliday } from "@/lib/israeli-holidays";
 import { insightsSummaryLine, usualLine } from "@/lib/customer-insights";
+import { localISODate } from "@/lib/utils";
 import { useModalBack } from "@/lib/useModalBack";
 import { useRouter } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
@@ -907,7 +908,9 @@ function FindCustomerPopover({ onPick, onClose }: {
   async function pick(c: Customer) {
     setBusy(c.id);
     const d = await fetch(`/api/admin/customers/${c.id}`).then(r => (r.ok ? r.json() : null)).catch(() => null);
-    const up = Array.isArray(d?.upcoming) ? d.upcoming[0] : null;
+    // The API lists appointments newest-first; the NEXT one is the earliest.
+    const ups = Array.isArray(d?.upcoming) ? [...d.upcoming].sort((a: { date: string; startTime: string }, b: { date: string; startTime: string }) => String(a.date).localeCompare(String(b.date)) || a.startTime.localeCompare(b.startTime)) : [];
+    const up = ups[0] || null;
     onPick({ customerId: c.id, name: c.name, appt: up ? { id: up.id, date: String(up.date).slice(0, 10), startTime: up.startTime, staffName: up.staff?.name || "" } : null });
   }
   return (
@@ -1909,7 +1912,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [rebookDone, setRebookDone] = useState<string | null>(null);
   const [rebookErr, setRebookErr] = useState<string | null>(null);
   const baseDateISO = dispDate.split("T")[0];
-  const addDays = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const addDays = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISODate(d); };
   const rebookWeeks = [2, 3, 4, 5, 6];
   const defaultWeeks = rhythmDays ? Math.min(6, Math.max(2, Math.round(rhythmDays / 7))) : 3;
   function openRebook() {
