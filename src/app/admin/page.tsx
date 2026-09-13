@@ -6289,10 +6289,14 @@ export default function AdminCalendar() {
             className="flex items-center gap-1 px-3 py-2 bg-teal-600 text-white rounded-lg text-xs font-semibold hover:bg-teal-700 transition shrink-0">
             + תור
           </button>
-          <button onClick={() => setNearestOpen(true)} title="התורים הפנויים הקרובים ביותר — אצל כל הספרים"
-            className="w-9 h-9 rounded-lg border border-teal-200 text-teal-700 hover:bg-teal-50 flex items-center justify-center shrink-0 text-sm">⚡</button>
-          <button onClick={() => setFindOpen(true)} title="מתי יש ללקוח תור?"
-            className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-100 flex items-center justify-center shrink-0 text-sm">🔍</button>
+          {/* ⚡ nearest slots / 🔍 find customer — row 1 on desktop; on mobile
+              they live in row 2 so the date label keeps its width. */}
+          {!isMobile && (<>
+            <button onClick={() => setNearestOpen(true)} title="התורים הפנויים הקרובים ביותר — אצל כל הספרים"
+              className="w-9 h-9 rounded-lg border border-teal-200 text-teal-700 hover:bg-teal-50 flex items-center justify-center shrink-0 text-sm">⚡</button>
+            <button onClick={() => setFindOpen(true)} title="מתי יש ללקוח תור?"
+              className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-100 flex items-center justify-center shrink-0 text-sm">🔍</button>
+          </>)}
 
           {/* Notifications bell — own bookings/cancellations (barber) or all (owner) */}
           <NotificationsBell />
@@ -6350,6 +6354,15 @@ export default function AdminCalendar() {
                 className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">−</button>
               <button onClick={() => setHourHeight(h => Math.min(220, h + 20))} disabled={hourHeight >= 220}
                 className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">+</button>
+            </div>
+          )}
+
+          {isMobile && (
+            <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
+              <button onClick={() => setNearestOpen(true)} title="הכי קרוב"
+                className="w-7 h-7 flex items-center justify-center text-sm text-teal-700 hover:bg-white rounded-md transition">⚡</button>
+              <button onClick={() => setFindOpen(true)} title="מתי יש ללקוח תור?"
+                className="w-7 h-7 flex items-center justify-center text-sm text-neutral-600 hover:bg-white rounded-md transition">🔍</button>
             </div>
           )}
 
