@@ -6369,7 +6369,7 @@ export default function AdminCalendar() {
           {/* Day view staff selection is handled by the ✂️ filter button — no separate barber picker needed */}
 
           {/* Zoom — hidden on mobile (use pinch) / shown on desktop */}
-          {view !== "month" && (
+          {view !== "month" && !isMobile && (
             <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
               <button onClick={() => setHourHeight(h => Math.max(28, h - 20))} disabled={hourHeight <= 28}
                 className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">−</button>
