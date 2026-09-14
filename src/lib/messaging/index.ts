@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { normalizeIsraeliPhone } from "./phone";
@@ -864,6 +864,17 @@ export const TEMPLATE_DEFS = {
     description: "נשלחת פעם אחת, 5 ימים אחרי הראשונה, אם לא ענה ולא קבע.",
     field: "rhythmNudgeSecondTemplate" as const,
     default: DEFAULT_RHYTHM_SECOND_TEMPLATE,
+    variables: [
+      { key: "name",     label: "שם הלקוח" },
+      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "options",  label: "השעות המוצעות" },
+    ],
+  },
+  rhythm_nudge_second_taken: {
+    label: "הגיע הזמן לתור — הודעה שנייה כשהשעות נתפסו",
+    description: "במקום ההודעה השנייה הרגילה, כשאף אחת מהשעות שהוצעו בראשונה כבר לא פנויה. {{options}} = שעות חדשות.",
+    field: "rhythmNudgeSecondTakenTemplate" as const,
+    default: DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE,
     variables: [
       { key: "name",     label: "שם הלקוח" },
       { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },

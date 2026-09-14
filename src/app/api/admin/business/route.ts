@@ -121,6 +121,7 @@ export async function PATCH(req: NextRequest) {
       ...(body.rhythmNudgeTemplate !== undefined && { rhythmNudgeTemplate: body.rhythmNudgeTemplate || null }),
       ...(body.rhythmNudgeCancelledTemplate !== undefined && { rhythmNudgeCancelledTemplate: body.rhythmNudgeCancelledTemplate || null }),
       ...(body.rhythmNudgeSecondTemplate !== undefined && { rhythmNudgeSecondTemplate: body.rhythmNudgeSecondTemplate || null }),
+      ...(body.rhythmNudgeSecondTakenTemplate !== undefined && { rhythmNudgeSecondTakenTemplate: body.rhythmNudgeSecondTakenTemplate || null }),
       ...(body.rhythmNudgeNewTemplate !== undefined && { rhythmNudgeNewTemplate: body.rhythmNudgeNewTemplate || null }),
       ...(body.waitlistNotifyTemplate !== undefined && {
         waitlistNotifyTemplate: body.waitlistNotifyTemplate || null,

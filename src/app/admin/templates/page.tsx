@@ -74,6 +74,7 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   appointment_no_show_repeat: { emoji: "🚫", when: "נשלחת כשמסמנים 'הבריז' על תור ובוחרים 'פעם שנייה+'" },
   rhythm_nudge:           { emoji: "✂️", when: "נשלחת מיוזמתנו כשלפי הקצב של הלקוח הגיע הזמן לתספורת ואין לו תור (הגדרות → אוטומציות)" },
   rhythm_nudge_second:    { emoji: "✂️", when: "הודעה שנייה ואחרונה, 5 ימים אחרי הראשונה, אם לא ענה ולא קבע" },
+  rhythm_nudge_second_taken: { emoji: "✂️", when: "ההודעה השנייה כשהשעות מהראשונה כבר נתפסו — מציעה שעות חדשות" },
   rhythm_nudge_new:       { emoji: "✂️", when: "ללקוח אחרי ביקור ראשון (שלב 2, מתג נפרד באוטומציות)" },
 };
 
@@ -92,7 +93,7 @@ const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
   {
     title: "הגיע הזמן לתור",
     subtitle: "הצעה יזומה לתור הבא לפי הקצב האישי של הלקוח — המספרה כמזכירה שלו",
-    keys: ["rhythm_nudge", "rhythm_nudge_second", "rhythm_nudge_new"],
+    keys: ["rhythm_nudge", "rhythm_nudge_second", "rhythm_nudge_second_taken", "rhythm_nudge_new"],
   },
   {
     title: "החלפות והעברות תורים",

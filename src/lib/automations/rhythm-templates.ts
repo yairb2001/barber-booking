@@ -7,6 +7,8 @@ export const DEFAULT_RHYTHM_TEMPLATE =
 איזו שעה נוח שאקבע לך?`;
 export const DEFAULT_RHYTHM_SECOND_TEMPLATE =
 `היי {{name}}, עדיין פנוי {{at_staff}}{{options}} — לתפוס לך?`;
+export const DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE =
+`היי {{name}}, השעות שהצעתי לך כבר נתפסו, אבל יש {{at_staff}}{{options}} — לתפוס לך?`;
 export const DEFAULT_RHYTHM_NEW_TEMPLATE =
 `היי {{name}}, איזה כיף שהסתפרת אצלנו בפעם שעברה 😊
 

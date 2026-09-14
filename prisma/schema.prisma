@@ -56,6 +56,7 @@ model Business {
   rhythmNudgeTemplate          String?  @map("rhythm_nudge_template")
   rhythmNudgeCancelledTemplate String?  @map("rhythm_nudge_cancelled_template")
   rhythmNudgeSecondTemplate    String?  @map("rhythm_nudge_second_template")
+  rhythmNudgeSecondTakenTemplate String? @map("rhythm_nudge_second_taken_template") // second nudge when the first offer's times were taken
   rhythmNudgeNewTemplate       String?  @map("rhythm_nudge_new_template")
   // ── Theme / branding ──
   secondaryColor  String?  @default("#ffffff") @map("secondary_color")

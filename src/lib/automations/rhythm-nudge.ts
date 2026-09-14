@@ -52,15 +52,15 @@ export function getRhythmSettings(raw: string | null | undefined): RhythmSetting
   } catch { return { ...RHYTHM_DEFAULTS }; }
 }
 
-import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
-export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE };
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
+export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Slot = { date: string; time: string; staffId: string; staffName: string; preferred: boolean };
 export type PlanEntry = {
   customerId: string; name: string; phone: string;
   kind: "rhythm_nudge" | "rhythm_nudge_2";
-  variant: "regular" | "second" | "new";
+  variant: "regular" | "second" | "second_taken" | "new";
   reason: string;           // why today (for logs / dry run)
   daysToDue: number | null;
   staffMode: "regular" | "mixed";
@@ -172,7 +172,7 @@ function freeInWindow(index: AvailabilityIndex, date: string, staffId: string | 
 export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean; onlyCustomerIds?: string[]; businessId?: string; force?: boolean } = {}): Promise<RunResult[]> {
   const biz = await prisma.business.findMany({
     where: opts.businessId ? { id: opts.businessId } : {},
-    select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeNewTemplate: true },
+    select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeSecondTakenTemplate: true, rhythmNudgeNewTemplate: true },
   });
   const results: RunResult[] = [];
   const { date: todayISO } = getBusinessNow();
@@ -204,8 +204,8 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
     const since7 = new Date(now.getTime() - 7 * DAY);
     const recentAuto = await prisma.messageLog.findMany({ where: { businessId: b.id, kind: { in: AUTOMATION_KINDS }, createdAt: { gte: since7 }, status: { not: "failed" } }, select: { customerPhone: true } });
     const recentAutoPhones = new Set(recentAuto.map(r => normalizeIsraeliPhone(r.customerPhone)));
-    const nudgeLogs = await prisma.messageLog.findMany({ where: { businessId: b.id, kind: { in: NUDGE_KINDS }, createdAt: { gte: new Date(now.getTime() - 120 * DAY) }, status: { not: "failed" } }, select: { customerPhone: true, kind: true, createdAt: true } });
-    const nudgesByPhone = new Map<string, { kind: string; createdAt: Date }[]>();
+    const nudgeLogs = await prisma.messageLog.findMany({ where: { businessId: b.id, kind: { in: NUDGE_KINDS }, createdAt: { gte: new Date(now.getTime() - 120 * DAY) }, status: { not: "failed" } }, select: { customerPhone: true, kind: true, createdAt: true, body: true } });
+    const nudgesByPhone = new Map<string, { kind: string; createdAt: Date; body: string }[]>();
     for (const l of nudgeLogs) { const k = normalizeIsraeliPhone(l.customerPhone); nudgesByPhone.set(k, [...(nudgesByPhone.get(k) || []), l]); }
 
     // Shop-wide median rhythm (for one-visit customers, stage 2).
@@ -284,6 +284,14 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       const slots = await findOffer({ businessId: b.id, todayISO, anchorISO, staffId: regularStaffId, serviceId, tod, excludedStaffIds: cfg.excludedStaffIds, blockedStaffIds, index });
       if (!slots.length) { skip("no_slots"); continue; }
 
+      // Second nudge: are the times we offered the first time still on the
+      // table? If none of the new offer's (day,time) pairs appeared in the first
+      // message, say so instead of "עדיין פנוי".
+      if (variant === "second") {
+        const firstBody = myNudges[0]?.body ?? "";
+        const stillOffered = slots.some(s => firstBody.includes(s.time) && firstBody.includes(dayLabel(s.date, todayISO).replace(/^יום /, "")));
+        if (!stillOffered) variant = "second_taken";
+      }
       const mixed = !regularStaffId;
       const staffName = regularStaffId ? (slots[0]?.staffName || topRow?.staff?.name || "") : "";
       const vars = {
@@ -294,6 +302,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         booking_link: `${baseUrl}${b.slug ? `/${b.slug}` : ""}/book`,
       };
       const tmpl = variant === "second" ? (b.rhythmNudgeSecondTemplate || DEFAULT_RHYTHM_SECOND_TEMPLATE)
+        : variant === "second_taken" ? (b.rhythmNudgeSecondTakenTemplate || DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE)
         : variant === "new" ? (b.rhythmNudgeNewTemplate || DEFAULT_RHYTHM_NEW_TEMPLATE)
         : (b.rhythmNudgeTemplate || DEFAULT_RHYTHM_TEMPLATE);
       const body = applyTemplate(tmpl, vars);

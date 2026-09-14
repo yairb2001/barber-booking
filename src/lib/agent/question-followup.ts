@@ -29,6 +29,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
 import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName, stripFollowupPreamble } from "@/lib/agent/followup-shared";
+import { buildConfirmFollowup } from "@/lib/agent/confirm-followup";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -236,7 +237,10 @@ export async function runAgentQuestionFollowup(
           });
       if (registered?.name && !isPhoneLikeName(registered.name)) name = firstName(registered.name);
 
-      const followup = await generateFollowup(transcript, name, biz.id);
+      // A final "מאשר?" left hanging gets a deterministic, calendar-checked
+      // reply (says it is NOT booked yet; offers the nearest time if taken).
+      const confirmFollowup = await buildConfirmFollowup({ businessId: biz.id, conversationId: convo.id, lastAgentText: last.content, name }).catch(() => null);
+      const followup = confirmFollowup ?? await generateFollowup(transcript, name, biz.id);
       // Model decided the reminder would hurt (declined / no longer relevant).
       if (followup === null) { skipped++; continue; }
 
