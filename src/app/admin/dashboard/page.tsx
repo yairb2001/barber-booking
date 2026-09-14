@@ -1393,21 +1393,52 @@ export default function Dashboard() {
           </div>
 
           {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
-          {!isFutureMonth && a.rhythmNudge && a.rhythmNudge.sent > 0 && (
-            <div className="bg-white rounded-2xl border border-neutral-200 p-4 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
-                <p className="text-sm text-neutral-700 mt-1">נשלחו <b>{a.rhythmNudge.sent}</b> · קבעו תוך 3 ימים <b>{a.rhythmNudge.booked}</b></p>
-                {a.rhythmNudge.by && a.rhythmNudge.booked > 0 && (
-                  <p className="text-xs text-neutral-500 mt-0.5">
-                    {a.rhythmNudge.by.self} קבעו לבד בקישור · {a.rhythmNudge.by.agent} דרך הסוכן · {a.rhythmNudge.by.admin} אצל ספר
-                    {a.rhythmNudge.avgHoursToBook != null && ` · בממוצע אחרי ${a.rhythmNudge.avgHoursToBook < 48 ? `${a.rhythmNudge.avgHoursToBook} שעות` : `${Math.round(a.rhythmNudge.avgHoursToBook / 24)} ימים`}`}
-                  </p>
+          {!isFutureMonth && a.rhythmNudge && a.rhythmNudge.sent > 0 && (() => {
+            const r = a.rhythmNudge;
+            const by = r.by ?? { self: 0, agent: 0, admin: 0 };
+            const waiting = Math.max(0, r.sent - r.booked);
+            const pct = (n: number) => (r.booked ? Math.round((n / r.booked) * 100) : 0);
+            const hours = r.avgHoursToBook;
+            const speed = hours == null ? null : hours < 1 ? "תוך פחות משעה" : hours < 48 ? `תוך ${hours} שעות בממוצע` : `תוך ${Math.round(hours / 24)} ימים בממוצע`;
+            return (
+              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <div className="flex items-baseline justify-between mb-3">
+                  <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
+                  <span className={`text-2xl font-extrabold ${r.rate >= 20 ? "text-teal-700" : r.rate >= 10 ? "text-neutral-800" : "text-amber-600"}`}>{r.rate}%</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  <div className="bg-neutral-50 rounded-xl py-2">
+                    <p className="text-lg font-bold text-neutral-800">{r.sent}</p>
+                    <p className="text-[10px] text-neutral-500">הודעות נשלחו</p>
+                  </div>
+                  <div className="bg-teal-50 rounded-xl py-2">
+                    <p className="text-lg font-bold text-teal-700">{r.booked}</p>
+                    <p className="text-[10px] text-teal-700">קבעו תור תוך 3 ימים</p>
+                  </div>
+                  <div className="bg-neutral-50 rounded-xl py-2">
+                    <p className="text-lg font-bold text-neutral-800">{waiting}</p>
+                    <p className="text-[10px] text-neutral-500">עדיין לא קבעו</p>
+                  </div>
+                </div>
+                {r.booked > 0 && (
+                  <>
+                    <p className="text-[10px] text-neutral-400 mb-1">איך הם קבעו</p>
+                    <div className="flex h-2 rounded-full overflow-hidden bg-neutral-100 mb-1.5">
+                      <div className="bg-teal-500" style={{ width: `${pct(by.self)}%` }} title="לבד, דרך הקישור" />
+                      <div className="bg-sky-400" style={{ width: `${pct(by.agent)}%` }} title="דרך הסוכן" />
+                      <div className="bg-neutral-400" style={{ width: `${pct(by.admin)}%` }} title="אצל ספר" />
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-600">
+                      <span><span className="inline-block w-2 h-2 rounded-full bg-teal-500 ml-1 align-middle" />לבד דרך הקישור <b>{by.self}</b></span>
+                      <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 ml-1 align-middle" />ענו לסוכן <b>{by.agent}</b></span>
+                      <span><span className="inline-block w-2 h-2 rounded-full bg-neutral-400 ml-1 align-middle" />קבע ספר <b>{by.admin}</b></span>
+                      {speed && <span className="text-neutral-400 mr-auto">{speed}</span>}
+                    </div>
+                  </>
                 )}
               </div>
-              <span className={`text-2xl font-extrabold ${a.rhythmNudge.rate >= 20 ? "text-teal-700" : "text-neutral-500"}`}>{a.rhythmNudge.rate}%</span>
-            </div>
-          )}
+            );
+          })()}
 
           {/* ── Cancellations — where the money leaks ── */}
           {!isFutureMonth && a.cancellations && a.cancellations.booked > 0 && (
