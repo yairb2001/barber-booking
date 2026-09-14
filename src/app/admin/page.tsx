@@ -868,7 +868,7 @@ function NearestSlotsPopover({ staffFilter, allStaff, onPick, onClose, forName }
                 <li key={i}>
                   <button onClick={() => onPick(r)}
                     className="w-full flex items-center gap-3 border border-neutral-200 rounded-lg px-3 py-2 hover:bg-teal-50 hover:border-teal-200 transition text-right">
-                    <div className="w-14 shrink-0 text-center">
+                    <div className="w-[4.5rem] shrink-0 text-center">
                       <p className="text-base font-bold text-neutral-900 leading-tight" dir="ltr">{r.time}</p>
                       <p className="text-[10px] text-neutral-500 leading-tight">{r.dayLabel}</p>
                     </div>

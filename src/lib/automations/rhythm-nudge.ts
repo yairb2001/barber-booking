@@ -88,6 +88,7 @@ function dayLabel(iso: string, todayISO: string): string {
   if (diff === 1) return "מחר";
   const name = `יום ${HEB_DAYS[getDayOfWeekISO(iso)]}`;
   if (diff <= 6) return name;
+  if (diff <= 13) return `${name} הבא`;
   const d = new Date(iso + "T00:00:00Z");
   return `${name} ${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }

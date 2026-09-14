@@ -20,16 +20,17 @@ const MAX_SCAN_DAYS = 120;
 // while keeping the in-memory slot generation cheap even at a long horizon.
 const RAW_PER_STAFF = 40;
 
-// Friendly Hebrew label for a slot's date. For anything a week or more out we
-// include the actual date (weekday names alone repeat and would read as "soon").
+// Friendly Hebrew label for a slot's date: "היום" / "מחר" / "יום רביעי" for the
+// coming week, "יום רביעי הבא" for the week after, and weekday + date beyond
+// that (a weekday name alone repeats and would read as "soon").
 function dayLabelFor(dateStr: string, dayOffset: number): string {
   if (dayOffset === 0) return "היום";
   if (dayOffset === 1) return "מחר";
   const date = new Date(dateStr + "T00:00:00.000Z");
-  if (dayOffset < 7) {
-    return date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
-  }
-  return date.toLocaleDateString("he-IL", { day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+  const weekday = date.toLocaleDateString("he-IL", { weekday: "long", timeZone: "Asia/Jerusalem" });
+  if (dayOffset < 7) return weekday;
+  if (dayOffset < 14) return `${weekday} הבא`;
+  return `${weekday} ${date.getUTCDate()}.${date.getUTCMonth() + 1}`;
 }
 
 
