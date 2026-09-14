@@ -182,12 +182,15 @@ export async function POST(req: NextRequest) {
   // cancelled-by-staff rows). Bypassed with allowDuplicate: true.
   if (!body.override && !body.allowDuplicate) {
     const weekMs = 7 * 24 * 60 * 60 * 1000;
+    // Only LIVE appointments count as a possible duplicate: from today onward,
+    // within a week of the new date. A past appointment is a visit, not a clash.
+    const todayUTC = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
     const dup = await prisma.appointment.findFirst({
       where: {
         businessId: business.id,
         customerId: customer.id,
         status: { in: ["pending", "confirmed"] },
-        date: { gte: new Date(dateObj.getTime() - weekMs), lte: new Date(dateObj.getTime() + weekMs) },
+        date: { gte: new Date(Math.max(todayUTC.getTime(), dateObj.getTime() - weekMs)), lte: new Date(dateObj.getTime() + weekMs) },
       },
       orderBy: [{ date: "asc" }, { startTime: "asc" }],
       select: { id: true, date: true, startTime: true, staff: { select: { name: true } } },
