@@ -49,7 +49,7 @@ export default function NotificationsSettingsPage() {
                 <label className="text-sm text-neutral-800 font-semibold block">🔔 ההתראות שלי (מנהל ראשי)</label>
                 <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
                   על אילו תורים לקבל התראות לנייד — של כל הספרים, רק שלך, או בכלל לא.
-                  התראות ניהול (הודעות חדשות, הסלמות, בקשות שינוי) ממשיכות להגיע כל עוד לא כבוי.
+                  הודעות וואטסאפ מגיעות לפי מי שמטפל: פנייה חדשה — לספר הקבוע של הלקוח (אין כזה → לכולם); תשובה בשיחה — רק למי שכתב ללקוח ב-24 השעות האחרונות. בקשות שינוי והסלמות ניהוליות ממשיכות להגיע כל עוד לא כבוי.
                 </p>
               </div>
               {notifyScopeSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}

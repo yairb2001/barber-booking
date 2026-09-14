@@ -881,14 +881,14 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
       fetch("/api/admin/staff").then(r => r.json()),
       fetch("/api/admin/services").then(r => r.json()),
       fetch(`/api/admin/customers/${customerId}`).then(r => (r.ok ? r.json() : null)).catch(() => null),
-    ]).then(([staffD, svcD, cust]: [StaffItem[], ServiceItem[], { insights?: { usual?: { staffId: string; serviceId: string; weekday: number | null; hour: string | null }; avgIntervalDays?: number | null } } | null]) => {
+    ]).then(([staffD, svcD, cust]: [StaffItem[], ServiceItem[], { insights?: { usual?: { staffId: string; serviceId: string; weekday: number | null; hour: string | null; prefillHour?: string | null }; avgIntervalDays?: number | null } } | null]) => {
       setAllStaff(staffD.map(s => ({ id: s.id, name: s.name })));
       setAllServices(svcD);
       const u = cust?.insights?.usual;
       setStaffId(u?.staffId && staffD.some(s => s.id === u.staffId) ? u.staffId : (staffD[0]?.id || ""));
       setServiceId(u?.serviceId && svcD.some(s => s.id === u.serviceId) ? u.serviceId : (svcD[0]?.id || ""));
       if (u?.weekday !== null && u?.weekday !== undefined) setDayOfWeek(u.weekday);
-      if (u?.hour) setStartTime(u.hour);
+      if (u?.hour || u?.prefillHour) setStartTime((u.hour || u.prefillHour) as string);
       const avg = cust?.insights?.avgIntervalDays;
       if (typeof avg === "number" && avg > 0) {
         const w = Math.round(avg / 7);
