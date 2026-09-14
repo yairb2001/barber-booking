@@ -295,6 +295,9 @@ model Customer {
   // Free-text permanent note about the customer (haircut numbers, preferences).
   // Own column so it is searchable; older data lived in notificationPrefs.notes.
   notes             String?
+  // Short personal link token: /t/<token> opens "my appointments" signed in.
+  // Random 10 chars (base58, ~58 bits); minted on first use; unique per customer.
+  linkToken         String?   @unique @map("link_token")
   createdAt         DateTime  @default(now()) @map("created_at")
   lastVisitAt       DateTime? @map("last_visit_at")
   deletedAt         DateTime? @map("deleted_at")
