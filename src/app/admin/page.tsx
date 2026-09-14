@@ -3304,10 +3304,15 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
               ) : (
                 <ul className="space-y-1.5">
                   {past.slice(0, 30).map(a => (
-                    <li key={a.id} className="flex items-center justify-between gap-2 text-xs border border-neutral-100 rounded-lg px-3 py-2">
+                    <li key={a.id} className={`flex items-center justify-between gap-2 text-xs border rounded-lg px-3 py-2 ${a.status.startsWith("cancelled") || a.status === "no_show" ? "border-neutral-100 bg-neutral-50 opacity-70" : "border-neutral-100"}`}>
                       <div className="min-w-0">
-                        <p className="font-medium text-neutral-800 truncate">{a.customServiceName || a.service?.name || "שירות"}</p>
-                        <p className="text-neutral-500">{a.staff?.name || "—"}</p>
+                        <p className={`font-medium truncate ${a.status.startsWith("cancelled") || a.status === "no_show" ? "text-neutral-500 line-through" : "text-neutral-800"}`}>{a.customServiceName || a.service?.name || "שירות"}</p>
+                        <p className="text-neutral-500">
+                          {a.staff?.name || "—"}
+                          {a.status === "cancelled_by_customer" && <span className="text-red-500"> · ביטל</span>}
+                          {a.status === "cancelled_by_staff" && <span className="text-red-500"> · בוטל ע״י הספר</span>}
+                          {a.status === "no_show" && <span className="text-orange-600"> · הבריז</span>}
+                        </p>
                       </div>
                       <div className="text-left shrink-0">
                         <p className="text-neutral-700">{new Date(a.date).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "2-digit" })}</p>

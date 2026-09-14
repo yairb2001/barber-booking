@@ -1506,11 +1506,14 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
     });
     const ins = computeCustomerInsights(wide);
     if (ins.visits >= 2 && ins.usual && wide.find(w => w.staffId === ins.usual!.staffId)?.staff?.isAvailable) {
-      const tod = ins.usual.timeOfDay === "morning" ? "בבוקר" : ins.usual.timeOfDay === "afternoon" ? "בצהריים" : ins.usual.timeOfDay === "evening" ? "בערב" : "";
+      const tod = ins.usual.timeOfDay === "morning" ? "בבוקר (לפני 12:00)" : ins.usual.timeOfDay === "afternoon" ? "בצהריים (12:00–17:00)" : ins.usual.timeOfDay === "evening" ? "בערב (אחרי 17:00)" : "";
+      const usualDay = ins.usual.weekday !== null ? `ביום ${["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"][ins.usual.weekday]}` : "";
       const rhythm = ins.avgIntervalDays ? ` הוא מגיע בערך כל ${ins.avgIntervalDays} יום${ins.expectedReturnInDays !== null && ins.expectedReturnInDays <= 3 ? " — והוא בדיוק בזמן לתספורת הבאה" : ""}.` : "";
       parts.push(
-        `הרגיל שלו: ${ins.usual.serviceName} אצל ${ins.usual.staffName}${tod ? `, בדרך כלל ${tod}` : ""}${ins.usual.hour ? ` סביב ${ins.usual.hour}` : ""}.${rhythm} ` +
-        `כשהוא מבקש תור בלי לפרט — אל תשאל "איזה שירות" ו"אצל מי": בדוק זמינות עם הכלי ל${ins.usual.serviceName} אצל ${ins.usual.staffName}${tod ? ` ${tod}` : ""} והצע לו ישר 2-3 שעות קרובות במשפט אחד ("כמו תמיד, ${ins.usual.serviceName} אצל ${ins.usual.staffName}? יש לי ..."). אם הוא רוצה משהו אחר — הוא יגיד.`,
+        `הרגיל שלו: ${ins.usual.serviceName} אצל ${ins.usual.staffName}${usualDay || tod ? `, בדרך כלל ${[usualDay, tod].filter(Boolean).join(" ")}` : ""}.${rhythm} ` +
+        `כשהוא מבקש תור בלי לפרט — אל תשאל "איזה שירות" ו"אצל מי": בדוק זמינות עם הכלי ל${ins.usual.serviceName} אצל ${ins.usual.staffName} והצע לו ישר 3 אפשרויות במשפט אחד ("כמו תמיד, ${ins.usual.serviceName} אצל ${ins.usual.staffName}? יש לי ..."). ` +
+        (tod ? `הטווח שלו הוא המדד: תמיד בחר את 3 האפשרויות הכי קרובות לשעות שהוא רגיל (${tod}), גם אם זה ביום אחר מזה שביקש או מהיום הרגיל שלו — עדיף יום אחר בטווח השעות שלו מאשר אותו יום בשעה שלא מתאימה לו. רק אם אין כלום בטווח שלו בימים הקרובים, הצע שעות אחרות ותגיד לו שזה מחוץ לשעות שהוא רגיל. ` : "") +
+        `אם הוא רוצה משהו אחר — הוא יגיד.`,
       );
     }
   } catch { /* context enrichment is best-effort */ }

@@ -31,9 +31,9 @@ export type CustomerInsights = {
   usual: {
     serviceId: string; serviceName: string;
     staffId: string; staffName: string;
-    weekday: number | null; // 0=Sun … 6=Sat, most common
-    hour: string | null;    // "HH:MM", most common start time (rounded to 30 min)
-    timeOfDay: "morning" | "afternoon" | "evening" | null;
+    weekday: number | null; // 0=Sun … 6=Sat, most common (tie → most recent)
+    hour: string | null;    // "HH:MM" — typical start inside the usual time-of-day (median), for prefills only
+    timeOfDay: TimeOfDay | null; // THE measure of "his hours": בוקר / צהריים / ערב
   } | null;
   // Customer used to visit one barber and now visits another.
   switchedBarber: { fromName: string; toName: string; sinceISO: string } | null;
@@ -42,11 +42,21 @@ export type CustomerInsights = {
 const DAY = 86_400_000;
 const isoDay = (d: Date | string) => (typeof d === "string" ? d : d.toISOString()).slice(0, 10);
 
+/** Most frequent value; a tie goes to the one seen most RECENTLY (input is oldest→newest). */
 function mode<T>(xs: T[]): T | null {
   if (!xs.length) return null;
-  const m = new Map<T, number>();
-  for (const x of xs) m.set(x, (m.get(x) || 0) + 1);
-  return Array.from(m.entries()).sort((a, b) => b[1] - a[1])[0][0];
+  const count = new Map<T, number>();
+  const lastIdx = new Map<T, number>();
+  xs.forEach((x, i) => { count.set(x, (count.get(x) || 0) + 1); lastIdx.set(x, i); });
+  return Array.from(count.entries()).sort((a, b) => b[1] - a[1] || (lastIdx.get(b[0])! - lastIdx.get(a[0])!))[0][0];
+}
+
+export type TimeOfDay = "morning" | "afternoon" | "evening";
+export const TIME_OF_DAY_LABEL: Record<TimeOfDay, string> = { morning: "בבוקר", afternoon: "בצהריים", evening: "בערב" };
+/** בוקר < 12:00 · צהריים 12:00–17:00 · ערב ≥ 17:00 */
+export function timeOfDayOf(hhmm: string): TimeOfDay {
+  const h = Number(hhmm.slice(0, 2));
+  return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
 }
 
 export function computeCustomerInsights(rows: InsightAppt[], now = new Date()): CustomerInsights {
@@ -84,13 +94,19 @@ export function computeCustomerInsights(rows: InsightAppt[], now = new Date()): 
     const staffId = mode(recentVisits.map(v => v.staffId))!;
     const staffRow = [...recentVisits].reverse().find(v => v.staffId === staffId)!;
     const weekday = mode(recentVisits.map(v => new Date(isoDay(v.date) + "T00:00:00").getDay()));
-    const hourKey = mode(recentVisits.map(v => {
-      const [h, m] = v.startTime.split(":").map(Number);
-      const rounded = m < 15 ? 0 : m < 45 ? 30 : 60;
-      const hh = rounded === 60 ? h + 1 : h;
-      return `${String(hh).padStart(2, "0")}:${rounded === 30 ? "30" : "00"}`;
-    }));
-    const h = hourKey ? Number(hourKey.slice(0, 2)) : null;
+    // "His hours" = the most common time-of-day bucket, not a specific clock
+    // time (one visit at 16:30 must not make 16:30 "his usual").
+    const timeOfDay = mode(recentVisits.map(v => timeOfDayOf(v.startTime)));
+    // A representative clock time inside that bucket (median) — used only to
+    // pre-fill forms (recurring rule), never as the customer's preference.
+    let hourKey: string | null = null;
+    if (timeOfDay) {
+      const mins = recentVisits.filter(v => timeOfDayOf(v.startTime) === timeOfDay)
+        .map(v => { const [h, m] = v.startTime.split(":").map(Number); return h * 60 + m; }).sort((a, b) => a - b);
+      const med = mins[Math.floor(mins.length / 2)];
+      const rounded = Math.round(med / 30) * 30;
+      hourKey = `${String(Math.floor(rounded / 60)).padStart(2, "0")}:${String(rounded % 60).padStart(2, "0")}`;
+    }
     usual = {
       serviceId: svcId,
       serviceName: svcRow.customServiceName || svcRow.service?.name || "",
@@ -98,7 +114,7 @@ export function computeCustomerInsights(rows: InsightAppt[], now = new Date()): 
       staffName: staffRow.staff?.name || "",
       weekday,
       hour: hourKey,
-      timeOfDay: h === null ? null : h < 12 ? "morning" : h < 17 ? "afternoon" : "evening",
+      timeOfDay,
     };
   }
 
@@ -148,7 +164,10 @@ export function usualLine(i: CustomerInsights): string | null {
   const parts: string[] = [];
   if (i.usual.serviceName) parts.push(i.usual.serviceName);
   if (i.usual.staffName) parts.push(`אצל ${i.usual.staffName}`);
-  if (i.usual.weekday !== null && i.usual.hour) parts.push(`בדרך כלל יום ${HEB_WEEKDAYS[i.usual.weekday]} ${i.usual.hour}`);
+  if (i.usual.weekday !== null || i.usual.timeOfDay) {
+    const bits = [i.usual.weekday !== null ? `יום ${HEB_WEEKDAYS[i.usual.weekday]}` : null, i.usual.timeOfDay ? TIME_OF_DAY_LABEL[i.usual.timeOfDay] : null].filter(Boolean);
+    parts.push(`בדרך כלל ${bits.join(", ")}`);
+  }
   if (i.avgIntervalDays) {
     const w = Math.round(i.avgIntervalDays / 7);
     parts.push(w >= 2 && Math.abs(i.avgIntervalDays - w * 7) <= 2 ? `כל ${w} שבועות` : `כל ${i.avgIntervalDays} יום`);
