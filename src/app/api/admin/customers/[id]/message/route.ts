@@ -45,6 +45,7 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
   }
 
   const result = await sendProactiveMessage({
+    sentByStaffId: getRequestSession(req)?.staffId ?? null,
     businessId: customer.businessId,
     customerPhone: customer.phone,
     kind: "manual",

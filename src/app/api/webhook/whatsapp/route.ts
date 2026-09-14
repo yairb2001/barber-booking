@@ -33,7 +33,7 @@ import {
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
-import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
+import { pushChatEvent } from "@/lib/native/chat-push";
 import { sendMessage } from "@/lib/messaging";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
@@ -454,11 +454,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const agentAllowedByTier = tierHas(biz.tier, "aiAgent");
 
   if (!agentConfig?.isEnabled || !agentAllowedByTier) {
-    // Agent is off (or not included in the tier) → a human must reply. Ping the owner.
+    // Agent is off (or not included in the tier) → a human must reply.
     pushToOwner(biz.id, {
       title: `הודעה חדשה מ${senderName || phone}`,
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
+    }).catch(() => {});
+    // Web push by the routing rules: whoever is in the conversation → the
+    // customer's regular barber → everyone with inbox access.
+    pushChatEvent({
+      businessId: biz.id, conversationId: conv.id, phone, event: "reply",
+      payload: { title: `💬 ${senderName || phone}`, body: previewText(text), url: `/admin/chats?phone=${encodeURIComponent(phone)}`, tag: `chat-${conv.id}` },
     }).catch(() => {});
     // Real incident (2026-08-11/12): with no escalatedAt set, these threads look
     // identical to any other resolved chat and never surface a "needs handling"
@@ -503,11 +509,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       actions: [{ action: "reply", title: "ענה" }, { action: "card", title: "כרטיס לקוח" }],
       actionUrls: { reply: chatUrl, card: `/admin/customers?customer=${encodeURIComponent(phone)}` },
     };
-    notifyOwnerWeb(biz.id, "reply", replyPayload).catch(() => {});
-    // Barbers who can see the shared inbox get it too (their own toggle applies).
-    prisma.staff.findMany({ where: { businessId: biz.id, role: "barber", canViewAllChats: true }, select: { id: true } })
-      .then(rows => rows.forEach(r => notifyStaffWeb(r.id, "reply", replyPayload).catch(() => {})))
-      .catch(() => {});
+    // Only the people actually in this conversation (wrote in the last 24h);
+    // nobody yet → the customer's regular barber, else everyone with inbox access.
+    pushChatEvent({ businessId: biz.id, conversationId: conv.id, phone, event: "reply", payload: replyPayload }).catch(() => {});
     return NextResponse.json({ ok: true, skipped: "escalated", saved: true });
   }
 

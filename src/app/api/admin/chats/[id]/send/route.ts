@@ -37,6 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       conversationId: conv.id,
       role: "assistant",
       source: "admin",
+      sentByStaffId: session.staffId ?? null,
       content: message.trim(),
     },
   });

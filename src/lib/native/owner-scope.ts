@@ -49,7 +49,7 @@ function phoneMatches(a: string | null | undefined, b: string | null | undefined
  * the same signal /api/admin/auth/login already uses to resolve "which
  * business does this phone belong to".
  */
-async function resolveOwnerStaffId(businessId: string): Promise<string | null> {
+export async function resolveOwnerStaffId(businessId: string): Promise<string | null> {
   const byRole = await prisma.staff.findFirst({
     where: { businessId, role: "owner", isActive: true },
     select: { id: true },

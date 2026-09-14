@@ -682,7 +682,10 @@ model ConversationMessage {
   content        String   // message text (or JSON for tool calls)
   toolName       String?  @map("tool_name")
   toolCallId     String?  @map("tool_call_id")
-  toolInput      String?  @map("tool_input")   // JSON of the tool's input args (e.g. which staffId was asked)
+  toolInput      String?  @map("tool_input")
+  // Which team member typed a manual (source=admin) reply. Drives who gets the
+  // push when the customer answers: only the people in the conversation.
+  sentByStaffId  String?  @map("sent_by_staff_id")   // JSON of the tool's input args (e.g. which staffId was asked)
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation   Conversation @relation(fields: [conversationId], references: [id])

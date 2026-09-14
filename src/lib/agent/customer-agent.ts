@@ -23,6 +23,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
+import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -1202,20 +1203,16 @@ export async function escalateToHuman(opts: {
     where: { id: conversationId },
     data: { status: "escalated", escalatedAt: new Date() },
   });
-  notifyOwnerWeb(bizId, "escalation", {
-    title: "שיחה הופנתה אליך 👤",
-    body: "לקוח ממתין לטיפול אנושי בצ׳אט",
-    url: "/admin/chats",
-    tag: `escalation-${conversationId}`,
-  }).catch(() => {});
-  if (targetStaff) {
-    notifyStaffWeb(targetStaff.id, "escalation", {
+  // Push: the customer's regular barber only; no regular barber → everyone.
+  pushChatEvent({
+    businessId: bizId, conversationId, phone: callerPhone, event: "escalation",
+    payload: {
       title: "שיחה הופנתה אליך 👤",
-      body: `${custLine} ממתין/ה לטיפול אנושי בצ׳אט`,
-      url: "/admin/chats",
+      body: `${custLine} ממתין/ה לטיפול אנושי בצ׳אט${reason ? ` — ${reason.slice(0, 80)}` : ""}`,
+      url: `/admin/chats?phone=${encodeURIComponent(normalizeIsraeliPhone(callerPhone))}`,
       tag: `escalation-${conversationId}`,
-    }).catch(() => {});
-  }
+    },
+  }).catch(() => {});
 
   return { notified, targetStaffName: targetStaff?.name ?? null };
 }

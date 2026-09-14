@@ -278,6 +278,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           startTime:    appointment.startTime,
         }, business.appointmentCancelledTemplate);
         sendProactiveMessage({
+          sentByStaffId: getRequestSession(req)?.staffId ?? null,
           businessId:    before.businessId,
           appointmentId: appointment.id,
           customerPhone: appointment.customer.phone,
@@ -321,6 +322,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           repeat:       noShowMessage === "repeat",
         }, noShowMessage === "repeat" ? business.appointmentNoShowRepeatTemplate : business.appointmentNoShowTemplate);
         sendProactiveMessage({
+          sentByStaffId: getRequestSession(req)?.staffId ?? null,
           businessId:    before.businessId,
           appointmentId: appointment.id,
           customerPhone: appointment.customer.phone,

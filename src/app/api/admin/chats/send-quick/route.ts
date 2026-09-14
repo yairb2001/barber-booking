@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       role: "assistant",
       source: "admin",
       content: message.trim(),
+      sentByStaffId: session.staffId ?? null,
     },
   });
   await prisma.conversation.update({

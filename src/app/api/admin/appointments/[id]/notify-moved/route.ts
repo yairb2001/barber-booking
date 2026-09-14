@@ -50,6 +50,7 @@ export async function POST(
   }, business.appointmentMovedTemplate);
 
   const result = await sendProactiveMessage({
+    sentByStaffId: getRequestSession(req)?.staffId ?? null,
     businessId: business.id,
     appointmentId: appt.id,
     customerPhone: appt.customer.phone,

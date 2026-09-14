@@ -452,6 +452,8 @@ export async function sendProactiveMessage(opts: {
   kind: MessageKind;
   appointmentId?: string;
   customerName?: string;
+  /** Team member who initiated this (routes the push when the customer replies). */
+  sentByStaffId?: string | null;
   /** Mute the AI agent for 24h after sending. Default true. */
   escalate?: boolean;
 }): Promise<SendResult> {
@@ -483,6 +485,7 @@ export async function sendProactiveMessage(opts: {
       role: "assistant",
       source: "admin",
       content: opts.body,
+      sentByStaffId: opts.sentByStaffId ?? null,
     },
   });
   await prisma.conversation.update({
