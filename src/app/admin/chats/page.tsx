@@ -426,7 +426,7 @@ export default function ChatsPage() {
                 <p className="font-semibold text-slate-900 truncate">{activeThread.customerName || activeThread.phone}</p>
                 <p className="text-xs text-slate-400" dir="ltr">{activeThread.phone}</p>
               </button>
-              <button onClick={() => router.push(`/admin?book=${encodeURIComponent(activeThread.phone)}`)}
+              <button onClick={() => router.push(`/admin?book=${encodeURIComponent(activeThread.phone)}${activeThread.customerName ? `&name=${encodeURIComponent(activeThread.customerName)}` : ""}`)}
                 className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100 transition"
                 title="קבע תור ללקוח הזה — האישור יופיע גם כאן בשיחה">
                 📅 קבע תור

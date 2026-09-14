@@ -35,7 +35,7 @@ type Analytics = {
   totalAppointments:    number;
   periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
   cancellations?:       Cancellations;
-  rhythmNudge?:         { sent: number; booked: number; rate: number };
+  rhythmNudge?:         { sent: number; booked: number; rate: number; by?: { self: number; agent: number; admin: number }; avgHoursToBook?: number | null };
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1398,6 +1398,12 @@ export default function Dashboard() {
               <div>
                 <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
                 <p className="text-sm text-neutral-700 mt-1">נשלחו <b>{a.rhythmNudge.sent}</b> · קבעו תוך 3 ימים <b>{a.rhythmNudge.booked}</b></p>
+                {a.rhythmNudge.by && a.rhythmNudge.booked > 0 && (
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {a.rhythmNudge.by.self} קבעו לבד בקישור · {a.rhythmNudge.by.agent} דרך הסוכן · {a.rhythmNudge.by.admin} אצל ספר
+                    {a.rhythmNudge.avgHoursToBook != null && ` · בממוצע אחרי ${a.rhythmNudge.avgHoursToBook < 48 ? `${a.rhythmNudge.avgHoursToBook} שעות` : `${Math.round(a.rhythmNudge.avgHoursToBook / 24)} ימים`}`}
+                  </p>
+                )}
               </div>
               <span className={`text-2xl font-extrabold ${a.rhythmNudge.rate >= 20 ? "text-teal-700" : "text-neutral-500"}`}>{a.rhythmNudge.rate}%</span>
             </div>

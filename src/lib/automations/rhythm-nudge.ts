@@ -15,7 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { computeCustomerInsights, type CustomerInsights } from "@/lib/customer-insights";
 import { computeQuickSlots } from "@/lib/quick-slots";
 import { buildAvailabilityIndex, type AvailabilityIndex } from "@/lib/availability-index";
-import { enqueueMessage, mirrorToConversation, applyTemplate, firstName } from "@/lib/messaging";
+import { enqueueMessage, applyTemplate, firstName } from "@/lib/messaging";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 
@@ -52,15 +52,15 @@ export function getRhythmSettings(raw: string | null | undefined): RhythmSetting
   } catch { return { ...RHYTHM_DEFAULTS }; }
 }
 
-import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
-export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE };
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
+export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Slot = { date: string; time: string; staffId: string; staffName: string; preferred: boolean };
 export type PlanEntry = {
   customerId: string; name: string; phone: string;
   kind: "rhythm_nudge" | "rhythm_nudge_2";
-  variant: "regular" | "cancelled" | "second" | "new";
+  variant: "regular" | "second" | "new";
   reason: string;           // why today (for logs / dry run)
   daysToDue: number | null;
   staffMode: "regular" | "mixed";
@@ -172,7 +172,7 @@ function freeInWindow(index: AvailabilityIndex, date: string, staffId: string | 
 export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean; onlyCustomerIds?: string[]; businessId?: string; force?: boolean } = {}): Promise<RunResult[]> {
   const biz = await prisma.business.findMany({
     where: opts.businessId ? { id: opts.businessId } : {},
-    select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeCancelledTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeNewTemplate: true },
+    select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeNewTemplate: true },
   });
   const results: RunResult[] = [];
   const { date: todayISO } = getBusinessNow();
@@ -273,10 +273,9 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
           if (free > cfg.fillThreshold) { skip("not_yet"); continue; }
           reason = `due in ${daysToDue}d but only ${free} free in window`;
         } else { skip(daysToDue > cfg.earlyWindowDays ? "not_yet" : "past_window"); continue; }
-        // Cancelled and never rebooked?
-        const lastAny = [...c.appointments].sort((a, b) => b.date.getTime() - a.date.getTime())[0];
+        // A customer who cancelled and never rebooked gets the SAME regular
+        // message (owner's call) — the days in the offer simply differ.
         if (isNew) variant = "new";
-        else if (lastAny && lastAny.status.startsWith("cancelled") && lastAny.date > lastVisitDate) variant = "cancelled";
       }
 
       const anchorISO = daysToDue > 0 ? dueISO : todayISO;
@@ -295,7 +294,6 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         booking_link: `${baseUrl}${b.slug ? `/${b.slug}` : ""}/book`,
       };
       const tmpl = variant === "second" ? (b.rhythmNudgeSecondTemplate || DEFAULT_RHYTHM_SECOND_TEMPLATE)
-        : variant === "cancelled" ? (b.rhythmNudgeCancelledTemplate || DEFAULT_RHYTHM_CANCELLED_TEMPLATE)
         : variant === "new" ? (b.rhythmNudgeNewTemplate || DEFAULT_RHYTHM_NEW_TEMPLATE)
         : (b.rhythmNudgeTemplate || DEFAULT_RHYTHM_TEMPLATE);
       const body = applyTemplate(tmpl, vars);
@@ -307,8 +305,9 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
     res.planned.sort((a, b) => (a.daysToDue ?? 0) - (b.daysToDue ?? 0));
     if (!opts.dryRun) {
       for (const p of res.planned) {
+        // The chat mirror happens in the drip queue at the moment of delivery,
+        // so the thread shows the real send time (1/min), not the plan time.
         await enqueueMessage({ businessId: b.id, customerPhone: p.phone, kind: p.kind, body: p.body, scheduledFor: now });
-        await mirrorToConversation(b.id, p.phone, p.body);
       }
     }
     results.push(res);

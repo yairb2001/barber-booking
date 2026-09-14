@@ -939,12 +939,14 @@ function FindCustomerPopover({ onPick, onClose }: {
 }
 
 // ── New Appointment Modal ─────────────────────────────────────────────────────
-function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved, initialCustomer = null, mirrorToChat = false, quickStart = true }:
+function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved, initialCustomer = null, initialNewCustomer = null, mirrorToChat = false, quickStart = true }:
   { staff: Staff | null; allStaff: Staff[]; services: Service[]; date: string; time: string; onClose: () => void; onSaved: () => void;
     /** false → open the full form (the "+ תור" header button: no slot chosen yet). */
     quickStart?: boolean;
     /** Pre-selected customer (booking started from the chat screen). */
     initialCustomer?: Customer | null;
+    /** Unknown phone from the chat: open in "new customer" mode with these values. */
+    initialNewCustomer?: { name: string; phone: string } | null;
     /** Also write the confirmation into the customer's chat thread. */
     mirrorToChat?: boolean;
   }
@@ -961,7 +963,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
   // Ad-hoc "temporary service" (שירות זמני): free-text name + price + duration
   // the barber types on the fly instead of picking a predefined service.
   const [customSvc, setCustomSvc] = useState({ name: "", price: "", duration: "30" });
-  const [customerMode, setCustomerMode] = useState<"search" | "new">("search");
+  const [customerMode, setCustomerMode] = useState<"search" | "new">(initialNewCustomer ? "new" : "search");
   const [customerQuery, setCustomerQuery] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   // Per-staff services (StaffService): the EXACT services the selected barber
@@ -969,7 +971,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
   // (fall back to the global list). Reloaded whenever the chosen barber changes.
   const [staffServices, setStaffServices] = useState<Service[] | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(initialCustomer);
-  const [newCustomer, setNewCustomer] = useState({ name: "", phone: "" });
+  const [newCustomer, setNewCustomer] = useState({ name: initialNewCustomer?.name ?? "", phone: initialNewCustomer?.phone ?? "" });
   // Referral tracking — required when creating a NEW customer (parity with /book/confirm)
   const [referralSource, setReferralSource] = useState("");
   const [referrerPhone, setReferrerPhone] = useState("");
@@ -4400,6 +4402,9 @@ export default function AdminCalendar() {
   // /admin?book=<phone> (from the chat screen): pick a slot, then book for
   // this customer with the confirmation mirrored into the chat.
   const [bookFor, setBookFor] = useState<Customer | null>(null);
+  // Unknown phone from the chat → open the form as a NEW customer, name/phone
+  // pre-filled from the conversation (WhatsApp display name), still editable.
+  const [bookNew, setBookNew] = useState<{ name: string; phone: string } | null>(null);
   const searchParams = useSearchParams();
   const bookParam = searchParams?.get("book") ?? null;
   const dateParam = searchParams?.get("date") ?? null;
@@ -4415,6 +4420,7 @@ export default function AdminCalendar() {
         const norm = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
         const c = Array.isArray(d) ? d.find(x => norm(x.phone) === norm(phone)) || d[0] : null;
         if (c) setBookFor(c);
+        else setBookNew({ name: sp.get("name") || "", phone: phone.startsWith("972") ? "0" + phone.slice(3) : phone });
         setNearestOpen(true);
       })
       .catch(() => setNearestOpen(true));
@@ -6454,9 +6460,9 @@ export default function AdminCalendar() {
         <NearestSlotsPopover
           staffFilter={(view === "week" || view === "3day") ? (weekBarber || "") : ""}
           allStaff={allStaff}
-          onClose={() => { setNearestOpen(false); setBookFor(null); }}
+          onClose={() => { setNearestOpen(false); setBookFor(null); setBookNew(null); }}
           onPick={r => { setNearestOpen(false); setNewAppt({ staffId: r.staffId, date: r.date, time: r.time }); }}
-          forName={bookFor?.name}
+          forName={bookFor?.name || bookNew?.name || undefined}
         />
       )}
       {findOpen && (
@@ -6517,9 +6523,9 @@ export default function AdminCalendar() {
           staff={allStaff.find(s => s.id === newAppt.staffId) || null}
           allStaff={allStaff} services={services}
           date={newAppt.date} time={newAppt.time}
-          onClose={() => { setNewAppt(null); setBookFor(null); }} onSaved={loadAppointments}
-          initialCustomer={bookFor} mirrorToChat={!!bookFor}
-          quickStart={newAppt.quick !== false}
+          onClose={() => { setNewAppt(null); setBookFor(null); setBookNew(null); }} onSaved={loadAppointments}
+          initialCustomer={bookFor} initialNewCustomer={bookNew} mirrorToChat={!!bookFor || !!bookNew}
+          quickStart={newAppt.quick !== false && !bookNew}
         />
       )}
       {addBreak && (

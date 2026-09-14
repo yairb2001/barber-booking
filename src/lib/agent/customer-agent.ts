@@ -690,15 +690,19 @@ export async function execTool(
         // Count name words — a "full name" is first + last (≥ 2 words).
         const nameWords = (s: string | null | undefined) => (s ?? "").trim().split(/\s+/).filter(Boolean).length;
 
-        if (!customer) {
-          // NEW customer: never book without a full name. If the model only has
-          // a first name, refuse and tell it to ask for first + last, THEN retry.
+        // A record whose name is a phone number (created when the agent noted
+        // waitlist interest) or a single word is NOT a named customer — the
+        // full-name rule applies to it exactly like to a brand-new one.
+        const hasRealName = !!customer && nameWords(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
+        if (!customer || !hasRealName) {
+          // NEW / unnamed customer: never book without a full name. If the model
+          // only has a first name, refuse and tell it to ask for first + last.
           if (nameWords(customerName) < 2) {
             return "שגיאה: זה לקוח חדש שאינו רשום במערכת, ואסור לקבוע תור בלי שם מלא. בקש מהלקוח בנימוס את שמו המלא — שם פרטי ושם משפחה — ורק אחרי שקיבלת את שניהם קרא שוב ל-book_appointment עם השם המלא. אל תקבע עם שם פרטי בלבד ואל תעביר לאדם בגלל זה.";
           }
-          customer = await prisma.customer.create({
-            data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" },
-          });
+          customer = customer
+            ? await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } })
+            : await prisma.customer.create({ data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" } });
         } else if (nameWords(customerName) > nameWords(customer.name)) {
           // EXISTING customer: the name on file is the source of truth. Only
           // upgrade it when the new name is MORE complete (more words) — e.g.
@@ -1014,13 +1018,14 @@ export async function execTool(
         let customer = await prisma.customer.findFirst({
           where: { businessId: bizId, OR: [{ phone }, { phone: localPhone }] },
         });
-        if (!customer) {
+        const hasRealName = !!customer && nameWords(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
+        if (!customer || !hasRealName) {
           if (nameWords(customerName) < 2) {
             return "שגיאה: זה לקוח חדש שאינו רשום. בקש בנימוס את שמו המלא (שם פרטי ושם משפחה), ורק אחרי שקיבלת קרא שוב ל-join_waitlist עם customerName.";
           }
-          customer = await prisma.customer.create({
-            data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" },
-          });
+          customer = customer
+            ? await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } })
+            : await prisma.customer.create({ data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" } });
         } else if (nameWords(customerName) > nameWords(customer.name)) {
           customer = await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } });
         }

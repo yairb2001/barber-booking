@@ -30,7 +30,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getBusinessNow } from "@/lib/utils";
-import { deliverMessageLog } from "@/lib/messaging";
+import { deliverMessageLog, mirrorToConversation } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
@@ -325,6 +325,10 @@ export async function GET(req: NextRequest) {
     try {
       const result = await deliverMessageLog(row, business);
       if (result.ok) sent++; else failed++;
+      // Proactive nudges show up in the chat thread at the moment they go out.
+      if (result.ok && row.kind.startsWith("rhythm_nudge")) {
+        await mirrorToConversation(row.businessId, row.customerPhone, row.body).catch(() => {});
+      }
     } catch (err) {
       console.error("[drip-queue] send failed:", err);
       await prisma.messageLog.update({

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_CANCELLED_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
+import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { normalizeIsraeliPhone } from "./phone";
@@ -856,17 +856,6 @@ export const TEMPLATE_DEFS = {
       { key: "name",     label: "שם הלקוח" },
       { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
       { key: "staff",    label: "שם הספר הקבוע" },
-      { key: "options",  label: "השעות המוצעות" },
-    ],
-  },
-  rhythm_nudge_cancelled: {
-    label: "הגיע הזמן לתור — ביטל ולא קבע",
-    description: "אותו מנגנון, ללקוח שהתור האחרון שלו בוטל ולא נקבע חדש.",
-    field: "rhythmNudgeCancelledTemplate" as const,
-    default: DEFAULT_RHYTHM_CANCELLED_TEMPLATE,
-    variables: [
-      { key: "name",     label: "שם הלקוח" },
-      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
       { key: "options",  label: "השעות המוצעות" },
     ],
   },

@@ -162,6 +162,8 @@ export async function GET(req: NextRequest) {
     select: { customerPhone: true, createdAt: true },
   });
   let nudgeBooked = 0;
+  const nudgeBy = { self: 0, agent: 0, admin: 0 };
+  const nudgeHours: number[] = [];
   if (nudgeLogs.length) {
     const norm = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
     const phones = Array.from(new Set(nudgeLogs.map(l => norm(l.customerPhone))));
@@ -169,15 +171,25 @@ export async function GET(req: NextRequest) {
     const idByPhone = new Map(custs.map(c => [norm(c.phone), c.id]));
     const created = await prisma.appointment.findMany({
       where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + 3 * 86_400_000) }, status: { in: ["pending", "confirmed", "completed"] } },
-      select: { customerId: true, createdAt: true },
+      select: { customerId: true, createdAt: true, source: true },
     });
     const seen = new Set<string>();
     for (const l of nudgeLogs) {
       const cid = idByPhone.get(norm(l.customerPhone)); if (!cid || seen.has(cid)) continue;
-      if (created.some(a => a.customerId === cid && a.createdAt >= l.createdAt && a.createdAt.getTime() - l.createdAt.getTime() <= 3 * 86_400_000)) { nudgeBooked++; seen.add(cid); }
+      const hit = created.find(a => a.customerId === cid && a.createdAt >= l.createdAt && a.createdAt.getTime() - l.createdAt.getTime() <= 3 * 86_400_000);
+      if (hit) {
+        nudgeBooked++; seen.add(cid);
+        // customer = booked alone via the link · agent = replied and the agent booked · admin = a barber booked
+        if (hit.source === "agent") nudgeBy.agent++; else if (hit.source === "admin" || hit.source === "recurring") nudgeBy.admin++; else nudgeBy.self++;
+        nudgeHours.push((hit.createdAt.getTime() - l.createdAt.getTime()) / 3_600_000);
+      }
     }
   }
-  const rhythmNudge = { sent: nudgeLogs.length, booked: nudgeBooked, rate: nudgeLogs.length ? Math.round((nudgeBooked / nudgeLogs.length) * 100) : 0 };
+  const rhythmNudge = {
+    sent: nudgeLogs.length, booked: nudgeBooked, rate: nudgeLogs.length ? Math.round((nudgeBooked / nudgeLogs.length) * 100) : 0,
+    by: nudgeBy,
+    avgHoursToBook: nudgeHours.length ? Math.round(nudgeHours.reduce((s, h) => s + h, 0) / nudgeHours.length) : null,
+  };
 
   const cancellations = {
     total: cancelled.length,
