@@ -15,7 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { computeCustomerInsights, type CustomerInsights } from "@/lib/customer-insights";
 import { computeQuickSlots } from "@/lib/quick-slots";
 import { buildAvailabilityIndex, type AvailabilityIndex } from "@/lib/availability-index";
-import { enqueueMessage, applyTemplate, firstName } from "@/lib/messaging";
+import { enqueueMessage, applyTemplate, firstName, staffDisplayName } from "@/lib/messaging";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 
@@ -92,8 +92,8 @@ function dayLabel(iso: string, todayISO: string): string {
   return `${name} ${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }
 /** "יום רביעי 13:00, יום רביעי 15:30 או יום חמישי 11:00" (+ " אצל X" per slot when mixed). */
-function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean): string {
-  const parts = slots.map(s => `${dayLabel(s.date, todayISO)} ${s.time}${withStaff ? ` אצל ${firstName(s.staffName)}` : ""}`);
+function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean, teamNames: string[]): string {
+  const parts = slots.map(s => `${dayLabel(s.date, todayISO)} ${s.time}${withStaff ? ` אצל ${staffDisplayName(s.staffName, teamNames)}` : ""}`);
   if (parts.length <= 1) return parts.join("");
   return parts.slice(0, -1).join(", ") + " או " + parts[parts.length - 1];
 }
@@ -294,11 +294,12 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       }
       const mixed = !regularStaffId;
       const staffName = regularStaffId ? (slots[0]?.staffName || topRow?.staff?.name || "") : "";
+      const teamNames = index.staff.map(s => s.name);
       const vars = {
         name: firstName(c.name),
-        staff: firstName(staffName),
-        at_staff: mixed ? "" : `אצל ${firstName(staffName)} `,
-        options: formatOptions(slots, todayISO, mixed || variant === "new"),
+        staff: staffDisplayName(staffName, teamNames),
+        at_staff: mixed ? "" : `אצל ${staffDisplayName(staffName, teamNames)} `,
+        options: formatOptions(slots, todayISO, mixed || variant === "new", teamNames),
         booking_link: `${baseUrl}${b.slug ? `/${b.slug}` : ""}/book`,
       };
       const tmpl = variant === "second" ? (b.rhythmNudgeSecondTemplate || DEFAULT_RHYTHM_SECOND_TEMPLATE)

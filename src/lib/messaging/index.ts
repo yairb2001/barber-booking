@@ -1207,6 +1207,16 @@ export function noShowText(
 }
 
 /**
+ * How to name a barber in a customer-facing message: first name — unless
+ * another team member shares it, then the full name ("יאיר בוחבוט" / "יאיר הרוש").
+ */
+export function staffDisplayName(name: string, teamNames: string[]): string {
+  const first = firstName(name);
+  const clash = teamNames.some(n => n.trim() !== name.trim() && firstName(n) === first);
+  return clash ? name.trim() : first;
+}
+
+/**
  * Record an outgoing system message in the customer's WhatsApp conversation
  * thread (ConversationMessage) so it shows up in the admin inbox and in the
  * agent's context. sendMessage()/enqueueMessage() only write MessageLog —
