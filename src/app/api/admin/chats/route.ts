@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
@@ -74,7 +75,24 @@ export async function GET(req: NextRequest) {
   }
 
   const now = Date.now();
-  const data = await Promise.all(convs.map(async (c) => {
+  // Unread counts in ONE query (was one count per conversation — ~300 queries
+  // per page load). Only conversations a human is handling can show unread.
+  const humanIds = convs
+    .filter(c => !agentGloballyOn || (!!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS))
+    .map(c => c.id);
+  const unreadById = new Map<string, number>();
+  if (humanIds.length) {
+    const rows = await prisma.$queryRaw<{ conversation_id: string; n: bigint }[]>`
+      SELECT m.conversation_id, COUNT(*)::bigint AS n
+      FROM conversation_messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      WHERE m.conversation_id IN (${Prisma.join(humanIds)})
+        AND m.role = 'user'
+        AND (c.last_read_at IS NULL OR m.created_at > c.last_read_at)
+      GROUP BY m.conversation_id`;
+    for (const r of rows) unreadById.set(r.conversation_id, Number(r.n));
+  }
+  const data = convs.map((c) => {
     const last = c.messages[0];
     const escalated = !!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS;
 
@@ -86,14 +104,7 @@ export async function GET(req: NextRequest) {
 
     // Unread = number of "user" messages newer than lastReadAt — but ONLY for
     // conversations that need a human. Agent-handled chats never show a red dot.
-    const rawUnread = await prisma.conversationMessage.count({
-      where: {
-        conversationId: c.id,
-        role: "user",
-        ...(c.lastReadAt ? { createdAt: { gt: c.lastReadAt } } : {}),
-      },
-    });
-    const unreadCount = needsHuman ? rawUnread : 0;
+    const unreadCount = needsHuman ? (unreadById.get(c.id) ?? 0) : 0;
 
     // "Needs handling" = it's a human-handled conversation AND the LAST message
     // is from the customer (role "user") — i.e. the customer spoke last and
@@ -139,7 +150,7 @@ export async function GET(req: NextRequest) {
       lastMessageRole: last?.role ?? null,
       unreadCount,
     };
-  }));
+  });
 
   // Ordering for the two-section UI:
   //   1. Human-handled conversations (escalated / agent off) first — the top
