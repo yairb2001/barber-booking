@@ -51,7 +51,8 @@ export type MessageKind =
   | "demo_sales_pitch"      // personalized "want this for your business?" pitch after demo interaction
   | "demo_lead_captured"    // dedupe marker once a demo visitor's contact info was captured as a lead
   | "rhythm_nudge"          // "הגיע הזמן לתור": first nudge when the customer's rhythm says it's time and they have no appointment
-  | "rhythm_nudge_2";       // second (and last) nudge 5 days later
+  | "rhythm_nudge_2"        // second (and last) nudge 5 days later
+  | "rhythm_nudge_new";     // the one-off nudge to a single-visit customer (kept apart so the dashboard can split new vs regular)
 
 export type MessageStatus =
   | "scheduled" // enqueued in the drip queue, waiting for its scheduledFor time

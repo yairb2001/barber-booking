@@ -156,39 +156,90 @@ export async function GET(req: NextRequest) {
     }
     byStaffCancel.set(a.staffId, st);
   }
-  // ── "הגיע הזמן לתור" — sent in period, booked within 72h of the message ──
+  // ── "הגיע הזמן לתור" — split into regulars (2+ visits at send time) and
+  // new customers (single visit → kind rhythm_nudge_new). Per customer, not per
+  // message: a regular may get two messages. "Booked" = an appointment created
+  // within 3 days of a message (any source), cancelled ones excluded.
   const nudgeLogs = await prisma.messageLog.findMany({
-    where: { businessId: bizId, kind: { in: ["rhythm_nudge", "rhythm_nudge_2"] }, createdAt: { gte: fromDate, lte: toDate }, status: { not: "failed" } },
-    select: { customerPhone: true, createdAt: true },
+    where: { businessId: bizId, kind: { in: ["rhythm_nudge", "rhythm_nudge_2", "rhythm_nudge_new"] }, createdAt: { gte: fromDate, lte: toDate }, status: { not: "failed" } },
+    select: { customerPhone: true, createdAt: true, kind: true },
+    orderBy: { createdAt: "asc" },
   });
-  let nudgeBooked = 0;
-  const nudgeBy = { self: 0, agent: 0, admin: 0 };
-  const nudgeHours: number[] = [];
+  type NudgeGroup = {
+    customers: number; messages: number; booked: number; rate: number;
+    by: { self: number; agent: number; admin: number }; avgHoursToBook: number | null; revenue: number;
+    repliedNoBook: number;
+    afterFirst?: number; afterSecond?: number;   // regulars
+    bookedLater?: number; secondVisit?: number;  // new customers
+  };
+  const emptyGroup = (): NudgeGroup => ({ customers: 0, messages: 0, booked: 0, rate: 0, by: { self: 0, agent: 0, admin: 0 }, avgHoursToBook: null, revenue: 0, repliedNoBook: 0 });
+  const nudgeRegular = { ...emptyGroup(), afterFirst: 0, afterSecond: 0 };
+  const nudgeNew = { ...emptyGroup(), bookedLater: 0, secondVisit: 0 };
+  const hoursOf = { regular: [] as number[], new: [] as number[] };
   if (nudgeLogs.length) {
     const norm = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
+    const H3D = 3 * 86_400_000, H30D = 30 * 86_400_000;
     const phones = Array.from(new Set(nudgeLogs.map(l => norm(l.customerPhone))));
-    const custs = await prisma.customer.findMany({ where: { businessId: bizId, OR: [{ phone: { in: phones } }, { phone: { in: phones.map(p => "0" + p.slice(3)) } }] }, select: { id: true, phone: true } });
+    const variants = phones.flatMap(p => [p, "0" + p.slice(3)]);
+    const [custs, convs] = await Promise.all([
+      prisma.customer.findMany({ where: { businessId: bizId, phone: { in: variants } }, select: { id: true, phone: true } }),
+      prisma.conversation.findMany({ where: { businessId: bizId, phone: { in: variants } }, select: { id: true, phone: true } }),
+    ]);
     const idByPhone = new Map(custs.map(c => [norm(c.phone), c.id]));
-    const created = await prisma.appointment.findMany({
-      where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + 3 * 86_400_000) }, status: { in: ["pending", "confirmed", "completed"] } },
-      select: { customerId: true, createdAt: true, source: true },
-    });
-    const seen = new Set<string>();
+    const convByPhone = new Map(convs.map(c => [norm(c.phone), c.id]));
+    const [created, inbound] = await Promise.all([
+      prisma.appointment.findMany({
+        where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + H30D) }, status: { in: ["pending", "confirmed", "completed"] } },
+        select: { customerId: true, createdAt: true, source: true, price: true, status: true },
+      }),
+      convs.length ? prisma.conversationMessage.findMany({
+        where: { conversationId: { in: convs.map(c => c.id) }, role: "user", createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + H3D) } },
+        select: { conversationId: true, createdAt: true },
+      }) : Promise.resolve([] as { conversationId: string; createdAt: Date }[]),
+    ]);
+    // Group messages per customer; the customer's group is decided by the kind of their first message.
+    const perCustomer = new Map<string, { phone: string; logs: typeof nudgeLogs }>();
     for (const l of nudgeLogs) {
-      const cid = idByPhone.get(norm(l.customerPhone)); if (!cid || seen.has(cid)) continue;
-      const hit = created.find(a => a.customerId === cid && a.createdAt >= l.createdAt && a.createdAt.getTime() - l.createdAt.getTime() <= 3 * 86_400_000);
-      if (hit) {
-        nudgeBooked++; seen.add(cid);
-        // customer = booked alone via the link · agent = replied and the agent booked · admin = a barber booked
-        if (hit.source === "agent") nudgeBy.agent++; else if (hit.source === "admin" || hit.source === "recurring") nudgeBy.admin++; else nudgeBy.self++;
-        nudgeHours.push((hit.createdAt.getTime() - l.createdAt.getTime()) / 3_600_000);
-      }
+      const cid = idByPhone.get(norm(l.customerPhone)); if (!cid) continue;
+      const e = perCustomer.get(cid) || { phone: norm(l.customerPhone), logs: [] }; e.logs.push(l); perCustomer.set(cid, e);
     }
+    for (const [cid, { phone, logs }] of Array.from(perCustomer.entries())) {
+      const isNew = logs[0].kind === "rhythm_nudge_new";
+      const g = isNew ? nudgeNew : nudgeRegular;
+      g.customers++; g.messages += logs.length;
+      const first = logs[0].createdAt;
+      const mine = created.filter(a => a.customerId === cid && a.createdAt >= first).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      // Booked within 3 days of ANY of their messages → attributed to the last message before the booking.
+      let hit: typeof mine[number] | null = null, afterMsg: typeof logs[number] | null = null;
+      for (const a of mine) {
+        const m = [...logs].reverse().find(l => a.createdAt >= l.createdAt && a.createdAt.getTime() - l.createdAt.getTime() <= H3D);
+        if (m) { hit = a; afterMsg = m; break; }
+      }
+      if (hit && afterMsg) {
+        g.booked++; g.revenue += hit.price;
+        if (hit.source === "agent") g.by.agent++; else if (hit.source === "admin" || hit.source === "recurring") g.by.admin++; else g.by.self++;
+        (isNew ? hoursOf.new : hoursOf.regular).push((hit.createdAt.getTime() - afterMsg.createdAt.getTime()) / 3_600_000);
+        if (!isNew) { if (afterMsg.kind === "rhythm_nudge_2") nudgeRegular.afterSecond++; else nudgeRegular.afterFirst++; }
+      } else {
+        const convId = convByPhone.get(phone);
+        const replied = !!convId && inbound.some(m => m.conversationId === convId && logs.some(l => m.createdAt >= l.createdAt && m.createdAt.getTime() - l.createdAt.getTime() <= H3D));
+        if (replied) g.repliedNoBook++;
+        if (isNew && mine.some(a => a.createdAt.getTime() - first.getTime() <= H30D)) nudgeNew.bookedLater++;
+      }
+      if (isNew && mine.some(a => a.status === "completed")) nudgeNew.secondVisit++;
+    }
+    for (const g of [nudgeRegular, nudgeNew]) g.rate = g.customers ? Math.round((g.booked / g.customers) * 100) : 0;
+    const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((s, h) => s + h, 0) / xs.length) : null);
+    nudgeRegular.avgHoursToBook = avg(hoursOf.regular); nudgeNew.avgHoursToBook = avg(hoursOf.new);
+    nudgeRegular.revenue = Math.round(nudgeRegular.revenue); nudgeNew.revenue = Math.round(nudgeNew.revenue);
   }
   const rhythmNudge = {
-    sent: nudgeLogs.length, booked: nudgeBooked, rate: nudgeLogs.length ? Math.round((nudgeBooked / nudgeLogs.length) * 100) : 0,
-    by: nudgeBy,
-    avgHoursToBook: nudgeHours.length ? Math.round(nudgeHours.reduce((s, h) => s + h, 0) / nudgeHours.length) : null,
+    // Legacy totals (kept for anything still reading them)
+    sent: nudgeLogs.length, booked: nudgeRegular.booked + nudgeNew.booked,
+    rate: nudgeLogs.length ? Math.round(((nudgeRegular.booked + nudgeNew.booked) / (nudgeRegular.customers + nudgeNew.customers || 1)) * 100) : 0,
+    by: { self: nudgeRegular.by.self + nudgeNew.by.self, agent: nudgeRegular.by.agent + nudgeNew.by.agent, admin: nudgeRegular.by.admin + nudgeNew.by.admin },
+    avgHoursToBook: null as number | null,
+    regular: nudgeRegular, new: nudgeNew,
   };
 
   const cancellations = {

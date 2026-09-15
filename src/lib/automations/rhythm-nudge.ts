@@ -59,7 +59,7 @@ export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM
 type Slot = { date: string; time: string; staffId: string; staffName: string; preferred: boolean };
 export type PlanEntry = {
   customerId: string; name: string; phone: string;
-  kind: "rhythm_nudge" | "rhythm_nudge_2";
+  kind: "rhythm_nudge" | "rhythm_nudge_2" | "rhythm_nudge_new";
   variant: "regular" | "second" | "second_taken" | "new";
   reason: string;           // why today (for logs / dry run)
   daysToDue: number | null;
@@ -70,8 +70,8 @@ export type PlanEntry = {
 export type RunResult = { businessId: string; scanned: number; planned: PlanEntry[]; skipped: Record<string, number> };
 
 const HEB_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
-const NUDGE_KINDS = ["rhythm_nudge", "rhythm_nudge_2"];
-const AUTOMATION_KINDS = ["reengage", "post_first_visit", "post_every_visit", "agent_followup", "rhythm_nudge", "rhythm_nudge_2"];
+const NUDGE_KINDS = ["rhythm_nudge", "rhythm_nudge_2", "rhythm_nudge_new"];
+const AUTOMATION_KINDS = ["reengage", "post_first_visit", "post_every_visit", "agent_followup", ...NUDGE_KINDS];
 const DAY = 86_400_000;
 const REGULAR_SHARE = 0.7;       // ≥70% of recent visits with one barber → "his barber"
 const SECOND_AFTER_DAYS = 5;
@@ -292,7 +292,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         } else { skip(daysToDue > cfg.earlyWindowDays ? "not_yet" : "past_window"); continue; }
         // A customer who cancelled and never rebooked gets the SAME regular
         // message (owner's call) — the days in the offer simply differ.
-        if (isNew) variant = "new";
+        if (isNew) { variant = "new"; kind = "rhythm_nudge_new"; }
       }
 
       const anchorISO = daysToDue > 0 ? dueISO : todayISO;

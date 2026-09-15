@@ -30,12 +30,83 @@ type Cancellations = {
   topCancellers: { customerId: string; name: string; count: number }[];
 };
 
+type NudgeGroup = {
+  customers: number; messages: number; booked: number; rate: number;
+  by: { self: number; agent: number; admin: number }; avgHoursToBook: number | null; revenue: number; repliedNoBook: number;
+  afterFirst?: number; afterSecond?: number; bookedLater?: number; secondVisit?: number;
+};
+
+/** "הגיע הזמן לתור" — two tabs: regulars (2+ visits) and new customers (one visit). Two different stories, two different numbers. */
+function RhythmNudgeCard({ regular, nu, monthLabel }: { regular: NudgeGroup; nu: NudgeGroup; monthLabel: string }) {
+  const [tab, setTab] = useState<"regular" | "new">(regular.customers || !nu.customers ? "regular" : "new");
+  const g = tab === "regular" ? regular : nu;
+  const pct = (n: number) => (g.booked ? Math.round((n / g.booked) * 100) : 0);
+  const hours = g.avgHoursToBook;
+  const speed = hours == null ? null : hours < 1 ? "תוך פחות משעה" : hours < 48 ? `תוך ${hours} שעות בממוצע` : `תוך ${Math.round(hours / 24)} ימים בממוצע`;
+  const rateColor = (r: number) => (r >= 20 ? "text-teal-700" : r >= 10 ? "text-neutral-800" : "text-amber-600");
+  const Tab = ({ id, label, grp }: { id: "regular" | "new"; label: string; grp: NudgeGroup }) => (
+    <button onClick={() => setTab(id)} disabled={!grp.customers}
+      className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${tab === id ? "bg-white shadow-sm text-neutral-900" : "text-neutral-500"}`}>
+      {label} <span className={`${tab === id ? rateColor(grp.rate) : "text-neutral-400"} font-extrabold`}>{grp.customers ? `${grp.rate}%` : "—"}</span>
+    </button>
+  );
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <div className="flex items-baseline justify-between mb-2">
+        <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
+        <span className={`text-2xl font-extrabold ${rateColor(g.rate)}`}>{g.rate}%</span>
+      </div>
+      <div className="flex bg-neutral-100 rounded-xl p-1 gap-1 mb-3">
+        <Tab id="regular" label="קבועים 2+" grp={regular} />
+        <Tab id="new" label="חדשים" grp={nu} />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-center mb-3">
+        <div className="bg-neutral-50 rounded-xl py-2">
+          <p className="text-lg font-bold text-neutral-800">{g.customers}</p>
+          <p className="text-[10px] text-neutral-500">קיבלו הודעה{g.messages > g.customers ? <span className="text-neutral-400"> · {g.messages} הודעות</span> : null}</p>
+        </div>
+        <div className="bg-teal-50 rounded-xl py-2">
+          <p className="text-lg font-bold text-teal-700">{g.booked}</p>
+          <p className="text-[10px] text-teal-700">קבעו תור תוך 3 ימים</p>
+        </div>
+        <div className="bg-neutral-50 rounded-xl py-2">
+          <p className="text-lg font-bold text-neutral-800">{Math.max(0, g.customers - g.booked)}</p>
+          <p className="text-[10px] text-neutral-500">עדיין לא קבעו</p>
+        </div>
+      </div>
+      {g.booked > 0 && (
+        <>
+          <p className="text-[10px] text-neutral-400 mb-1">איך הם קבעו</p>
+          <div className="flex h-2 rounded-full overflow-hidden bg-neutral-100 mb-1.5">
+            <div className="bg-teal-500" style={{ width: `${pct(g.by.self)}%` }} title="לבד, דרך הקישור" />
+            <div className="bg-sky-400" style={{ width: `${pct(g.by.agent)}%` }} title="דרך הסוכן" />
+            <div className="bg-neutral-400" style={{ width: `${pct(g.by.admin)}%` }} title="אצל ספר" />
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-600 mb-2">
+            <span><span className="inline-block w-2 h-2 rounded-full bg-teal-500 ml-1 align-middle" />לבד דרך הקישור <b>{g.by.self}</b></span>
+            <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 ml-1 align-middle" />ענו לסוכן <b>{g.by.agent}</b></span>
+            <span><span className="inline-block w-2 h-2 rounded-full bg-neutral-400 ml-1 align-middle" />קבע ספר <b>{g.by.admin}</b></span>
+            {speed && <span className="text-neutral-400 mr-auto">{speed}</span>}
+          </div>
+        </>
+      )}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-500 border-t border-neutral-100 pt-2">
+        {tab === "regular" && (g.afterSecond ?? 0) > 0 && <span>אחרי הודעה 1: <b className="text-neutral-700">{g.afterFirst ?? 0}</b> · אחרי הודעה 2: <b className="text-neutral-700">{g.afterSecond}</b></span>}
+        {tab === "new" && <span>קבעו בסוף (עד 30 יום): <b className="text-neutral-700">{g.bookedLater ?? 0}</b></span>}
+        {tab === "new" && <span>הגיעו לביקור שני: <b className="text-neutral-700">{g.secondVisit ?? 0}</b></span>}
+        <span>ענו ולא קבעו: <b className="text-neutral-700">{g.repliedNoBook}</b></span>
+        {g.revenue > 0 && <span className="mr-auto">הכנסה מהתורים: <b className="text-teal-700">₪{g.revenue.toLocaleString()}</b></span>}
+      </div>
+    </div>
+  );
+}
+
 type Analytics = {
   totalRevenue:         number;
   totalAppointments:    number;
   periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
   cancellations?:       Cancellations;
-  rhythmNudge?:         { sent: number; booked: number; rate: number; by?: { self: number; agent: number; admin: number }; avgHoursToBook?: number | null };
+  rhythmNudge?:         { sent: number; booked: number; rate: number; by?: { self: number; agent: number; admin: number }; avgHoursToBook?: number | null; regular?: NudgeGroup; new?: NudgeGroup };
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1393,52 +1464,9 @@ export default function Dashboard() {
           </div>
 
           {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
-          {!isFutureMonth && a.rhythmNudge && a.rhythmNudge.sent > 0 && (() => {
-            const r = a.rhythmNudge;
-            const by = r.by ?? { self: 0, agent: 0, admin: 0 };
-            const waiting = Math.max(0, r.sent - r.booked);
-            const pct = (n: number) => (r.booked ? Math.round((n / r.booked) * 100) : 0);
-            const hours = r.avgHoursToBook;
-            const speed = hours == null ? null : hours < 1 ? "תוך פחות משעה" : hours < 48 ? `תוך ${hours} שעות בממוצע` : `תוך ${Math.round(hours / 24)} ימים בממוצע`;
-            return (
-              <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-                <div className="flex items-baseline justify-between mb-3">
-                  <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">✂️ הגיע הזמן לתור — {monthLabel}</h2>
-                  <span className={`text-2xl font-extrabold ${r.rate >= 20 ? "text-teal-700" : r.rate >= 10 ? "text-neutral-800" : "text-amber-600"}`}>{r.rate}%</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                  <div className="bg-neutral-50 rounded-xl py-2">
-                    <p className="text-lg font-bold text-neutral-800">{r.sent}</p>
-                    <p className="text-[10px] text-neutral-500">הודעות נשלחו</p>
-                  </div>
-                  <div className="bg-teal-50 rounded-xl py-2">
-                    <p className="text-lg font-bold text-teal-700">{r.booked}</p>
-                    <p className="text-[10px] text-teal-700">קבעו תור תוך 3 ימים</p>
-                  </div>
-                  <div className="bg-neutral-50 rounded-xl py-2">
-                    <p className="text-lg font-bold text-neutral-800">{waiting}</p>
-                    <p className="text-[10px] text-neutral-500">עדיין לא קבעו</p>
-                  </div>
-                </div>
-                {r.booked > 0 && (
-                  <>
-                    <p className="text-[10px] text-neutral-400 mb-1">איך הם קבעו</p>
-                    <div className="flex h-2 rounded-full overflow-hidden bg-neutral-100 mb-1.5">
-                      <div className="bg-teal-500" style={{ width: `${pct(by.self)}%` }} title="לבד, דרך הקישור" />
-                      <div className="bg-sky-400" style={{ width: `${pct(by.agent)}%` }} title="דרך הסוכן" />
-                      <div className="bg-neutral-400" style={{ width: `${pct(by.admin)}%` }} title="אצל ספר" />
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-600">
-                      <span><span className="inline-block w-2 h-2 rounded-full bg-teal-500 ml-1 align-middle" />לבד דרך הקישור <b>{by.self}</b></span>
-                      <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 ml-1 align-middle" />ענו לסוכן <b>{by.agent}</b></span>
-                      <span><span className="inline-block w-2 h-2 rounded-full bg-neutral-400 ml-1 align-middle" />קבע ספר <b>{by.admin}</b></span>
-                      {speed && <span className="text-neutral-400 mr-auto">{speed}</span>}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })()}
+          {!isFutureMonth && a.rhythmNudge?.regular && a.rhythmNudge.new && (a.rhythmNudge.regular.customers + a.rhythmNudge.new.customers) > 0 && (
+            <RhythmNudgeCard regular={a.rhythmNudge.regular} nu={a.rhythmNudge.new} monthLabel={monthLabel} />
+          )}
 
           {/* ── Cancellations — where the money leaks ── */}
           {!isFutureMonth && a.cancellations && a.cancellations.booked > 0 && (
