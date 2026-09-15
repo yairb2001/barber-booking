@@ -82,21 +82,37 @@ function todLabelWindow(tod: "morning" | "afternoon" | "evening" | null): (t: st
   if (!tod) return () => true;
   return (t: string) => { const h = timeToMinutes(t) / 60; return tod === "morning" ? h < 12 : tod === "afternoon" ? h >= 12 && h < 17 : h >= 17; };
 }
+/** "היום" / "מחר" / "יום שלישי ה-22.9" — in a message the date is always spelled out. */
 function dayLabel(iso: string, todayISO: string): string {
   const diff = Math.round((new Date(iso + "T00:00:00Z").getTime() - new Date(todayISO + "T00:00:00Z").getTime()) / DAY);
   if (diff === 0) return "היום";
   if (diff === 1) return "מחר";
-  const name = `יום ${HEB_DAYS[getDayOfWeekISO(iso)]}`;
-  if (diff <= 6) return name;
-  if (diff <= 13) return `${name} הבא`;
   const d = new Date(iso + "T00:00:00Z");
-  return `${name} ${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
+  return `יום ${HEB_DAYS[getDayOfWeekISO(iso)]} ה-${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }
-/** "יום רביעי 13:00, יום רביעי 15:30 או יום חמישי 11:00" (+ " אצל X" per slot when mixed). */
+/**
+ * Options grouped by day, one line per day, so the message reads as a list:
+ *   ביום שלישי ה-22.9 ב13:00 או ב13:30
+ *   או ביום רביעי ה-23.9 ב16:00
+ * (+ " אצל X" after each time when the offer mixes barbers.)
+ */
 function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean, teamNames: string[]): string {
-  const parts = slots.map(s => `${dayLabel(s.date, todayISO)} ${s.time}${withStaff ? ` אצל ${staffDisplayName(s.staffName, teamNames)}` : ""}`);
-  if (parts.length <= 1) return parts.join("");
-  return parts.slice(0, -1).join(", ") + " או " + parts[parts.length - 1];
+  const name = (s: Slot) => staffDisplayName(s.staffName, teamNames);
+  // Name the barber as few times as possible: once up front when every slot
+  // is his, per day when each day is one barber's, per time only when mixed.
+  const oneStaff = new Set(slots.map(s => s.staffId)).size === 1;
+  const byDay = new Map<string, Slot[]>();
+  for (const s of slots) byDay.set(s.date, [...(byDay.get(s.date) || []), s]);
+  const lines = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, ds]) => {
+    const label = dayLabel(date, todayISO);
+    const day = label === "היום" || label === "מחר" ? label : `ב${label}`;
+    const dayStaff = withStaff && !oneStaff && new Set(ds.map(s => s.staffId)).size === 1 ? ` אצל ${name(ds[0])}` : "";
+    const perTime = withStaff && !oneStaff && !dayStaff;
+    const times = ds.map(s => `ב${s.time}${perTime ? ` אצל ${name(s)}` : ""}`);
+    return `${day}${dayStaff} ${times.join(" או ")}`;
+  });
+  const text = lines.map((l, i) => (i === 0 ? l : `או ${l}`)).join("\n");
+  return withStaff && oneStaff ? `ל${name(slots[0])} ${text}` : text;
 }
 
 // ── Slot search ──────────────────────────────────────────────────────────────
@@ -290,7 +306,8 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       // message, say so instead of "עדיין פנוי".
       if (variant === "second") {
         const firstBody = myNudges[0]?.body ?? "";
-        const stillOffered = slots.some(s => firstBody.includes(s.time) && firstBody.includes(dayLabel(s.date, todayISO).replace(/^יום /, "")));
+        // Weekday name + time — tolerant to the label format the first message used.
+        const stillOffered = slots.some(s => firstBody.includes(s.time) && firstBody.includes(HEB_DAYS[getDayOfWeekISO(s.date)]));
         if (!stillOffered) variant = "second_taken";
       }
       const mixed = !regularStaffId;
@@ -299,7 +316,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       const vars = {
         name: firstName(c.name),
         staff: staffDisplayName(staffName, teamNames),
-        at_staff: mixed ? "" : `אצל ${staffDisplayName(staffName, teamNames)} `,
+        at_staff: mixed ? "לנו " : `ל${staffDisplayName(staffName, teamNames)} `,
         options: formatOptions(slots, todayISO, mixed || variant === "new", teamNames),
         booking_link: `${baseUrl}${b.slug ? `/${b.slug}` : ""}/book`,
       };
