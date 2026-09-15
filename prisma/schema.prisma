@@ -391,6 +391,9 @@ model Appointment {
   productSales     ProductSale[]
 
   @@index([recurringId])
+  @@index([businessId, date])
+  @@index([customerId, date])
+  @@index([staffId, date])
   @@map("appointments")
 }
 

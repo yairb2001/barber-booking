@@ -154,6 +154,12 @@ export async function GET(req: NextRequest) {
   if (inQuietHours(israelMinutes)) {
     // Still run the piggybacked scans (they only enqueue / check health), but
     // do not deliver anything until 08:00.
+    // Keep the database awake in the evening (21:30–24:00) and early morning
+    // (06:00–08:00): barbers open the calendar then, and a suspended Neon
+    // compute costs them a 3–5s cold start on the first screen. The piggyback
+    // scans only touch the DB every ~10 min, which is longer than the
+    // auto-suspend timeout. Deep night (00:00–06:00) is still allowed to sleep.
+    if (israelMinutes >= 6 * 60) await prisma.$queryRaw`SELECT 1`.catch(() => {});
     await runPiggybackTasks(now);
     return NextResponse.json({ ok: true, skipped: "quiet-hours" });
   }

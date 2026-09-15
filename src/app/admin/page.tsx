@@ -5090,13 +5090,14 @@ export default function AdminCalendar() {
     const dates = getDates();
     const startDate = dates[0];
     const endDate   = dates[dates.length - 1];
+    // One range request for the whole view (was one request per day — 7 for a week, ~30 for a month).
     const [apptResults, overridesRaw] = await Promise.all([
-      Promise.all(dates.map(d => fetch(`/api/admin/appointments?date=${d}`).then(r => r.json()))),
+      fetch(`/api/admin/appointments?from=${startDate}&to=${endDate}`).then(r => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`/api/admin/schedule-overrides?startDate=${startDate}&endDate=${endDate}`)
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
     ]);
-    const flat = apptResults.flat() as Appt[];
+    const flat = (Array.isArray(apptResults) ? apptResults : []) as Appt[];
     setAppointments(flat);
     if (pendingOpenApptId.current) {
       const target = flat.find(a => a.id === pendingOpenApptId.current);

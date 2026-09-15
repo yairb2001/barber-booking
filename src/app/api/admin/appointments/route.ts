@@ -44,8 +44,15 @@ export async function GET(req: NextRequest) {
     where.staffId = staffIdParam;
   }
 
+  // Narrow relations: the calendar reads a handful of fields, and full rows
+  // (staff.settings, staff.passwordHash, customer.notes…) made a week ~470KB.
   const appointments = await prisma.appointment.findMany({
-    where, include: { customer: true, staff: true, service: true },
+    where,
+    include: {
+      customer: { select: { id: true, name: true, phone: true, referralSource: true, notificationPrefs: true, knownBefore: true } },
+      staff: { select: { id: true, name: true } },
+      service: { select: { id: true, name: true, durationMinutes: true, price: true } },
+    },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
 

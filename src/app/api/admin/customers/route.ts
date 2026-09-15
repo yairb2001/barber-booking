@@ -205,10 +205,17 @@ export async function GET(req: NextRequest) {
     ];
   }
 
+  // Only what the screens read — the full row (utm*, tokens, prefs) made the
+  // 760-customer list ~450KB.
   let customers = await prisma.customer.findMany({
     where,
     orderBy: { name: "asc" },
     take: limit,
+    select: {
+      id: true, name: true, phone: true, createdAt: true, lastVisitAt: true,
+      isBlocked: true, messagingOptOut: true, knownBefore: true,
+      referralSource: true, notificationPrefs: true, notes: true,
+    },
   });
   if (!stats && !noFuture && !noShowsOnly && sort === "name") return NextResponse.json(customers);
 
