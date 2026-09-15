@@ -209,7 +209,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
     const customers = await prisma.customer.findMany({
       where: { businessId: b.id, deletedAt: null, isBlocked: false, messagingOptOut: false, phone: { not: "" }, ...(opts.onlyCustomerIds ? { id: { in: opts.onlyCustomerIds } } : {}) },
       select: {
-        id: true, name: true, phone: true,
+        id: true, name: true, phone: true, knownBefore: true,
         staffBlocks: { select: { staffId: true } },
         appointments: { select: { date: true, startTime: true, endTime: true, status: true, staffId: true, serviceId: true, customServiceName: true, createdAt: true, staff: { select: { name: true, isAvailable: true } }, service: { select: { name: true } } } },
         waitlist: { where: { status: "waiting" }, select: { id: true }, take: 1 },
@@ -244,11 +244,12 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       if (c.waitlist.length) { skip("on_waitlist"); continue; }
       if (ins.visits === 0) { skip("no_visits"); continue; }
 
-      const isNew = ins.visits === 1 || !ins.avgIntervalDays;
+      // A "known before" regular with one visit here gets the regular message (paced by the shop median).
+      const isNew = (ins.visits === 1 || !ins.avgIntervalDays) && !c.knownBefore;
       if (isNew && !cfg.includeNewCustomers) { skip("one_visit"); continue; }
       if (!ins.lastVisitAt) { skip("no_last_visit"); continue; }
 
-      const interval = isNew ? shopMedian : ins.avgIntervalDays!;
+      const interval = ins.avgIntervalDays || shopMedian;
       const dueISO = addDaysISO(ins.lastVisitAt, interval);
       const daysToDue = Math.round((new Date(dueISO + "T00:00:00Z").getTime() - todayUTC.getTime()) / DAY);
       if (daysToDue < -RELEASE_AFTER_DAYS) { skip("released_6w"); continue; }

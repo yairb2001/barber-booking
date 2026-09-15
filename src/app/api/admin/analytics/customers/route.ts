@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     // ── New customers: first-ever appointment (globally or with staff) is in [from,to]
     const periodAppts = await prisma.appointment.findMany({
       where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, status: { notIn: cancelledArr }, ...sf },
-      select: { customerId: true, customer: { select: { id: true, name: true, phone: true } } },
+      select: { customerId: true, customer: { select: { id: true, name: true, phone: true, knownBefore: true } } },
     });
 
     const custIds = Array.from(new Set(periodAppts.map(a => a.customerId)));
@@ -67,17 +67,17 @@ export async function GET(req: NextRequest) {
     }
 
     // Customer map for names
-    const custMap = new Map<string, { name: string; phone: string }>();
+    const custMap = new Map<string, { name: string; phone: string; knownBefore: boolean }>();
     for (const a of periodAppts) {
       if (!custMap.has(a.customerId)) {
-        custMap.set(a.customerId, { name: a.customer.name, phone: a.customer.phone });
+        custMap.set(a.customerId, { name: a.customer.name, phone: a.customer.phone, knownBefore: !!a.customer.knownBefore });
       }
     }
 
     const newCustomers = custIds
       .filter(id => {
         const first = firstDates.get(id);
-        return first && first >= fromDate && first <= toDate;
+        return first && first >= fromDate && first <= toDate && !custMap.get(id)?.knownBefore;
       })
       .map(id => {
         const c = custMap.get(id)!;

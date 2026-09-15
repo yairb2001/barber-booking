@@ -221,6 +221,7 @@ type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
   customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
+  isFirstVisit?: boolean;   // ★ the customer's first appointment here (unless marked "known before")
   confirmedAt?: string | null; // customer replied "1" to the reminder (confirmations feature)
   customServiceName?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
@@ -806,9 +807,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
-            {!!appt.customerNoShows && (
-        <span className="absolute top-0.5 right-0.5 z-10 text-[9px] leading-none text-neutral-500"
-          title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>⚠</span>
+      {(!!appt.customerNoShows || appt.isFirstVisit) && (
+        <span className="absolute top-0.5 right-0.5 z-10 flex gap-0.5 text-[9px] leading-none">
+          {appt.isFirstVisit && <span className="text-amber-500" title="לקוח חדש — ביקור ראשון">★</span>}
+          {!!appt.customerNoShows && <span className="text-neutral-500" title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>⚠</span>}
+        </span>
       )}
       {(appt.note || appt.staffNote) && (
         <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
@@ -2241,6 +2244,21 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
     setPermSaving(false);
   }
 
+  const [firstVisitHidden, setFirstVisitHidden] = useState(false);
+  const [markingKnown, setMarkingKnown] = useState(false);
+  async function markKnownBefore() {
+    setMarkingKnown(true);
+    try {
+      await fetch(`/api/admin/customers/${appt.customer.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ knownBefore: true }),
+      });
+      setFirstVisitHidden(true);
+      onReload?.();
+    } catch { /* ignore */ }
+    setMarkingKnown(false);
+  }
+
   async function dismissNoShow() {
     setDismissingNoShow(true);
     try {
@@ -2403,6 +2421,15 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
 
         </div>
 
+        {appt.isFirstVisit && !firstVisitHidden && (
+          <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-1.5">
+            <span className="text-xs text-amber-800">★ לקוח חדש — ביקור ראשון</span>
+            <button onClick={markKnownBefore} disabled={markingKnown}
+              className="text-[11px] text-amber-700 hover:text-amber-900 underline disabled:opacity-40 shrink-0" title="לקוח קבוע מלפני המערכת — לא לספור אותו כחדש">
+              {markingKnown ? "שומר…" : "לא חדש"}
+            </button>
+          </div>
+        )}
         {!!appt.customerNoShows && !noShowHidden && (
           <div className="mx-4 mt-2 flex items-center justify-between gap-2 rounded-lg bg-neutral-100 border border-neutral-200 px-3 py-1.5">
             <span className="text-xs text-neutral-600">⚠ הלקוח הבריז בעבר{appt.customerNoShows > 1 ? ` (${appt.customerNoShows} פעמים)` : ""}</span>

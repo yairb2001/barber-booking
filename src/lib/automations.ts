@@ -51,8 +51,9 @@ export async function triggerPostVisitAutomations(appt: ApptRef): Promise<void> 
 
     // ── post_first_visit ───────────────────────────────────────────────────────
     if (auto.type === "post_first_visit") {
-      // Only on the very first completed appointment
-      if (completedCount !== 1) continue;
+      // Only on the very first completed appointment — and not for a regular
+      // from before this system (owner marked "known before").
+      if (completedCount !== 1 || customer.knownBefore) continue;
 
       // Dedup: don't send if we already sent this to the customer before
       const already = await prisma.messageLog.findFirst({

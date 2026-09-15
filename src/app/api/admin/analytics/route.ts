@@ -110,7 +110,7 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
       startTime: true, serviceId: true, cancelledAt: true,
-      customer: { select: { id: true, referralSource: true, name: true } },
+      customer: { select: { id: true, referralSource: true, name: true, knownBefore: true } },
       staff:    { select: { id: true, name: true } },
       service:  { select: { id: true, name: true } },
     },
@@ -295,10 +295,10 @@ export async function GET(req: NextRequest) {
   };
 
   // Unique customers with active appointments
-  const periodCustMap = new Map<string, { referralSource: string | null }>();
+  const periodCustMap = new Map<string, { referralSource: string | null; knownBefore: boolean }>();
   for (const a of activeAppts) {
     if (!periodCustMap.has(a.customerId))
-      periodCustMap.set(a.customerId, { referralSource: a.customer.referralSource });
+      periodCustMap.set(a.customerId, { referralSource: a.customer.referralSource, knownBefore: !!a.customer.knownBefore });
   }
   const periodCustIds = Array.from(periodCustMap.keys());
   const periodCustSet = new Set(periodCustIds);
@@ -432,12 +432,12 @@ export async function GET(req: NextRequest) {
   const newBySrc      = new Map<string, number>();
   const returnedBySrc = new Map<string, number>();
 
-  for (const [custId, { referralSource }] of Array.from(periodCustMap.entries())) {
+  for (const [custId, { referralSource, knownBefore }] of Array.from(periodCustMap.entries())) {
     const gDates = globalDates.get(custId) ?? [];
     const sDates = staffDates.get(custId) ?? [];
     const src = referralSource || "לא צוין";
 
-    const isNewToBusiness = gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate;
+    const isNewToBusiness = !knownBefore && gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate;
     const isNewToStaff    = sDates[0] && sDates[0] >= fromDate && sDates[0] <= toDate;
 
     if (isNewToBusiness) newToBusiness++;

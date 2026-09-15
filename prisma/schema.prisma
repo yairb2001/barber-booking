@@ -298,6 +298,10 @@ model Customer {
   // (appointment reminders, swap/move follow-ups, agent replies) are unaffected.
   // Cleared automatically the moment a new appointment is created for them —
   // booking again is treated as opting back in.
+  // "Not new": a regular from before this system who shows up here with a
+  // first appointment. Excludes them from every "new customer" signal (★ on the
+  // calendar, dashboard counts, first-visit automation, new-customer nudge).
+  knownBefore       Boolean   @default(false) @map("known_before")
   messagingOptOut   Boolean   @default(false) @map("messaging_opt_out")
   messagingOptOutAt DateTime? @map("messaging_opt_out_at")
   pushToken         String?   @map("push_token")

@@ -65,10 +65,20 @@ export async function GET(req: NextRequest) {
     ? await prisma.appointment.groupBy({ by: ["customerId"], where: noShowWhere, _count: { _all: true } })
     : [];
   const noShowByCustomer = new Map(noShowGroups.map(g => [g.customerId, g._count._all]));
+  // ★ first visit: this is the customer's earliest non-cancelled appointment
+  // with the business — unless the owner marked them "known before" (a regular
+  // from before this system).
+  const firstGroups = customerIds.length
+    ? await prisma.appointment.groupBy({ by: ["customerId"], where: { businessId: session.businessId, customerId: { in: customerIds }, status: { notIn: ["cancelled_by_customer", "cancelled_by_staff"] } }, _min: { date: true } })
+    : [];
+  const firstByCustomer = new Map(firstGroups.map(g => [g.customerId, g._min.date?.getTime()]));
   const withNoShow = appointments.map(a => {
     let acked = false;
     try { acked = a.customer?.notificationPrefs ? !!JSON.parse(a.customer.notificationPrefs).noShowAck : false; } catch { /* ignore */ }
-    return { ...a, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0) };
+    // Same-day back-to-back bookings (father + son on one card): star only the first block.
+    const isFirstVisit = !a.customer?.knownBefore && !a.status.startsWith("cancelled") && firstByCustomer.get(a.customerId) === a.date.getTime()
+      && !appointments.some(o => o.customerId === a.customerId && o.date.getTime() === a.date.getTime() && !o.status.startsWith("cancelled") && o.startTime < a.startTime);
+    return { ...a, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0), isFirstVisit };
   });
   return NextResponse.json(withNoShow);
 }

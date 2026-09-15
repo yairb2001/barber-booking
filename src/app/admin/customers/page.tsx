@@ -13,6 +13,7 @@ type Customer = {
   createdAt: string;
   isBlocked: boolean;
   messagingOptOut: boolean;
+  knownBefore?: boolean;
   referralSource?: string | null;
   notificationPrefs?: string | null;
   notes?: string | null;
@@ -522,6 +523,11 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
     await patch({ isBlocked: next });
   };
 
+  const toggleKnownBefore = async () => {
+    if (!detail) return;
+    await patch({ knownBefore: !detail.knownBefore });
+  };
+
   const toggleOptOut = async () => {
     if (!detail) return;
     const next = !detail.messagingOptOut;
@@ -828,6 +834,15 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
 
         {/* Danger zone */}
         <div className="p-5 space-y-2">
+          <button onClick={toggleKnownBefore} disabled={busy}
+            className={`w-full rounded-xl py-2.5 text-sm font-medium ${detail.knownBefore ? "bg-amber-50 text-amber-800 hover:bg-amber-100" : "bg-slate-50 text-slate-700 hover:bg-slate-100"}`}>
+            {detail.knownBefore ? "★ מסומן: לקוח מלפני המערכת" : "לקוח מלפני המערכת (לא חדש)"}
+          </button>
+          {detail.knownBefore && (
+            <p className="text-[11px] text-slate-400 text-center px-2">
+              לא נספר כלקוח חדש: בלי ★ ביומן, לא בסטטיסטיקת החדשים, בלי הודעת "ביקור ראשון". לחיצה נוספת מבטלת.
+            </p>
+          )}
           <button onClick={toggleOptOut} disabled={busy}
             className={`w-full rounded-xl py-2.5 text-sm font-medium ${
               detail.messagingOptOut

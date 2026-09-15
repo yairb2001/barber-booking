@@ -134,6 +134,7 @@ export async function GET(req: NextRequest) {
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lt?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
+    knownBefore?: boolean;
     OR?: Array<{ name: { contains: string; mode?: "insensitive" | "default" } } | { notes: { contains: string; mode?: "insensitive" | "default" } } | { phone: { contains: string } }>;
   };
 
@@ -178,6 +179,7 @@ export async function GET(req: NextRequest) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - Number(newDays));
     where.createdAt = { gte: cutoff };
+    where.knownBefore = false; // a regular from before the system isn't "new"
   }
 
   // Search query — supports name or phone.
