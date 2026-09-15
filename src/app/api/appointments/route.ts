@@ -343,10 +343,11 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Update customer last visit
+  // Update customer last visit. Booking again = opting back in: clear a prior
+  // messaging opt-out so reminders/automations resume for this customer.
   await prisma.customer.update({
     where: { id: customer.id },
-    data: { lastVisitAt: new Date() },
+    data: { lastVisitAt: new Date(), messagingOptOut: false, messagingOptOutAt: null },
   });
 
   // Side-effect notifications (push + WhatsApp). On Vercel serverless the

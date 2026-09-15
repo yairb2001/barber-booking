@@ -12,6 +12,7 @@ type Customer = {
   phone: string;
   createdAt: string;
   isBlocked: boolean;
+  messagingOptOut: boolean;
   referralSource?: string | null;
   notificationPrefs?: string | null;
   notes?: string | null;
@@ -256,6 +257,7 @@ export default function CustomersPage() {
                   <td className="px-3 sm:px-5 py-4 font-medium text-neutral-900">
                     {c.name}
                     {c.isBlocked && <span className="mr-2 text-xs text-red-500">🚫 חסום</span>}
+                    {c.messagingOptOut && <span className="mr-2 text-xs text-slate-400">🔕 לא מקבל הודעות</span>}
                   </td>
                   <td className="px-3 sm:px-5 py-4 text-neutral-600 whitespace-nowrap" dir="ltr">{c.phone}</td>
                   <td className="px-3 sm:px-5 py-4 text-xs whitespace-nowrap">
@@ -520,6 +522,13 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
     await patch({ isBlocked: next });
   };
 
+  const toggleOptOut = async () => {
+    if (!detail) return;
+    const next = !detail.messagingOptOut;
+    if (next && !confirm("להסיר את הלקוח מהודעות? הוא ימשיך להופיע במאגר ולקבוע תורים כרגיל, אבל לא יקבל יותר תפוצות/אוטומציות — רק תזכורות לתורים שכבר קבע. קביעת תור חדש תחזיר אותו אוטומטית.")) return;
+    await patch({ messagingOptOut: next });
+  };
+
   const toggleStaffBlock = async (staffId: string) => {
     if (!detail) return;
     const current = detail.blockedStaffIds || [];
@@ -595,6 +604,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
               {detail.totalVisits} ביקורים •
               נרשם {new Date(detail.createdAt).toLocaleDateString("he-IL")}
               {detail.isBlocked && <span className="mr-2 text-red-500">🚫 חסום</span>}
+              {detail.messagingOptOut && <span className="mr-2 text-slate-400">🔕 לא מקבל הודעות</span>}
             </div>
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 text-xl ml-2">✕</button>
@@ -817,7 +827,22 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
         )}
 
         {/* Danger zone */}
-        <div className="p-5 flex gap-2">
+        <div className="p-5 space-y-2">
+          <button onClick={toggleOptOut} disabled={busy}
+            className={`w-full rounded-xl py-2.5 text-sm font-medium ${
+              detail.messagingOptOut
+                ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                : "bg-slate-50 text-slate-700 hover:bg-slate-100"
+            }`}>
+            {detail.messagingOptOut ? "🔔 החזר להודעות" : "🔕 הסר מהודעות"}
+          </button>
+          {detail.messagingOptOut && (
+            <p className="text-[11px] text-slate-400 text-center px-2">
+              לא מקבל תפוצות/אוטומציות. עדיין מופיע במאגר, יכול לקבוע תור, ומקבל תזכורות לתור קיים.
+              קביעת תור חדש תחזיר אותו אוטומטית.
+            </p>
+          )}
+          <div className="flex gap-2">
           <button onClick={toggleBlock} disabled={busy}
             className={`flex-1 rounded-xl py-2.5 text-sm font-medium ${
               detail.isBlocked
@@ -830,6 +855,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
             className="flex-1 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl py-2.5 text-sm font-medium">
             🗑 מחק משתמש
           </button>
+          </div>
         </div>
       </div>
 

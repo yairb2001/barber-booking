@@ -97,6 +97,10 @@ export async function runPostVisitAutomations(): Promise<{ fired: number; skippe
       });
       if (already) { skipped++; continue; }
 
+      // Respect blocked / opted-out customers — a "come back and book again"
+      // nudge is exactly the proactive outreach opting out is meant to silence.
+      if (appt.customer.isBlocked || appt.customer.messagingOptOut) { skipped++; continue; }
+
       // Count completed appointments for the customer (treat past confirmed/completed as done)
       const completedCount = await prisma.appointment.count({
         where: {
@@ -240,6 +244,7 @@ export async function runPostVisitAutomations(): Promise<{ fired: number; skippe
       },
     });
     if (already) { skipped++; continue; }
+    if (appt.customer.isBlocked || appt.customer.messagingOptOut) { skipped++; continue; }
 
     const biz = appt.business;
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";

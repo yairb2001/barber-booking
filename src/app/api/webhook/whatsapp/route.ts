@@ -32,6 +32,7 @@ import {
   expireStaleAgentSwaps,
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
+import { handleOptOutKeywordReply } from "@/lib/messaging/opt-out";
 import { pushToOwner } from "@/lib/native/push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { sendMessage } from "@/lib/messaging";
@@ -406,6 +407,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // so it never reaches the booking agent. (The message itself is already in the
   // inbox; only the agent run is skipped.)
   try {
+    // Exact "הסר" opt-out — deterministic, ahead of everything else (including
+    // the escalation check below) so it works even mid-handoff to a human.
+    if (await handleOptOutKeywordReply(biz, phone, text, conv.id)) {
+      return NextResponse.json({ ok: true, handled: "opt_out" });
+    }
     if (await handleStaffApprovalReply(biz.id, phone, text)) {
       return NextResponse.json({ ok: true, handled: "swap_staff_reply" });
     }

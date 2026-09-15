@@ -104,6 +104,7 @@ export async function GET(req: NextRequest) {
       where: {
         businessId: auto.businessId,
         isBlocked: false,
+        messagingOptOut: false,
         deletedAt: null,
         phone: { not: "" },
         lastVisitAt: { lte: cutoffDate, gte: activationFloor, not: null },

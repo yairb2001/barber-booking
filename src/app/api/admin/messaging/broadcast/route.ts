@@ -39,7 +39,7 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
     if (ids.length === 0) return [];
 
     return prisma.customer.findMany({
-      where: { businessId: business.id, isBlocked: false, deletedAt: null, id: { in: ids } },
+      where: { businessId: business.id, isBlocked: false, messagingOptOut: false, deletedAt: null, id: { in: ids } },
       select: { id: true, name: true, phone: true },
     });
   }
@@ -48,13 +48,14 @@ async function fetchFilteredCustomers(business: { id: string }, qs: string) {
   type WhereClause = {
     businessId: string;
     isBlocked: boolean;
+    messagingOptOut: boolean;
     deletedAt: null;
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
   };
 
-  const where: WhereClause = { businessId: business.id, isBlocked: false, deletedAt: null };
+  const where: WhereClause = { businessId: business.id, isBlocked: false, messagingOptOut: false, deletedAt: null };
 
   if (staffId) where.appointments = { some: { staffId } };
 
