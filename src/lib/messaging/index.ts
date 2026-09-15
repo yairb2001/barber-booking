@@ -852,12 +852,12 @@ export const TEMPLATE_DEFS = {
   },
   rhythm_nudge: {
     label: "הגיע הזמן לתור — לקוח קבוע",
-    description: "נשלחת מיוזמתנו כשלפי הקצב של הלקוח הגיע הזמן לתספורת ואין לו תור. {{at_staff}} = \"אצל שימי \" (ריק ללקוח מעורב), {{options}} = עד 3 שעות פנויות.",
+    description: "נשלחת מיוזמתנו כשלפי הקצב של הלקוח הגיע הזמן לתספורת ואין לו תור. {{at_staff}} = \"לשימי \" (\"לנו \" ללקוח מעורב), {{options}} = עד 3 שעות פנויות, שורה לכל יום.",
     field: "rhythmNudgeTemplate" as const,
     default: DEFAULT_RHYTHM_TEMPLATE,
     variables: [
       { key: "name",     label: "שם הלקוח" },
-      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "at_staff", label: "\"ל<ספר> \" (\"לנו \" ללקוח מעורב)" },
       { key: "staff",    label: "שם הספר הקבוע" },
       { key: "options",  label: "השעות המוצעות" },
     ],
@@ -869,7 +869,7 @@ export const TEMPLATE_DEFS = {
     default: DEFAULT_RHYTHM_SECOND_TEMPLATE,
     variables: [
       { key: "name",     label: "שם הלקוח" },
-      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "at_staff", label: "\"ל<ספר> \" (\"לנו \" ללקוח מעורב)" },
       { key: "options",  label: "השעות המוצעות" },
     ],
   },
@@ -880,7 +880,7 @@ export const TEMPLATE_DEFS = {
     default: DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE,
     variables: [
       { key: "name",     label: "שם הלקוח" },
-      { key: "at_staff", label: "\"אצל <ספר> \" (ריק ללקוח מעורב)" },
+      { key: "at_staff", label: "\"ל<ספר> \" (\"לנו \" ללקוח מעורב)" },
       { key: "options",  label: "השעות המוצעות" },
     ],
   },
