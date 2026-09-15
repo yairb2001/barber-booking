@@ -21,6 +21,7 @@ import { recordAgentUsage } from "@/lib/agent/usage";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
+import { applyMessagingOptOut } from "@/lib/messaging/opt-out";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
@@ -396,6 +397,14 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
         staffId: { type: "string", description: "מזהה הספר שאליו להעביר, אם ידוע (אופציונלי)" },
       },
       required: ["reason"],
+    },
+  },
+  {
+    name: "opt_out_of_messages",
+    description: "מסמן שהלקוח לא רוצה יותר לקבל הודעות יזומות מאיתנו (תפוצות, אוטומציות 'הגיע הזמן לתור', וכו'). קרא לכלי הזה כשהלקוח מבקש להסיר את עצמו/להפסיק לקבל הודעות/'הסר'/'תפסיקו לשלוח לי' — גם אם זו לא בדיוק המילה 'הסר'. זה לא חוסם אותו: הוא עדיין יכול לדבר איתך ולקבוע תור בכל עת, ותזכורות לתור שכבר קבוע ימשיכו להישלח כרגיל. קביעת תור חדש מבטלת את ההסרה אוטומטית.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
     },
     // Cache breakpoint: the whole (static) tool block is read from cache on every
     // iteration of the loop and on follow-up turns, at ~10% of the token cost.
@@ -785,9 +794,11 @@ export async function execTool(
         // self-service link), so without this update lastVisitAt goes stale
         // and the "haven't seen you in N weeks" automation fires on customers
         // who actually booked/visited recently (Yair, 2026-08-17).
+        // Booking again = opting back in: clear a prior messaging opt-out so
+        // reminders/automations resume for this customer.
         await prisma.customer.update({
           where: { id: customer.id },
-          data: { lastVisitAt: new Date() },
+          data: { lastVisitAt: new Date(), messagingOptOut: false, messagingOptOutAt: null },
         });
 
         notifyOwnerWeb(bizId, "appointment", {
@@ -1083,6 +1094,12 @@ export async function execTool(
         return notified
           ? `הועברה התראה ${target} עם פרטי הלקוח והבעיה. אמור ללקוח שנציג יחזור אליו בהקדם.`
           : `סומן להעברה לאדם, אך לא נמצא מספר טלפון לשליחת התראה. אמור ללקוח שנציג יחזור אליו בהקדם.`;
+      }
+
+      case "opt_out_of_messages": {
+        const result = await applyMessagingOptOut({ businessId: bizId, phone: callerPhone, conversationId });
+        if (!result.ok) return "שגיאה: לא נמצא לקוח עם המספר הזה.";
+        return "הלקוח סומן כמי שלא מקבל הודעות יזומות. אמור לו בקצרה וחמימות שלא ישלחו לו יותר תפוצות/אוטומציות, אבל תזכורות לתור שכבר קבוע ימשיכו כרגיל, ושהוא תמיד מוזמן לחזור ולקבוע תור.";
       }
 
       default:

@@ -220,6 +220,14 @@ export async function GET(req: NextRequest) {
       });
       if (upcoming) { skipped++; continue; }
 
+      // Respect blocked / opted-out customers — this is a "come back and book"
+      // nudge, exactly the kind of proactive outreach opting out silences.
+      const custStatus = await prisma.customer.findFirst({
+        where: { businessId: biz.id, deletedAt: null, OR: [{ phone }, { phone: localPhone }] },
+        select: { isBlocked: true, messagingOptOut: true },
+      });
+      if (custStatus?.isBlocked || custStatus?.messagingOptOut) { skipped++; continue; }
+
       // Confirm there was a real two-way exchange, and gather context for the LLM.
       const msgs = await prisma.conversationMessage.findMany({
         where:   { conversationId: convo.id, role: { in: ["user", "assistant"] } },

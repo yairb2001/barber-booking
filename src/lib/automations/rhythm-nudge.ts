@@ -191,7 +191,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
     // offer window (anchor −2 … +5) and the "filling up" check.
     const index = await buildAvailabilityIndex(b.id, todayISO, 15);
     const customers = await prisma.customer.findMany({
-      where: { businessId: b.id, deletedAt: null, isBlocked: false, phone: { not: "" }, ...(opts.onlyCustomerIds ? { id: { in: opts.onlyCustomerIds } } : {}) },
+      where: { businessId: b.id, deletedAt: null, isBlocked: false, messagingOptOut: false, phone: { not: "" }, ...(opts.onlyCustomerIds ? { id: { in: opts.onlyCustomerIds } } : {}) },
       select: {
         id: true, name: true, phone: true,
         staffBlocks: { select: { staffId: true } },

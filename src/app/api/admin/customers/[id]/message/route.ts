@@ -17,9 +17,15 @@ export async function POST(req: NextRequest, ctx: { params: { id: string } }) {
 
   const customer = await prisma.customer.findUnique({
     where: { id },
-    select: { businessId: true, phone: true, name: true, isBlocked: true, deletedAt: true },
+    select: { businessId: true, phone: true, name: true, isBlocked: true, deletedAt: true, messagingOptOut: true },
   });
   if (!customer) return NextResponse.json({ error: "not found" }, { status: 404 });
+
+  // The customer explicitly asked not to receive anything we initiate — a
+  // manual message is still us initiating, even if a human is typing it.
+  if (customer.messagingOptOut) {
+    return NextResponse.json({ error: "הלקוח הסיר את עצמו מהודעות — לא ניתן לשלוח אליו הודעה יזומה." }, { status: 403 });
+  }
 
   // Tenant isolation: never message a customer from another business.
   if (customer.businessId !== session.businessId) {

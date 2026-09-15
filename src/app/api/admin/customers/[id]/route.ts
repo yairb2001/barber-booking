@@ -112,6 +112,10 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   if (typeof body.name === "string" && body.name.trim()) data.name = body.name.trim();
   if (typeof body.phone === "string" && body.phone.trim()) data.phone = normalizeIsraeliPhone(body.phone) || body.phone.replace(/\s/g, "");
   if (typeof body.isBlocked === "boolean") data.isBlocked = body.isBlocked;
+  if (typeof body.messagingOptOut === "boolean") {
+    data.messagingOptOut = body.messagingOptOut;
+    data.messagingOptOutAt = body.messagingOptOut ? new Date() : null;
+  }
   if (body.referralSource !== undefined) data.referralSource = body.referralSource || null;
   if (body.notes !== undefined) data.notes = body.notes ? String(body.notes) : null;
   if (body.noShowAck !== undefined) {

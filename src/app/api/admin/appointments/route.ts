@@ -251,10 +251,12 @@ export async function POST(req: NextRequest) {
   });
 
   // Keep re-engagement eligibility in sync — see the same update in the
-  // WhatsApp agent's booking path (Yair, 2026-08-17).
+  // WhatsApp agent's booking path (Yair, 2026-08-17). A new appointment also
+  // clears a prior messaging opt-out — being back on the books counts as
+  // opting back in, whether the customer booked it or staff did.
   await prisma.customer.update({
     where: { id: customer.id },
-    data: { lastVisitAt: new Date() },
+    data: { lastVisitAt: new Date(), messagingOptOut: false, messagingOptOutAt: null },
   });
 
   // Send WhatsApp confirmation only when the appointment is genuinely in the future.

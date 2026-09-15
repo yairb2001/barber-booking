@@ -290,6 +290,16 @@ model Customer {
   // stop being nagged about a reward already handed over.
   referralTiersGiven Int      @default(0) @map("referral_tiers_given")
   isBlocked         Boolean   @default(false) @map("is_blocked")
+  // ── Messaging opt-out ("הסר") ────────────────────────────────────────────
+  // Unlike isBlocked, this does NOT stop the agent from replying or the
+  // customer from booking — it only silences outreach WE initiate (broadcasts,
+  // reengage/post-visit automations, the manual "message customer" tool).
+  // Transactional messages tied to something the customer did themselves
+  // (appointment reminders, swap/move follow-ups, agent replies) are unaffected.
+  // Cleared automatically the moment a new appointment is created for them —
+  // booking again is treated as opting back in.
+  messagingOptOut   Boolean   @default(false) @map("messaging_opt_out")
+  messagingOptOutAt DateTime? @map("messaging_opt_out_at")
   pushToken         String?   @map("push_token")
   notificationPrefs String?   @map("notification_prefs") // JSON
   // Free-text permanent note about the customer (haircut numbers, preferences).
