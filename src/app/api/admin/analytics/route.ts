@@ -57,6 +57,8 @@ export async function GET(req: NextRequest) {
   const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const bizId = biz.id;
+  // Regulars from before this system (owner marked "known before") are never "new" in any cohort.
+  const knownBeforeIds = new Set((await prisma.customer.findMany({ where: { businessId: bizId, knownBefore: true }, select: { id: true } })).map(c => c.id));
 
   const { searchParams } = req.nextUrl;
   const fromStr          = searchParams.get("from") ?? "";
@@ -438,7 +440,7 @@ export async function GET(req: NextRequest) {
     const src = referralSource || "לא צוין";
 
     const isNewToBusiness = !knownBefore && gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate;
-    const isNewToStaff    = sDates[0] && sDates[0] >= fromDate && sDates[0] <= toDate;
+    const isNewToStaff    = !knownBefore && sDates[0] && sDates[0] >= fromDate && sDates[0] <= toDate;
 
     if (isNewToBusiness) newToBusiness++;
     if (isNewToStaff)    newToStaff++;
@@ -500,6 +502,7 @@ export async function GET(req: NextRequest) {
     prevDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
 
     const prevNewIds = prevCustIds.filter(id => {
+      if (knownBeforeIds.has(id)) return false;
       const dates = prevDates.get(id) ?? [];
       return dates[0] && dates[0] >= prevMonthStart && dates[0] <= prevMonthEnd;
     });
@@ -549,7 +552,8 @@ export async function GET(req: NextRequest) {
   wDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
 
   let cohortSize = 0, cohortReturned = 0;
-  for (const [, dates] of Array.from(wDates.entries())) {
+  for (const [id, dates] of Array.from(wDates.entries())) {
+    if (knownBeforeIds.has(id)) continue;
     if (dates[0] >= windowStart) { cohortSize++; if (dates.length >= minVisits) cohortReturned++; }
   }
 

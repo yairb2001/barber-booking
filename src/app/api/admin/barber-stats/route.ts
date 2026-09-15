@@ -187,8 +187,10 @@ export async function GET(req: NextRequest) {
     _min:    { date: true },
   });
 
+  const knownBeforeIds = new Set((await prisma.customer.findMany({ where: { businessId: session.businessId, knownBefore: true }, select: { id: true } })).map(c => c.id));
   function countNewInRange(start: Date, end: Date) {
     return firstVisitPerCustomer.filter(r => {
+      if (knownBeforeIds.has(r.customerId)) return false;
       const d = r._min.date;
       return d !== null && d >= start && d <= end;
     }).length;

@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const biz = await getSessionBusiness(req, { id: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const bizId = biz.id;
+  const knownBeforeIds = new Set((await prisma.customer.findMany({ where: { businessId: bizId, knownBefore: true }, select: { id: true } })).map(c => c.id));
 
   const { searchParams } = req.nextUrl;
   const fromStr = searchParams.get("from") ?? "";
@@ -116,6 +117,7 @@ export async function GET(req: NextRequest) {
 
     // Filter: first visit was in prev month
     const prevNewIds = prevCustIds.filter(id => {
+      if (knownBeforeIds.has(id)) return false;
       const dates = prevDates.get(id) ?? [];
       return dates[0] && dates[0] >= prevMonthStart && dates[0] <= prevMonthEnd;
     });
