@@ -8,6 +8,7 @@ import { timeToMinutes, appointmentInstant } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 export async function GET(req: NextRequest) {
+  const t0 = Date.now(); const marks: string[] = []; const mark = (l: string) => marks.push(`${l};dur=${Date.now() - t0}`);
   const session = getRequestSession(req);
   // Tenant isolation: every admin read MUST be bound to the logged-in business.
   // Without this, findMany() below returns appointments from ALL businesses.
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
   // a staffId param for someone else is supplied. Owners and permitted barbers
   // may filter freely by staffId.
   const perms = await getEffectivePermissions(req);
+  mark("perms");
   if (!perms.isOwner && !perms.canViewAllCalendars && perms.staffId) {
     where.staffId = perms.staffId;
   } else if (staffIdParam) {
@@ -55,6 +57,7 @@ export async function GET(req: NextRequest) {
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
+  mark("list");
 
   // Flag customers who have no-showed ("הבריז") before, so the calendar can warn
   // the barber. One extra grouped query over the customers already in this
@@ -87,7 +90,9 @@ export async function GET(req: NextRequest) {
       && !appointments.some(o => o.customerId === a.customerId && o.date.getTime() === a.date.getTime() && !o.status.startsWith("cancelled") && o.startTime < a.startTime);
     return { ...a, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0), isFirstVisit };
   });
-  return NextResponse.json(withNoShow);
+  mark("flags");
+  // Server-Timing lets us read where the time goes from the browser / curl.
+  return NextResponse.json(withNoShow, { headers: { "Server-Timing": marks.join(", ") } });
 }
 
 export async function POST(req: NextRequest) {
