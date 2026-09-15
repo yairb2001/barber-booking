@@ -103,7 +103,7 @@ function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean, team
   const oneStaff = new Set(slots.map(s => s.staffId)).size === 1;
   const byDay = new Map<string, Slot[]>();
   for (const s of slots) byDay.set(s.date, [...(byDay.get(s.date) || []), s]);
-  const lines = [...byDay.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, ds]) => {
+  const lines = Array.from(byDay.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([date, ds]) => {
     const label = dayLabel(date, todayISO);
     const day = label === "היום" || label === "מחר" ? label : `ב${label}`;
     const dayStaff = withStaff && !oneStaff && new Set(ds.map(s => s.staffId)).size === 1 ? ` אצל ${name(ds[0])}` : "";
