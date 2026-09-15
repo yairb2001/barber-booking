@@ -11,7 +11,7 @@
 import { prisma } from "@/lib/prisma";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
-export type StaffRow = { id: string; name: string; isAvailable: boolean; leadMinutes: number; firstLeadMinutes: number };
+export type StaffRow = { id: string; name: string; isAvailable: boolean; inQuickPool: boolean; leadMinutes: number; firstLeadMinutes: number };
 export type AvailabilityIndex = {
   fromISO: string; toISO: string;
   staff: StaffRow[];
@@ -26,7 +26,7 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   const first = new Date(fromISO + "T00:00:00.000Z"), last = new Date(toISO + "T00:00:00.000Z");
   const [biz, staffRows, services] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }),
-    prisma.staff.findMany({ where: { businessId, isAvailable: true }, select: { id: true, name: true, isAvailable: true, settings: true, staffServices: { select: { serviceId: true, customDuration: true } } } }),
+    prisma.staff.findMany({ where: { businessId, isAvailable: true }, select: { id: true, name: true, isAvailable: true, inQuickPool: true, settings: true, staffServices: { select: { serviceId: true, customDuration: true } } } }),
     prisma.service.findMany({ where: { businessId }, select: { id: true, durationMinutes: true } }),
   ]);
   const staffIds = staffRows.map(s => s.id);
@@ -37,7 +37,7 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   ]);
   const numFrom = (raw: string | null, key: string, d: number) => { try { const v = raw ? Number(JSON.parse(raw)[key]) : NaN; return isNaN(v) ? d : v; } catch { return d; } };
   const staff: StaffRow[] = staffRows.map(s => ({
-    id: s.id, name: s.name, isAvailable: s.isAvailable,
+    id: s.id, name: s.name, isAvailable: s.isAvailable, inQuickPool: s.inQuickPool,
     leadMinutes: numFrom(s.settings, "minBookingLeadMinutes", biz?.minBookingLeadMinutes ?? 0),
     firstLeadMinutes: numFrom(s.settings, "firstApptLeadMinutes", biz?.firstApptLeadMinutes ?? 0),
   }));
@@ -75,6 +75,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
     }
     cache.set(key, out); return out;
   };
-  const staffByLoad = (dateISO: string) => [...staff].sort((a, b) => (booked.get(`${a.id}|${dateISO}`)?.length || 0) - (booked.get(`${b.id}|${dateISO}`)?.length || 0));
+  // "Any barber" = the quick pool (everyone if the business defined no pool).
+  const pool = staff.some(s => s.inQuickPool) ? staff.filter(s => s.inQuickPool) : staff;
+  const staffByLoad = (dateISO: string) => [...pool].sort((a, b) => (booked.get(`${a.id}|${dateISO}`)?.length || 0) - (booked.get(`${b.id}|${dateISO}`)?.length || 0));
   return { fromISO, toISO, staff, slots, staffByLoad };
 }

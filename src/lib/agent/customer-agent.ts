@@ -475,11 +475,12 @@ export async function execTool(
         const staff = await prisma.staff.findMany({
           where: { businessId: bizId, isAvailable: true },
           orderBy: { sortOrder: "asc" },
-          select: { id: true, name: true, nickname: true },
+          select: { id: true, name: true, nickname: true, inQuickPool: true },
         });
         if (!staff.length) return "אין ספרים פעילים כרגע.";
+        const hasPool = staff.some(s => s.inQuickPool);
         return staff
-          .map(s => `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]`)
+          .map(s => `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${hasPool && !s.inQuickPool ? " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו" : ""}`)
           .join("\n");
       }
 

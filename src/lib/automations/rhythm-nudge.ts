@@ -181,7 +181,7 @@ async function findOffer(opts: {
 /** Free slots in the customer's window on one day, for the "filling up" rule. */
 function freeInWindow(index: AvailabilityIndex, date: string, staffId: string | null, serviceId: string | null, tod: "morning" | "afternoon" | "evening" | null, excluded: string[]): number {
   const inWindow = todLabelWindow(tod);
-  const rows = staffId ? index.staff.filter(s => s.id === staffId) : index.staff.filter(s => !excluded.includes(s.id));
+  const rows = staffId ? index.staff.filter(s => s.id === staffId) : index.staffByLoad(date).filter(s => !excluded.includes(s.id));
   return rows.reduce((n, r) => n + index.slots(r.id, date, serviceId).filter(inWindow).length, 0);
 }
 

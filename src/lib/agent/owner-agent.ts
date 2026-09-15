@@ -494,7 +494,7 @@ export async function execOwnerTool(
 
       // Availability guard (owner may override with force).
       if (!force) {
-        const dayAvail = await computeDayAvailability(businessId, date, effStaffId, serviceId);
+        const dayAvail = await computeDayAvailability(businessId, date, effStaffId, serviceId, { allStaff: true });
         const slots = dayAvail.find(s => s.staffId === effStaffId)?.slots ?? [];
         if (!slots.includes(time)) {
           return `שים לב: ${time} ב-${date} לא פנוי אצל ${staff.name} (יום סגור / מעבר לאופק / תפוס). אם בכל זאת לקבוע, קרא שוב עם force=true. אחרת קרא ל-get_schedule כדי לראות מה תפוס.`;

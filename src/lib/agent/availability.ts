@@ -24,17 +24,24 @@ export async function computeDayAvailability(
   date: string,
   inputStaffId?: string,
   inputServiceId?: string,
-  /** Admin use: ignore the customer-facing booking horizon and lead times. */
-  opts: { ignoreLimits?: boolean } = {},
+  /** Admin use: ignore the customer-facing booking horizon and lead times.
+   *  allStaff: include barbers outside the quick pool even without a staffId (owner tools). */
+  opts: { ignoreLimits?: boolean; allStaff?: boolean } = {},
 ): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
   const dateObj = new Date(date + "T00:00:00.000Z");
   const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
   const nowBiz = getBusinessNow();
 
-  const staffList = await prisma.staff.findMany({
+  let staffList = await prisma.staff.findMany({
     where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
-    select: { id: true, name: true, settings: true },
+    select: { id: true, name: true, settings: true, inQuickPool: true },
   });
+  // "Any barber" (no staffId) = the quick pool only. A barber outside the pool
+  // (the owner, say) is offered only when asked for by id — by the customer or
+  // because he's their regular. Businesses with an empty pool keep everyone.
+  if (!inputStaffId && !opts.ignoreLimits && !opts.allStaff && staffList.some(s => s.inQuickPool)) {
+    staffList = staffList.filter(s => s.inQuickPool);
+  }
   if (!staffList.length) return [];
 
   const biz = await prisma.business.findUnique({
