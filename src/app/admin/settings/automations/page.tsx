@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 type AutoType = "reengage" | "post_first_visit" | "post_every_visit";
 interface AutoRec {
@@ -712,33 +712,28 @@ function CallAutomationCard() {
         </div>
         {guideOpen && (
           <div className="rounded-xl bg-amber-50/60 border border-amber-200 p-3 text-xs text-neutral-700 space-y-2 leading-relaxed">
-            <p className="font-semibold text-neutral-800">ההקמה — פעם אחת, ~15 דקות, על טלפון אנדרואיד עם ה-SIM של המספרה</p>
+            <p className="font-semibold text-neutral-800">פעם אחת, ~15 דקות, על טלפון אנדרואיד עם ה-SIM של המספרה</p>
             <ol className="list-decimal pr-4 space-y-1.5">
-              <li>מתקינים <a href="https://play.google.com/store/apps/details?id=com.arlosoft.macrodroid" target="_blank" rel="noreferrer" className="text-teal-700 underline font-semibold">MacroDroid</a> (חינם, Play Store). מאשרים הרשאות טלפון ויומן שיחות. בהגדרות הסוללה של הטלפון: MacroDroid → ללא הגבלה, אחרת אנדרואיד מכבה אותו.</li>
-              <li>לוחצים למטה על <b>"הצג כתובת וסוד"</b> — הכתובת והסוד מוכנים להעתקה.</li>
-              <li>יוצרים <b>3 מאקרו</b>, כולם עם אותה פעולה — <b>HTTP Request</b> → POST לכתובת, Content-Type <code dir="ltr">application/json</code>, וכותרת (Header) <code dir="ltr">x-call-secret</code> עם הסוד:
-                <ul className="list-disc pr-4 mt-1 space-y-1">
-                  <li><b>לא ענינו</b> — טריגר <i>Call Missed → Any Number</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"missed"}'}</code></li>
-                  <li><b>ענינו</b> — טריגר <i>Call Ended → Incoming</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","durationSec":[call_duration]}'}</code></li>
-                  <li><b>חזרנו אליו</b> — טריגר <i>Call Ended → Outgoing</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","direction":"out"}'}</code></li>
-                </ul>
-                הסוגריים המרובעים הם משתנים של MacroDroid — הוא ממלא אותם לבד (בוחרים מהרשימה "…" ליד שדה הטקסט).
-              </li>
-              <li><b>בדיקה</b>: קודם עם הכפתור למטה (המספר שלך → "לא ענינו" → אמור להגיע ווצאפ). אחר כך שיחה אמיתית מהטלפון האישי למספרה בלי לענות — הלשונית 📞 בצ׳אטים אמורה להראות אותה. אין שורה = MacroDroid לא שלח (הרשאות / סוללה); יש שורה "בלי הודעה" = הסיבה כתובה שם.</li>
-              <li>מתג ראשי <b>ON</b>. עד אז הכול נרשם אבל לא נשלח.</li>
+              <li>מתקינים <a href="https://play.google.com/store/apps/details?id=com.arlosoft.macrodroid" target="_blank" rel="noreferrer" className="text-teal-700 underline font-semibold">MacroDroid</a> (חינם). מאשרים לו הרשאות טלפון, ובהגדרות הסוללה: MacroDroid → ללא הגבלה.</li>
+              <li>לוחצים למטה על <b>"הצג כתובת וסוד"</b>.</li>
+              <li>ב-MacroDroid יוצרים 3 מאקרו — <b>לא ענינו</b>, <b>ענינו</b>, <b>חזרנו אליו</b>. לכל אחד: הטריגר שכתוב לידו, ופעולה "בקשת HTTP" שממלאים מהתיבה למטה (יש כפתור העתקה לכל שדה).</li>
+              <li><b>בדיקה</b>: הכפתור למטה עם המספר שלך → אמור להגיע ווצאפ. ואז שיחה אמיתית למספרה בלי לענות → הלשונית 📞 בצ׳אטים מראה אותה.</li>
+              <li>מתג ראשי <b>ON</b>.</li>
             </ol>
-            <p className="text-neutral-500">הטלפון חייב להיות דלוק ומחובר לאינטרנט — הוא זה שרואה את השיחות. אייפון לא מתאים: אפל לא מאפשרת לאף אפליקציה לראות שיחות.</p>
+            <p className="text-neutral-500">הטלפון חייב להיות דלוק ומחובר לאינטרנט. אייפון לא מתאים — אפל לא נותנת לאפליקציות לראות שיחות.</p>
           </div>
         )}
         {!hook ? (
           <button onClick={() => loadHook(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50">הצג כתובת וסוד</button>
         ) : (
-          <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-xs space-y-1.5" dir="ltr">
-            <p><span className="text-neutral-400">POST </span><code className="select-all">{hook.url}</code></p>
-            <p><span className="text-neutral-400">x-call-secret: </span><code className="select-all">{showSecret ? hook.secret : "••••••••••••"}</code>
-              <button onClick={() => setShowSecret(v => !v)} className="mr-2 ml-2 text-teal-700 underline">{showSecret ? "הסתר" : "הצג"}</button>
-              <button onClick={() => loadHook(true)} className="text-neutral-500 underline">חדש סוד</button></p>
-            <p className="text-neutral-500" dir="rtl">גוף הבקשה (JSON): <code dir="ltr">{'{"phone":"[call_number]","outcome":"missed"}'}</code> לשיחה שלא נענתה, <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","durationSec":[call_duration]}'}</code> לשיחה שהסתיימה, ו-<code dir="ltr">{'"direction":"out"'}</code> לשיחה יוצאת.</p>
+          <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-xs space-y-3">
+            <CopyRow label="כתובת (URL), שיטה POST" value={hook.url} />
+            <CopyRow label={`כותרת (Header) בשם x-call-secret`} value={hook.secret} masked={!showSecret}
+              extra={<><button onClick={() => setShowSecret(v => !v)} className="text-teal-700 underline">{showSecret ? "הסתר" : "הצג"}</button> <button onClick={() => loadHook(true)} className="text-neutral-500 underline mr-2">חדש סוד</button></>} />
+            <p className="text-neutral-500">Content-Type: <code dir="ltr">application/json</code>. גוף הבקשה (Body) לכל מאקרו — הסוגריים המרובעים הם משתנים של MacroDroid, בוחרים אותם מהרשימה "…" ליד השדה:</p>
+            <CopyRow label="לא ענינו — טריגר: שיחה שלא נענתה (Call Missed)" value={'{"phone":"[call_number]","outcome":"missed"}'} />
+            <CopyRow label="ענינו — טריגר: שיחה נכנסת הסתיימה (Call Ended → Incoming)" value={'{"phone":"[call_number]","outcome":"answered","durationSec":[call_duration]}'} />
+            <CopyRow label="חזרנו אליו — טריגר: שיחה יוצאת הסתיימה (Call Ended → Outgoing)" value={'{"phone":"[call_number]","outcome":"answered","direction":"out"}'} />
           </div>
         )}
       </div>
@@ -758,6 +753,20 @@ function CallAutomationCard() {
             {testResult.body && <p className="text-neutral-600 whitespace-pre-line">{testResult.body}</p>}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CopyRow({ label, value, masked, extra }: { label: string; value: string; masked?: boolean; extra?: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <p className="text-[11px] text-neutral-500 mb-1">{label} {extra}</p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 min-w-0 truncate bg-white border border-neutral-200 rounded-lg px-2 py-1.5 text-[11px]" dir="ltr">{masked ? "••••••••••••••••" : value}</code>
+        <button onClick={() => { navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {}); }}
+          className="shrink-0 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-100">{copied ? "✓ הועתק" : "העתק"}</button>
       </div>
     </div>
   );

@@ -191,7 +191,7 @@ function freeInWindow(index: AvailabilityIndex, date: string, staffId: string | 
 }
 
 // ── The run ──────────────────────────────────────────────────────────────────
-export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean; onlyCustomerIds?: string[]; businessId?: string; force?: boolean } = {}): Promise<RunResult[]> {
+export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean; onlyCustomerIds?: string[]; businessId?: string; force?: boolean; /** tests: ignore due-date timing for the listed customers */ ignoreTiming?: boolean } = {}): Promise<RunResult[]> {
   const biz = await prisma.business.findMany({
     where: opts.businessId ? { id: opts.businessId } : {},
     select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeSecondTakenTemplate: true, rhythmNudgeNewTemplate: true },
@@ -303,7 +303,9 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       } else {
         if (recentAutoPhones.has(phone)) { skip("automation_7d"); continue; }
         const anchor = daysToDue > 0 ? dueISO : todayISO;
-        if (daysToDue <= cfg.leadDays && daysToDue >= -PAST_DUE_WINDOW) {
+        if (opts.ignoreTiming) {
+          reason = `preview (due in ${daysToDue}d)`;
+        } else if (daysToDue <= cfg.leadDays && daysToDue >= -PAST_DUE_WINDOW) {
           reason = daysToDue >= 0 ? `due in ${daysToDue}d (lead ${cfg.leadDays})` : `${-daysToDue}d past due`;
         } else if (daysToDue > cfg.leadDays && daysToDue <= cfg.earlyWindowDays) {
           const free = freeInWindow(index, anchor, regularStaffId, serviceId, tod, cfg.excludedStaffIds);
@@ -318,7 +320,19 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       const anchorISO = daysToDue > 0 ? dueISO : todayISO;
       const blockedStaffIds = c.staffBlocks.map(x => x.staffId);
       if (regularStaffId && blockedStaffIds.includes(regularStaffId)) { skip("blocked_at_regular"); continue; }
-      const slots = await findOffer({ businessId: b.id, todayISO, anchorISO, staffId: regularStaffId, serviceId, tod, excludedStaffIds: cfg.excludedStaffIds, blockedStaffIds, index });
+      let slots = await findOffer({ businessId: b.id, todayISO, anchorISO, staffId: regularStaffId, serviceId, tod, excludedStaffIds: cfg.excludedStaffIds, blockedStaffIds, index });
+      // New customer (one visit): one option with the barber he already met —
+      // even outside the quick pool — plus two with others, so he sees a
+      // familiar name AND the shop's breadth (owner's rule, 16.9).
+      if (isNew && topRow?.staff?.isAvailable && top && !blockedStaffIds.includes(top[0]) && !cfg.excludedStaffIds.includes(top[0])) {
+        const prevId = top[0];
+        const withPrev = await findOffer({ businessId: b.id, todayISO, anchorISO, staffId: prevId, serviceId, tod, excludedStaffIds: cfg.excludedStaffIds, blockedStaffIds, index });
+        const first = withPrev[0];
+        if (first) {
+          const others = slots.filter(s => s.staffId !== prevId && !(s.date === first.date && s.time === first.time)).slice(0, 2);
+          slots = [first, ...others].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+        }
+      }
       if (!slots.length) { skip("no_slots"); continue; }
 
       // Second nudge: are the times we offered the first time still on the
