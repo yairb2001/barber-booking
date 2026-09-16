@@ -283,7 +283,10 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       for (const a of recentVisits) byStaff.set(a.staffId, (byStaff.get(a.staffId) || 0) + 1);
       const top = Array.from(byStaff.entries()).sort((a, b) => b[1] - a[1])[0];
       const topRow = top ? recentVisits.find(a => a.staffId === top[0]) : undefined;
-      const regularStaffId = top && recentVisits.length && top[1] / recentVisits.length >= REGULAR_SHARE && topRow?.staff?.isAvailable ? top[0] : null;
+      // "His barber" needs a pattern — at least 2 visits. One visit is not a
+      // preference: a new customer gets options across the quick pool, with the
+      // barber named per slot (spec §6), never a barber outside the pool.
+      const regularStaffId = top && recentVisits.length >= 2 && !isNew && top[1] / recentVisits.length >= REGULAR_SHARE && topRow?.staff?.isAvailable ? top[0] : null;
       if (regularStaffId && cfg.excludedStaffIds.includes(regularStaffId)) { skip("staff_excluded"); continue; }
       const serviceId = ins.usual?.serviceId ?? null;
       const tod = ins.usual?.timeOfDay ?? null;
