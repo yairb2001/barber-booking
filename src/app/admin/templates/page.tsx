@@ -82,44 +82,60 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   call_known_missed:      { emoji: "📞", when: "לקוח קיים בלי תור קרוב שהתקשר ולא נענה (+ פוש לספר שלו)" },
 };
 
+// Four tabs (few on purpose); each tab keeps its small sections.
+type TabKey = "appointment" | "cancel" | "retain" | "calls";
+const TABS: { key: TabKey; label: string; emoji: string }[] = [
+  { key: "appointment", label: "סביב התור",      emoji: "📅" },
+  { key: "cancel",      label: "ביטולים והברזות", emoji: "❌" },
+  { key: "retain",      label: "קשר ושימור",     emoji: "✂️" },
+  { key: "calls",       label: "שיחות טלפון",    emoji: "📞" },
+];
 // Display order, grouped into sections.
-const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
+const GROUPS: { tab: TabKey; title: string; subtitle: string; keys: TemplateKey[] }[] = [
   {
+    tab: "appointment",
     title: "אישור ותזכורות",
     subtitle: "ההודעות הבסיסיות סביב התור — הפעל/כבה וערוך כל אחת",
     keys: ["confirmation", "reminder_24h", "reminder_24h_new", "reminder_24h_returning", "reminder_2h"],
   },
   {
+    tab: "retain",
     title: "ברכות אחרי ביקור",
     subtitle: "הודעות שמחזקות את הקשר עם הלקוח",
     keys: ["first_booking", "walk_in"],
   },
   {
+    tab: "retain",
     title: "הגיע הזמן לתור",
     subtitle: "הצעה יזומה לתור הבא לפי הקצב האישי של הלקוח — המספרה כמזכירה שלו",
     keys: ["rhythm_nudge", "rhythm_nudge_second", "rhythm_nudge_second_taken", "rhythm_nudge_new"],
   },
   {
-    title: "📞 שיחות טלפון",
+    tab: "calls",
+    title: "שיחות טלפון",
     subtitle: "מי שמתקשר למספרה מקבל הודעה בווצאפ מיד בסיום השיחה — לפי מי הוא ואם ענינו",
     keys: ["call_new_missed", "call_new_answered", "call_known_missed_upcoming", "call_known_missed"],
   },
   {
+    tab: "appointment",
     title: "החלפות והעברות תורים",
     subtitle: "נשלחות אוטומטית כשאתה מבצע פעולה ביומן",
     keys: ["swap_proposal", "move_proposal", "swap_confirmation", "appointment_moved", "delay_notification"],
   },
   {
+    tab: "appointment",
     title: "רשימת המתנה",
     subtitle: "נשלחת אוטומטית כשמתפנה תור ללקוח שממתין",
     keys: ["waitlist_notify"],
   },
   {
+    tab: "cancel",
     title: "ביטול תור",
     subtitle: "ההודעות שנשלחות ללקוח כשתור מתבטל",
     keys: ["appointment_cancelled", "appointment_self_cancelled"],
   },
   {
+    tab: "cancel",
     title: "לא הגיע לתור (הבריז)",
     subtitle: "נשלחות רק אם בוחרים לשלוח בזמן סימון 'הבריז' על תור — לא אוטומטי",
     keys: ["appointment_no_show", "appointment_no_show_repeat"],
@@ -135,6 +151,11 @@ type EditorState = {
 
 export default function MessagesHubPage() {
   const keys = Object.keys(TEMPLATE_DEFS) as TemplateKey[];
+  const [tab, setTab] = useState<TabKey>("appointment");
+  useEffect(() => {
+    try { const t = localStorage.getItem("admin.templates.tab") as TabKey | null; if (t && TABS.some(x => x.key === t)) setTab(t); } catch { /* ignore */ }
+  }, []);
+  const pickTab = (t: TabKey) => { setTab(t); try { localStorage.setItem("admin.templates.tab", t); } catch { /* ignore */ } };
 
   const [byKey, setByKey] = useState<Record<TemplateKey, EditorState>>(() => {
     const init: Partial<Record<TemplateKey, EditorState>> = {};
@@ -379,8 +400,23 @@ export default function MessagesHubPage() {
         </p>
       </div>
 
-      {/* Grouped message cards */}
-      {GROUPS.map(group => (
+      {/* Tabs — sticky so switching stays one tap away while scrolling long cards */}
+      <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-neutral-50/95 backdrop-blur">
+        <div className="flex bg-white border border-neutral-200 rounded-xl p-1 gap-1 overflow-x-auto">
+          {TABS.map(t => {
+            const count = GROUPS.filter(g => g.tab === t.key).reduce((n, g) => n + g.keys.length, 0);
+            return (
+              <button key={t.key} onClick={() => pickTab(t.key)}
+                className={`flex-1 whitespace-nowrap rounded-lg px-2 py-2 text-xs font-semibold transition ${tab === t.key ? "bg-teal-600 text-white shadow-sm" : "text-neutral-600 hover:bg-neutral-100"}`}>
+                {t.emoji} {t.label} <span className={`text-[10px] font-normal ${tab === t.key ? "text-white/70" : "text-neutral-400"}`}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Grouped message cards — the active tab only */}
+      {GROUPS.filter(g => g.tab === tab).map(group => (
         <div key={group.title} className="space-y-3">
           <div className="px-1">
             <h2 className="text-sm font-bold text-neutral-700">{group.title}</h2>
