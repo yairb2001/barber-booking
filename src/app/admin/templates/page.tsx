@@ -402,12 +402,12 @@ export default function MessagesHubPage() {
 
       {/* Tabs — sticky so switching stays one tap away while scrolling long cards */}
       <div className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-neutral-50/95 backdrop-blur">
-        <div className="flex bg-white border border-neutral-200 rounded-xl p-1 gap-1 overflow-x-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-4 bg-white border border-neutral-200 rounded-xl p-1 gap-1">
           {TABS.map(t => {
             const count = GROUPS.filter(g => g.tab === t.key).reduce((n, g) => n + g.keys.length, 0);
             return (
               <button key={t.key} onClick={() => pickTab(t.key)}
-                className={`flex-1 whitespace-nowrap rounded-lg px-2 py-2 text-xs font-semibold transition ${tab === t.key ? "bg-teal-600 text-white shadow-sm" : "text-neutral-600 hover:bg-neutral-100"}`}>
+                className={`whitespace-nowrap rounded-lg px-2 py-2 text-xs font-semibold transition ${tab === t.key ? "bg-teal-600 text-white shadow-sm" : "text-neutral-600 hover:bg-neutral-100"}`}>
                 {t.emoji} {t.label} <span className={`text-[10px] font-normal ${tab === t.key ? "text-white/70" : "text-neutral-400"}`}>{count}</span>
               </button>
             );
