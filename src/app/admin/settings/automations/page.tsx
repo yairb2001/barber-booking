@@ -618,6 +618,7 @@ function CallAutomationCard() {
   const [testPhone, setTestPhone] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ case: string; sent: boolean; reason: string; body?: string } | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     fetch("/api/admin/business").then(r => r.json()).then(biz => {
@@ -677,7 +678,33 @@ function CallAutomationCard() {
       </div>
 
       <div className="pt-3 border-t border-neutral-100 space-y-2">
-        <p className="text-xs font-semibold text-neutral-700">חיבור הטלפון (MacroDroid)</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-semibold text-neutral-700">חיבור הטלפון (MacroDroid)</p>
+          <button onClick={() => setGuideOpen(v => !v)} title="הדרכה" aria-expanded={guideOpen}
+            className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border transition ${guideOpen ? "bg-amber-50 border-amber-300 text-amber-700" : "border-neutral-200 text-neutral-500 hover:bg-neutral-50"}`}>
+            ⭐ הדרכה {guideOpen ? "▴" : "▾"}
+          </button>
+        </div>
+        {guideOpen && (
+          <div className="rounded-xl bg-amber-50/60 border border-amber-200 p-3 text-xs text-neutral-700 space-y-2 leading-relaxed">
+            <p className="font-semibold text-neutral-800">ההקמה — פעם אחת, ~15 דקות, על טלפון אנדרואיד עם ה-SIM של המספרה</p>
+            <ol className="list-decimal pr-4 space-y-1.5">
+              <li>מתקינים <a href="https://play.google.com/store/apps/details?id=com.arlosoft.macrodroid" target="_blank" rel="noreferrer" className="text-teal-700 underline font-semibold">MacroDroid</a> (חינם, Play Store). מאשרים הרשאות טלפון ויומן שיחות. בהגדרות הסוללה של הטלפון: MacroDroid → ללא הגבלה, אחרת אנדרואיד מכבה אותו.</li>
+              <li>לוחצים למטה על <b>"הצג כתובת וסוד"</b> — הכתובת והסוד מוכנים להעתקה.</li>
+              <li>יוצרים <b>3 מאקרו</b>, כולם עם אותה פעולה — <b>HTTP Request</b> → POST לכתובת, Content-Type <code dir="ltr">application/json</code>, וכותרת (Header) <code dir="ltr">x-call-secret</code> עם הסוד:
+                <ul className="list-disc pr-4 mt-1 space-y-1">
+                  <li><b>לא ענינו</b> — טריגר <i>Call Missed → Any Number</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"missed"}'}</code></li>
+                  <li><b>ענינו</b> — טריגר <i>Call Ended → Incoming</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","durationSec":[call_duration]}'}</code></li>
+                  <li><b>חזרנו אליו</b> — טריגר <i>Call Ended → Outgoing</i>; גוף: <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","direction":"out"}'}</code></li>
+                </ul>
+                הסוגריים המרובעים הם משתנים של MacroDroid — הוא ממלא אותם לבד (בוחרים מהרשימה "…" ליד שדה הטקסט).
+              </li>
+              <li><b>בדיקה</b>: קודם עם הכפתור למטה (המספר שלך → "לא ענינו" → אמור להגיע ווצאפ). אחר כך שיחה אמיתית מהטלפון האישי למספרה בלי לענות — הלשונית 📞 בצ׳אטים אמורה להראות אותה. אין שורה = MacroDroid לא שלח (הרשאות / סוללה); יש שורה "בלי הודעה" = הסיבה כתובה שם.</li>
+              <li>מתג ראשי <b>ON</b>. עד אז הכול נרשם אבל לא נשלח.</li>
+            </ol>
+            <p className="text-neutral-500">הטלפון חייב להיות דלוק ומחובר לאינטרנט — הוא זה שרואה את השיחות. אייפון לא מתאים: אפל לא מאפשרת לאף אפליקציה לראות שיחות.</p>
+          </div>
+        )}
         {!hook ? (
           <button onClick={() => loadHook(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50">הצג כתובת וסוד</button>
         ) : (
