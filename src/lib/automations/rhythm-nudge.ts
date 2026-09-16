@@ -29,10 +29,13 @@ export type RhythmSettings = {
   includeNewCustomers: boolean; // stage 2: one-visit customers after the shop's median rhythm
   excludedStaffIds: string[];   // customers regular with these barbers are skipped
   notBefore: string | null;     // YYYY-MM-DD — never send before this date (launch guard)
+  newCustomerDays: number | null; // pace for one-visit customers; null = the shop's median rhythm
+  quietAfterActivityDays: number; // skip anyone who no-showed / cancelled / wrote to us this recently
 };
 export const RHYTHM_DEFAULTS: RhythmSettings = {
   enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true,
   includeNewCustomers: false, excludedStaffIds: [], notBefore: null,
+  newCustomerDays: null, quietAfterActivityDays: 3,
 };
 export function getRhythmSettings(raw: string | null | undefined): RhythmSettings {
   try {
@@ -48,6 +51,8 @@ export function getRhythmSettings(raw: string | null | undefined): RhythmSetting
       includeNewCustomers: r.includeNewCustomers === true,
       excludedStaffIds: Array.isArray(r.excludedStaffIds) ? r.excludedStaffIds.filter((x: unknown) => typeof x === "string") : [],
       notBefore: typeof r.notBefore === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.notBefore) ? r.notBefore : null,
+      newCustomerDays: typeof r.newCustomerDays === "number" && isFinite(r.newCustomerDays) && r.newCustomerDays >= 1 ? Math.round(r.newCustomerDays) : null,
+      quietAfterActivityDays: num(r.quietAfterActivityDays, RHYTHM_DEFAULTS.quietAfterActivityDays),
     };
   } catch { return { ...RHYTHM_DEFAULTS }; }
 }
@@ -67,7 +72,7 @@ export type PlanEntry = {
   slots: Slot[];
   body: string;
 };
-export type RunResult = { businessId: string; scanned: number; planned: PlanEntry[]; skipped: Record<string, number> };
+export type RunResult = { businessId: string; scanned: number; planned: PlanEntry[]; skipped: Record<string, number>; shopMedianDays?: number };
 
 const HEB_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const NUDGE_KINDS = ["rhythm_nudge", "rhythm_nudge_2", "rhythm_nudge_new"];
@@ -220,6 +225,13 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
     // Recent automation traffic (7 days) + this customer's nudges since their last visit.
     const since7 = new Date(now.getTime() - 7 * DAY);
     const recentAuto = await prisma.messageLog.findMany({ where: { businessId: b.id, kind: { in: AUTOMATION_KINDS }, createdAt: { gte: since7 }, status: { not: "failed" } }, select: { customerPhone: true } });
+    // Customers who wrote to us in the last N days are mid-conversation — the agent has them; don't butt in.
+    const quietSince = new Date(now.getTime() - cfg.quietAfterActivityDays * DAY);
+    const recentInbound = cfg.quietAfterActivityDays > 0 ? await prisma.conversation.findMany({
+      where: { businessId: b.id, agentType: { not: "owner" }, messages: { some: { role: "user", createdAt: { gte: quietSince } } } }, select: { phone: true },
+    }) : [];
+    const recentInboundPhones = new Set(recentInbound.map(c => normalizeIsraeliPhone(c.phone)));
+    const quietSinceUTC = new Date(todayISO + "T00:00:00.000Z"); quietSinceUTC.setUTCDate(quietSinceUTC.getUTCDate() - cfg.quietAfterActivityDays);
     const recentAutoPhones = new Set(recentAuto.map(r => normalizeIsraeliPhone(r.customerPhone)));
     const nudgeLogs = await prisma.messageLog.findMany({ where: { businessId: b.id, kind: { in: NUDGE_KINDS }, createdAt: { gte: new Date(now.getTime() - 120 * DAY) }, status: { not: "failed" } }, select: { customerPhone: true, kind: true, createdAt: true, body: true } });
     const nudgesByPhone = new Map<string, { kind: string; createdAt: Date; body: string }[]>();
@@ -235,6 +247,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       if (ins.avgIntervalDays && ins.visits >= 2) intervals.push(ins.avgIntervalDays);
     }
     if (intervals.length) { intervals.sort((a, b) => a - b); shopMedian = intervals[Math.floor(intervals.length / 2)]; }
+    res.shopMedianDays = shopMedian;
     const todayUTC = new Date(todayISO + "T00:00:00.000Z");
 
     for (const { c, ins } of candidates) {
@@ -243,13 +256,16 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       if (c.appointments.some(a => a.date >= todayUTC && ["pending", "confirmed"].includes(a.status))) { skip("has_upcoming"); continue; }
       if (c.waitlist.length) { skip("on_waitlist"); continue; }
       if (ins.visits === 0) { skip("no_visits"); continue; }
+      // Fresh no-show / cancellation / message: he's already in touch (or just flaked) — "ראיתי שלא קבעת" would land wrong.
+      if (cfg.quietAfterActivityDays > 0 && (recentInboundPhones.has(phone) ||
+          c.appointments.some(a => a.date >= quietSinceUTC && a.date < todayUTC && ["no_show", "cancelled_by_customer", "cancelled_by_staff"].includes(a.status)))) { skip("recent_activity"); continue; }
 
       // A "known before" regular with one visit here gets the regular message (paced by the shop median).
       const isNew = (ins.visits === 1 || !ins.avgIntervalDays) && !c.knownBefore;
       if (isNew && !cfg.includeNewCustomers) { skip("one_visit"); continue; }
       if (!ins.lastVisitAt) { skip("no_last_visit"); continue; }
 
-      const interval = ins.avgIntervalDays || shopMedian;
+      const interval = ins.avgIntervalDays || cfg.newCustomerDays || shopMedian;
       const dueISO = addDaysISO(ins.lastVisitAt, interval);
       const daysToDue = Math.round((new Date(dueISO + "T00:00:00Z").getTime() - todayUTC.getTime()) / DAY);
       if (daysToDue < -RELEASE_AFTER_DAYS) { skip("released_6w"); continue; }

@@ -480,8 +480,8 @@ export default function AutomationsSettingsPage() {
 
 
 // ── "הגיע הזמן לתור" — rhythm nudge (specs/rhythm-nudge.md) ──────────────────
-type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null };
-const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null };
+type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null; newCustomerDays: number | null; quietAfterActivityDays: number };
+const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null, newCustomerDays: null, quietAfterActivityDays: 3 };
 
 function RhythmNudgeCard() {
   const [cfg, setCfg] = useState<RhythmCfg>(RHYTHM_DEFAULTS);
@@ -489,7 +489,8 @@ function RhythmNudgeCard() {
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [preview, setPreview] = useState<{ planned: { name: string; reason: string; body: string }[]; skipped: Record<string, number>; scanned: number } | null>(null);
+  const [preview, setPreview] = useState<{ planned: { name: string; reason: string; body: string }[]; skipped: Record<string, number>; scanned: number; shopMedianDays?: number } | null>(null);
+  const [median, setMedian] = useState<number | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
   useEffect(() => {
@@ -498,6 +499,7 @@ function RhythmNudgeCard() {
       fetch("/api/admin/staff").then(r => r.json()),
     ]).then(([biz, st]) => {
       const r = biz?.settings?.rhythmNudge || {};
+      fetch("/api/admin/automations/rhythm-median").then(x => x.json()).then(d => { if (typeof d?.median === "number") setMedian(d.median); }).catch(() => {});
       setCfg({ ...RHYTHM_DEFAULTS, ...r, excludedStaffIds: Array.isArray(r.excludedStaffIds) ? r.excludedStaffIds : [] });
       setStaff((Array.isArray(st) ? st : []).map((x: { id: string; name: string }) => ({ id: x.id, name: x.name })));
       setLoaded(true);
@@ -552,9 +554,32 @@ function RhythmNudgeCard() {
         <Toggle on={cfg.secondNudge} onClick={() => save({ ...cfg, secondNudge: !cfg.secondNudge })} />
         <p className="text-sm text-neutral-700">הודעה שנייה אחרי 5 ימים אם לא ענה ולא קבע (ואז משחררים)</p>
       </div>
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <Toggle on={cfg.includeNewCustomers} onClick={() => save({ ...cfg, includeNewCustomers: !cfg.includeNewCustomers })} />
+          <p className="text-sm text-neutral-700">גם לקוחות אחרי ביקור ראשון (פעם אחת)</p>
+        </div>
+        {cfg.includeNewCustomers && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600" style={{ marginRight: "3.25rem" }}>
+            <span>מתי? אחרי</span>
+            <button onClick={() => save({ ...cfg, newCustomerDays: null })}
+              className={`px-2.5 py-1 rounded-full border ${cfg.newCustomerDays === null ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-600 border-neutral-200"}`}>
+              הקצב החציוני של המספרה{median !== null ? ` (${median} ימים)` : ""}
+            </button>
+            <span>או</span>
+            <input type="number" min={1} max={120} value={cfg.newCustomerDays ?? ""} placeholder="ימים"
+              onChange={e => setCfg(c => ({ ...c, newCustomerDays: e.target.value ? Number(e.target.value) : null }))}
+              onBlur={() => save(cfg)}
+              className={`w-16 border rounded-lg px-2 py-1 text-sm ${cfg.newCustomerDays !== null ? "border-teal-400" : "border-neutral-200"}`} dir="ltr" />
+            <span>ימים מהביקור</span>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-3">
-        <Toggle on={cfg.includeNewCustomers} onClick={() => save({ ...cfg, includeNewCustomers: !cfg.includeNewCustomers })} />
-        <p className="text-sm text-neutral-700">גם לקוחות אחרי ביקור ראשון (פעם אחת, לפי הקצב הממוצע של המספרה)</p>
+        <input type="number" min={0} max={30} value={cfg.quietAfterActivityDays} onChange={e => setCfg(c => ({ ...c, quietAfterActivityDays: Number(e.target.value) }))} onBlur={() => save(cfg)}
+          className="w-16 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
+        <p className="text-sm text-neutral-700">ימי שקט אחרי הברזה / ביטול / הודעה מהלקוח <span className="text-neutral-400 text-xs">(0 = בלי)</span></p>
       </div>
 
       {staff.length > 1 && (
