@@ -107,6 +107,7 @@ type Analytics = {
   periodNoShows:        number; // scoped to the selected month/period (unlike totalNoShows, which is all-time)
   cancellations?:       Cancellations;
   rhythmNudge?:         { sent: number; booked: number; rate: number; by?: { self: number; agent: number; admin: number }; avgHoursToBook?: number | null; regular?: NudgeGroup; new?: NudgeGroup };
+  calls?:               { total: number; missed: number; missedRate: number; newCallers: number; newMissed: { count: number; replied: number; booked: number; rate: number }; newAnswered: { count: number; booked: number; rate: number } };
   uniqueCustomers:      number;
   newCustomers:         number;          // legacy alias
   newToBusiness:        number;
@@ -1466,6 +1467,25 @@ export default function Dashboard() {
           {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
           {!isFutureMonth && a.rhythmNudge?.regular && a.rhythmNudge.new && (a.rhythmNudge.regular.customers + a.rhythmNudge.new.customers) > 0 && (
             <RhythmNudgeCard regular={a.rhythmNudge.regular} nu={a.rhythmNudge.new} monthLabel={monthLabel} />
+          )}
+
+          {/* ── 📞 Calls to the shop number — and what the automation brought ── */}
+          {!isFutureMonth && a.calls && a.calls.total > 0 && (
+            <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <div className="flex items-baseline justify-between mb-3">
+                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">📞 שיחות למספרה — {monthLabel}</h2>
+                <span className={`text-2xl font-extrabold ${a.calls.missedRate >= 40 ? "text-red-600" : a.calls.missedRate >= 20 ? "text-amber-600" : "text-neutral-800"}`}>{a.calls.missedRate}%<span className="text-xs font-semibold text-neutral-400 mr-1">לא נענו</span></span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                <div className="bg-neutral-50 rounded-xl py-2"><p className="text-lg font-bold text-neutral-800">{a.calls.total}</p><p className="text-[10px] text-neutral-500">שיחות</p></div>
+                <div className="bg-red-50 rounded-xl py-2"><p className="text-lg font-bold text-red-600">{a.calls.missed}</p><p className="text-[10px] text-red-600">לא נענו</p></div>
+                <div className="bg-amber-50 rounded-xl py-2"><p className="text-lg font-bold text-amber-700">{a.calls.newCallers}</p><p className="text-[10px] text-amber-700">מתקשרים חדשים</p></div>
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-500 border-t border-neutral-100 pt-2">
+                <span>חדשים שלא ענינו להם: <b className="text-neutral-700">{a.calls.newMissed.count}</b> · ענו <b className="text-neutral-700">{a.calls.newMissed.replied}</b> · קבעו תוך 3 ימים <b className="text-teal-700">{a.calls.newMissed.booked}</b> ({a.calls.newMissed.rate}%)</span>
+                <span>חדשים שענינו להם: <b className="text-neutral-700">{a.calls.newAnswered.count}</b> · נקבע להם תור תוך שעה <b className="text-teal-700">{a.calls.newAnswered.booked}</b> ({a.calls.newAnswered.rate}%)</span>
+              </div>
+            </div>
           )}
 
           {/* ── Cancellations — where the money leaks ── */}

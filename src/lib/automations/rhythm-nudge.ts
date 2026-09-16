@@ -56,7 +56,7 @@ import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM
 export { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE };
 
 // ── Types ────────────────────────────────────────────────────────────────────
-type Slot = { date: string; time: string; staffId: string; staffName: string; preferred: boolean };
+export type Slot = { date: string; time: string; staffId: string; staffName: string; preferred: boolean };
 export type PlanEntry = {
   customerId: string; name: string; phone: string;
   kind: "rhythm_nudge" | "rhythm_nudge_2" | "rhythm_nudge_new";
@@ -83,7 +83,7 @@ function todLabelWindow(tod: "morning" | "afternoon" | "evening" | null): (t: st
   return (t: string) => { const h = timeToMinutes(t) / 60; return tod === "morning" ? h < 12 : tod === "afternoon" ? h >= 12 && h < 17 : h >= 17; };
 }
 /** "היום" / "מחר" / "יום שלישי ה-22.9" — in a message the date is always spelled out. */
-function dayLabel(iso: string, todayISO: string): string {
+export function dayLabel(iso: string, todayISO: string): string {
   const diff = Math.round((new Date(iso + "T00:00:00Z").getTime() - new Date(todayISO + "T00:00:00Z").getTime()) / DAY);
   if (diff === 0) return "היום";
   if (diff === 1) return "מחר";
@@ -96,7 +96,7 @@ function dayLabel(iso: string, todayISO: string): string {
  *   או ביום רביעי ה-23.9 ב16:00
  * (+ " אצל X" after each time when the offer mixes barbers.)
  */
-function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean, teamNames: string[]): string {
+export function formatOptions(slots: Slot[], todayISO: string, withStaff: boolean, teamNames: string[]): string {
   const name = (s: Slot) => staffDisplayName(s.staffName, teamNames);
   // Name the barber as few times as possible: once up front when every slot
   // is his, per day when each day is one barber's, per time only when mixed.

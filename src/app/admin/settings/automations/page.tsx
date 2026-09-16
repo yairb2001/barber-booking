@@ -409,6 +409,7 @@ export default function AutomationsSettingsPage() {
           </p>
 
           <RhythmNudgeCard />
+          <CallAutomationCard />
 
           <AutoPanel
             emoji="🔄" title="החזרת לקוחות לא פעילים"
@@ -599,6 +600,113 @@ function RhythmNudgeCard() {
           <p className="text-neutral-400" dir="ltr">skipped: {Object.entries(preview.skipped).map(([k, v]) => `${k} ${v}`).join(" · ")}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ── 📞 "התקשרת? אני כאן" — phone-call automation (specs/call-automation.md) ──
+type CallCfg = { enabled: boolean; newMissed: boolean; newAnswered: boolean; knownMissedUpcoming: boolean; knownMissed: boolean };
+const CALL_DEFAULTS: CallCfg = { enabled: false, newMissed: true, newAnswered: true, knownMissedUpcoming: true, knownMissed: true };
+function CallAutomationCard() {
+  const [cfg, setCfg] = useState<CallCfg>(CALL_DEFAULTS);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [hook, setHook] = useState<{ secret: string; url: string } | null>(null);
+  const [showSecret, setShowSecret] = useState(false);
+  const [testPhone, setTestPhone] = useState("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ case: string; sent: boolean; reason: string; body?: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/business").then(r => r.json()).then(biz => {
+      setCfg({ ...CALL_DEFAULTS, ...(biz?.settings?.callAutomation || {}) });
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+  async function save(next: CallCfg) {
+    setCfg(next); setSaving(true);
+    await fetch("/api/admin/business", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settingsPatch: { callAutomation: next } }) }).catch(() => {});
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 1800);
+  }
+  async function loadHook(rotate = false) {
+    if (rotate && !confirm("לחדש את הסוד? הטלפון יצטרך את הסוד החדש, הישן יפסיק לעבוד מיד.")) return;
+    const r = await fetch("/api/admin/automations/call-hook", { method: rotate ? "POST" : "GET" }).then(x => x.json()).catch(() => null);
+    if (r?.secret) { setHook(r); setShowSecret(true); }
+  }
+  async function runTest(outcome: "missed" | "answered") {
+    if (!testPhone.trim()) return;
+    setTesting(true); setTestResult(null);
+    const r = await fetch("/api/admin/automations/call-test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: testPhone, outcome }) }).then(x => x.json()).catch(() => null);
+    setTestResult(r); setTesting(false);
+  }
+  const Toggle = ({ on, onClick }: { on: boolean; onClick: () => void }) => (
+    <button onClick={onClick} disabled={saving} className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${on ? "bg-teal-500" : "bg-neutral-200"}`}>
+      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${on ? "right-0.5" : "left-0.5"}`} />
+    </button>
+  );
+  const row = (key: keyof Omit<CallCfg, "enabled">, label: string, hint: string) => (
+    <div className="flex items-start gap-3">
+      <Toggle on={cfg[key]} onClick={() => save({ ...cfg, [key]: !cfg[key] })} />
+      <div><p className="text-sm text-neutral-700">{label}</p><p className="text-[11px] text-neutral-400">{hint}</p></div>
+    </div>
+  );
+  const caseLabel: Record<string, string> = { A: "חדש / לא נענה", B: "חדש / נענה", C: "קיים / תור קרוב", D: "קיים / לא נענה", none: "בלי הודעה" };
+
+  if (!loaded) return null;
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
+      <div className="flex items-start gap-3">
+        <Toggle on={cfg.enabled} onClick={() => save({ ...cfg, enabled: !cfg.enabled })} />
+        <div className="min-w-0 flex-1">
+          <h2 className="font-semibold text-neutral-800">📞 התקשרת? אני כאן</h2>
+          <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
+            מי שמתקשר למספר המספרה מקבל הודעה בווצאפ מיד בסיום השיחה — לפי מי הוא ואם ענינו. הודעה אחת למספר ל-24 שעות, לא לחסומים, לא בשבת. דורש טלפון אנדרואיד עם MacroDroid שמדווח על השיחות (ההוראות למטה).
+          </p>
+          {saved && <span className="text-xs text-emerald-600">✓ נשמר</span>}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {row("newMissed", "מספר חדש — לא ענינו", "הסוכן מציג את עצמו, 3 שעות פנויות אצל כולם, קישור לאתר, \"תכתוב לי כאן\"")}
+        {row("newAnswered", "מספר חדש — ענינו", "הצגה ניטרלית של הסוכן + קישור. אתם מבקשים שם בשיחה וקובעים מהצ׳אט")}
+        {row("knownMissedUpcoming", "לקוח קיים עם תור ב-24 שעות — לא ענינו", "מזכיר את התור: מאחר / להזיז / לבטל")}
+        {row("knownMissed", "לקוח קיים בלי תור קרוב — לא ענינו", "\"אני כאן לכל דבר\" + פוש לספר הקבוע שלו (אין → לכולם)")}
+        <p className="text-[11px] text-neutral-400">לקוח קיים שענינו לו — לא מקבל כלום.</p>
+      </div>
+
+      <div className="pt-3 border-t border-neutral-100 space-y-2">
+        <p className="text-xs font-semibold text-neutral-700">חיבור הטלפון (MacroDroid)</p>
+        {!hook ? (
+          <button onClick={() => loadHook(false)} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-neutral-200 text-neutral-700 hover:bg-neutral-50">הצג כתובת וסוד</button>
+        ) : (
+          <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-xs space-y-1.5" dir="ltr">
+            <p><span className="text-neutral-400">POST </span><code className="select-all">{hook.url}</code></p>
+            <p><span className="text-neutral-400">x-call-secret: </span><code className="select-all">{showSecret ? hook.secret : "••••••••••••"}</code>
+              <button onClick={() => setShowSecret(v => !v)} className="mr-2 ml-2 text-teal-700 underline">{showSecret ? "הסתר" : "הצג"}</button>
+              <button onClick={() => loadHook(true)} className="text-neutral-500 underline">חדש סוד</button></p>
+            <p className="text-neutral-500" dir="rtl">גוף הבקשה (JSON): <code dir="ltr">{'{"phone":"[call_number]","outcome":"missed"}'}</code> לשיחה שלא נענתה, <code dir="ltr">{'{"phone":"[call_number]","outcome":"answered","durationSec":[call_duration]}'}</code> לשיחה שהסתיימה, ו-<code dir="ltr">{'"direction":"out"'}</code> לשיחה יוצאת.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="pt-3 border-t border-neutral-100 space-y-2">
+        <p className="text-xs font-semibold text-neutral-700">בדיקה — מדמה שיחה מהמספר הזה ושולח את ההודעה באמת</p>
+        <div className="flex gap-2 items-center flex-wrap">
+          <input value={testPhone} onChange={e => setTestPhone(e.target.value)} placeholder="05X-XXX-XXXX" dir="ltr"
+            className="w-40 border border-neutral-200 rounded-lg px-3 py-1.5 text-sm" />
+          <button onClick={() => runTest("missed")} disabled={testing || !testPhone.trim()} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50">לא ענינו</button>
+          <button onClick={() => runTest("answered")} disabled={testing || !testPhone.trim()} className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">ענינו</button>
+          <a href="/admin/templates" className="text-xs text-neutral-500 underline underline-offset-2 mr-auto">עריכת הנוסחים</a>
+        </div>
+        {testResult && (
+          <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-3 text-xs space-y-1">
+            <p className="font-semibold text-neutral-700">{caseLabel[testResult.case] ?? testResult.case} · {testResult.sent ? "נשלח ✓" : `לא נשלח (${testResult.reason})`}</p>
+            {testResult.body && <p className="text-neutral-600 whitespace-pre-line">{testResult.body}</p>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

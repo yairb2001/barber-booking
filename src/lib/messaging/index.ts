@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
+import { DEFAULT_CALL_NEW_MISSED_TEMPLATE, DEFAULT_CALL_NEW_ANSWERED_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_TEMPLATE } from "@/lib/automations/call-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { normalizeIsraeliPhone } from "./phone";
@@ -893,6 +894,49 @@ export const TEMPLATE_DEFS = {
       { key: "name",         label: "שם הלקוח" },
       { key: "options",      label: "השעות המוצעות (עם שם ספר)" },
       { key: "booking_link", label: "קישור לקביעת תור" },
+    ],
+  },
+  call_new_missed: {
+    label: "התקשרת? אני כאן — מספר חדש, לא ענינו",
+    description: "מיד אחרי שיחה שלא נענתה ממספר שלא מוכר. {{options_line}} = משפט עם 3 השעות הכי קרובות אצל כולם (נשמט כשאין).",
+    field: "callNewMissedTemplate" as const,
+    default: DEFAULT_CALL_NEW_MISSED_TEMPLATE,
+    variables: [
+      { key: "business",     label: "שם העסק" },
+      { key: "options_line", label: "משפט ההצעה עם 3 שעות (או ריק)" },
+      { key: "options",      label: "השעות בלבד" },
+      { key: "booking_link", label: "קישור לקביעת תור" },
+    ],
+  },
+  call_new_answered: {
+    label: "התקשרת? אני כאן — מספר חדש, ענינו",
+    description: "מיד אחרי שיחה שנענתה ממספר שלא מוכר — הצגה ניטרלית של הסוכן; הספר קובע מהצ׳אט עם השם שקיבל בשיחה.",
+    field: "callNewAnsweredTemplate" as const,
+    default: DEFAULT_CALL_NEW_ANSWERED_TEMPLATE,
+    variables: [
+      { key: "business",     label: "שם העסק" },
+      { key: "booking_link", label: "קישור לקביעת תור" },
+    ],
+  },
+  call_known_missed_upcoming: {
+    label: "התקשרת? אני כאן — לקוח קיים עם תור ב-24 שעות, לא ענינו",
+    description: "מזכיר את התור הקרוב: מאחר / להזיז / לבטל.",
+    field: "callKnownMissedUpcomingTemplate" as const,
+    default: DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE,
+    variables: [
+      { key: "name",      label: "שם הלקוח" },
+      { key: "appt_when", label: "\"היום ב-14:30\" / \"מחר ב-10:00\"" },
+      { key: "staff",     label: "הספר של התור" },
+    ],
+  },
+  call_known_missed: {
+    label: "התקשרת? אני כאן — לקוח קיים בלי תור קרוב, לא ענינו",
+    description: "\"אני כאן לכל דבר\" + הצעה שיחזרו אליו. במקביל יוצא פוש לספר הקבוע (אין → לכולם).",
+    field: "callKnownMissedTemplate" as const,
+    default: DEFAULT_CALL_KNOWN_MISSED_TEMPLATE,
+    variables: [
+      { key: "name",          label: "שם הלקוח" },
+      { key: "staff_or_team", label: "הספר הקבוע או \"מישהו מהצוות\"" },
     ],
   },
   walk_in: {

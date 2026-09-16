@@ -244,6 +244,46 @@ export async function GET(req: NextRequest) {
     regular: nudgeRegular, new: nudgeNew,
   };
 
+  // ── 📞 Calls to the shop number (specs/call-automation.md §9) ──
+  const callEvents = await prisma.callEvent.findMany({
+    where: { businessId: bizId, direction: "in", at: { gte: fromDate, lte: toDate } },
+    select: { phone: true, at: true, outcome: true, customerId: true, case: true, messageLogId: true },
+  });
+  const calls = { total: callEvents.length, missed: 0, missedRate: 0, newCallers: 0,
+    newMissed: { count: 0, replied: 0, booked: 0, rate: 0 }, newAnswered: { count: 0, booked: 0, rate: 0 } };
+  if (callEvents.length) {
+    calls.missed = callEvents.filter(e => e.outcome === "missed").length;
+    calls.missedRate = Math.round((calls.missed / callEvents.length) * 100);
+    const newEvents = callEvents.filter(e => !e.customerId);
+    calls.newCallers = new Set(newEvents.map(e => e.phone)).size;
+    const newPhones = Array.from(new Set(newEvents.map(e => e.phone)));
+    const H3D = 3 * 86_400_000;
+    const [custs, convs] = newPhones.length ? await Promise.all([
+      prisma.customer.findMany({ where: { businessId: bizId, phone: { in: newPhones.flatMap(p => [p, "0" + p.slice(3)]) } }, select: { id: true, phone: true } }),
+      prisma.conversation.findMany({ where: { businessId: bizId, phone: { in: newPhones } }, select: { phone: true, messages: { where: { role: "user" }, orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true } } } }),
+    ]) : [[], []];
+    const normP = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
+    const custByPhone = new Map(custs.map(c => [normP(c.phone), c.id]));
+    const created = custs.length ? await prisma.appointment.findMany({ where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate }, status: { in: ["pending", "confirmed", "completed"] } }, select: { customerId: true, createdAt: true } }) : [];
+    const firstReply = new Map(convs.map(c => [c.phone, c.messages[0]?.createdAt]));
+    const seen = new Set<string>();
+    for (const e of newEvents) {
+      if (seen.has(e.phone)) continue; seen.add(e.phone);
+      const cid = custByPhone.get(e.phone);
+      const bookedWithin = (ms: number) => !!cid && created.some(a => a.customerId === cid && a.createdAt >= e.at && a.createdAt.getTime() - e.at.getTime() <= ms);
+      if (e.outcome === "missed") {
+        calls.newMissed.count++;
+        const r = firstReply.get(e.phone); if (r && r >= e.at && r.getTime() - e.at.getTime() <= H3D) calls.newMissed.replied++;
+        if (bookedWithin(H3D)) calls.newMissed.booked++;
+      } else {
+        calls.newAnswered.count++;
+        if (bookedWithin(3_600_000)) calls.newAnswered.booked++;
+      }
+    }
+    calls.newMissed.rate = calls.newMissed.count ? Math.round((calls.newMissed.booked / calls.newMissed.count) * 100) : 0;
+    calls.newAnswered.rate = calls.newAnswered.count ? Math.round((calls.newAnswered.booked / calls.newAnswered.count) * 100) : 0;
+  }
+
   const cancellations = {
     total: cancelled.length,
     booked: periodAll.length,
@@ -677,6 +717,7 @@ export async function GET(req: NextRequest) {
     periodNoShows,
     cancellations,
     rhythmNudge,
+    calls,
     // Unique customers served in the period (respects staff filter via sf)
     uniqueCustomers: periodCustIds.length,
     // Legacy alias — kept so older clients don't break. Prefer newToBusiness/newToStaff.

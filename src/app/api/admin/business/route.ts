@@ -123,6 +123,10 @@ export async function PATCH(req: NextRequest) {
       ...(body.rhythmNudgeSecondTemplate !== undefined && { rhythmNudgeSecondTemplate: body.rhythmNudgeSecondTemplate || null }),
       ...(body.rhythmNudgeSecondTakenTemplate !== undefined && { rhythmNudgeSecondTakenTemplate: body.rhythmNudgeSecondTakenTemplate || null }),
       ...(body.rhythmNudgeNewTemplate !== undefined && { rhythmNudgeNewTemplate: body.rhythmNudgeNewTemplate || null }),
+      ...(body.callNewMissedTemplate !== undefined && { callNewMissedTemplate: body.callNewMissedTemplate || null }),
+      ...(body.callNewAnsweredTemplate !== undefined && { callNewAnsweredTemplate: body.callNewAnsweredTemplate || null }),
+      ...(body.callKnownMissedUpcomingTemplate !== undefined && { callKnownMissedUpcomingTemplate: body.callKnownMissedUpcomingTemplate || null }),
+      ...(body.callKnownMissedTemplate !== undefined && { callKnownMissedTemplate: body.callKnownMissedTemplate || null }),
       ...(body.waitlistNotifyTemplate !== undefined && {
         waitlistNotifyTemplate: body.waitlistNotifyTemplate || null,
       }),

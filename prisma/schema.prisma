@@ -57,6 +57,12 @@ model Business {
   rhythmNudgeCancelledTemplate String?  @map("rhythm_nudge_cancelled_template")
   rhythmNudgeSecondTemplate    String?  @map("rhythm_nudge_second_template")
   rhythmNudgeSecondTakenTemplate String? @map("rhythm_nudge_second_taken_template") // second nudge when the first offer's times were taken
+  // "התקשרת? אני כאן" — phone-call automation (specs/call-automation.md)
+  callHookSecret                  String?  @unique @map("call_hook_secret")
+  callNewMissedTemplate           String?  @map("call_new_missed_template")
+  callNewAnsweredTemplate         String?  @map("call_new_answered_template")
+  callKnownMissedUpcomingTemplate String?  @map("call_known_missed_upcoming_template")
+  callKnownMissedTemplate         String?  @map("call_known_missed_template")
   rhythmNudgeNewTemplate       String?  @map("rhythm_nudge_new_template")
   // ── Theme / branding ──
   secondaryColor  String?  @default("#ffffff") @map("secondary_color")
@@ -131,6 +137,29 @@ model Business {
 }
 
 // === לוג הודעות ===
+/// A phone call to the shop's number, reported by the shop phone (MacroDroid)
+/// or a telephony webhook. Drives the "התקשרת? אני כאן" automation.
+model CallEvent {
+  id           String   @id @default(uuid())
+  businessId   String   @map("business_id")
+  phone        String                        // normalized 972…
+  customerId   String?  @map("customer_id")  // known customer at call time
+  direction    String                        // in | out
+  outcome      String                        // answered | missed
+  at           DateTime
+  durationSec  Int      @default(0) @map("duration_sec")
+  device       String?                       // which reporter (shop-android / test / twilio)
+  /// A | B | C | D = which message went out; "none" + reason when nothing was sent
+  case         String?
+  reason       String?
+  messageLogId String?  @map("message_log_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, at])
+  @@index([businessId, phone, at])
+  @@map("call_events")
+}
+
 model MessageLog {
   id            String   @id @default(uuid())
   businessId    String   @map("business_id")

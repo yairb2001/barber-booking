@@ -76,6 +76,10 @@ const MSG_META: Record<TemplateKey, MsgMeta> = {
   rhythm_nudge_second:    { emoji: "✂️", when: "הודעה שנייה ואחרונה, 5 ימים אחרי הראשונה, אם לא ענה ולא קבע" },
   rhythm_nudge_second_taken: { emoji: "✂️", when: "ההודעה השנייה כשהשעות מהראשונה כבר נתפסו — מציעה שעות חדשות" },
   rhythm_nudge_new:       { emoji: "✂️", when: "ללקוח אחרי ביקור ראשון (שלב 2, מתג נפרד באוטומציות)" },
+  call_new_missed:        { emoji: "📞", when: "מיד אחרי שיחה שלא נענתה ממספר שלא מוכר (הגדרות → אוטומציות → שיחות טלפון)" },
+  call_new_answered:      { emoji: "📞", when: "מיד אחרי שיחה שנענתה ממספר שלא מוכר — הצגת הסוכן, הספר קובע מהצ׳אט" },
+  call_known_missed_upcoming: { emoji: "📞", when: "לקוח קיים עם תור ב-24 השעות הקרובות שהתקשר ולא נענה" },
+  call_known_missed:      { emoji: "📞", when: "לקוח קיים בלי תור קרוב שהתקשר ולא נענה (+ פוש לספר שלו)" },
 };
 
 // Display order, grouped into sections.
@@ -94,6 +98,11 @@ const GROUPS: { title: string; subtitle: string; keys: TemplateKey[] }[] = [
     title: "הגיע הזמן לתור",
     subtitle: "הצעה יזומה לתור הבא לפי הקצב האישי של הלקוח — המספרה כמזכירה שלו",
     keys: ["rhythm_nudge", "rhythm_nudge_second", "rhythm_nudge_second_taken", "rhythm_nudge_new"],
+  },
+  {
+    title: "📞 שיחות טלפון",
+    subtitle: "מי שמתקשר למספרה מקבל הודעה בווצאפ מיד בסיום השיחה — לפי מי הוא ואם ענינו",
+    keys: ["call_new_missed", "call_new_answered", "call_known_missed_upcoming", "call_known_missed"],
   },
   {
     title: "החלפות והעברות תורים",

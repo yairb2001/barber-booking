@@ -1216,7 +1216,7 @@ export async function runOwnerAgent(opts: {
 
   // Load recent history for context.
   const history = await prisma.conversationMessage.findMany({
-    where: { conversationId: conv.id, role: { not: "tool" } },
+    where: { conversationId: conv.id, role: { in: ["user", "assistant"] } },
     orderBy: { createdAt: "desc" },
     take: MAX_HISTORY,
     select: { role: true, content: true },

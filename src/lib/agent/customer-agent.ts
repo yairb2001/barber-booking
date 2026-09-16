@@ -17,6 +17,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { computeCustomerInsights } from "@/lib/customer-insights";
 import { recentNudgeContext } from "@/lib/automations/rhythm-nudge";
+import { recentCallContext } from "@/lib/automations/call-events";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -1537,6 +1538,11 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
   try {
     const nudge = await recentNudgeContext(businessId, phone);
     if (nudge) parts.push(nudge);
+  } catch { /* best-effort */ }
+  // ── Phone call to the shop just now? ─────────────────────────────────────
+  try {
+    const call = await recentCallContext(businessId, phone);
+    if (call) parts.push(call);
   } catch { /* best-effort */ }
 
   // ── Preferred-barber signal (favorite vs. mixed) ─────────────────────────────

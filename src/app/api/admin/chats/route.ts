@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     include: {
       customer: { select: { id: true, name: true } },
       messages: {
-        where: { role: { not: "tool" } },
+        where: { role: { in: ["user", "assistant"] } },
         orderBy: { createdAt: "desc" },
         take: 1,
         select: { content: true, role: true, source: true, createdAt: true },
@@ -91,6 +91,15 @@ export async function GET(req: NextRequest) {
         AND (c.last_read_at IS NULL OR m.created_at > c.last_read_at)
       GROUP BY m.conversation_id`;
     for (const r of rows) unreadById.set(r.conversation_id, Number(r.n));
+  }
+  // 📞 a call to the shop in the last 24h → the row shows why the agent wrote first.
+  const callByPhone = new Map<string, { at: Date; outcome: string; case: string | null }>();
+  {
+    const calls = await prisma.callEvent.findMany({
+      where: { businessId: business.id, direction: "in", at: { gte: new Date(now - 24 * 3_600_000) } },
+      orderBy: { at: "desc" }, select: { phone: true, at: true, outcome: true, case: true },
+    });
+    for (const ev of calls) if (!callByPhone.has(ev.phone)) callByPhone.set(ev.phone, ev);
   }
   const data = convs.map((c) => {
     const last = c.messages[0];
@@ -149,6 +158,7 @@ export async function GET(req: NextRequest) {
       lastMessageSnippet: last?.content?.slice(0, 80) ?? "",
       lastMessageRole: last?.role ?? null,
       unreadCount,
+      lastCall: (() => { const ev = callByPhone.get(normalizeIsraeliPhone(c.phone)); return ev ? { at: ev.at, outcome: ev.outcome, case: ev.case } : null; })(),
     };
   });
 
