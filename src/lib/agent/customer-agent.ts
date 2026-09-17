@@ -409,7 +409,10 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
     },
     // Cache breakpoint: the whole (static) tool block is read from cache on every
     // iteration of the loop and on follow-up turns, at ~10% of the token cost.
-    cache_control: { type: "ephemeral" },
+    // 1h TTL: WhatsApp replies often land minutes-to-an-hour later; the default
+    // 5m cache expires between turns, so each message re-charged the full tool
+    // block. 1h turns those cross-turn reads into cache hits.
+    cache_control: { type: "ephemeral", ttl: "1h" },
   },
 ];
 
@@ -1394,7 +1397,10 @@ export function buildSystemPrompt(params: {
   if (params.customerContext) dynamic += `\n${params.customerContext}`;
 
   return [
-    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+    // 1h TTL on the big stable prompt (~14k chars): it's identical every call,
+    // so caching it for an hour lets a customer's later reply read it at ~10% of
+    // the price instead of re-charging the full prompt on every message.
+    { type: "text", text: stable, cache_control: { type: "ephemeral", ttl: "1h" } },
     { type: "text", text: dynamic },
   ];
 }
