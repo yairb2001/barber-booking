@@ -33,6 +33,8 @@ import {
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { handleOptOutKeywordReply } from "@/lib/messaging/opt-out";
+import { handleClosureReply } from "@/lib/closures/reply";
+import { getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { sendMessage } from "@/lib/messaging";
@@ -417,6 +419,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     if (await handleCandidateReply(biz.id, phone, text)) {
       return NextResponse.json({ ok: true, handled: "swap_candidate_reply" });
+    }
+    // Calendar-closure notice (two alternatives, free-text answer). A clear pick
+    // of A/B or an explicit decline is consumed here; anything else falls
+    // through to the booking agent, which gets closure context injected.
+    // MUST run before handleAdminProposalReply — that one would treat "13:30"
+    // as an unclear yes/no and ask "ענה כן או לא".
+    if (await handleClosureReply(biz.id, phone, text, getBusinessNow().date)) {
+      return NextResponse.json({ ok: true, handled: "closure_reply" });
     }
     // Manual (admin-built) swap/move proposal — the barber created it from the
     // calendar, so the agent never saw the outgoing offer. Intercept the yes/no

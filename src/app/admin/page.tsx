@@ -9,6 +9,8 @@ import { localISODate } from "@/lib/utils";
 import { useModalBack } from "@/lib/useModalBack";
 import { useRouter , useSearchParams } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
+import ClosureWizard from "./ClosureWizard";
+import ClosureCard from "./ClosureCard";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_HOUR_HEIGHT = 64;
@@ -3576,6 +3578,20 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   // Manual "quick message" to a single waiting customer (opens an inline box).
   const [msgTarget, setMsgTarget] = useState<WaitlistEntry | null>(null);
   const [msgText, setMsgText] = useState("");
+  // Calendar closure (specs/calendar-closure.md): how many active appointments
+  // this barber has on this day, the wizard (shown instead of saving when a
+  // close/cut would displace them), and the open closure card for the day.
+  const [dayApptCount, setDayApptCount] = useState<number>(0);
+  const [wizard, setWizard] = useState<{ fromTime?: string | null; toTime?: string | null } | null>(null);
+  const [openClosureId, setOpenClosureId] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`/api/admin/appointments?date=${date}&staffId=${staffId}`).then(r => r.ok ? r.json() : [])
+      .then((rows: { status?: string }[]) => setDayApptCount(Array.isArray(rows) ? rows.filter(a => a.status === "confirmed" || a.status === "pending").length : 0))
+      .catch(() => setDayApptCount(0));
+    fetch("/api/admin/closures?status=active").then(r => r.ok ? r.json() : [])
+      .then((rows: { id: string; date: string; staffId: string }[]) => setOpenClosureId(rows.find(c => c.date === date && c.staffId === staffId)?.id ?? null))
+      .catch(() => {});
+  }, [date, staffId]);
   const [msgSending, setMsgSending] = useState(false);
   const [msgSentId, setMsgSentId] = useState<string | null>(null);
   const [msgError, setMsgError] = useState("");
@@ -3674,10 +3690,25 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   }
 
   async function saveHours() {
+    // Cutting hours on a day that has appointments → the wizard handles the
+    // displaced ones (it closes only the part outside the new hours).
+    if (dayApptCount > 0 && hours.isWorking) {
+      const res = await fetch("/api/admin/closures/preview", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, date, fromTime: "00:00", toTime: hours.start }) }).catch(() => null);
+      const before = res && res.ok ? (await res.json()).displaced?.length ?? 0 : 0;
+      const res2 = await fetch("/api/admin/closures/preview", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, date, fromTime: hours.end, toTime: "23:59" }) }).catch(() => null);
+      const after = res2 && res2.ok ? (await res2.json()).displaced?.length ?? 0 : 0;
+      if (before > 0) { setWizard({ fromTime: "00:00", toTime: hours.start }); return; }
+      if (after > 0)  { setWizard({ fromTime: hours.end, toTime: "23:59" }); return; }
+    }
     await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks });
   }
 
   async function closeDay() {
+    // A day with appointments never closes silently — the wizard makes sure
+    // every customer has somewhere to go first (specs/calendar-closure.md).
+    if (dayApptCount > 0) { setWizard({ fromTime: null, toTime: null }); return; }
     setHours(p => ({ ...p, isWorking: false }));
     await doSave({ date, isWorking: false });
   }
@@ -3823,9 +3854,22 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
             {israeliHoliday(date) && (
               <p className="text-xs font-semibold text-amber-600 mt-0.5">🕎 {israeliHoliday(date)} — שימו לב לפני פתיחת שעות</p>
             )}
+            {dayApptCount > 0 && !openClosureId && (
+              <p className="text-xs font-semibold text-teal-700 mt-0.5">ביום הזה יש {dayApptCount} תורים — סגירה או קיצור שעות יעברו דרך אשף הסגירה, הלקוחות לא ייעלמו.</p>
+            )}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">✕</button>
         </div>
+        {openClosureId && (
+          <div className="px-4 pt-3">
+            <ClosureCard closureId={openClosureId} onChanged={onRefresh} />
+          </div>
+        )}
+        {wizard && (
+          <ClosureWizard staffId={staffId} date={date} fromTime={wizard.fromTime} toTime={wizard.toTime} today={todayISO()}
+            onCancel={() => setWizard(null)}
+            onDone={(id) => { setWizard(null); setOpenClosureId(id); setDayApptCount(0); onRefresh(); }} />
+        )}
 
         {/* Tabs */}
         <div className="flex border-b border-neutral-100 px-3 pt-1">

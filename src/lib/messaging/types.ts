@@ -40,6 +40,11 @@ export type MessageKind =
   // Walk-in customers — thank-you + booking link after appointment ends
   | "walk_in"
   // Referral thank-you — sent to the friend who referred a new customer
+  // Calendar closure (specs/calendar-closure.md)
+  | "closure_notice"      // barber closed the day: cancelled + two alternatives, in the barber's voice
+  | "closure_reminder"    // resend when the customer did not answer
+  | "closure_escalation"  // WhatsApp to the closing barber: customer still silent, call them
+  | "closure_summary"     // WhatsApp to the closing barber when every customer is handled
   | "referral_thankyou"
   // Internal business reports (sent to manager/staff, not customers)
   | "report_daily"

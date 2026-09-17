@@ -1146,6 +1146,7 @@ export async function handleAdminProposalReply(
       status: { in: ["pending_response", "expired"] },
       respondedAt: null,
       initiatedBy: "admin",
+      closureId: null, // closure proposals are routed by lib/closures/reply.ts
       OR: [
         { candidate: { customer: { OR: [{ phone }, { phone: local }] } } },
         { kind: "move", primary: { customer: { OR: [{ phone }, { phone: local }] } } },

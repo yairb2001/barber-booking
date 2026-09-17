@@ -40,6 +40,7 @@ model Business {
   moveProposalTemplate      String?  @map("move_proposal_template")
   swapConfirmationTemplate  String?  @map("swap_confirmation_template")
   appointmentMovedTemplate  String?  @map("appointment_moved_template")
+  closureNoticeTemplate     String?  @map("closure_notice_template")   // calendar-closure notice in the barber's voice (null = default)
   delayNotificationTemplate String?  @map("delay_notification_template")
   walkInTemplate            String?  @map("walk_in_template")
   firstBookingTemplate      String?  @map("first_booking_template")
@@ -408,6 +409,7 @@ model Appointment {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   recurringId    String?  @map("recurring_id")
+  closureId      String?  @map("closure_id") // set when cancelled by a calendar closure (specs/calendar-closure.md)
 
   business       Business @relation(fields: [businessId], references: [id])
   customer       Customer @relation(fields: [customerId], references: [id])
@@ -493,6 +495,12 @@ model SwapProposal {
   approvedAt             DateTime? @map("approved_at")
   expiresAt              DateTime  @map("expires_at") // createdAt + 24h (admin) / +2h (agent)
   reminderSentAt         DateTime? @map("reminder_sent_at") // set once the 1-hour nudge is sent
+  // Calendar-closure proposals carry TWO alternatives; the customer picks one
+  // in free text (the agent resolves it) or asks for something else.
+  closureId              String?   @map("closure_id")
+  optionsJson            String?   @map("options_json")  // [{staffId,date,startTime}] — up to 2
+  chosenIndex            Int?      @map("chosen_index")
+  closure                CalendarClosure? @relation(fields: [closureId], references: [id])
 
   business  Business     @relation(fields: [businessId], references: [id])
   primary   Appointment  @relation("SwapPrimary",   fields: [primaryAppointmentId],   references: [id])
@@ -852,6 +860,48 @@ model PortfolioItem {
   staff       Staff    @relation(fields: [staffId], references: [id])
 
   @@map("portfolio_items")
+}
+
+
+// === סגירת יומן עם לקוחות (specs/calendar-closure.md) ===
+model CalendarClosure {
+  id               String    @id @default(uuid())
+  businessId       String    @map("business_id")
+  staffId          String    @map("staff_id")
+  date             DateTime
+  fromTime         String?   @map("from_time") // "HH:MM" — null with toTime null = whole day
+  toTime           String?   @map("to_time")
+  reason           String?
+  createdByStaffId String?   @map("created_by_staff_id")
+  status           String    @default("active") // active | resolved
+  summaryJson      String?   @map("summary_json")
+  summarySentAt    DateTime? @map("summary_sent_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  resolvedAt       DateTime? @map("resolved_at")
+
+  proposals        SwapProposal[]
+
+  @@index([businessId, status])
+  @@map("calendar_closures")
+}
+
+// Soft hold on a free slot while a customer decides (closure alternatives now;
+// deposits later). The availability engine treats an unexpired hold as busy.
+model SlotHold {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  staffId     String   @map("staff_id")
+  date        DateTime
+  startTime   String   @map("start_time")
+  endTime     String   @map("end_time")
+  customerId  String?  @map("customer_id")
+  proposalId  String?  @map("proposal_id")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([staffId, date])
+  @@index([proposalId])
+  @@map("slot_holds")
 }
 
 // === קודי OTP לאימות בעת קביעת תור ===

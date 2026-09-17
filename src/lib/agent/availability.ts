@@ -151,8 +151,15 @@ export async function computeDayAvailability(
       where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
       select: { startTime: true, endTime: true },
     });
+    // Soft holds (calendar-closure alternatives offered to a customer, later
+    // deposits) block the slot like a booking until they expire — otherwise two
+    // displaced customers could be offered, and both accept, the same time.
+    const holds = await prisma.slotHold.findMany({
+      where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, expiresAt: { gt: new Date() } },
+      select: { startTime: true, endTime: true },
+    });
 
-    let slots = generateSlots(scheduleSlots, breaks, duration, booked);
+    let slots = generateSlots(scheduleSlots, breaks, duration, [...booked, ...holds]);
 
     if (nowBiz.date === date && opts.ignoreLimits) {
       slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes); // only the past is off-limits
