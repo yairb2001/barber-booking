@@ -23,6 +23,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { applyMessagingOptOut } from "@/lib/messaging/opt-out";
+import { findUpsellOffer } from "@/lib/automations/upsell";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
@@ -669,7 +670,7 @@ export async function execTool(
         const [staff, service, biz] = await Promise.all([
           prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, name: true } }),
           prisma.service.findUnique({ where: { id: serviceId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
-          prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } }),
+          prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true, settings: true } }),
         ]);
         if (!staff || !service || !biz) return "שגיאה: לא נמצא הספר או השירות לפי המזהה. קרא שוב ל-get_staff_list ו-get_services כדי לקבל מזהים מעודכנים, ואז נסה לקבוע שוב — אל תעביר לאדם בגלל זה.";
 
@@ -815,7 +816,30 @@ export async function execTool(
           url: "/admin",
           tag: `appt-${appt.id}`,
         }).catch(() => {});
-        return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}`;
+
+        // Post-booking upsell — a REAL free slot for a business-configured
+        // complementary service near this appointment (e.g. tanning right
+        // after a nail appointment), never a guess. Off by default per
+        // business (Business.settings.upsell.enabled) — see src/lib/
+        // automations/upsell.ts for the full contract.
+        let upsellLine = "";
+        try {
+          const offer = await findUpsellOffer({
+            businessId: bizId,
+            settings: biz.settings,
+            date,
+            bookedStart: startTime,
+            bookedEnd: endTime,
+            excludeServiceId: serviceId,
+          });
+          if (offer) {
+            upsellLine = `\n\nהזדמנות הצעה (עובדה אמיתית, לא לנחש): יש גם מקום פנוי ל${offer.serviceName} ב-${offer.time} אצל ${offer.staffName} (${offer.price}₪), קרוב לתור שזה עתה נקבע. אחרי שתאשר ללקוח את התור, הצע לו את זה בקצרה ובטבעיות (למשל "אגב, יש לנו גם פנוי ל${offer.serviceName} בסביבות השעה הזו — מעניין אותך לשמוע?") — אל תמציא פרטים שלא רשומים כאן, ואל תתעקש אם הוא לא מעוניין.`;
+          }
+        } catch (err) {
+          console.error("[agent] upsell check failed", err);
+        }
+
+        return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}${upsellLine}`;
       }
 
       // ── check_appointment ────────────────────────────────────────────────────
