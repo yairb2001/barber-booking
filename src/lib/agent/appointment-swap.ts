@@ -1261,6 +1261,41 @@ export async function handleAdminProposalReply(
 // 4) Lazy expiry — runs on every inbound webhook for the business (no cron).
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** The staff's 2h window to approve/deny a late-arrival delay expired with NO
+ *  reply through the recognized כן/לא channel at all — not even a "no".
+ *  Real incident (Linoy Sahar 15.9, then "N" 16.9, both on Yair's watch):
+ *  the staff actually DID approve, just informally inside the admin chat
+ *  panel rather than by replying to the bot's request, so the request sat
+ *  unanswered from the system's point of view — and the old behavior then
+ *  auto-marked the appointment a no-show and told the customer "not
+ *  approved, we charge in full", which was simply false both times.
+ *  Silence is not a denial: leave the appointment exactly as booked, same
+ *  wording already used when the staff replies late (see the expired branch
+ *  in handleLateArrivalStaffReply above), and let a staff member sort it out
+ *  manually if needed. */
+async function expireLateArrivalNoAnswer(bizId: string, primaryAppointmentId: string): Promise<void> {
+  const proposal = await prisma.swapProposal.findFirst({
+    where: { primaryAppointmentId, kind: "late_arrival", initiatedBy: "agent" },
+    orderBy: { createdAt: "desc" },
+    include: { primary: { include: { customer: true, staff: true, service: true } } },
+  });
+  if (!proposal?.primary) return;
+
+  await notifyRequester(
+    bizId,
+    proposal.requesterConversationId,
+    proposal.primary.customer.phone,
+    `לא הצלחתי לקבל תשובה מ${proposal.primary.staff.name} לגבי האיחור. התור שלך עדיין רשום כרגיל — מומלץ להגיע כמה שיותר קרוב לשעה שנקבעה 🙏`,
+  );
+  if (proposal.primary.staff.phone) {
+    await notifyStaffByPhone(
+      bizId,
+      proposal.primary.staff.phone,
+      `לא הספקת לענות (כן/לא) לבקשת האיחור של ${proposal.primary.customer.name} תוך שעתיים — התור נשאר כרגיל, לא סומן כהברזה. אם כבר סיכמת איתו ישירות, אין צורך לעשות כלום.`,
+    ).catch(() => {});
+  }
+}
+
 export async function expireStaleAgentSwaps(bizId: string): Promise<void> {
   const now = new Date();
   const stale = await prisma.swapProposal.findMany({
@@ -1270,11 +1305,19 @@ export async function expireStaleAgentSwaps(bizId: string): Promise<void> {
       status: { in: ["pending_staff_approval", "pending_response"] },
       expiresAt: { lt: now },
     },
-    select: { id: true, status: true, primaryAppointmentId: true },
+    select: { id: true, status: true, kind: true, primaryAppointmentId: true },
   });
   for (const s of stale) {
     await prisma.swapProposal.update({ where: { id: s.id }, data: { status: "expired" } }).catch(() => {});
-    if (s.status === "pending_response") {
+    // Late-arrival's FIRST question (approve the delay?) expiring with no
+    // reply at all is not a denial — Yair, 2026-09-17: silence must never be
+    // treated as "staff said no". Only an explicit "לא" (handled inline in
+    // handleLateArrivalStaffReply / handleLateArrivalSwapOfferConfirm above)
+    // may mark a real no-show. Mirrors the expired branch already correct in
+    // handleLateArrivalStaffReply for when the staff replies AFTER expiry.
+    if (s.status === "pending_staff_approval" && s.kind === "late_arrival") {
+      await expireLateArrivalNoAnswer(bizId, s.primaryAppointmentId);
+    } else if (s.status === "pending_response") {
       const promoted = await promoteNextCandidate(s.primaryAppointmentId);
       if (!promoted) await finishUnsuccessful(s.primaryAppointmentId);
     } else {
