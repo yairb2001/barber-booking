@@ -410,7 +410,10 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
     },
     // Cache breakpoint: the whole (static) tool block is read from cache on every
     // iteration of the loop and on follow-up turns, at ~10% of the token cost.
-    cache_control: { type: "ephemeral" },
+    // 1h TTL: WhatsApp replies often land minutes-to-an-hour later; the default
+    // 5m cache expires between turns, so each message re-charged the full tool
+    // block. 1h turns those cross-turn reads into cache hits.
+    cache_control: { type: "ephemeral", ttl: "1h" },
   },
 ];
 
@@ -1418,7 +1421,10 @@ export function buildSystemPrompt(params: {
   if (params.customerContext) dynamic += `\n${params.customerContext}`;
 
   return [
-    { type: "text", text: stable, cache_control: { type: "ephemeral" } },
+    // 1h TTL on the big stable prompt (~14k chars): it's identical every call,
+    // so caching it for an hour lets a customer's later reply read it at ~10% of
+    // the price instead of re-charging the full prompt on every message.
+    { type: "text", text: stable, cache_control: { type: "ephemeral", ttl: "1h" } },
     { type: "text", text: dynamic },
   ];
 }
@@ -1522,6 +1528,41 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
   } else {
     parts.push(`אין לו כרגע אף תור קבוע עתידי. אם ישאל "מתי התור שלי" — אמור לו בעדינות שאין לו תור קבוע כרגע, והצע לקבוע לו עכשיו.`);
   }
+
+  // ── Calendar closure: the barber cancelled this customer's appointment and
+  // offered two alternatives in his own voice. If the customer's reply was not a
+  // clear pick (handled deterministically in the webhook), the agent continues
+  // the SAME thread: finds them another time, honoring the loyalty rule and
+  // never inside the closed window. Spec: specs/calendar-closure.md §6
+  try {
+    const closureProposal = await prisma.swapProposal.findFirst({
+      where: { businessId, closureId: { not: null }, status: "pending_response", respondedAt: null, expiresAt: { gt: new Date() },
+        primary: { customerId: customer.id } },
+      orderBy: { createdAt: "desc" },
+      select: { optionsJson: true, primary: { select: { date: true, startTime: true, staff: { select: { id: true, name: true } } } },
+        closure: { select: { staffId: true, date: true, fromTime: true, toTime: true } } },
+    });
+    if (closureProposal) {
+      const opts: { staffName: string; date: string; startTime: string; sameStaff: boolean }[] = closureProposal.optionsJson ? JSON.parse(closureProposal.optionsJson) : [];
+      const origDate = new Date(closureProposal.primary.date).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
+      const optText = opts.map((o, i) => `${i === 0 ? "א" : "ב"}) ${o.date} בשעה ${o.startTime}${o.sameStaff ? "" : " אצל " + o.staffName}`).join("; ");
+      const window = closureProposal.closure?.fromTime && closureProposal.closure?.toTime
+        ? `בין ${closureProposal.closure.fromTime} ל-${closureProposal.closure.toTime}` : "כל היום";
+      const loyaltyRule = await prisma.appointment.groupBy({ by: ["staffId"], where: { businessId, customerId: customer.id, date: { lt: todayStart }, status: { in: ["confirmed", "completed"] } }, _count: { _all: true } })
+        .then(g => { const total = g.reduce((s2, x) => s2 + x._count._all, 0); const w = g.find(x => x.staffId === closureProposal.primary.staff.id)?._count._all ?? 0; return total > 0 && w / total >= 0.7; })
+        .catch(() => false);
+      parts.push(
+        `⚠️ מצב מיוחד — סגירת יומן: ${closureProposal.primary.staff.name} נאלץ לבטל ללקוח את התור של יום ${origDate} בשעה ${closureProposal.primary.startTime}, ושלח לו בעצמו הודעה בגוף ראשון ("זה ${firstName(closureProposal.primary.staff.name)}...") עם שתי חלופות: ${optText || "(אין)"}. ` +
+        `אתה ממשיך את אותה שיחה **בקול של ${firstName(closureProposal.primary.staff.name)}** (גוף ראשון, "אני אסדר לך"), מתנצל פעם אחת בלבד ולא מסביר למה. ` +
+        `אם הלקוח בוחר אחת מהחלופות — קרא ל-request_appointment_move לתור שלו עם הזמן שבחר${opts.some(o => !o.sameStaff) ? " (allowOtherBarber=true אם החלופה אצל ספר אחר)" : ""}. ` +
+        `אם הוא מבקש שעה/יום/ספר אחר — מצא לו (find_next_available / get_available_slots) והזז עם request_appointment_move. ` +
+        (loyaltyRule
+          ? `הלקוח קבוע אצל ${closureProposal.primary.staff.name} — הצע רק אצלו, אלא אם הלקוח מבקש במפורש ספר אחר (אז מותר, allowOtherBarber=true). `
+          : `מותר להציע גם ספרים אחרים. `) +
+        `אסור להציע זמן ביום ${new Date(closureProposal.closure?.date ?? closureProposal.primary.date).toISOString().slice(0, 10)} ${window} אצל ${closureProposal.primary.staff.name} — היומן שם סגור.`
+      );
+    }
+  } catch (e) { console.error("[agent] closure context failed", e); }
 
   const past = recent.filter(a => !a.status.startsWith("cancelled") && new Date(a.date) < todayStart);
   if (past.length) {

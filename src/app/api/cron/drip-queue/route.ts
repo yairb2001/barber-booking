@@ -35,6 +35,7 @@ import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
+import { runClosureSweep } from "@/lib/closures/status";
 import { sweepReminders } from "@/lib/reminders-sweep";
 import { runPostVisitAutomations } from "@/lib/automations/post-visit";
 import { runRhythmNudge } from "@/lib/automations/rhythm-nudge";
@@ -448,4 +449,8 @@ async function runPiggybackTasks(now: Date): Promise<void> {
       console.error("[drip-queue] demo-sales-agent failed:", err);
     }
   }
+
+  // Calendar-closure sweep: resend to silent customers, escalate to the closing
+  // barber, summarize when done. Cheap when no closure is open.
+  try { await runClosureSweep(now); } catch (err) { console.error("[drip-queue] closure sweep failed:", err); }
 }
