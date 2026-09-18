@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useModalBack } from "@/lib/useModalBack";
-import { rangeLabel } from "@/lib/closures/message";
+import { rangeLabel, renderClosureText, whenLabel } from "@/lib/closures/message";
 
 /**
  * Calendar-closure wizard — shown INSTEAD of saving when the barber closes a
@@ -86,16 +86,10 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
     return { ok: active.length === 0 || (noOpt === 0 && distinct.size >= active.length), needed: active.length, have: distinct.size, missing: Math.max(noOpt, active.length - distinct.size) };
   }, [plan, excluded]);
 
+  // Same renderer the server uses to send — what the barber previews is what goes out.
   function preview(d: Displaced): string {
     if (custom[d.appointmentId]) return custom[d.appointmentId];
-    const [a, b] = d.options;
-    const when = plan?.isToday ? `היום בשעה ${d.startTime}` : `ביום ${dateLabel(date)} בשעה ${d.startTime}`;
-    return template
-      .replace(/\{\{name\}\}/g, d.customer.name.split(/\s+/)[0])
-      .replace(/\{\{barber\}\}/g, (plan?.staffName ?? "").split(/\s+/)[0])
-      .replace(/\{\{when\}\}/g, when)
-      .replace(/\{\{option_a\}\}/g, a ? slotLabel(a, today) : "")
-      .replace(/\{\{option_b\}\}/g, b ? ` או ${slotLabel(b, today)}` : "");
+    return renderClosureText(template, { name: d.customer.name, barber: plan?.staffName ?? "", when: whenLabel(date, d.startTime), options: d.options, originalDate: date });
   }
 
   async function send() {

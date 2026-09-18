@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { sendProactiveMessage } from "@/lib/messaging/index";
 import { timeToMinutes, minutesToTime } from "@/lib/utils";
 import { planClosure, type ClosureInput, type ClosurePlan, type SlotOption } from "./plan";
-import { DEFAULT_CLOSURE_NOTICE_TEMPLATE, renderClosureText, describeSlot } from "./message";
+import { DEFAULT_CLOSURE_NOTICE_TEMPLATE, renderClosureText, whenLabel } from "./message";
 
 export const HOLD_HOURS = 24;
 
@@ -31,11 +31,6 @@ export type ExecuteResult = {
   sent: number; excluded: number; failed: number;
   perCustomer: { appointmentId: string; customerName: string; state: "sent" | "excluded" | "failed" }[];
 };
-
-function whenLabel(date: string, startTime: string, isToday: boolean): string {
-  if (isToday) return `היום בשעה ${startTime}`;
-  return `${describeSlot({ date, startTime }).replace(/ ב‑\d\d:\d\d$/, "")} בשעה ${startTime}`;
-}
 
 export async function executeClosure(input: ClosureInput, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   // Re-plan at execution time: the gate the barber saw is the gate we enforce,
@@ -116,8 +111,9 @@ export async function executeClosure(input: ClosureInput, opts: ExecuteOptions =
     const text = opts.customTextByAppointmentId?.[d.appointmentId]?.trim()
       || renderClosureText(template, {
         name: d.customer.name, barber: plan.staffName,
-        when: whenLabel(input.date, d.startTime, plan.isToday),
+        when: whenLabel(input.date, d.startTime),
         options: d.options as (SlotOption & { staffName: string })[],
+        originalDate: input.date,
       });
     try {
       await sendProactiveMessage({
