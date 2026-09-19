@@ -42,17 +42,28 @@ export function describeSlot(o: { date: string; startTime: string; staffName?: s
   return `${dayLabel} ב‑${o.startTime}${who}`;
 }
 
+/** "היום בשעה 09:30" / "ביום רביעי (30.9) בשעה 09:30" — the cancelled slot. */
+export function whenLabel(date: string, startTime: string): string {
+  if (date === getBusinessNow().date) return `היום בשעה ${startTime}`;
+  return `${describeSlot({ date, startTime }).replace(/ ב‑\d\d:\d\d$/, "")} בשעה ${startTime}`;
+}
+
 export function firstName(name: string): string {
   return (name || "").trim().split(/\s+/)[0] || "";
 }
 
 export function renderClosureText(
   template: string,
-  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[] },
+  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[]; originalDate?: string },
 ): string {
   const [a, b] = v.options;
-  const optionA = a ? describeSlot(a) : "";
-  const optionB = b ? ` או ${describeSlot(b)}` : "";
+  // "ביום רביעי (30.9) ב‑11:30 או ביום רביעי (30.9) ב‑13:00" read like a form
+  // letter (first real closure, 18.9.2026). Same day as the cancelled slot →
+  // "באותו יום"; second option on the same day as the first → just the time.
+  const who = (o: { staffName: string; sameStaff: boolean }) => (o.sameStaff === false && o.staffName ? ` אצל ${o.staffName}` : "");
+  const label = (o: typeof a) => (v.originalDate && o.date === v.originalDate ? `באותו יום ב‑${o.startTime}${who(o)}` : describeSlot(o));
+  const optionA = a ? label(a) : "";
+  const optionB = b ? ` או ${a && b.date === a.date ? `ב‑${b.startTime}${who(b)}` : label(b)}` : "";
   return template
     .replace(/\{\{name\}\}/g, firstName(v.name))
     .replace(/\{\{barber\}\}/g, firstName(v.barber))

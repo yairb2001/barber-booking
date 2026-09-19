@@ -23,25 +23,52 @@ type Opt = { staffId: string; staffName: string; date: string; startTime: string
 
 const DAY_WORDS: Record<string, number> = { "ראשון": 0, "שני": 1, "שלישי": 2, "רביעי": 3, "חמישי": 4, "שישי": 5, "שבת": 6 };
 
+/** Filler a customer wraps a pick in: "13 מעולה", "סבבה 11:00", "אפשר ב-13 בבקשה". */
+const FILLER = "(?:כן|סבבה|מעולה|אחלה|יאללה|אוקיי|אוקי|טוב|בסדר|מתאים(?: לי)?|תודה(?: רבה)?|אחי|בבקשה|אפשר|נלך על|נקבע|קח|תקבע(?: לי)?|את|לי|אני|רוצה|מעדיף|השעה|בשעה|ב|ב-|ב‑|של|אז)";
+const FILLER_HEAD = new RegExp(`^${FILLER}(?=\\s|\\d|$)[\\s,.!?]*`);
+const FILLER_TAIL = new RegExp(`[\\s,.!?]*(?<=\\s|\\d|^)${FILLER}$`);
+function stripFiller(t: string): string {
+  let prev = "";
+  while (prev !== t) {
+    prev = t;
+    t = t.replace(FILLER_HEAD, "").replace(FILLER_TAIL, "").trim();
+  }
+  return t;
+}
+
 /** Which of the two options did the customer pick? null = not a clear pick. */
 export function resolvePick(text: string, options: Opt[], today: string): number | null {
   const t = text.trim().replace(/[!.،,]+$/g, "");
   if (options.length === 1) {
     if (/^(כן|סבבה|מתאים|אוקיי|אוקי|בסדר|יאללה|מעולה|אחלה)\b/.test(t)) return 0;
   }
-  if (/^(ה?ראשונ[הי]?|האופציה הראשונה|1|א['׳]?|הראשון)$/.test(t)) return 0;
-  if (options.length > 1 && /^(ה?שני[יה]?|האופציה השנייה|2|ב['׳]?|השני)$/.test(t)) return 1;
-  // explicit time "13:30" / "13.30" / "ב-13:30"
-  const tm = t.match(/\b(\d{1,2})[:.](\d{2})\b/);
-  if (tm) {
-    const hhmm = `${tm[1].padStart(2, "0")}:${tm[2]}`;
-    const hits = options.map((o, i) => (o.startTime === hhmm ? i : -1)).filter(i => i >= 0);
-    if (hits.length === 1) return hits[0];
+  const only = (hits: number[]) => (hits.length === 1 ? hits[0] : null);
+  const core = stripFiller(t);
+  if (/^(ה?ראשונ[הי]?|האופציה הראשונה|האפשרות הראשונה|1|א['׳]?|הראשון)$/.test(core)) return 0;
+  if (options.length > 1 && /^(ה?שני(?:יה|י|ה)?|האופציה השנייה|האפשרות השנייה|2|ב['׳]?|השני)$/.test(core)) return 1;
+  // explicit time "13:30" / "13.30" / "ב-13:30" / "1330"
+  // ("11:30 או 13:00?" names both → not a pick)
+  const times = Array.from(t.matchAll(/(?:^|[^\d])(\d{1,2})[:.](\d{2})(?!\d)/g)).map(x => `${x[1].padStart(2, "0")}:${x[2]}`);
+  const compact = core.match(/^(\d{1,2})(\d{2})$/);
+  if (!times.length && compact) times.push(`${compact[1].padStart(2, "0")}:${compact[2]}`);
+  if (times.length) {
+    if (new Set(times).size > 1) return null;
+    const r = only(options.map((o, i) => (o.startTime === times[0] ? i : -1)).filter(i => i >= 0));
+    if (r !== null) return r;
+  }
+  // bare hour: "13", "ב-13", "13 מעולה", "1" (= 13:00 when only that option fits)
+  const hr = core.match(/^(\d{1,2})$/);
+  if (hr) {
+    const h = Number(hr[1]);
+    const hourOf = (o: Opt) => Number(o.startTime.split(":")[0]);
+    const exact = only(options.map((o, i) => (hourOf(o) === h ? i : -1)).filter(i => i >= 0));
+    if (exact !== null) return exact;
+    if (h < 12) { const pm = only(options.map((o, i) => (hourOf(o) === h + 12 ? i : -1)).filter(i => i >= 0)); if (pm !== null) return pm; }
   }
   // "מחר" / "היום" / day name — only if exactly one option matches
   const tomorrow = new Date(today + "T00:00:00.000Z"); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const tomorrowIso = tomorrow.toISOString().slice(0, 10);
-  const byDate = (pred: (o: Opt) => boolean) => { const h = options.map((o, i) => (pred(o) ? i : -1)).filter(i => i >= 0); return h.length === 1 ? h[0] : null; };
+  const byDate = (pred: (o: Opt) => boolean) => only(options.map((o, i) => (pred(o) ? i : -1)).filter(i => i >= 0));
   // NOTE: \b is useless next to Hebrew (not \w in JS) — use explicit edges.
   const has = (word: string) => new RegExp(`(?:^|[\\s,.])${word}(?=$|[\\s,.!?])`).test(t);
   if (has("מחר")) { const r = byDate(o => o.date === tomorrowIso); if (r !== null) return r; }
@@ -96,7 +123,14 @@ export async function handleClosureReply(bizId: string, fromPhone: string, text:
   }
 
   const pick = resolvePick(text, options, today);
-  if (pick === null) return false; // free text → the agent, with closure context
+  if (pick === null) {
+    // Free text → the agent, with closure context. Record that the customer DID
+    // answer: the sweep must not nag someone who is mid-conversation, and the
+    // card shows "בטיפול הסוכן" instead of "נשלח" (first real closure, 18.9.2026:
+    // "13" fell through and the barber would have been told he's silent).
+    await prisma.swapProposal.update({ where: { id: proposal.id }, data: { rawResponse: text.slice(0, 500) } }).catch(() => {});
+    return false;
+  }
 
   const chosen = options[pick];
   // Claim atomically (two replies racing), then point the proposal at the chosen option.

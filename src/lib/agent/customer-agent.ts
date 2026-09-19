@@ -51,13 +51,29 @@ async function computeDayAvailabilityRetrying(
   date: string,
   staffId?: string,
   serviceId?: string,
+  callerPhone?: string,
 ): Promise<ReturnType<typeof computeDayAvailability>> {
-  let result = await computeDayAvailability(bizId, date, staffId, serviceId);
+  const opts = { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) };
+  let result = await computeDayAvailability(bizId, date, staffId, serviceId, opts);
   for (let attempt = 0; !result.length && attempt < 2; attempt++) {
     await sleep(250);
-    result = await computeDayAvailability(bizId, date, staffId, serviceId);
+    result = await computeDayAvailability(bizId, date, staffId, serviceId, opts);
   }
   return result;
+}
+
+// Slots held FOR this caller (calendar-closure alternatives) must look free to
+// them — see computeDayAvailability. One lookup per caller, remembered briefly.
+const callerIdCache = new Map<string, { id: string | undefined; at: number }>();
+async function callerCustomerId(bizId: string, callerPhone?: string): Promise<string | undefined> {
+  if (!callerPhone) return undefined;
+  const phone = normalizeIsraeliPhone(callerPhone);
+  const key = `${bizId}|${phone}`;
+  const hit = callerIdCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.id;
+  const row = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true } }).catch(() => null);
+  callerIdCache.set(key, { id: row?.id, at: Date.now() });
+  return row?.id;
 }
 
 /**
@@ -503,7 +519,7 @@ export async function execTool(
         //      is indistinguishable from "fully booked", so we'd wrongly tell the
         //      customer there's no room. Surface it so the model re-fetches the
         //      list instead.
-        let byStaff = await computeDayAvailabilityRetrying(bizId, date, inputStaffId, inputServiceId);
+        let byStaff = await computeDayAvailabilityRetrying(bizId, date, inputStaffId, inputServiceId, callerPhone);
         if (!byStaff.length && inputStaffId) {
           const staffOk = await prisma.staff.findFirst({
             where: { id: inputStaffId, businessId: bizId, isAvailable: true },
@@ -529,7 +545,7 @@ export async function execTool(
             });
             if (byName) {
               console.warn(`[agent] get_available_slots: resolved staffId "${inputStaffId}" by name to ${byName.id} biz=${bizId} date=${date}`);
-              byStaff = await computeDayAvailabilityRetrying(bizId, date, byName.id, inputServiceId);
+              byStaff = await computeDayAvailabilityRetrying(bizId, date, byName.id, inputServiceId, callerPhone);
             } else {
               console.warn(`[agent] get_available_slots: unknown/unavailable staffId=${inputStaffId} biz=${bizId} date=${date}`);
               return `לא זיהיתי את הספר הזה. קרא שוב ל-get_staff_list וקבע עם המזהה המדויק של הספר שהלקוח ביקש.`;
@@ -608,7 +624,7 @@ export async function execTool(
         for (let d = 0; d < MAX_SCAN_DAYS; d++) {
           const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
           const ds = dObj.toISOString().slice(0, 10);
-          const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId);
+          const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) });
           if (byStaff.length) {
             // Return the FULL day per barber (morning through evening), not just
             // the first few. Truncating to the earliest slots hid the evening
@@ -683,7 +699,7 @@ export async function execTool(
         // barber's booking horizon, or a slot already taken. computeDayAvailability
         // is the single source of truth (it applies schedule, overrides, horizon
         // and existing bookings), so re-check the exact slot here before writing.
-        const dayAvail = await computeDayAvailabilityRetrying(bizId, date, staffId, serviceId);
+        const dayAvail = await computeDayAvailabilityRetrying(bizId, date, staffId, serviceId, callerPhone);
         const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
         if (!staffSlots.includes(startTime)) {
           // Diagnostic: this is the "agent said free, booking says taken" path.
@@ -1525,8 +1541,6 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
       })
       .join("; ");
     parts.push(`יש לו כבר תור קבוע: ${list}. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה). ⚠️ זהו מידע על תור קיים בלבד, ולא מקור לבדיקת זמינות — לעולם אל תשתמש בתאריך או בשעה של התור הקיים כדי להציע זמן פנוי או לטעון "זה הכי קרוב שיש". לבדיקת זמינות קרא תמיד ל-get_available_slots או ל-find_next_available.`);
-  } else {
-    parts.push(`אין לו כרגע אף תור קבוע עתידי. אם ישאל "מתי התור שלי" — אמור לו בעדינות שאין לו תור קבוע כרגע, והצע לקבוע לו עכשיו.`);
   }
 
   // ── Calendar closure: the barber cancelled this customer's appointment and
@@ -1534,35 +1548,44 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
   // clear pick (handled deterministically in the webhook), the agent continues
   // the SAME thread: finds them another time, honoring the loyalty rule and
   // never inside the closed window. Spec: specs/calendar-closure.md §6
+  let closurePending = false;
   try {
     const closureProposal = await prisma.swapProposal.findFirst({
       where: { businessId, closureId: { not: null }, status: "pending_response", respondedAt: null, expiresAt: { gt: new Date() },
         primary: { customerId: customer.id } },
       orderBy: { createdAt: "desc" },
-      select: { optionsJson: true, primary: { select: { date: true, startTime: true, staff: { select: { id: true, name: true } } } },
+      select: { optionsJson: true, primary: { select: { date: true, startTime: true, staff: { select: { id: true, name: true } }, service: { select: { id: true, name: true } } } },
         closure: { select: { staffId: true, date: true, fromTime: true, toTime: true } } },
     });
     if (closureProposal) {
+      closurePending = true;
       const opts: { staffName: string; date: string; startTime: string; sameStaff: boolean }[] = closureProposal.optionsJson ? JSON.parse(closureProposal.optionsJson) : [];
       const origDate = new Date(closureProposal.primary.date).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
-      const optText = opts.map((o, i) => `${i === 0 ? "א" : "ב"}) ${o.date} בשעה ${o.startTime}${o.sameStaff ? "" : " אצל " + o.staffName}`).join("; ");
+      const staffId = closureProposal.primary.staff.id;
+      const svc = closureProposal.primary.service;
+      const optText = opts.map((o, i) => `${i === 0 ? "א" : "ב"}) ${o.date} בשעה ${o.startTime} אצל ${o.staffName}${o.sameStaff ? "" : " (ספר אחר)"}`).join("; ");
       const window = closureProposal.closure?.fromTime && closureProposal.closure?.toTime
         ? `בין ${closureProposal.closure.fromTime} ל-${closureProposal.closure.toTime}` : "כל היום";
       const loyaltyRule = await prisma.appointment.groupBy({ by: ["staffId"], where: { businessId, customerId: customer.id, date: { lt: todayStart }, status: { in: ["confirmed", "completed"] } }, _count: { _all: true } })
-        .then(g => { const total = g.reduce((s2, x) => s2 + x._count._all, 0); const w = g.find(x => x.staffId === closureProposal.primary.staff.id)?._count._all ?? 0; return total > 0 && w / total >= 0.7; })
+        .then(g => { const total = g.reduce((s2, x) => s2 + x._count._all, 0); const w = g.find(x => x.staffId === staffId)?._count._all ?? 0; return total > 0 && w / total >= 0.7; })
         .catch(() => false);
       parts.push(
-        `⚠️ מצב מיוחד — סגירת יומן: ${closureProposal.primary.staff.name} נאלץ לבטל ללקוח את התור של יום ${origDate} בשעה ${closureProposal.primary.startTime}, ושלח לו בעצמו הודעה בגוף ראשון ("זה ${firstName(closureProposal.primary.staff.name)}...") עם שתי חלופות: ${optText || "(אין)"}. ` +
+        `⚠️ מצב מיוחד — סגירת יומן: ${closureProposal.primary.staff.name} נאלץ לבטל ללקוח את התור של יום ${origDate} בשעה ${closureProposal.primary.startTime} (${svc.name}), ושלח לו בעצמו הודעה בגוף ראשון ("זה ${firstName(closureProposal.primary.staff.name)}...") עם שתי חלופות: ${optText || "(אין)"}. ` +
+        `התור המקורי כבר מבוטל במערכת — זה צפוי, אל תגיד ללקוח "אין לך תור" ואל תנסה להזיז אותו (request_appointment_move לא יעבוד). ` +
+        `כדי לקבוע לו מחדש — book_appointment רגיל: serviceId=${svc.id} (${svc.name}), staffId=${staffId} (${closureProposal.primary.staff.name}) אלא אם הוא ביקש ספר אחר. השם שלו כבר ידוע, אל תבקש שם. ` +
+        `שתי החלופות שהוצעו לו שמורות עבורו ומופיעות פנויות — אם הוא בוחר אחת מהן, קבע אותה מיד. ` +
         `אתה ממשיך את אותה שיחה **בקול של ${firstName(closureProposal.primary.staff.name)}** (גוף ראשון, "אני אסדר לך"), מתנצל פעם אחת בלבד ולא מסביר למה. ` +
-        `אם הלקוח בוחר אחת מהחלופות — קרא ל-request_appointment_move לתור שלו עם הזמן שבחר${opts.some(o => !o.sameStaff) ? " (allowOtherBarber=true אם החלופה אצל ספר אחר)" : ""}. ` +
-        `אם הוא מבקש שעה/יום/ספר אחר — מצא לו (find_next_available / get_available_slots) והזז עם request_appointment_move. ` +
+        `אם הוא מבקש שעה/יום/ספר אחר — מצא לו (get_available_slots / find_next_available) וקבע עם book_appointment. ` +
         (loyaltyRule
-          ? `הלקוח קבוע אצל ${closureProposal.primary.staff.name} — הצע רק אצלו, אלא אם הלקוח מבקש במפורש ספר אחר (אז מותר, allowOtherBarber=true). `
+          ? `הלקוח קבוע אצל ${closureProposal.primary.staff.name} — הצע רק אצלו, אלא אם הלקוח מבקש במפורש ספר אחר. `
           : `מותר להציע גם ספרים אחרים. `) +
         `אסור להציע זמן ביום ${new Date(closureProposal.closure?.date ?? closureProposal.primary.date).toISOString().slice(0, 10)} ${window} אצל ${closureProposal.primary.staff.name} — היומן שם סגור.`
       );
     }
   } catch (e) { console.error("[agent] closure context failed", e); }
+  if (!upcoming.length && !closurePending) {
+    parts.push(`אין לו כרגע אף תור קבוע עתידי. אם ישאל "מתי התור שלי" — אמור לו בעדינות שאין לו תור קבוע כרגע, והצע לקבוע לו עכשיו.`);
+  }
 
   const past = recent.filter(a => !a.status.startsWith("cancelled") && new Date(a.date) < todayStart);
   if (past.length) {

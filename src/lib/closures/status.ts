@@ -16,7 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage, sendProactiveMessage } from "@/lib/messaging/index";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, timeToMinutes } from "@/lib/utils";
-import { DEFAULT_CLOSURE_REMINDER_TEMPLATE, renderClosureText, describeSlot, rangeLabel } from "./message";
+import { DEFAULT_CLOSURE_REMINDER_TEMPLATE, renderClosureText, describeSlot, rangeLabel, whenLabel } from "./message";
 
 export type CustomerState = "sent" | "rescheduled" | "agent" | "silent" | "silent_escalated" | "manual" | "failed";
 const END_OF_DAY_MIN = 20 * 60;
@@ -31,6 +31,7 @@ export async function summarizeClosure(closureId: string) {
     where: { closureId }, orderBy: { startTime: "asc" },
     include: { customer: { select: { id: true, name: true, phone: true } }, service: { select: { name: true } }, staff: { select: { name: true } } },
   });
+  await reconcileRebooked(c.id, c.createdAt, appts.map(a => ({ id: a.id, customerId: a.customer.id })));
   const proposals = await prisma.swapProposal.findMany({ where: { closureId } });
   const byAppt = new Map(proposals.map(p => [p.primaryAppointmentId, p]));
   const logs = await prisma.messageLog.findMany({
@@ -70,6 +71,36 @@ export async function summarizeClosure(closureId: string) {
   };
 }
 
+
+/** A displaced customer who got a NEW appointment after the closure — booked by
+ *  the agent in free text, or by the barber from the calendar — is done: close
+ *  the proposal as approved (pointing at the new slot), free the held slots.
+ *  Without this the card kept saying "בטיפול הסוכן" and the sweep would still
+ *  count them as open (first real closure, 18.9.2026). */
+async function reconcileRebooked(closureId: string, since: Date, appts: { id: string; customerId: string }[]) {
+  const open = await prisma.swapProposal.findMany({
+    where: { closureId, status: { in: ["pending_response", "expired", "rejected_by_customer"] } },
+    select: { id: true, primaryAppointmentId: true },
+  });
+  if (!open.length) return;
+  const custByAppt = new Map(appts.map(a => [a.id, a.customerId]));
+  const todayStart = new Date(getBusinessNow().date + "T00:00:00.000Z");
+  for (const p of open) {
+    const customerId = custByAppt.get(p.primaryAppointmentId);
+    if (!customerId) continue;
+    const fresh = await prisma.appointment.findFirst({
+      where: { customerId, id: { not: p.primaryAppointmentId }, createdAt: { gte: since }, date: { gte: todayStart }, status: { in: ["pending", "confirmed"] } },
+      orderBy: [{ date: "asc" }, { startTime: "asc" }],
+      select: { staffId: true, date: true, startTime: true },
+    });
+    if (!fresh) continue;
+    await prisma.$transaction([
+      prisma.swapProposal.update({ where: { id: p.id }, data: { status: "approved", approvedAt: new Date(), respondedAt: new Date(), targetStaffId: fresh.staffId, targetDate: fresh.date, targetStartTime: fresh.startTime } }),
+      prisma.slotHold.deleteMany({ where: { proposalId: p.id } }),
+    ]).catch(e => console.error("[closure] reconcile failed", e));
+  }
+}
+
 export async function markHandled(closureId: string, appointmentId: string) {
   const c = await prisma.calendarClosure.findUnique({ where: { id: closureId } });
   if (!c) return;
@@ -88,9 +119,8 @@ export async function resendClosureNotice(closureId: string, appointmentId: stri
   });
   if (!p) return false;
   const opts = p.optionsJson ? JSON.parse(p.optionsJson) : [];
-  const isToday = p.primary.date.toISOString().slice(0, 10) === getBusinessNow().date;
-  const when = isToday ? `היום בשעה ${p.primary.startTime}` : `${describeSlot({ date: p.primary.date.toISOString().slice(0, 10), startTime: p.primary.startTime }).replace(/ ב‑\d\d:\d\d$/, "")} בשעה ${p.primary.startTime}`;
-  const text = renderClosureText(DEFAULT_CLOSURE_REMINDER_TEMPLATE, { name: p.primary.customer.name, barber: p.primary.staff.name, when, options: opts });
+  const origDate = p.primary.date.toISOString().slice(0, 10);
+  const text = renderClosureText(DEFAULT_CLOSURE_REMINDER_TEMPLATE, { name: p.primary.customer.name, barber: p.primary.staff.name, when: whenLabel(origDate, p.primary.startTime), options: opts, originalDate: origDate });
   try {
     await sendProactiveMessage({ businessId: p.businessId, customerPhone: p.primary.customer.phone, customerName: p.primary.customer.name,
       appointmentId, kind: "closure_reminder", body: text, escalate: false });
@@ -100,11 +130,16 @@ export async function resendClosureNotice(closureId: string, appointmentId: stri
 }
 
 /** Piggybacked on the drip-queue tick. Idempotent; cheap when nothing is open. */
-export async function runClosureSweep(now = new Date()): Promise<{ resent: number; escalated: number; summarized: number }> {
+export async function runClosureSweep(now = new Date(), scope: { businessId?: string } = {}): Promise<{ resent: number; escalated: number; summarized: number }> {
   const out = { resent: 0, escalated: 0, summarized: 0 };
   const nowBiz = getBusinessNow();
-  const open = await prisma.calendarClosure.findMany({ where: { status: "active" } });
+  // `scope.businessId` exists for tests: an unscoped sweep from a test run once
+  // nudged a REAL customer of another business (18.9.2026). The cron runs unscoped.
+  const open = await prisma.calendarClosure.findMany({ where: { status: "active", ...(scope.businessId ? { businessId: scope.businessId } : {}) } });
   for (const c of open) {
+    // Someone rebooked (agent / calendar) since the last tick → close their proposal first, never nag them.
+    const appts = await prisma.appointment.findMany({ where: { closureId: c.id }, select: { id: true, customerId: true } });
+    await reconcileRebooked(c.id, c.createdAt, appts);
     const pending = await prisma.swapProposal.findMany({
       where: { closureId: c.id, status: "pending_response", respondedAt: null, rawResponse: null },
       include: { primary: { include: { customer: true, staff: true } } },

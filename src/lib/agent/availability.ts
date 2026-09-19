@@ -26,7 +26,7 @@ export async function computeDayAvailability(
   inputServiceId?: string,
   /** Admin use: ignore the customer-facing booking horizon and lead times.
    *  allStaff: include barbers outside the quick pool even without a staffId (owner tools). */
-  opts: { ignoreLimits?: boolean; allStaff?: boolean } = {},
+  opts: { ignoreLimits?: boolean; allStaff?: boolean; exemptHoldsCustomerId?: string } = {},
 ): Promise<{ staffId: string; name: string; slots: string[]; load: number }[]> {
   const dateObj = new Date(date + "T00:00:00.000Z");
   const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
@@ -154,8 +154,11 @@ export async function computeDayAvailability(
     // Soft holds (calendar-closure alternatives offered to a customer, later
     // deposits) block the slot like a booking until they expire — otherwise two
     // displaced customers could be offered, and both accept, the same time.
+    // The customer the holds were made FOR must still see them as free — the
+    // agent told a closure customer "13:00 isn't free" about his own option.
     const holds = await prisma.slotHold.findMany({
-      where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, expiresAt: { gt: new Date() } },
+      where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, expiresAt: { gt: new Date() },
+        ...(opts.exemptHoldsCustomerId ? { NOT: { customerId: opts.exemptHoldsCustomerId } } : {}) },
       select: { startTime: true, endTime: true },
     });
 
