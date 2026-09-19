@@ -50,7 +50,39 @@ import {
   AGENT_TOOLS,
 } from "../src/lib/agent/customer-agent";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// INCIDENT (2026-09-19): this file ran ~13 times in one hour against the
+// shared production ANTHROPIC_API_KEY, uncached, at up to 100 calls/run —
+// burned the account's credit and caused a real production outage (a real
+// customer hit the generic-fallback error at 13:10 because the key was
+// dry). Two independent, non-negotiable fixes going forward:
+//   1. This script REQUIRES its own key (TEST_ANTHROPIC_API_KEY) and
+//      refuses to silently fall back to the shared production key.
+//   2. Every call is cache_control'd (see runOne) so repeated runs against
+//      the same prompt cost ~10% after the first, not 100% every time.
+const TEST_API_KEY = process.env.TEST_ANTHROPIC_API_KEY;
+if (!TEST_API_KEY) {
+  throw new Error(
+    "TEST_ANTHROPIC_API_KEY is not set. This script must NEVER run against the shared production ANTHROPIC_API_KEY " +
+    "(see the 2026-09-19 incident in audit-log.md — this exact gap caused a real production outage). " +
+    "Get/verify a dedicated test-only key before running this file."
+  );
+}
+const anthropic = new Anthropic({ apiKey: TEST_API_KEY });
+
+// Repeats:10 scenarios only actually run at 10 if this is explicitly set —
+// otherwise every scenario is capped to 2, regardless of what it declares.
+// A careless `npx tsx test-prompt-routing.ts` must default to the CHEAP
+// path; opting into the expensive one is a deliberate, visible choice.
+const ALLOW_HEAVY_REPEATS = process.env.ALLOW_HEAVY_REPEATS === "1";
+
+// Running total across the whole file, printed at the end — so the cost of
+// a run is on screen when it happens, not discovered later from a billing
+// dashboard that this script (deliberately, via TEST_ANTHROPIC_API_KEY)
+// never appears on.
+let totalInputTokens = 0;
+let totalOutputTokens = 0;
+let totalCacheCreationTokens = 0;
+let totalCacheReadTokens = 0;
 const prisma = new PrismaClient();
 
 const DOMINANT_BUSINESS_ID = "c8e1ac89-32d1-4e00-b493-2e95aef4d8f2";
@@ -431,17 +463,31 @@ async function runOne(scenario: Scenario) {
     now: NOW,
     customerContext: scenario.customerContext,
   });
+  // buildSystemPrompt() already marks its own stable block cache_control'd
+  // (see customer-agent.ts) — that part is fine as-is. What was missing
+  // entirely: AGENT_TOOLS (also large, also identical across every one of
+  // the ~100 calls in a run) had no cache_control at all, so it was paying
+  // full input price on every single call. Mark the last tool cached, same
+  // pattern production uses for the same reason.
+  const cachedTools = AGENT_TOOLS.map((t, i) =>
+    i === AGENT_TOOLS.length - 1 ? { ...t, cache_control: { type: "ephemeral" as const } } : t
+  );
 
   const response = await anthropic.messages.create({
     model,
     max_tokens: 500,
     system,
-    tools: AGENT_TOOLS,
+    tools: cachedTools,
     messages: [
       ...scenario.history.map(h => ({ role: h.role, content: h.content })),
       { role: "user" as const, content: scenario.incomingText },
     ],
   });
+
+  totalInputTokens += response.usage.input_tokens;
+  totalOutputTokens += response.usage.output_tokens;
+  totalCacheCreationTokens += response.usage.cache_creation_input_tokens ?? 0;
+  totalCacheReadTokens += response.usage.cache_read_input_tokens ?? 0;
 
   const textBlock = response.content.find(b => b.type === "text");
   const toolBlock = response.content.find(b => b.type === "tool_use");
@@ -463,11 +509,14 @@ async function main() {
   // failing/passing run on 1-2 samples doesn't mean much against inherent
   // LLM non-determinism.
   const DEFAULT_REPEATS = 2;
+  if (!ALLOW_HEAVY_REPEATS) {
+    console.log("ALLOW_HEAVY_REPEATS not set — every scenario capped to 2 repeats regardless of its declared value. Set ALLOW_HEAVY_REPEATS=1 to run the full N=10 mandatory-scenario gate.");
+  }
   let failures = 0;
   const summary: Array<{ label: string; passRate: number; n: number; baseline: number | null; flagged: boolean }> = [];
 
   for (const scenario of SCENARIOS) {
-    const n = scenario.repeats ?? DEFAULT_REPEATS;
+    const n = ALLOW_HEAVY_REPEATS ? (scenario.repeats ?? DEFAULT_REPEATS) : Math.min(scenario.repeats ?? DEFAULT_REPEATS, DEFAULT_REPEATS);
     const runs = await Promise.all(Array.from({ length: n }, () => runOne(scenario)));
     const checks = runs.map(r => scenario.check(r.text, r.tool, r.toolInput));
     const passCount = checks.filter(c => c.pass).length;
@@ -496,6 +545,19 @@ async function main() {
     console.log(`  ${s.flagged ? "⚠️ " : "✅"} ${(s.passRate * 100).toFixed(0)}%\t(n=${s.n})\t${s.label}`);
   }
   console.log(`\n${failures === 0 ? "✅ No scenario flagged" : `❌ ${failures} scenario(s) flagged — failure rate exceeds known baseline`}`);
+
+  // Rough Sonnet pricing ($3/M input, $3.75/M cache-write, $0.30/M cache-read,
+  // $15/M output) — good enough to see the order of magnitude on-screen
+  // immediately, not exact billing. This number is on the TEST key, which
+  // never appears in the production agent_usage dashboard — it's the only
+  // place this cost is visible at all.
+  const estCostUsd =
+    (totalInputTokens / 1_000_000) * 3 +
+    (totalCacheCreationTokens / 1_000_000) * 3.75 +
+    (totalCacheReadTokens / 1_000_000) * 0.30 +
+    (totalOutputTokens / 1_000_000) * 15;
+  console.log(`\n💰 This run: ~${totalInputTokens + totalCacheCreationTokens + totalCacheReadTokens} input-side tokens (${totalCacheReadTokens} from cache), ${totalOutputTokens} output tokens — est. $${estCostUsd.toFixed(3)} (rough Sonnet pricing, not exact billing).`);
+
   await prisma.$disconnect();
   process.exit(failures === 0 ? 0 : 1);
 }
