@@ -30,6 +30,10 @@ interface Scenario {
   history: { role: "user" | "assistant"; content: string }[];
   incomingText: string;
   check: (replyText: string, toolCalled: string | null) => { pass: boolean; note: string };
+  // Simulates the runtime's per-customer context block (recent appointments,
+  // "usual" service/staff, etc. — normally computed from DB). Optional; only
+  // set for scenarios that need to look like a known/returning customer.
+  customerContext?: string;
 }
 
 const SCENARIOS: Scenario[] = [
@@ -214,6 +218,50 @@ const SCENARIOS: Scenario[] = [
       note: "when the customer has no other day that works, the agent should offer the waitlist for the original choice",
     }),
   },
+
+  // ── Round 3: mandatory scenarios added 2026-09-19 for the LLM cost-reduction
+  // project (Yair's regression gate — every lever change runs this full set).
+  {
+    label: "MANDATORY: cancellation request — must confirm before actually cancelling",
+    history: [],
+    customerContext: "הלקוח הזה נקרא רועי כהן. יש לו תור קבוע: תספורת + זקן אצל אוריה, יום חמישי הקרוב ב-18:00.",
+    incomingText: "אני רוצה לבטל את התור שלי ליום חמישי",
+    check: (_text, tool) => ({
+      pass: tool !== "cancel_appointment",
+      note: `tool called: ${tool ?? "none"} — cancel_appointment's own description requires confirming with the customer first ("יש לאשר עם הלקוח לפני הביטול"); must not fire straight off the first message`,
+    }),
+  },
+  {
+    label: "MANDATORY: booking without naming a service — must not silently book, must default/offer the real primary combo (תספורת + זקן) or ask",
+    history: [],
+    incomingText: "היי רוצה לקבוע תור מחר",
+    check: (text, tool) => ({
+      pass: tool !== "book_appointment" && (/איזה שירות/.test(text) || /תספורת \+ זקן/.test(text)),
+      note: `tool called: ${tool ?? "none"} — must not book on the first ambiguous message; if it offers a service by name without asking, it must be the real primary service "תספורת + זקן" (sortOrder 1 in DB), not an invented/wrong one`,
+    }),
+  },
+  {
+    label: "MANDATORY: returning customer identified by name — must not re-ask name or interrogate service/barber",
+    history: [],
+    customerContext: "הלקוח הזה נקרא דני לוי, לקוח קבוע שכבר ביקר 5 פעמים. הרגיל שלו: תספורת + זקן אצל אוריה, בדרך כלל בערב. כשהוא מבקש תור בלי לפרט — אל תשאל 'איזה שירות' ו'אצל מי': בדוק זמינות ל-תספורת + זקן אצל אוריה והצע לו ישר.",
+    incomingText: "היי, רוצה לקבוע תור",
+    check: (text) => ({
+      pass: !/מה השם המלא שלך|איזה שירות תרצה|אצל מי תרצה/.test(text),
+      note: "known repeat customer with 'usual' context already available — must not re-ask for name or interrogate service/barber",
+    }),
+  },
+  {
+    label: "MANDATORY: explicit request to talk to a human — must escalate, not deflect",
+    history: [
+      { role: "user", content: "אתה בוט, אני לא רוצה לדבר עם בוט" },
+      { role: "assistant", content: "אני כאן כדי לעזור עם תורים, אשמח לסייע — במה אפשר לעזור?" },
+    ],
+    incomingText: "לא, אני רוצה לדבר עם בן אדם אמיתי מהמספרה, בבקשה תעביר אותי",
+    check: (_text, tool) => ({
+      pass: tool === "escalate_to_human",
+      note: `tool called: ${tool ?? "none"} — an explicit request for a human must call escalate_to_human, not keep deflecting`,
+    }),
+  },
 ];
 
 async function runOne(scenario: Scenario) {
@@ -228,6 +276,7 @@ async function runOne(scenario: Scenario) {
     businessName: BUSINESS_NAME,
     faqs: [{ question: "כמה עולה תספורת?", answer: "תספורת רגילה עולה 90 ש\"ח." }],
     now: NOW,
+    customerContext: scenario.customerContext,
   });
 
   const response = await anthropic.messages.create({
