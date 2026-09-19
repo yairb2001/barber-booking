@@ -43,8 +43,20 @@ const until = new Date(args[1] || "2026-09-19");
 
 const NO_SLOT_TOOLS = new Set(["get_available_slots", "find_next_available"]);
 const NO_SLOT_PATTERN = /אין תורים פנויים|לא נמצאו תורים פנויים/;
-const WAITLIST_MENTION = /רשימת ה?המתנה/;
-const BOOK_SUCCESS = /✅\s*תור נקבע בהצלחה/;
+// Broadened after manual review found real misses: "אעדכן אותך אם יתפנה" is a
+// genuine waitlist offer worded without the literal phrase "רשימת המתנה" —
+// missing it inflated the gap count. Same for booking confirmations: the
+// customer-facing "✅ תור נקבע בהצלחה" template is sent as an ASSISTANT-role
+// message (a separate confirmation notification), NOT as the tool-role
+// book_appointment return value — checking only the tool role missed two
+// genuine successful bookings entirely.
+const WAITLIST_MENTION = /רשימת ה?המתנה|אעדכן אותך אם יתפנה|לעדכן אותך אם יתפנה/;
+const BOOK_SUCCESS = /תור נקבע בהצלחה/;
+// A generic-fallback crash ("תקלה זמנית ולא הצלחנו לענות") is a technical
+// failure, not a prompt-instruction gap — the agent never got a chance to
+// decide whether to offer the waitlist. Tracked separately so it doesn't get
+// conflated with "the model chose not to follow the waitlist instruction".
+const FALLBACK_CRASH = /תקלה זמנית ולא הצלחנו לענות/;
 
 async function main() {
   const convos = await prisma.conversation.findMany({
@@ -56,6 +68,7 @@ async function main() {
   let existingApptReschedule = 0;
   let resolvedByBooking = 0;
   let resolvedByWaitlist = 0;
+  let technicalCrash = 0;
   let unresolvedGap = 0;
   const gapExamples = [];
 
@@ -116,15 +129,23 @@ async function main() {
     // the word waitlist" — a customer who got booked into an alternative slot
     // the agent found (find_next_available -> accepted) is a SUCCESS, not a
     // gap, even though a "no slots" tool result appeared earlier in the same
-    // conversation. Only count it as a real gap if neither a booking nor a
-    // waitlist registration/offer followed.
-    const booked = after.some(m => m.role === "tool" && m.toolName === "book_appointment" && BOOK_SUCCESS.test(m.content));
+    // conversation. Only count it as a real gap if neither a booking, a
+    // waitlist registration/offer, nor an unrelated technical crash explains
+    // the outcome.
+    // Two distinct success pathways exist in the data: the tool's own return
+    // value shown inline (role=tool, toolName=book_appointment) AND a
+    // separate customer-facing confirmation notification (role=assistant,
+    // no toolName) sent after the fact. Checking only one silently missed
+    // real bookings via the other path — check both.
+    const booked = after.some(m => BOOK_SUCCESS.test(m.content) && (m.role === "assistant" || m.toolName === "book_appointment"));
     const waitlisted = after.some(
       m => (m.role === "assistant" && WAITLIST_MENTION.test(m.content)) || (m.role === "tool" && m.toolName === "join_waitlist")
     );
+    const crashed = after.some(m => m.role === "assistant" && FALLBACK_CRASH.test(m.content));
 
     if (booked) resolvedByBooking++;
     else if (waitlisted) resolvedByWaitlist++;
+    else if (crashed) technicalCrash++;
     else {
       unresolvedGap++;
       gapExamples.push({ conv: `${c.whatsappName || "—"} (${c.phone}) [${c.id.slice(0, 8)}]`, at: msgs[noSlotIdx].createdAt.toISOString() });
@@ -137,8 +158,9 @@ async function main() {
   console.log(`  → ניסיון להזיז תור קיים (כבר היה לו תור) — לא אובדן לקוח חדש: ${existingApptReschedule}`);
   console.log(`  → נפתר בקביעת תור אחר (find_next_available/יום אחר וכו') בהמשך אותה שיחה: ${resolvedByBooking}`);
   console.log(`  → נפתר בהצעת/רישום לרשימת המתנה: ${resolvedByWaitlist}`);
-  const newBookingAttempts = hitNoSlot - existingApptReschedule;
-  console.log(`  → פער אמיתי (מתוך ${newBookingAttempts} ניסיונות תור חדש בפועל) — לא תור, לא רשימת המתנה: ${unresolvedGap} (${newBookingAttempts ? ((unresolvedGap / newBookingAttempts) * 100).toFixed(0) : 0}%)`);
+  console.log(`  → תקלה טכנית (fallback גנרי) — לא קשור להחלטת הסוכן על רשימת המתנה: ${technicalCrash}`);
+  const newBookingAttempts = hitNoSlot - existingApptReschedule - technicalCrash;
+  console.log(`  → פער אמיתי (מתוך ${newBookingAttempts} ניסיונות תור חדש שבאמת קיבלו תשובה) — לא תור, לא רשימת המתנה: ${unresolvedGap} (${newBookingAttempts ? ((unresolvedGap / newBookingAttempts) * 100).toFixed(0) : 0}%)`);
 
   if (gapExamples.length) {
     console.log(`\nשיחות עם פער אמיתי (${gapExamples.length}):`);
