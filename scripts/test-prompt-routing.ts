@@ -91,6 +91,16 @@ async function loadRealConfig() {
   }
   PRIMARY_SERVICE_ID = primaryService.id;
   PRIMARY_SERVICE_NAME = primaryService.name;
+
+  // Optional override so a candidate edit (e.g. a compression pass) can run
+  // through every scenario BEFORE it's ever written to production — zero DB
+  // writes either way. Unset by default; behavior is identical to before
+  // when CANDIDATE_PROMPT_FILE is not provided.
+  if (process.env.CANDIDATE_PROMPT_FILE) {
+    const fs = await import("fs");
+    REAL_SYSTEM_PROMPT = fs.readFileSync(process.env.CANDIDATE_PROMPT_FILE, "utf-8");
+    console.log(`⚠️  Using CANDIDATE prompt from ${process.env.CANDIDATE_PROMPT_FILE} (${REAL_SYSTEM_PROMPT.length} chars) — NOT the live DB value.`);
+  }
 }
 
 interface Scenario {
