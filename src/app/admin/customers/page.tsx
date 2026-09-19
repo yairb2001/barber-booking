@@ -31,7 +31,7 @@ const FILTER_CHIPS: { key: ListFilter; label: string; hint: string }[] = [
   { key: "all",       label: "הכל",              hint: "" },
   { key: "no_future", label: "בלי תור עתידי",    hint: "לקוחות שאין להם תור קרוב — הכי שווה לשלוח להם" },
   { key: "inactive",  label: "לא היו 6+ שבועות", hint: "לא ביקרו 42 יום ומעלה" },
-  { key: "new",       label: "חדשים החודש",       hint: "הצטרפו ב-30 הימים האחרונים" },
+  { key: "new",       label: "חדשים החודש",       hint: "הביקור הראשון שלהם התקיים ב-30 הימים האחרונים" },
   { key: "no_shows",  label: "הבריזו",            hint: "לקוחות שסומנו כלא הגיעו" },
   { key: "mine",      label: "רק שלי",            hint: "לקוחות שהיו אצלי" },
 ];

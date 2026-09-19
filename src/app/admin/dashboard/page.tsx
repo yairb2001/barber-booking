@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import NewCustomersRetentionCard from "./RetentionCard";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
@@ -1463,6 +1464,9 @@ export default function Dashboard() {
               />
             )}
           </div>
+
+          {/* ── New customers & second-visit retention — strict, visit-based (20.9.2026) ── */}
+          <NewCustomersRetentionCard staffId={selStaff || (!isOwner && me?.staffId ? me.staffId : null)} isOwner={isOwner} />
 
           {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
           {!isFutureMonth && a.rhythmNudge?.regular && a.rhythmNudge.new && (a.rhythmNudge.regular.customers + a.rhythmNudge.new.customers) > 0 && (

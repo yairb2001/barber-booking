@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, barbersCanSeeAllCustomers } from "@/lib/session";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { computeRetention } from "@/lib/analytics/retention";
 
 // Never cache this list — it must always reflect current customers.
 export const dynamic = "force-dynamic";
@@ -134,6 +135,7 @@ export async function GET(req: NextRequest) {
     appointments?: { some: { staffId: string } };
     lastVisitAt?: { gte?: Date; lt?: Date; lte?: Date } | null;
     createdAt?: { gte: Date };
+    id?: { in: string[] };
     knownBefore?: boolean;
     OR?: Array<{ name: { contains: string; mode?: "insensitive" | "default" } } | { notes: { contains: string; mode?: "insensitive" | "default" } } | { phone: { contains: string } }>;
   };
@@ -174,12 +176,13 @@ export async function GET(req: NextRequest) {
     where.lastVisitAt = { gte: cutoff };
   }
 
-  // New customers: created in last N days
+  // New customers: FIRST REAL VISIT in the last N days — not "record created",
+  // which also counts people who only wrote to the agent or joined a waitlist
+  // (owner, 20.9.2026). Same definition as the dashboard retention card.
   if (newDays) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - Number(newDays));
-    where.createdAt = { gte: cutoff };
-    where.knownBefore = false; // a regular from before the system isn't "new"
+    const days = Math.min(Math.max(Number(newDays) || 30, 1), 365);
+    const ret = await computeRetention({ businessId: business.id, staffId: staffId || null, windows: [days] });
+    where.id = { in: ret.windows[0].customers.map(x => x.id) };
   }
 
   // Search query — supports name or phone.
