@@ -318,6 +318,27 @@ const SCENARIOS: Scenario[] = [
       note: "when the customer has no other day that works, the agent should offer the waitlist for the original choice",
     }),
   },
+  {
+    // Sourced from a real gap found 2026-09-19 (check-waitlist-offer-rate.mjs,
+    // Yair/Tzachi's revenue-loss investigation): the scenario above uses an
+    // explicit "I have no other day that works" trigger, but real customers
+    // usually just decline flatly ("לא, תודה" / "לא רוצה") without spelling
+    // that out — and prompt rule #11 ("אם הלקוח בסוף לא קבע כלום... הצע לו
+    // את רשימת ההמתנה במקום פשוט לעזוב אותו בלי כלום") is supposed to cover
+    // this too. Reading real transcripts found this simpler, much more common
+    // phrasing gets missed noticeably more often than the explicit one above.
+    label: "MANDATORY: customer flatly declines an offered alternative (no elaboration) — must still offer the waitlist before letting the conversation end",
+    repeats: 10,
+    history: [
+      { role: "user", content: "יש תור היום?" },
+      { role: "assistant", content: "בדקתי — אין מקום פנוי היום. הכי קרוב שיש זה מחר ב-12:00, מתאים?" },
+    ],
+    incomingText: "לא, תודה",
+    check: (text) => ({
+      pass: /רשימת ה?המתנה|אעדכן אותך אם יתפנה|לעדכן אותך אם יתפנה/.test(text),
+      note: "a flat decline with no elaboration is the MORE common real phrasing than 'I have no other day that works' — must still trigger the same waitlist offer before the conversation ends, not just 'ok, I'm here when you want'",
+    }),
+  },
 
   // ── Round 3: mandatory scenarios added 2026-09-19 for the LLM cost-reduction
   // project (Yair's regression gate — every lever change runs this full set).
