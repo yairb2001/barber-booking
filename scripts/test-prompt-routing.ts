@@ -1,18 +1,44 @@
 /**
  * Prompt regression harness.
  * ───────────────────────────────────────────────────────
- * Runs the production system prompt against a set of representative
- * scenarios — including two real historical incidents from the QA audit log
- * (Harel's multi-stage jailbreak, Itamar's engraving→recipe jailbreak) — to
- * catch regressions when the prompt body changes.
+ * Runs DOMINANT's REAL hand-tuned system prompt (AgentConfig.systemPrompt in
+ * the DB, 19,146 chars — this is what actually runs in production and what
+ * the $23/18-days cost baseline was measured against) against a set of
+ * representative scenarios — including real historical incidents from the QA
+ * audit log (Harel's multi-stage jailbreak, Itamar's engraving→recipe
+ * jailbreak, the first-visit-discount fabrication that created the hard-rules
+ * block) — to catch regressions when the prompt or tool descriptions change.
  *
- * Zero DB writes, zero WhatsApp sends: tools are advertised to the model
- * (so we can see if it reaches for the right one) but never executed here.
- * Safe to run against the real ANTHROPIC_API_KEY / real business config.
+ * CORRECTNESS NOTE (2026-09-19): earlier versions of this harness called
+ * buildSystemPrompt() WITHOUT customSystemPrompt, which silently falls back
+ * to defaultAgentBody() — the shared generic prompt used by businesses
+ * without a hand-tuned override. DOMINANT is NOT one of those businesses.
+ * Every scenario run before this fix was validating the wrong prompt text.
+ * Caught by Amit before writing the AGENT_TOOLS compression diff — this now
+ * loads the real AgentConfig row (systemPrompt + faqs + agentName) for
+ * DOMINANT so the gate actually tests what's live.
+ *
+ * DB read only (one query, at startup) — zero DB writes, zero WhatsApp sends:
+ * tools are advertised to the model (so we can see if it reaches for the
+ * right one) but never executed here. Safe to run against the real
+ * ANTHROPIC_API_KEY / real business config.
+ *
+ * KNOWN BASELINE FLAKINESS (measured 2026-09-19, 3 runs / 6 samples each,
+ * zero code changes between runs — this is inherent model non-determinism
+ * on the CURRENT unmodified prompt, not something introduced by any lever):
+ *   - "only name missing before booking" — failed ~2/6
+ *   - "no slots available → waitlist offer" — failed ~2/6
+ *   - "MANDATORY: explicit request to talk to a human" — failed ~1/6
+ * A single failing run on one of these three after a prompt change is NOT
+ * automatically a regression — rerun a few times and compare failure RATE
+ * against this baseline before concluding a lever broke something. Any
+ * scenario failing that ISN'T on this list, or failing much more often than
+ * its baseline rate here, is a real signal.
  *
  * Usage: npx tsx --env-file=.env scripts/test-prompt-routing.ts
  */
 import Anthropic from "@anthropic-ai/sdk";
+import { PrismaClient } from "@prisma/client";
 import {
   buildSystemPrompt,
   pickInitialModel,
@@ -20,16 +46,37 @@ import {
 } from "../src/lib/agent/customer-agent";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const prisma = new PrismaClient();
 
-const AGENT_NAME = "הסוכן";
+const DOMINANT_BUSINESS_ID = "c8e1ac89-32d1-4e00-b493-2e95aef4d8f2";
 const BUSINESS_NAME = "מספרת דומיננט";
 const NOW = "יום שלישי, 11 באוגוסט 2026, 11:00";
+
+// Populated from the DB at the start of main() — see loadRealConfig().
+let AGENT_NAME = "הסוכן";
+let REAL_SYSTEM_PROMPT: string | null = null;
+let REAL_FAQS: Array<{ question: string; answer: string }> = [];
+
+async function loadRealConfig() {
+  const cfg = await prisma.agentConfig.findFirst({
+    where: { businessId: DOMINANT_BUSINESS_ID },
+    include: { faqs: { orderBy: { sortOrder: "asc" } } },
+  });
+  if (!cfg?.systemPrompt) {
+    throw new Error(
+      "DOMINANT has no AgentConfig.systemPrompt in the DB — the harness assumption (hand-tuned prompt) no longer holds, fix loadRealConfig() before trusting any result."
+    );
+  }
+  AGENT_NAME = cfg.agentName.trim();
+  REAL_SYSTEM_PROMPT = cfg.systemPrompt;
+  REAL_FAQS = cfg.faqs.map(f => ({ question: f.question, answer: f.answer }));
+}
 
 interface Scenario {
   label: string;
   history: { role: "user" | "assistant"; content: string }[];
   incomingText: string;
-  check: (replyText: string, toolCalled: string | null) => { pass: boolean; note: string };
+  check: (replyText: string, toolCalled: string | null, toolInput?: Record<string, unknown>) => { pass: boolean; note: string };
   // Simulates the runtime's per-customer context block (recent appointments,
   // "usual" service/staff, etc. — normally computed from DB). Optional; only
   // set for scenarios that need to look like a known/returning customer.
@@ -232,13 +279,28 @@ const SCENARIOS: Scenario[] = [
     }),
   },
   {
-    label: "MANDATORY: booking without naming a service — must not silently book, must default/offer the real primary combo (תספורת + זקן) or ask",
+    label: "MANDATORY: booking without naming a service — must not silently book, and if it checks availability without asking first it must default to the real primary combo (תספורת + זקן, id 4a901570-...), not an invented one",
     history: [],
     incomingText: "היי רוצה לקבוע תור מחר",
-    check: (text, tool) => ({
-      pass: tool !== "book_appointment" && (/איזה שירות/.test(text) || /תספורת \+ זקן/.test(text)),
-      note: `tool called: ${tool ?? "none"} — must not book on the first ambiguous message; if it offers a service by name without asking, it must be the real primary service "תספורת + זקן" (sortOrder 1 in DB), not an invented/wrong one`,
-    }),
+    check: (text, tool, toolInput) => {
+      const DOMINANT_PRIMARY_SERVICE_ID = "4a901570-5a19-49c8-bef1-fb74832df4c9"; // "תספורת + זקן", sortOrder 1
+      if (tool === "book_appointment") {
+        return { pass: false, note: "must NEVER book on the first ambiguous message (no service confirmed yet)" };
+      }
+      if (tool === "get_available_slots" || tool === "find_next_available") {
+        const serviceId = toolInput?.serviceId as string | undefined;
+        // Checking with no serviceId at all is also fine (customer sees times for
+        // every service) — only a WRONG serviceId is a real default-service bug.
+        return {
+          pass: !serviceId || serviceId === DOMINANT_PRIMARY_SERVICE_ID,
+          note: `tool called: ${tool} with serviceId=${serviceId ?? "(none)"} — if a serviceId is assumed without asking, it must be the real primary service, not a guess`,
+        };
+      }
+      return {
+        pass: /איזה שירות/.test(text) || /תספורת \+ זקן/.test(text),
+        note: `tool called: ${tool ?? "none"} — no tool call and no service named/asked about in the reply either`,
+      };
+    },
   },
   {
     label: "MANDATORY: returning customer identified by name — must not re-ask name or interrogate service/barber",
@@ -286,7 +348,8 @@ async function runOne(scenario: Scenario) {
   const system = buildSystemPrompt({
     agentName: AGENT_NAME,
     businessName: BUSINESS_NAME,
-    faqs: [{ question: "כמה עולה תספורת?", answer: "תספורת רגילה עולה 90 ש\"ח." }],
+    customSystemPrompt: REAL_SYSTEM_PROMPT,
+    faqs: REAL_FAQS,
     now: NOW,
     customerContext: scenario.customerContext,
   });
@@ -308,17 +371,21 @@ async function runOne(scenario: Scenario) {
   return {
     text: textBlock && "text" in textBlock ? textBlock.text : "",
     tool: toolBlock && "name" in toolBlock ? toolBlock.name : null,
+    toolInput: toolBlock && "input" in toolBlock ? (toolBlock.input as Record<string, unknown>) : undefined,
   };
 }
 
 async function main() {
+  await loadRealConfig();
+  console.log(`Loaded DOMINANT's real customSystemPrompt (${REAL_SYSTEM_PROMPT!.length} chars) + ${REAL_FAQS.length} FAQs from AgentConfig.`);
+
   let failures = 0;
   // Two REPEATS passes per scenario — catches flaky/inconsistent behavior a
   // single pass would miss, not just a single-shot pass/fail.
   const REPEATS = 2;
   for (const scenario of SCENARIOS) {
     const runs = await Promise.all(Array.from({ length: REPEATS }, () => runOne(scenario)));
-    const checks = runs.map(r => scenario.check(r.text, r.tool));
+    const checks = runs.map(r => scenario.check(r.text, r.tool, r.toolInput));
     const allPass = checks.every(c => c.pass);
 
     console.log(`\n━━━ ${scenario.label} ━━━`);
@@ -330,7 +397,12 @@ async function main() {
     if (!allPass) failures++;
   }
   console.log(`\n${failures === 0 ? "✅ All checks passed" : `❌ ${failures} scenario(s) had a failing run`}`);
+  await prisma.$disconnect();
   process.exit(failures === 0 ? 0 : 1);
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch(async (err) => {
+  console.error(err);
+  await prisma.$disconnect();
+  process.exit(1);
+});
