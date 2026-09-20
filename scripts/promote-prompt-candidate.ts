@@ -29,14 +29,14 @@ async function main() {
 
   if (cmd === "status") {
     const isCandidate = (cfg.systemPrompt ?? "") === DOMINANT_CANDIDATE_PROMPT;
-    console.log(`${biz.name}: prompt ${cfg.systemPrompt?.length ?? 0} chars (${isCandidate ? "= CANDIDATE" : "live/other"}, sha ${sha(cfg.systemPrompt ?? "").slice(0, 12)}) · agentPromptV2=${settings.agentPromptV2 === true} · agentPromptV3=${settings.agentPromptV3 === true}`);
+    console.log(`${biz.name}: prompt ${cfg.systemPrompt?.length ?? 0} chars (${isCandidate ? "= CANDIDATE" : "live/other"}, sha ${sha(cfg.systemPrompt ?? "").slice(0, 12)}) · agentPromptV2=${settings.agentPromptV2 === true} · agentPromptV3=${settings.agentPromptV3 === true} · agentPromptV4=${settings.agentPromptV4 === true}`);
     return;
   }
 
   // promote-v3: same as promote, plus settings.agentPromptV3 (stage C: propose_booking
   // tool set, code-confirmed bookings). The DB prompt written is whatever
   // DOMINANT_CANDIDATE_PROMPT currently is (v3 text since 20.9.2026).
-  if (cmd === "promote" || cmd === "promote-v3") {
+  if (cmd === "promote" || cmd === "promote-v3" || cmd === "promote-v4") {
     const dir = path.join(process.cwd(), "prompt-backups");
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `dominant-prompt-pre-stageB-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
@@ -44,11 +44,11 @@ async function main() {
     fs.writeFileSync(file, JSON.stringify(backup, null, 1));
     await prisma.$transaction([
       prisma.agentConfig.update({ where: { id: cfg.id }, data: { systemPrompt: DOMINANT_CANDIDATE_PROMPT } }),
-      prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify({ ...settings, agentPromptV2: true, ...(cmd === "promote-v3" ? { agentPromptV3: true } : {}) }) } }),
+      prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify({ ...settings, agentPromptV2: true, ...(cmd === "promote-v3" || cmd === "promote-v4" ? { agentPromptV3: true } : {}), ...(cmd === "promote-v4" ? { agentPromptV4: true } : {}) }) } }),
     ]);
     const after = await prisma.agentConfig.findUnique({ where: { id: cfg.id }, select: { systemPrompt: true } });
     if (sha(after?.systemPrompt ?? "") !== sha(DOMINANT_CANDIDATE_PROMPT)) throw new Error("verification failed — prompt in DB does not match the candidate");
-    console.log(`promoted. backup: ${file} (${backup.systemPrompt?.length} chars) → live prompt ${DOMINANT_CANDIDATE_PROMPT.length} chars, agentPromptV2=true${cmd === "promote-v3" ? ", agentPromptV3=true" : ""}`);
+    console.log(`promoted. backup: ${file} (${backup.systemPrompt?.length} chars) → live prompt ${DOMINANT_CANDIDATE_PROMPT.length} chars, agentPromptV2=true${cmd === "promote-v3" || cmd === "promote-v4" ? ", agentPromptV3=true" : ""}${cmd === "promote-v4" ? ", agentPromptV4=true" : ""}`);
     return;
   }
 
@@ -57,7 +57,8 @@ async function main() {
     const backup = JSON.parse(fs.readFileSync(arg, "utf8"));
     if (backup.businessId !== biz.id) throw new Error("backup belongs to another business");
     if (sha(backup.systemPrompt ?? "") !== backup.sha256) throw new Error("backup file corrupted (sha mismatch)");
-    const restoredSettings = { ...settings, agentPromptV2: backup.settings ? (JSON.parse(backup.settings).agentPromptV2 === true) : false, agentPromptV3: false };
+    const prev = backup.settings ? JSON.parse(backup.settings) : {};
+    const restoredSettings = { ...settings, agentPromptV2: prev.agentPromptV2 === true, agentPromptV3: prev.agentPromptV3 === true, agentPromptV4: prev.agentPromptV4 === true };
     await prisma.$transaction([
       prisma.agentConfig.update({ where: { id: cfg.id }, data: { systemPrompt: backup.systemPrompt } }),
       prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify(restoredSettings) } }),
@@ -67,6 +68,6 @@ async function main() {
     console.log(`rolled back to ${backup.takenAt} (${backup.systemPrompt?.length} chars), agentPromptV2=false`);
     return;
   }
-  throw new Error("usage: promote | promote-v3 | rollback <file> | status");
+  throw new Error("usage: promote | promote-v3 | promote-v4 | rollback <file> | status");
 }
 main().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());

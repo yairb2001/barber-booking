@@ -161,7 +161,7 @@ export async function POST(req: NextRequest) {
     const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone,
-      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 3 } : {}),
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
     // Test hook: pretend a rhythm nudge offered these slots to the sandbox phone.

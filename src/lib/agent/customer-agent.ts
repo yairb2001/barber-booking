@@ -30,6 +30,7 @@ import { computeDayAvailability, computeParallelSlots, resolveStaffService } fro
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
+import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
@@ -1919,7 +1920,7 @@ export type SandboxOptions = {
   toolsOverride?: Anthropic.Tool[];
   contextPhone?: string;
   usageKind?: string;
-  /** 3 = stage-C tool set (propose_booking, no catalog/check/info/book tools) */
+  /** 3 = stage-C tool set (propose_booking, no catalog/check/info/book tools); 4 = + availability snapshot in context */
   promptVersion?: number;
 };
 
@@ -2110,10 +2111,38 @@ export async function runCustomerAgent(opts: {
   // bookings, continuing a barber's manual offer — live OUTSIDE the cached
   // prefix and are injected only when the conversation actually needs them.
   // Active for the candidate prompt (replay) and for businesses switched to it.
-  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true || bizSettingsOf(biz.settings).agentPromptV3 === true || sandbox?.promptVersion === 3;
+  const promptV4 = sandbox?.promptVersion === 4 || bizSettingsOf(biz.settings).agentPromptV4 === true;
+  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true || bizSettingsOf(biz.settings).agentPromptV3 === true || sandbox?.promptVersion === 3 || promptV4;
   if (promptV2) {
     const extra = situationalGuidance(incomingText, history);
     if (extra) customerContext += `\n${extra}`;
+  }
+  // Prompt v4 (owner's idea, 20.9.2026): the next days' availability of EVERY
+  // barber, compressed (~400 tokens), fresh on every message, only when the
+  // conversation is about booking — so "this week / evening / another barber"
+  // is answered without tool round trips. propose_booking still re-verifies.
+  if (promptV4 && !preHandledReply) {
+    try {
+      const recentTexts = [incomingText, ...history.slice(-4).map(h => h.content)];
+      const availTools = recentToolRows.some(t => t.toolName && ["get_available_slots", "find_next_available", "find_parallel_slots", "propose_booking"].includes(t.toolName));
+      if (looksLikeBookingContext(recentTexts) || availTools) {
+        const ctxPhone = normalizeIsraeliPhone(sandbox?.contextPhone ?? phone);
+        const cust = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone: ctxPhone }, { phone: ctxPhone.replace(/^972/, "0") }] }, select: { id: true } });
+        let serviceId: string | null = null, regularStaffId: string | null = null;
+        if (cust) {
+          const past = await prisma.appointment.findMany({ where: { businessId, customerId: cust.id, status: { in: ["confirmed", "completed"] } }, orderBy: { date: "desc" }, take: 12, select: { staffId: true, serviceId: true } });
+          if (past.length) {
+            serviceId = past[0].serviceId;
+            const cnt = new Map<string, number>(); for (const a of past) cnt.set(a.staffId, (cnt.get(a.staffId) ?? 0) + 1);
+            const top = Array.from(cnt.entries()).sort((a, b) => b[1] - a[1])[0];
+            if (top && past.length >= 2 && top[1] / past.length >= 0.7) regularStaffId = top[0];
+          }
+        }
+        if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId });
+        customerContext += `\n${snap}`;
+      }
+    } catch (e) { console.error("[agent] availability snapshot failed", e); }
   }
 
   // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
@@ -2127,7 +2156,7 @@ export async function runCustomerAgent(opts: {
     now: nowLabel(),
     customerContext,
   });
-  const promptV3 = sandbox?.promptVersion === 3 || bizSettingsOf(biz.settings).agentPromptV3 === true;
+  const promptV3 = sandbox?.promptVersion === 3 || bizSettingsOf(biz.settings).agentPromptV3 === true || promptV4;
   const tools = sandbox?.toolsOverride ?? selectTools(AGENT_TOOLS, { v3: promptV3, hasCatalog: !!catalogBlock });
   const usageKind = sandbox?.usageKind ?? "customer";
 
