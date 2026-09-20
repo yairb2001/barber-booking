@@ -333,7 +333,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "propose_booking",
-    description: "מציע ללקוח את התור לאישור סופי. קרא כשיש ספר, שירות, יום ושעה (ושם מלא ללקוח חדש). המערכת שולחת ללקוח את שאלת האישור הקבועה, ואם הוא עונה כן — קובעת בעצמה ומודיעה לו. אתה לא כותב את שאלת האישור ולא קובע בעצמך.",
+    description: "מציע ללקוח את התור לאישור סופי. קרא כשיש ספר, שירות, יום ושעה. לקוח חדש בלי שם — המערכת שואלת אותו את השם בעצמה. המערכת שולחת ללקוח את שאלת האישור הקבועה, ואם הוא עונה כן — קובעת בעצמה ומודיעה לו. אתה לא כותב את שאלת האישור ולא קובע בעצמך.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -341,13 +341,13 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         serviceId: { type: "string", description: "מזהה השירות" },
         date: { type: "string", description: "YYYY-MM-DD" },
         startTime: { type: "string", description: "HH:MM — שעה שחזרה מהכלי" },
-        customerName: { type: "string", description: "שם מלא. לקוח רשום — כפי שרשום. לקוח חדש — פרטי + משפחה (נשאל רק בסוף)." },
+        customerName: { type: "string", description: "שם מלא. לקוח רשום — כפי שרשום. לקוח חדש — רק אם כבר כתב שם מלא; אחרת השאר ריק והמערכת תשאל אותו." },
         mentionStaff: { type: "boolean", description: "true רק אם הלקוח ביקש ספר בשם או שסוכם על הקבוע שלו — אז שם הספר מופיע בשאלה." },
         originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
         customerConfirmed: { type: "boolean", description: "true רק כשהלקוח כבר ענה בחיוב, במילים שלו, לשאלת האישור שהמערכת שלחה על בדיוק התור הזה — אז המערכת קובעת מיד בלי לשאול שוב." },
         note: { type: "string", description: "אופציונלי, רק כשהתור עבור מישהו אחר: 'התור בפועל עבור: <שם>'." },
       },
-      required: ["staffId", "serviceId", "date", "startTime", "customerName"],
+      required: ["staffId", "serviceId", "date", "startTime"],
     },
   },
   {
@@ -920,10 +920,20 @@ export async function execTool(
         const customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true, name: true } });
         const words = (t: string | null | undefined) => (t ?? "").trim().split(/\s+/).filter(Boolean).length;
         const registeredName = !!customer && words(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
-        if (!registeredName && words(customerName) < 2) return "שגיאה: לקוח חדש — צריך שם מלא (פרטי + משפחה) לפני ההצעה. שאל: \"רגע לפני שאני סוגר את התור מה השם המלא שלך?\" ואז קרא שוב.";
         const avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
         if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
           return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
+        }
+        // New customer without a full name: the system asks for it (fixed text),
+        // reads the answer and moves on to the confirmation — no model call for
+        // the name turn (owner's decision after the 2–20.9 data, 20.9.2026).
+        if (!registeredName && words(customerName) < 2) {
+          const question = await createConfirmProposal({
+            businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
+            date, startTime, customerName: null, note: note || null, mentionStaff, originalRequest: originalRequest || null,
+            awaitingName: true, partialName: words(customerName) === 1 ? String(customerName).trim() : null,
+          });
+          return "PROPOSED\n" + question;
         }
         // The customer already said yes in his own words (the classifier missed it,
         // the model caught it): book now instead of asking the same question again.
@@ -2106,10 +2116,13 @@ export async function runCustomerAgent(opts: {
   try {
     const ctxPhone = sandbox?.contextPhone ?? phone;
     const cust = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone: normalizeIsraeliPhone(ctxPhone) }, { phone: normalizeIsraeliPhone(ctxPhone).replace(/^972/, "0") }] }, select: { id: true, name: true } });
+    const lastAssistant = [...history].reverse().find(m => m.role === "assistant") ?? null;
     const outcome = await handleIncomingForProposal({
       businessId, phone, conversationId: conversation.id, text: incomingText, customer: cust, sandbox: !!sandbox,
       execTool: (name, input) => execTool(name, input, businessId, conversation.id, sandbox?.contextPhone ?? phone, sandbox),
+      lastAssistant: lastAssistant ? { content: lastAssistant.content, createdAt: lastAssistant.createdAt } : null,
     });
+    if (outcome.silent) { console.log(`[agent] silent ack, no reply biz=${businessId}`); return; }
     if (outcome.reply) preHandledReply = outcome.reply;
     else if (outcome.context) customerContext += `\n${outcome.context}`;
     else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }

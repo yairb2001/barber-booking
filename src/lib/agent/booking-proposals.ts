@@ -162,6 +162,8 @@ export async function createConfirmProposal(p: {
   staffId: string; staffName: string; serviceId: string; serviceName: string;
   date: string; startTime: string; customerName?: string | null; note?: string | null;
   mentionStaff: boolean; originalRequest?: string | null; firstName?: string | null;
+  /** New customer without a full name: the system asks for it and continues on its own. */
+  awaitingName?: boolean; partialName?: string | null;
 }): Promise<string> {
   const phone = normalizeIsraeliPhone(p.phone);
   await prisma.bookingProposal.updateMany({ where: { businessId: p.businessId, phone, status: "pending" }, data: { status: "superseded", respondedAt: new Date() } });
@@ -169,10 +171,11 @@ export async function createConfirmProposal(p: {
     data: {
       businessId: p.businessId, phone, conversationId: p.conversationId, kind: "confirm",
       staffId: p.staffId, serviceId: p.serviceId, date: new Date(p.date + "T00:00:00.000Z"), startTime: p.startTime,
-      customerName: p.customerName ?? null, note: JSON.stringify({ note: p.note ?? null, originalRequest: p.originalRequest ?? null, staffName: p.staffName, serviceName: p.serviceName }),
+      customerName: p.customerName ?? null, note: JSON.stringify({ note: p.note ?? null, originalRequest: p.originalRequest ?? null, staffName: p.staffName, serviceName: p.serviceName, mentionStaff: p.mentionStaff, awaitingName: !!p.awaitingName, partialName: p.partialName ?? null }),
       expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
     },
   });
+  if (p.awaitingName) return p.partialName ? FAMILY_NAME_QUESTION : NAME_QUESTION;
   return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime });
 }
 
@@ -186,7 +189,49 @@ export async function recordNudgeOffer(p: { businessId: string; phone: string; s
   });
 }
 
-export type ProposalOutcome = { reply?: string; context?: string };
+export type ProposalOutcome = { reply?: string; context?: string; silent?: boolean };
+
+// ── "תודה" → nothing (owner's decision, 20.9.2026) ────────────────────────────
+// A bare acknowledgement right after a closing message from the agent gets no
+// reply and no model call — the way a barber just reads "תודה 🙏" and moves on.
+const ACK_WORDS = ["תודה", "תודהה", "רבה", "אחלה", "סבבה", "מעולה", "מושלם", "פגז", "יאללה", "ביי", "להתראות", "נתראה", "אוקי", "אוקיי", "בסדר", "טוב", "מצוין", "מצויין", "אלוף", "גבר", "אחי", "כפרה", "מלך", "תותח", "נשמה", "בכיף", "אמן", "ok", "okay", "okk", "thanks", "thank", "you", "ty", "thx", "tnx", "cool", "great", "perfect", "bye", "good", "nice", "awesome", "10x", "top"];
+const EMOJI_ONLY = /^(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2B00-\u2BFF]|[\uFE0F\u200D\u20E3])+$/;
+export function isPureAck(text: string): boolean {
+  const raw = text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "").trim();
+  if (!raw || /[?؟\d]/.test(raw)) return false;
+  const toks = tokens(raw);
+  if (!toks.length || toks.length > 6) return false;
+  return toks.every(t => ACK_WORDS.includes(t) || EMOJI_ONLY.test(t));
+}
+/** The agent's last message left nothing open: no question, no offered time, no "מתאים/רוצה". */
+export function leavesNothingOpen(assistantText: string): boolean {
+  if (/[?؟]/.test(assistantText)) return false;
+  if (/קבעתי לך|^בוטל|נרשמת|רשמתי אותך/.test(assistantText)) return true;   // the system's own closings
+  return !/\d{1,2}:\d{2}/.test(assistantText) && !/פנוי|מתאים|רוצה|אפשר|איזה|איזו|מתי|תגיד|תרצה|מה השם/.test(assistantText);
+}
+const ACK_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+// ── Full name in code ─────────────────────────────────────────────────────────
+// Real data (2–20.9.2026): 9 name questions, 8 answered with a full name in the
+// next message, 1 answered a previous question ("בוקר"). So: a 2–4 word answer
+// made of letters only, that is not a yes/no/greeting/time word, IS the name.
+export const NAME_QUESTION = "רגע לפני שאני סוגר את התור — מה השם המלא שלך?";
+export const FAMILY_NAME_QUESTION = "ושם המשפחה?";
+const NOT_NAME = new Set<string>([...YES_STEMS, ...NO_STEMS, ...FILLER, ...ACK_WORDS, ...CANCEL_VERBS,
+  "היי", "הי", "הלו", "אהלן", "בוקר", "צהריים", "צהרים", "ערב", "לילה", "מחר", "היום", "מחרתיים", "שבוע", "הבא", "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת",
+  "תור", "תספורת", "זקן", "שעה", "מתי", "איפה", "כמה", "מה", "מי", "למה", "איך", "אפשר", "רוצה", "בשעה", "אצל", "עם", "בלי", "רק", "גם", "לא", "כן", "אותו", "אותה",
+  "hi", "hello", "hey", "today", "tomorrow", "morning", "evening", "name"]);
+export function looksLikeName(text: string): { full?: string; partial?: string } | null {
+  let raw = text.replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "").trim();
+  if (!raw || /[?؟\d]/.test(raw)) return null;
+  raw = raw.replace(/^(שמי|השם שלי|השם הוא|קוראים לי|אני|זה|my name is|i am|i'm|it's|its)\s+/i, "").replace(/\s+(קוראים לי)$/, "");
+  const toks = raw.replace(/[,.!…"״()\[\]:;]+/g, " ").split(/\s+/).filter(Boolean);
+  if (toks.length < 1 || toks.length > 4) return null;
+  if (!toks.every(t => /^[A-Za-zא-ת][A-Za-zא-ת'׳’\-]*$/.test(t) && t.replace(/[^A-Za-zא-ת]/g, "").length >= 2)) return null;
+  if (toks.some(t => NOT_NAME.has(t.toLowerCase().replace(/['׳’]/g, "")))) return null;
+  const norm = toks.map(t => /^[a-z]/i.test(t) ? t[0].toUpperCase() + t.slice(1).toLowerCase() : t).join(" ");
+  return toks.length === 1 ? { partial: norm } : { full: norm };
+}
 
 /**
  * Runs BEFORE the model on every incoming customer message. Returns a reply to
@@ -196,11 +241,16 @@ export async function handleIncomingForProposal(p: {
   businessId: string; phone: string; conversationId: string; text: string;
   customer: { id: string; name: string } | null;
   execTool: ExecTool; sandbox: boolean;
+  /** The agent's last message (for the "תודה" → silence rule). */
+  lastAssistant?: { content: string; createdAt: Date } | null;
 }): Promise<ProposalOutcome> {
   const pending = await findPendingProposal(p.businessId, p.phone);
-  if (!pending) return maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
+  if (!pending) {
+    if (p.lastAssistant && isPureAck(p.text) && leavesNothingOpen(p.lastAssistant.content) && Date.now() - p.lastAssistant.createdAt.getTime() < ACK_WINDOW_MS) return { silent: true };
+    return maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
+  }
   const text = p.text.trim();
-  const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string }; } catch { return {}; } })();
+  const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string; mentionStaff?: boolean; awaitingName?: boolean; partialName?: string | null }; } catch { return {}; } })();
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
 
   if (pending.kind === "cancel") {
@@ -223,6 +273,21 @@ export async function handleIncomingForProposal(p: {
 
   if (pending.kind === "confirm") {
     const what = `${meta.serviceName ?? ""} אצל ${meta.staffName ?? ""} ${dayLabelHe(dateISO)} בשעה ${pending.startTime}`;
+    if (meta.awaitingName) {
+      // We asked "מה השם המלא שלך?" — the answer IS the name unless it clearly isn't.
+      const nm = looksLikeName(text);
+      const finish = async (full: string): Promise<ProposalOutcome> => {
+        await prisma.bookingProposal.update({ where: { id: pending.id }, data: { customerName: full, note: JSON.stringify({ ...meta, awaitingName: false, partialName: null }) } });
+        return { reply: confirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", mentionStaff: !!meta.mentionStaff, date: dateISO, startTime: pending.startTime ?? "" }) };
+      };
+      if (nm?.full) return finish(nm.full);
+      if (nm?.partial && meta.partialName) return finish(`${meta.partialName} ${nm.partial}`);
+      if (nm?.partial) {
+        await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify({ ...meta, partialName: nm.partial }) } });
+        return { reply: FAMILY_NAME_QUESTION };
+      }
+      return { context: `ביקשת מהלקוח שם מלא כדי לסגור תור (${what}) והוא ענה משהו שאינו שם: "${text.slice(0, 120)}". טפל במה שכתב, ואז בקש שוב שם מלא (פרטי + משפחה); כשיש שם מלא קרא ל-propose_booking עם אותם פרטים ו-customerName.` };
+    }
     if (isPlainYes(text, pending.startTime)) {
       const result = await p.execTool("book_appointment", {
         staffId: pending.staffId ?? "", serviceId: pending.serviceId ?? "", date: dateISO, startTime: pending.startTime ?? "",
