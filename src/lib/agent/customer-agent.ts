@@ -199,11 +199,20 @@ const BOOKING_CONTEXT_TOOLS = new Set([...Array.from(SMART_TOOLS), "get_availabl
 /** Exported (not just used internally) so test scripts can reuse the exact
  *  production routing signal instead of re-implementing a second, possibly
  *  drifting, copy of these regexes. */
+// 20.9.2026 — cost measurement (docs/PLAN-COST.md) showed the Haiku split LOSES
+// money: 63% of Haiku calls were cold cache writes (too little Haiku traffic to
+// stay warm), $0.034/call vs $0.0097 for a warm Sonnet call, Haiku counts the
+// same Hebrew prompt at ~2× the tokens (40K vs 20K), and 25 Haiku→Sonnet
+// escalations then paid a SECOND cold write on Sonnet. A cheaper model only pays
+// off all-or-nothing (plan stage D). Until then everything runs on Sonnet; the
+// routing signals below are kept for that experiment.
+const HAIKU_ROUTING_ENABLED = false;
 export function pickInitialModel(
   incomingText: string,
   recentToolNames: (string | null)[],
   recentMessages: string[] = []
 ): string {
+  if (!HAIKU_ROUTING_ENABLED) return MODEL_SMART;
   if (SMART_INTENT.test(incomingText)) return MODEL_SMART;
   if (recentToolNames.some(t => t && BOOKING_CONTEXT_TOOLS.has(t))) return MODEL_SMART;
   // Sticky: if the recent dialogue shows a booking already in motion, stay on the
@@ -246,7 +255,7 @@ function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.Mess
 export const AGENT_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_services",
-    description: "מחזיר רשימת השירותים הזמינים עם מחיר ומשך בדקות. אם מועבר staffId — מחזיר את השמות, המחירים, המשך וההערות המותאמים של אותו ספר.",
+    description: "רשימת השירותים עם מחיר ומשך. בדרך כלל היא כבר כתובה בהנחיות, כולל המחיר של כל ספר — קרא רק אם היא חסרה שם. עם staffId — הגרסה המותאמת של אותו ספר.",
     input_schema: {
       type: "object" as const,
       properties: {
@@ -257,7 +266,7 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "get_staff_list",
-    description: "מחזיר רשימת הספרים הזמינים (שם, מזהה, זמינות).",
+    description: "רשימת הספרים עם המזהים שלהם. בדרך כלל היא כבר כתובה בהנחיות — קרא רק אם היא חסרה שם.",
     input_schema: { type: "object" as const, properties: {}, required: [] },
   },
   {
@@ -680,17 +689,36 @@ export async function execTool(
 
       // ── book_appointment ─────────────────────────────────────────────────────
       case "book_appointment": {
-        const { staffId, serviceId, date, startTime, customerName, note } = input;
+        const { staffId: staffIdIn, serviceId: serviceIdIn, date, startTime, customerName, note } = input;
         // The caller IS the customer — always use their WhatsApp number, never
         // a number the model invented or asked for.
         const phone = normalizeIsraeliPhone(callerPhone);
 
-        const [staff, service, biz] = await Promise.all([
-          prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, name: true } }),
-          prisma.service.findUnique({ where: { id: serviceId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
-          prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } }),
+        let [staff, service] = await Promise.all([
+          prisma.staff.findFirst({ where: { id: staffIdIn, businessId: bizId }, select: { id: true, name: true } }),
+          prisma.service.findFirst({ where: { id: serviceIdIn, businessId: bizId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
         ]);
+        const biz = await prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } });
+        // Measured 13–20.9.2026: in 21% of bookings the model passed a NAME
+        // (or a stale id) here, got the error below, re-fetched the lists and
+        // retried — doubling those conversations' model calls (24.8 vs 11.9).
+        // Resolve by name/nickname ourselves, exactly like get_available_slots.
+        if (!staff && staffIdIn) {
+          staff = await prisma.staff.findFirst({
+            where: { businessId: bizId, isAvailable: true, OR: [{ name: { contains: staffIdIn, mode: "insensitive" } }, { nickname: { contains: staffIdIn, mode: "insensitive" } }] },
+            select: { id: true, name: true },
+          });
+          if (staff) console.warn(`[agent] book_appointment: resolved staffId "${staffIdIn}" by name to ${staff.id} biz=${bizId}`);
+        }
+        if (!service && serviceIdIn) {
+          service = await prisma.service.findFirst({
+            where: { businessId: bizId, isVisible: true, name: { contains: serviceIdIn, mode: "insensitive" } },
+            select: { id: true, name: true, price: true, durationMinutes: true },
+          });
+          if (service) console.warn(`[agent] book_appointment: resolved serviceId "${serviceIdIn}" by name to ${service.id} biz=${bizId}`);
+        }
         if (!staff || !service || !biz) return "שגיאה: לא נמצא הספר או השירות לפי המזהה. קרא שוב ל-get_staff_list ו-get_services כדי לקבל מזהים מעודכנים, ואז נסה לקבוע שוב — אל תעביר לאדם בגלל זה.";
+        const staffId = staff.id, serviceId = service.id;
 
         // ── Hard availability guard ──────────────────────────────────────────
         // NEVER create an appointment on a slot that isn't genuinely open for
@@ -1365,12 +1393,97 @@ function correctHebrewWeekdayLabels(text: string): string {
 /** Exported so test scripts can build the exact same system prompt Anthropic
  *  sees in production (including the hard guardrails + dynamic time block),
  *  instead of re-implementing this assembly a second time. */
+/** Staff + services — with each barber's own prices/durations and the exact
+ *  ids the tools take — as ONE block inside the cached prefix. Measured
+ *  1–20.9.2026: every booking re-fetched them (get_staff_list 1.4×, get_services
+ *  1.5× per booking): two model calls for data that is static per business.
+ *  Here it costs ~1K cached tokens (~$0.0003 per call). A catalog too big for
+ *  the prefix (many rooms/services) returns "" and the tools stay the source. */
+export async function buildCatalogBlock(businessId: string): Promise<string> {
+  const [staff, services] = await Promise.all([
+    prisma.staff.findMany({
+      where: { businessId, isAvailable: true },
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true, name: true, nickname: true, inQuickPool: true,
+        staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
+      },
+    }),
+    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true } }),
+  ]);
+  if (!staff.length || !services.length) return "";
+  const hasPool = staff.some(s => s.inQuickPool);
+  const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
+  const lines = staff.map(s => {
+    const own = [...s.staffServices].sort((a, b) => a.service.sortOrder - b.service.sortOrder);
+    const list = own.length
+      ? own.map(ss => svc(ss.customName ?? ss.service.name, ss.customPrice ?? ss.service.price, ss.customDuration ?? ss.service.durationMinutes, ss.customNote ?? ss.service.note, ss.service.id))
+      : services.map(sv => svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id));
+    const pool = hasPool && !s.inQuickPool ? " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו" : "";
+    return `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
+  });
+  const block = "הספרים והשירותים (עדכני. המחיר והמשך הם של כל ספר בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n" + lines.join("\n");
+  return block.length > 4000 ? "" : block;
+}
+
+/** The business-level inputs of the CACHED prefix — one place, so the customer
+ *  agent and the cache-warm ping build a byte-identical stable block. */
+export function stablePromptParams(
+  businessName: string,
+  agentConfig: { agentName: string | null; systemPrompt: string | null; setupConfig: string | null; faqs: Array<{ question: string; answer: string }> } | null,
+  catalogBlock: string,
+) {
+  let setupBlock = "";
+  if (agentConfig?.setupConfig) {
+    try { setupBlock = compileSetupConfig(JSON.parse(agentConfig.setupConfig) as SetupConfig); }
+    catch { /* malformed setupConfig — fall back to no shop layer */ }
+  }
+  return {
+    agentName: agentConfig?.agentName ?? "הסוכן",
+    businessName,
+    customSystemPrompt: agentConfig?.systemPrompt,
+    setupBlock,
+    faqs: agentConfig?.faqs ?? [],
+    catalogBlock,
+  };
+}
+
+const nowLabel = () => new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" });
+
+/** Keep-warm ping: re-reads the cached prefix (tools + stable prompt) so its 1h
+ *  TTL is refreshed. Costs a cache READ (~$0.006 for 20K tokens) instead of the
+ *  cold WRITE (~$0.08) the next customer would otherwise pay. Scheduled by
+ *  src/lib/agent/cache-warm.ts. Returns the usage so the scheduler can tell a hit
+ *  (cacheRead ≈ prefix) from a miss (cacheWrite ≈ prefix = the TTL had expired). */
+export async function warmCustomerAgentCache(businessId: string): Promise<{ cacheRead: number; cacheWrite: number } | null> {
+  const [biz, agentConfig] = await Promise.all([
+    prisma.business.findUnique({ where: { id: businessId }, select: { name: true, settings: true } }),
+    prisma.agentConfig.findUnique({ where: { businessId }, include: { faqs: { orderBy: { sortOrder: "asc" } } } }),
+  ]);
+  if (!biz) return null;
+  let settings: Record<string, unknown> = {};
+  if (biz.settings) { try { settings = JSON.parse(biz.settings); } catch { /* ignore */ } }
+  if (settings.aiProvider === "openai") return null; // nothing to warm on that path
+  const catalogBlock = await buildCatalogBlock(businessId);
+  const systemPrompt = buildSystemPrompt({ ...stablePromptParams(biz.name, agentConfig, catalogBlock), now: nowLabel() });
+  const res = await anthropic.messages.create({
+    model: MODEL_SMART,
+    max_tokens: 1,
+    system: systemPrompt,
+    tools: AGENT_TOOLS,
+    messages: [{ role: "user", content: "." }],
+  });
+  void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "cache_warm", usage: res.usage });
+  return { cacheRead: res.usage.cache_read_input_tokens ?? 0, cacheWrite: res.usage.cache_creation_input_tokens ?? 0 };
+}
+
 export function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
   setupBlock?: string;
   faqs: Array<{ question: string; answer: string }>;
+  catalogBlock?: string;
   now: string;
   customerContext?: string;
 }): Anthropic.TextBlockParam[] {
@@ -1394,6 +1507,10 @@ export function buildSystemPrompt(params: {
       "\n\nמידע שיעזור לך לענות:\n" +
       params.faqs.map(f => `ש: ${f.question}\nת: ${f.answer}`).join("\n\n");
   }
+  // Staff/services catalog — static per business, so it belongs in the cached
+  // prefix (see buildCatalogBlock). Changes only when the owner edits a barber
+  // or a service, which costs one cold write and nothing more.
+  if (params.catalogBlock) stable += `\n\n${params.catalogBlock}`;
 
   // Hard guardrails — appended in CODE so they hold for EVERY business, even one
   // with a hand-tuned custom prompt. Born from a real incident where a follow-up
@@ -1844,21 +1961,12 @@ export async function runCustomerAgent(opts: {
   const isFirstTurn = !history.some(m => m.role === "assistant");
   const customerContext = await loadCustomerContext(businessId, phone, isFirstTurn);
 
-  // Compile the shop's setup-interview answers into a prompt block (empty until
-  // the interview has run; ignored entirely when a hand-tuned override exists).
-  let setupBlock = "";
-  if (agentConfig?.setupConfig) {
-    try { setupBlock = compileSetupConfig(JSON.parse(agentConfig.setupConfig) as SetupConfig); }
-    catch { /* malformed setupConfig — fall back to no shop layer */ }
-  }
-
+  // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
+  // so both build the identical prefix (setup-interview block, FAQs, catalog).
+  const catalogBlock = await buildCatalogBlock(businessId);
   const systemPrompt = buildSystemPrompt({
-    agentName:         agentConfig?.agentName ?? "הסוכן",
-    businessName:      biz.name,
-    customSystemPrompt: agentConfig?.systemPrompt,
-    setupBlock,
-    faqs:              agentConfig?.faqs ?? [],
-    now:               new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" }),
+    ...stablePromptParams(biz.name, agentConfig, catalogBlock),
+    now: nowLabel(),
     customerContext,
   });
 

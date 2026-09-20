@@ -36,6 +36,7 @@ import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 import { runClosureSweep } from "@/lib/closures/status";
+import { keepAgentCachesWarm } from "@/lib/agent/cache-warm";
 import { sweepReminders } from "@/lib/reminders-sweep";
 import { runPostVisitAutomations } from "@/lib/automations/post-visit";
 import { runRhythmNudge } from "@/lib/automations/rhythm-nudge";
@@ -453,4 +454,12 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   // Calendar-closure sweep: resend to silent customers, escalate to the closing
   // barber, summarize when done. Cheap when no closure is open.
   try { await runClosureSweep(now); } catch (err) { console.error("[drip-queue] closure sweep failed:", err); }
+
+  // Keep the customer agent's 1h prompt cache alive across the gaps between
+  // conversations (docs/PLAN-COST.md, stage A). A read every ~50 min beats a
+  // cold write on the next customer.
+  try {
+    const w = await keepAgentCachesWarm(now);
+    if (w.pinged.length || w.misses.length) console.log(`[cache-warm] pinged ${w.pinged.length}, misses ${w.misses.length}`);
+  } catch (err) { console.error("[drip-queue] cache-warm failed:", err); }
 }
