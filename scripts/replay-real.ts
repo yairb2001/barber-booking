@@ -42,7 +42,7 @@ async function api(body: Record<string, unknown>) {
 
 function pick(): Episode[] {
   if (args.ids) { const ids = args.ids.split(","); return corpus.filter(e => ids.some((id: string) => e.conversationId.startsWith(id))); }
-  const ok = corpus.filter(e => e.userTurns >= 1 && e.userTurns <= 9 && !/^\W*$/.test(e.transcript.find(m => m.role === "user")?.text ?? ""));
+  const ok = corpus.filter(e => e.userTurns >= 1 && e.userTurns <= 9 && !/^[^a-zA-Z0-9\u05d0-\u05ea]*$/.test(e.transcript.find(m => m.role === "user")?.text ?? ""));
   const groups = new Map<string, Episode[]>();
   for (const e of ok) { const k = e.proactiveFirst ? "nudge" : e.outcome; (groups.get(k) ?? groups.set(k, []).get(k)!).push(e); }
   for (const g of Array.from(groups.values())) g.sort((a: Episode, b: Episode) => b.start.localeCompare(a.start)); // newest first
