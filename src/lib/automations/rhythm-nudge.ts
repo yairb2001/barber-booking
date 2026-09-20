@@ -18,6 +18,7 @@ import { buildAvailabilityIndex, type AvailabilityIndex } from "@/lib/availabili
 import { enqueueMessage, applyTemplate, firstName, staffDisplayName } from "@/lib/messaging";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
+import { recordNudgeOffer } from "@/lib/agent/booking-proposals";
 
 // ── Settings (Business.settings.rhythmNudge) ─────────────────────────────────
 export type RhythmSettings = {
@@ -71,6 +72,7 @@ export type PlanEntry = {
   staffMode: "regular" | "mixed";
   slots: Slot[];
   body: string;
+  serviceId: string | null;
 };
 export type RunResult = { businessId: string; scanned: number; planned: PlanEntry[]; skipped: Record<string, number>; shopMedianDays?: number };
 
@@ -360,7 +362,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         : (b.rhythmNudgeTemplate || DEFAULT_RHYTHM_TEMPLATE);
       const body = applyTemplate(tmpl, vars);
 
-      res.planned.push({ customerId: c.id, name: c.name, phone, kind, variant, reason, daysToDue, staffMode: mixed ? "mixed" : "regular", slots, body });
+      res.planned.push({ customerId: c.id, name: c.name, phone, kind, variant, reason, daysToDue, staffMode: mixed ? "mixed" : "regular", slots, body, serviceId });
     }
 
     // Most overdue first, then send.
@@ -370,6 +372,9 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         // The chat mirror happens in the drip queue at the moment of delivery,
         // so the thread shows the real send time (1/min), not the plan time.
         await enqueueMessage({ businessId: b.id, customerPhone: p.phone, kind: p.kind, body: p.body, scheduledFor: now });
+        // Stage C: remember the offer structured, so a reply that picks one of
+        // these slots is handled in code (booking-proposals.ts), no model call.
+        await recordNudgeOffer({ businessId: b.id, phone: p.phone, serviceId: p.serviceId, options: p.slots.map(s => ({ staffId: s.staffId, staffName: s.staffName, date: s.date, startTime: s.time })) }).catch(e => console.error("[rhythm-nudge] offer record failed", e));
       }
     }
     results.push(res);

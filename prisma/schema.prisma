@@ -934,3 +934,28 @@ model Lead {
 
   @@map("leads")
 }
+
+/// Stage C (docs/PLAN-COST.md): a booking the agent PROPOSED and the customer
+/// has to confirm — "כן" is then handled in code, no model call — or a rhythm
+/// nudge's offered slots waiting for the customer to pick one. Keyed by phone.
+model BookingProposal {
+  id             String    @id @default(uuid())
+  businessId     String    @map("business_id")
+  phone          String    // normalized 972…
+  conversationId String?   @map("conversation_id")
+  kind           String    // "confirm" | "nudge"
+  staffId        String?   @map("staff_id")
+  serviceId      String?   @map("service_id")
+  date           DateTime?
+  startTime      String?   @map("start_time")
+  customerName   String?   @map("customer_name")
+  note           String?
+  optionsJson    String?   @map("options_json") // nudge: [{staffId,staffName,date,startTime}]
+  status         String    @default("pending") // pending | accepted | rejected | expired | superseded
+  createdAt      DateTime  @default(now()) @map("created_at")
+  expiresAt      DateTime  @map("expires_at")
+  respondedAt    DateTime? @map("responded_at")
+
+  @@index([businessId, phone, status])
+  @@map("booking_proposals")
+}

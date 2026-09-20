@@ -19,7 +19,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 type Msg = { t: string; role: string; tool?: string; input?: string; text: string };
-type Episode = { conversationId: string; phone: string; name: string | null; start: string; calls: number; cost: number; outcome: string; proactiveFirst: boolean; userTurns: number; transcript: Msg[] };
+type Episode = { conversationId: string; phone: string; name: string | null; start: string; calls: number; cost: number; outcome: string; proactiveFirst: boolean; userTurns: number; transcript: Msg[]; seedNudge?: { serviceId?: string; options: { staffId: string; staffName: string; date: string; startTime: string }[] } };
 type TurnResult = { text: string; replies: string[]; tools: { name: string; input: string | null; result: string }[]; toolLog: string[]; usage: { calls: number; costUsd: number; cacheWrite: number; cacheRead: number; output: number }; ms: number; error?: string };
 type VariantRun = { variant: string; turns: TurnResult[]; calls: number; costUsd: number; flags: string[] };
 
@@ -81,10 +81,12 @@ async function replay(ep: Episode, variant: string): Promise<VariantRun> {
   const contextPhone = ep.phone.replace(/^0/, "972").replace(/\D/g, "");
   const turns: TurnResult[] = [];
   try {
+    let first = true;
     for (const m of ep.transcript.filter(x => x.role === "user")) {
       const text = m.text.trim(); if (!text) continue;
       try {
-        const r = await api({ action: "turn", phone, text, variant, contextPhone });
+        const r = await api({ action: "turn", phone, text, variant, contextPhone, ...(first && ep.seedNudge ? { seedNudge: ep.seedNudge } : {}) });
+        first = false;
         turns.push({ text, replies: r.replies ?? [], tools: r.tools ?? [], toolLog: r.toolLog ?? [], usage: r.usage, ms: r.ms });
       } catch (e) {
         turns.push({ text, replies: [], tools: [], toolLog: [], usage: { calls: 0, costUsd: 0, cacheWrite: 0, cacheRead: 0, output: 0 }, ms: 0, error: e instanceof Error ? e.message : String(e) });

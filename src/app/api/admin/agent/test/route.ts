@@ -129,6 +129,7 @@ async function cleanupSandbox(businessId: string, phone: string) {
     await prisma.conversation.deleteMany({ where: { id: { in: convs.map(c => c.id) } } }).catch(() => {});
   }
   await prisma.messageLog.deleteMany({ where: { businessId, customerPhone: phone } }).catch(() => {});
+  await prisma.bookingProposal.deleteMany({ where: { businessId, phone } }).catch(() => {});
   // A sandbox turn may have auto-created a Customer (+ implicit waitlist rows)
   // for the fake phone — remove them too, so nothing fake reaches the CRM.
   const fakeCustomers = await prisma.customer.findMany({ where: { businessId, phone: { in: [phone, phone.replace(/^972/, "0")] } }, select: { id: true } });
@@ -160,8 +161,14 @@ export async function POST(req: NextRequest) {
     const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone,
-      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, toolsOverride: AGENT_TOOLS_CANDIDATE } : {}),
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 3 } : {}),
     };
+    void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
+    // Test hook: pretend a rhythm nudge offered these slots to the sandbox phone.
+    if (body.seedNudge && Array.isArray(body.seedNudge.options)) {
+      const { recordNudgeOffer } = await import("@/lib/agent/booking-proposals");
+      await recordNudgeOffer({ businessId: business.id, phone, serviceId: typeof body.seedNudge.serviceId === "string" ? body.seedNudge.serviceId : null, options: body.seedNudge.options });
+    }
     const startedAt = new Date();
     try {
       await runCustomerAgent({ businessId: business.id, phone, incomingText: text, sandbox });

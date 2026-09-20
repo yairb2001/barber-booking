@@ -30,6 +30,7 @@ import { computeDayAvailability, computeParallelSlots, resolveStaffService } fro
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
+import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
@@ -330,6 +331,24 @@ const BASE_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "propose_booking",
+    description: "מציע ללקוח את התור לאישור סופי. קרא כשיש ספר, שירות, יום ושעה (ושם מלא ללקוח חדש). המערכת שולחת ללקוח את שאלת האישור הקבועה, ואם הוא עונה כן — קובעת בעצמה ומודיעה לו. אתה לא כותב את שאלת האישור ולא קובע בעצמך.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        staffId: { type: "string", description: "מזהה הספר" },
+        serviceId: { type: "string", description: "מזהה השירות" },
+        date: { type: "string", description: "YYYY-MM-DD" },
+        startTime: { type: "string", description: "HH:MM — שעה שחזרה מהכלי" },
+        customerName: { type: "string", description: "שם מלא. לקוח רשום — כפי שרשום. לקוח חדש — פרטי + משפחה (נשאל רק בסוף)." },
+        mentionStaff: { type: "boolean", description: "true רק אם הלקוח ביקש ספר בשם או שסוכם על הקבוע שלו — אז שם הספר מופיע בשאלה." },
+        originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
+        note: { type: "string", description: "אופציונלי, רק כשהתור עבור מישהו אחר: 'התור בפועל עבור: <שם>'." },
+      },
+      required: ["staffId", "serviceId", "date", "startTime", "customerName"],
+    },
+  },
+  {
     name: "check_appointment",
     description: "בודק אם ללקוח (זה שמתכתב איתך עכשיו) יש תורים קרובים קיימים. אין צורך במספר טלפון — המערכת יודעת מי הלקוח.",
     input_schema: {
@@ -444,6 +463,16 @@ const BASE_TOOLS: Anthropic.Tool[] = [
 // Stage B (docs/PLAN-COST.md): the wording above is the long original; what the
 // model actually sees is the trimmed version — same names and schemas.
 export const AGENT_TOOLS: Anthropic.Tool[] = applyToolDescriptions(BASE_TOOLS);
+
+/** Stage C tool set: the catalog and the customer's own appointments are in the
+ *  prompt, address/phone too, and bookings go through propose_booking (code
+ *  confirms and books) — so five tools disappear and one arrives. Stable per
+ *  business, so the cached prefix stays stable. */
+const V3_DROP = new Set(["get_staff_list", "get_services", "check_appointment", "get_business_info", "book_appointment"]);
+export function selectTools(all: Anthropic.Tool[], o: { v3: boolean; hasCatalog: boolean }): Anthropic.Tool[] {
+  if (!o.v3) return all.filter(t => t.name !== "propose_booking");
+  return all.filter(t => !V3_DROP.has(t.name) || (!o.hasCatalog && (t.name === "get_staff_list" || t.name === "get_services")));
+}
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
@@ -867,6 +896,35 @@ export async function execTool(
           tag: `appt-${appt.id}`,
         }).catch(() => {});
         return `✅ תור נקבע בהצלחה!\n📅 ${date} ב-${startTime}\n💈 ${service.name} אצל ${staff.name}\n💰 ${eff.price}₪\nמזהה תור: ${appt.id}`;
+      }
+
+      // ── propose_booking (stage C: the confirmation + the "כן" are code) ───────
+      case "propose_booking": {
+        const { staffId: sIn, serviceId: svIn, date, startTime, customerName, note, originalRequest } = input;
+        const mentionStaff = String((input as Record<string, unknown>).mentionStaff) === "true";
+        const phone = normalizeIsraeliPhone(callerPhone);
+        let [staff, service] = await Promise.all([
+          prisma.staff.findFirst({ where: { id: sIn, businessId: bizId }, select: { id: true, name: true } }),
+          prisma.service.findFirst({ where: { id: svIn, businessId: bizId }, select: { id: true, name: true } }),
+        ]);
+        if (!staff && sIn) staff = await prisma.staff.findFirst({ where: { businessId: bizId, isAvailable: true, OR: [{ name: { contains: sIn, mode: "insensitive" } }, { nickname: { contains: sIn, mode: "insensitive" } }] }, select: { id: true, name: true } });
+        if (!service && svIn) service = await prisma.service.findFirst({ where: { businessId: bizId, isVisible: true, name: { contains: svIn, mode: "insensitive" } }, select: { id: true, name: true } });
+        if (!staff || !service) return "שגיאה: לא זיהיתי את הספר או השירות. השתמש במזהים בדיוק כפי שהם כתובים בהנחיות ונסה שוב.";
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || !/^\d{1,2}:\d{2}$/.test(startTime ?? "")) return "שגיאה: date חייב להיות YYYY-MM-DD ו-startTime HH:MM.";
+        const customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true, name: true } });
+        const words = (t: string | null | undefined) => (t ?? "").trim().split(/\s+/).filter(Boolean).length;
+        const registeredName = !!customer && words(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
+        if (!registeredName && words(customerName) < 2) return "שגיאה: לקוח חדש — צריך שם מלא (פרטי + משפחה) לפני ההצעה. שאל: \"רגע לפני שאני סוגר את התור מה השם המלא שלך?\" ואז קרא שוב.";
+        const avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
+        if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
+          return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
+        }
+        const question = await createConfirmProposal({
+          businessId: bizId, phone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
+          date, startTime, customerName: registeredName ? customer!.name : customerName, note: note || null, mentionStaff,
+          originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName),
+        });
+        return "PROPOSED\n" + question;
       }
 
       // ── check_appointment ────────────────────────────────────────────────────
@@ -1415,7 +1473,9 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     }),
     prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true } }),
   ]);
-  if (!staff.length || !services.length) return "";
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true } });
+  const info = [biz?.address ? `כתובת: ${biz.address}` : "", biz?.phone ? `טלפון: ${biz.phone}` : "", biz?.about ? biz.about.replace(/\s+/g, " ").slice(0, 300) : ""].filter(Boolean).join(" · ");
+  if (!staff.length || !services.length) return info ? `פרטי העסק: ${info}` : "";
   const hasPool = staff.some(s => s.inQuickPool);
   const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
   const lines = staff.map(s => {
@@ -1426,8 +1486,8 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     const pool = hasPool && !s.inQuickPool ? " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו" : "";
     return `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
-  const block = "הספרים והשירותים (עדכני. המחיר והמשך הם של כל ספר בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n" + lines.join("\n");
-  return block.length > 4000 ? "" : block;
+  const block = "הספרים והשירותים (עדכני. המחיר והמשך הם של כל ספר בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n" + lines.join("\n") + (info ? `\nפרטי העסק: ${info}` : "");
+  return block.length > 4500 ? (info ? `פרטי העסק: ${info}` : "") : block;
 }
 
 /** The business-level inputs of the CACHED prefix — one place, so the customer
@@ -1527,10 +1587,15 @@ export function buildSystemPrompt(params: {
     "אם ללקוח יקר — הבן אותו בחום והשאר דלת פתוחה, בלי להציע שום פיצוי. " +
     "אסור להבטיח דבר בשם העסק שלא כתוב בהנחיות או שלא חזר מהכלים.";
 
+  // Guidance about "today" is static — it used to ride in the per-turn block
+  // and was paid at full price on every call (~450 tokens); now it is cached.
+  stable +=
+    "\n\nהיום ועכשיו: השעה שבהנחיות היא שעת האמת. אל תגיד ללקוח מדעתך \"היום כבר מאוחר\" או \"אין זמן היום\": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שעברו ולוקח בחשבון זמן הכנה. " +
+    "ביקש היום — בדוק עם get_available_slots; חזרו שעות — הצע אותן. לא חזרה אף שעה — find_next_available לתאריך הפנוי הקרוב באמת; אל תנחש יום (כמו \"מחר\"). find_next_available כבר סרק את כל הימים קדימה: אם הלקוח דוחה את התאריך שחזר, אל תציע יום מוקדם יותר (כולל \"מחר\") אלא אם ביקש שירות או ספר אחר; רוצה מאוחר יותר — קרא שוב עם afterDate=התאריך שנדחה.";
+
   // Per-turn chunk (current time + who's chatting). Changes every minute and
   // per customer, so it must stay OUTSIDE the cached prefix.
-  let dynamic =
-    `התאריך והשעה כרגע: ${params.now} (אזור זמן ישראל). זו שעת האמת — התייחס אליה כפי שהיא. אל תגיד ללקוח מדעתך "היום כבר מאוחר" או "אין זמן היום": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שכבר עברו ולוקח בחשבון זמן הכנה. אם הלקוח מבקש היום — בדוק עם get_available_slots; אם חזרו שעות, הצע אותן כרגיל. אם לא חזרה אף שעה להיום, קרא ל-find_next_available כדי לקבל את התאריך הפנוי הקרוב ביותר בפועל, והצע אותו — אל תנחש יום ספציפי (כמו "מחר") מדעתך. find_next_available כבר סרק קדימה את כל הימים, אז אם הלקוח דוחה את התאריך שהוא החזיר, כל יום מוקדם יותר כבר נבדק ואין בו מקום — אל תציע יום מוקדם יותר (כולל "מחר") שוב, אלא אם הלקוח מבקש שירות או ספר אחר שטרם נבדק. אם הלקוח דוחה את התאריך ורוצה יום מאוחר יותר (אותו ספר/שירות) — קרא שוב ל-find_next_available עם afterDate=התאריך שנדחה, אל תחזור על אותה תוצאה ואל תשתוק.`;
+  let dynamic = `התאריך והשעה כרגע: ${params.now} (אזור זמן ישראל).`;
   if (params.customerContext) dynamic += `\n${params.customerContext}`;
 
   return [
@@ -1615,6 +1680,7 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
     take: 3,
     select: {
+      id: true,
       date: true,
       startTime: true,
       staff:   { select: { name: true } },
@@ -1634,10 +1700,10 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
     const list = upcoming
       .map(a => {
         const d = new Date(a.date).toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem" });
-        return `${a.service.name} אצל ${a.staff.name} ביום ${d} בשעה ${a.startTime}`;
+        return `${a.service.name} אצל ${a.staff.name} ביום ${d} בשעה ${a.startTime} [id: ${a.id}]`;
       })
       .join("; ");
-    parts.push(`יש לו כבר תור קבוע: ${list}. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה). ⚠️ זהו מידע על תור קיים בלבד, ולא מקור לבדיקת זמינות — לעולם אל תשתמש בתאריך או בשעה של התור הקיים כדי להציע זמן פנוי או לטעון "זה הכי קרוב שיש". לבדיקת זמינות קרא תמיד ל-get_available_slots או ל-find_next_available.`);
+    parts.push(`יש לו כבר תור קבוע: ${list}. לביטול, הזזה או דיווח איחור השתמש במזהה שבסוגריים ישירות. אם הוא שואל מתי התור שלו — ענה לו מיד מהמידע הזה, בלי להפנות אותו לבדוק לבד. זה תור אמיתי שכבר נקבע (לא רשימת המתנה). ⚠️ זהו מידע על תור קיים בלבד, ולא מקור לבדיקת זמינות — לעולם אל תשתמש בתאריך או בשעה של התור הקיים כדי להציע זמן פנוי או לטעון "זה הכי קרוב שיש". לבדיקת זמינות קרא תמיד ל-get_available_slots או ל-find_next_available.`);
   }
 
   // ── Calendar closure: the barber cancelled this customer's appointment and
@@ -1838,6 +1904,8 @@ export type SandboxOptions = {
   toolsOverride?: Anthropic.Tool[];
   contextPhone?: string;
   usageKind?: string;
+  /** 3 = stage-C tool set (propose_booking, no catalog/check/info/book tools) */
+  promptVersion?: number;
 };
 
 export async function runCustomerAgent(opts: {
@@ -2009,11 +2077,25 @@ export async function runCustomerAgent(opts: {
   // than relying on the model to guess whether to greet.
   const isFirstTurn = !history.some(m => m.role === "assistant");
   let customerContext = await loadCustomerContext(businessId, sandbox?.contextPhone ?? phone, isFirstTurn);
+  // Stage C: a pending proposal ("מאשר?" waiting for כן, or a nudge's offered
+  // slots) is resolved in CODE first. A handled reply skips the model entirely.
+  let preHandledReply: string | null = null;
+  try {
+    const ctxPhone = sandbox?.contextPhone ?? phone;
+    const cust = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone: normalizeIsraeliPhone(ctxPhone) }, { phone: normalizeIsraeliPhone(ctxPhone).replace(/^972/, "0") }] }, select: { id: true, name: true } });
+    const outcome = await handleIncomingForProposal({
+      businessId, phone, conversationId: conversation.id, text: incomingText, customer: cust, sandbox: !!sandbox,
+      execTool: (name, input) => execTool(name, input, businessId, conversation.id, sandbox?.contextPhone ?? phone, sandbox),
+    });
+    if (outcome.reply) preHandledReply = outcome.reply;
+    else if (outcome.context) customerContext += `\n${outcome.context}`;
+    else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }
+  } catch (e) { console.error("[agent] proposal handling failed", e); }
   // Prompt v2 ("cartridges done right"): the rarely-needed procedures — group
   // bookings, continuing a barber's manual offer — live OUTSIDE the cached
   // prefix and are injected only when the conversation actually needs them.
   // Active for the candidate prompt (replay) and for businesses switched to it.
-  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true;
+  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true || bizSettingsOf(biz.settings).agentPromptV3 === true || sandbox?.promptVersion === 3;
   if (promptV2) {
     const extra = situationalGuidance(incomingText, history);
     if (extra) customerContext += `\n${extra}`;
@@ -2030,7 +2112,8 @@ export async function runCustomerAgent(opts: {
     now: nowLabel(),
     customerContext,
   });
-  const tools = sandbox?.toolsOverride ?? AGENT_TOOLS;
+  const promptV3 = sandbox?.promptVersion === 3 || bizSettingsOf(biz.settings).agentPromptV3 === true;
+  const tools = sandbox?.toolsOverride ?? selectTools(AGENT_TOOLS, { v3: promptV3, hasCatalog: !!catalogBlock });
   const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
@@ -2038,12 +2121,14 @@ export async function runCustomerAgent(opts: {
   // settings.aiProvider = "openai" (settings.openaiModel overrides the model,
   // default "gpt-4o"). The Anthropic path in the else-branch below is the default
   // and is left completely untouched — switching back to Claude is a flag flip.
-  let assistantText = "";
+  let assistantText = preHandledReply ?? "";
   let bizSettings: Record<string, unknown> = {};
   if (biz.settings) { try { bizSettings = JSON.parse(biz.settings); } catch { /* malformed settings — use Claude default */ } }
   const aiProvider = bizSettings.aiProvider === "openai" ? "openai" : "anthropic";
 
-  if (aiProvider === "openai") {
+  if (preHandledReply) {
+    // resolved in code above — nothing to ask the model
+  } else if (aiProvider === "openai") {
     const openaiModel = typeof bizSettings.openaiModel === "string" ? bizSettings.openaiModel : "gpt-4o";
     console.log(`[agent] provider=openai model=${openaiModel} biz=${businessId}`);
     assistantText = await runOpenAiAgentLoop({
@@ -2122,6 +2207,10 @@ export async function runCustomerAgent(opts: {
       }
       // Add tool results as user message
       messages.push({ role: "user", content: toolResults });
+      // propose_booking is terminal: the CODE sends the confirmation question —
+      // no further model call (docs/PLAN-COST.md stage C).
+      const proposed = toolResults.find(r => typeof r.content === "string" && r.content.startsWith("PROPOSED\n"));
+      if (proposed) { assistantText = (proposed.content as string).slice("PROPOSED\n".length); break; }
       continue;
     }
 
