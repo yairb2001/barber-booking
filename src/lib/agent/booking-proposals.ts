@@ -40,7 +40,8 @@ export function dayLabelHe(iso: string): string {
 }
 
 export function firstNameOf(name: string | null | undefined): string {
-  return (name ?? "").trim().split(/\s+/)[0] || "";
+  // WhatsApp names sometimes carry bidi control marks (\u202a…) — never echo them.
+  return (name ?? "").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().split(/\s+/)[0] || "";
 }
 
 /** The fixed final-confirmation question (owner's mandated phrasing). */
