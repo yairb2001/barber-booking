@@ -29,6 +29,7 @@ import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
+import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
@@ -252,7 +253,7 @@ function withCacheBreakpoint(messages: Anthropic.MessageParam[]): Anthropic.Mess
 
 // ─── Tool definitions ──────────────────────────────────────────────────────────
 
-export const AGENT_TOOLS: Anthropic.Tool[] = [
+const BASE_TOOLS: Anthropic.Tool[] = [
   {
     name: "get_services",
     description: "רשימת השירותים עם מחיר ומשך. בדרך כלל היא כבר כתובה בהנחיות, כולל המחיר של כל ספר — קרא רק אם היא חסרה שם. עם staffId — הגרסה המותאמת של אותו ספר.",
@@ -440,6 +441,9 @@ export const AGENT_TOOLS: Anthropic.Tool[] = [
     cache_control: { type: "ephemeral", ttl: "1h" },
   },
 ];
+// Stage B (docs/PLAN-COST.md): the wording above is the long original; what the
+// model actually sees is the trimmed version — same names and schemas.
+export const AGENT_TOOLS: Anthropic.Tool[] = applyToolDescriptions(BASE_TOOLS);
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
