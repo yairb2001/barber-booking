@@ -1797,13 +1797,58 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
 
 // ─── Main agent function ────────────────────────────────────────────────────────
 
+function bizSettingsOf(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw) return {};
+  try { return JSON.parse(raw) as Record<string, unknown>; } catch { return {}; }
+}
+
+/** Prompt v2 situational blocks. Each one used to sit permanently in the 19K-char
+ *  DOMINANT prompt (paid on every call, cached or not); now it is injected into
+ *  the per-turn block only when the conversation shows the situation. */
+const GROUP_RE = /חבר|אח שלי|אחי |הילד|הבן|הבת|ביחד|במקביל|שנינו|שלושתנו|גם ל|עוד אחד|עוד תור|שני תורים|לשניים|לשנינו|באותה שעה/;
+export const GROUP_GUIDANCE =
+  "קביעה לכמה אנשים: המטרה שיגיעו יחד באותה שעה, כל אחד אצל ספר אחר. שעות מקבילות רק מ-find_parallel_slots (count = מספר האנשים) — אסור להרכיב צמד ספר+שעה בעצמך מרשימה רגילה. " +
+  "לקוח חדש או שלא אכפת לו מהספר → שבץ במקביל בלי לשאול; יש לו ספר קבוע → שאל פעם אחת אם חשוב לו להישאר אצלו. " +
+  "כבר יש לו תור → אל תיגע בו ואל תקבע לו שני; קבע רק לחבר באותה שעה אצל ספר אחר. אין ספר שני פנוי → או להזיז את הקיים (request_appointment_move) ואז לקבוע לחבר, או להשאיר — לעולם לא להשאיר וגם להוסיף. " +
+  "שני תורים רצופים אצל אותו ספר = ברירה אחרונה, והסבר שזה רצוף ולא במקביל. אל תקבע לאותו אדם שני תורים באותו יום בלי שביקש — התור הנוסף הוא לחבר. " +
+  "אם הלקוח כבר נתן שעה שונה לכל אחד — זו לא מקביליות: קבע כל אחד בנפרד כרגיל.";
+export const MANUAL_OFFER_GUIDANCE =
+  "בשיחה הזאת יש הודעות שנכתבו ידנית על ידי הספר, או הצעת שעה מלפני יותר משעה. התייחס אליהן כאילו אתה כתבת: אותו קו, אותה הבטחה, בלי להתחיל מחדש ובלי להציג את עצמך. " +
+  "אם הוצעו יום ושעה ספציפיים והלקוח מאשר — אל תשאל שוב איזה יום ושעה. הסדר: 1) get_available_slots לאותו יום ולספר שהוצע — ההצעה ישנה והשעה יכלה להיתפס; " +
+  "2) פנויה → שאלת האישור הסופית בנוסח הקבוע (לא \"רק לוודא, בסדר?\") ואחרי כן book_appointment; 3) נתפסה → אמור בכנות והצע את הקרובה שכן פנויה.";
+export function situationalGuidance(incomingText: string, history: { role: string; content: string; source: string | null; createdAt: Date }[]): string {
+  const parts: string[] = [];
+  const recentText = [incomingText, ...history.slice(-6).map(h => h.content)].join("\n");
+  if (GROUP_RE.test(recentText)) parts.push(GROUP_GUIDANCE);
+  const lastAssistant = [...history].reverse().find(h => h.role === "assistant");
+  const manual = history.some(h => h.role === "assistant" && h.source === "admin");
+  const staleOffer = !!lastAssistant && Date.now() - lastAssistant.createdAt.getTime() > 3600_000 && /\d{1,2}:\d{2}/.test(lastAssistant.content);
+  if (manual || staleOffer) parts.push(MANUAL_OFFER_GUIDANCE);
+  return parts.join("\n");
+}
+
+export type SandboxOptions = {
+  replies: string[];
+  toolLog: string[];
+  promptOverride?: string;
+  toolsOverride?: Anthropic.Tool[];
+  contextPhone?: string;
+  usageKind?: string;
+};
+
 export async function runCustomerAgent(opts: {
   businessId: string;
   phone: string;        // normalized E.164
   incomingText: string;
   alreadyPersisted?: boolean;  // when true, skip saving the user message (webhook already did)
-  /** Owner test run: no WhatsApp sends, mutating tools simulated; replies collected here. */
-  sandbox?: { replies: string[]; toolLog: string[] };
+  /** Owner test run: no WhatsApp sends, mutating tools simulated; replies collected here.
+   *  Replay harness (docs/PLAN-COST.md): promptOverride / toolsOverride swap the
+   *  CANDIDATE prompt or tool set in for this run only (nothing is written to the
+   *  DB config); contextPhone loads the real customer's context (name, history,
+   *  nudges) while the conversation itself is stored under the throw-away phone;
+   *  usageKind tags the agent_usage rows ("sandbox") so they never pollute the
+   *  cost numbers of real traffic. */
+  sandbox?: SandboxOptions;
 }): Promise<void> {
   const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
 
@@ -1927,7 +1972,7 @@ export async function runCustomerAgent(opts: {
     },
     orderBy: { createdAt: "desc" },
     take: MAX_HISTORY,
-    select: { role: true, content: true },
+    select: { role: true, content: true, source: true, createdAt: true },
   });
   history.reverse();
 
@@ -1959,16 +2004,30 @@ export async function runCustomerAgent(opts: {
   // turn in history). Used to fire the personal greeting deterministically rather
   // than relying on the model to guess whether to greet.
   const isFirstTurn = !history.some(m => m.role === "assistant");
-  const customerContext = await loadCustomerContext(businessId, phone, isFirstTurn);
+  let customerContext = await loadCustomerContext(businessId, sandbox?.contextPhone ?? phone, isFirstTurn);
+  // Prompt v2 ("cartridges done right"): the rarely-needed procedures — group
+  // bookings, continuing a barber's manual offer — live OUTSIDE the cached
+  // prefix and are injected only when the conversation actually needs them.
+  // Active for the candidate prompt (replay) and for businesses switched to it.
+  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true;
+  if (promptV2) {
+    const extra = situationalGuidance(incomingText, history);
+    if (extra) customerContext += `\n${extra}`;
+  }
 
   // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
   // so both build the identical prefix (setup-interview block, FAQs, catalog).
   const catalogBlock = await buildCatalogBlock(businessId);
+  const configForPrompt = sandbox?.promptOverride
+    ? { agentName: agentConfig?.agentName ?? null, systemPrompt: sandbox.promptOverride, setupConfig: agentConfig?.setupConfig ?? null, faqs: agentConfig?.faqs ?? [] }
+    : agentConfig;
   const systemPrompt = buildSystemPrompt({
-    ...stablePromptParams(biz.name, agentConfig, catalogBlock),
+    ...stablePromptParams(biz.name, configForPrompt, catalogBlock),
     now: nowLabel(),
     customerContext,
   });
+  const tools = sandbox?.toolsOverride ?? AGENT_TOOLS;
+  const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
   // Provider switch (A/B experiment): a business can point its agent at GPT via
@@ -2005,7 +2064,7 @@ export async function runCustomerAgent(opts: {
       model,
       max_tokens: 1024,
       system:     systemPrompt,
-      tools:      AGENT_TOOLS,
+      tools,
       messages:   withCacheBreakpoint(messages),
     });
 
@@ -2014,7 +2073,7 @@ export async function runCustomerAgent(opts: {
       `[agent] model=${model} in=${u.input_tokens} out=${u.output_tokens} ` +
       `cacheWrite=${u.cache_creation_input_tokens ?? 0} cacheRead=${u.cache_read_input_tokens ?? 0}`
     );
-    void recordAgentUsage({ businessId, provider: "anthropic", model, kind: "customer", conversationId: conversation.id, usage: u });
+    void recordAgentUsage({ businessId, provider: "anthropic", model, kind: usageKind, conversationId: conversation.id, usage: u });
 
     // Append assistant response to messages
     messages.push({ role: "assistant", content: response.content });
@@ -2077,7 +2136,7 @@ export async function runCustomerAgent(opts: {
       system:   systemPrompt,
       messages: withCacheBreakpoint(messages), // includes every tool result so far
     });
-    void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "customer", conversationId: conversation.id, usage: closing.usage });
+    void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: usageKind, conversationId: conversation.id, usage: closing.usage });
     for (const block of closing.content) {
       if (block.type === "text") assistantText += block.text;
     }

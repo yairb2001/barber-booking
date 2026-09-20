@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
+import type { AgentCostResult } from "@/lib/analytics/agent-cost";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Biz = {
@@ -184,6 +185,8 @@ function Usage() {
         ))}
       </div>
 
+      <AgentCostCard />
+
       <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -213,6 +216,181 @@ function Usage() {
       <p className="text-xs text-slate-400 text-center">
         ₪ לפי ~{USD_TO_ILS}₪/$ (להמחשה). המכסות והעלויות = הערכה לכיול מול נתוני אמת.
       </p>
+    </div>
+  );
+}
+
+// ── Agent cost: last 7 days vs previous 7 vs baseline ────────────────────────
+type AgentCostData = {
+  businessName: string;
+  current: AgentCostResult;
+  previous: AgentCostResult;
+  baseline: AgentCostResult;
+};
+const AGENT_ILS_PER_USD = 3.3; // matches scripts/measure-agent-cost.ts
+const agorot = (usd: number | null) => (usd == null ? "—" : `${Math.round(usd * AGENT_ILS_PER_USD * 100)} אג׳`);
+const usd3 = (n: number | null) => (n == null ? "—" : `$${n.toFixed(3)}`);
+const perBooking = (w: AgentCostResult, n: number) => (w.bookedEpisodes ? n / w.bookedEpisodes : null);
+const staffAndServicesPerBooking = (w: AgentCostResult) =>
+  perBooking(w, w.bookedToolCalls.get_staff_list + w.bookedToolCalls.get_services);
+
+/** Two-line cell: money in agorot on top, USD (Latin) on its own line. */
+function Money({ usd }: { usd: number | null }) {
+  return (
+    <>
+      <div>{agorot(usd)}</div>
+      <div className="text-[11px] text-slate-400" dir="ltr">{usd3(usd)}</div>
+    </>
+  );
+}
+
+type AgentCostRow = {
+  label: string;
+  /** Latin sub-label (tool names etc.) — rendered on its own line, never mixed with Hebrew. */
+  sub?: string;
+  value: (w: AgentCostResult) => number | null;
+  render: (w: AgentCostResult) => ReactNode;
+  lowerIsBetter: boolean;
+  /** Depends on conversation_messages → partial when the window is older than the 7-day retention. */
+  episodeBased?: boolean;
+};
+
+const AGENT_COST_ROWS: AgentCostRow[] = [
+  { label: "עלות ליום", value: (w) => w.costPerDay, render: (w) => <Money usd={w.costPerDay} />, lowerIsBetter: true },
+  { label: "קריאות", value: (w) => w.calls, render: (w) => w.calls.toLocaleString(), lowerIsBetter: false },
+  {
+    label: "התחלות קרות ליום", value: (w) => w.coldStartsPerDay, lowerIsBetter: true,
+    render: (w) => (
+      <>
+        <div>{w.coldStartsPerDay.toFixed(1)}</div>
+        <div className="text-[11px] text-slate-400">{w.coldStarts} סה״כ</div>
+      </>
+    ),
+  },
+  {
+    label: "פינגים לשמירת מטמון", value: (w) => w.pings.count, lowerIsBetter: false,
+    render: (w) => (
+      <>
+        <div>{w.pings.count} · {w.pings.misses} פספוסים</div>
+        <div className="text-[11px] text-slate-400" dir="ltr">{usd3(w.pings.costUsd)}</div>
+      </>
+    ),
+  },
+  {
+    label: "עלות לשיחה שקבעה תור", value: (w) => w.avgCostPerBookingConversationUsd, lowerIsBetter: true, episodeBased: true,
+    render: (w) => (
+      <>
+        <Money usd={w.avgCostPerBookingConversationUsd} />
+        <div className="text-[11px] text-slate-400">{w.bookedEpisodes} שיחות</div>
+      </>
+    ),
+  },
+  {
+    label: "קריאות לקביעה (חציון)", value: (w) => (w.bookedEpisodes ? w.medianCallsPerBooking : null), lowerIsBetter: true, episodeBased: true,
+    render: (w) => (w.bookedEpisodes ? w.medianCallsPerBooking : "—"),
+  },
+  {
+    label: "כל ההוצאה ÷ קביעות", value: (w) => w.costPerBookingAllIn, lowerIsBetter: true,
+    render: (w) => (
+      <>
+        <Money usd={w.costPerBookingAllIn} />
+        <div className="text-[11px] text-slate-400">{w.agentBookings} קביעות</div>
+      </>
+    ),
+  },
+  {
+    label: "קריאות כלים לקביעה", sub: "get_staff_list + get_services", value: staffAndServicesPerBooking, lowerIsBetter: true, episodeBased: true,
+    render: (w) => { const v = staffAndServicesPerBooking(w); return v == null ? "—" : v.toFixed(1); },
+  },
+];
+
+function AgentCostCard() {
+  const [data, setData] = useState<AgentCostData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/super/agent-cost", { cache: "no-store" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json() as Promise<AgentCostData>;
+      })
+      .then(setData)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "שגיאה"));
+  }, []);
+
+  const title = "עלות סוכן הלקוחות — 7 ימים אחרונים מול 7 הקודמים";
+
+  if (error) {
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+        <div className="text-sm text-red-600 mt-1">לא הצלחתי לטעון את נתוני העלות.</div>
+        <div className="text-xs text-red-400 mt-0.5" dir="ltr">{error}</div>
+      </div>
+    );
+  }
+  if (!data) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+        <div className="text-sm text-slate-400 mt-2">טוען עלות סוכן…</div>
+      </div>
+    );
+  }
+
+  const windows = [data.current, data.previous, data.baseline] as const;
+  const anyPartial = windows.some((w) => !w.episodesReliable);
+  const sandbox = windows.map((w) => w.sandboxCostUsd).reduce((s, n) => s + n, 0);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white overflow-x-auto">
+      <div className="p-4 pb-2">
+        <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
+        <div className="text-[11px] text-slate-400 mt-0.5">{data.businessName} · ירוק = השתפר מול 7 הימים הקודמים</div>
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-slate-500 text-xs border-b border-slate-100">
+            <th className="text-right font-medium p-3">מדד</th>
+            <th className="text-center font-medium p-3">7 ימים אחרונים</th>
+            <th className="text-center font-medium p-3">7 הקודמים</th>
+            <th className="text-center font-medium p-3">בסיס 1–20.9</th>
+          </tr>
+        </thead>
+        <tbody>
+          {AGENT_COST_ROWS.map((row) => {
+            const cur = row.value(data.current);
+            const prev = row.value(data.previous);
+            const improved = row.lowerIsBetter && cur != null && prev != null && cur < prev;
+            return (
+              <tr key={row.label} className="border-b border-slate-50 last:border-0">
+                <td className="p-3 text-slate-700">
+                  <div>{row.label}{row.episodeBased && anyPartial ? " *" : ""}</div>
+                  {row.sub && <div className="text-[11px] text-slate-400 font-mono" dir="ltr">{row.sub}</div>}
+                </td>
+                {windows.map((w, i) => (
+                  <td
+                    key={i}
+                    className={`p-3 text-center ${i === 0 ? (improved ? "text-emerald-600 font-semibold" : "text-slate-800 font-semibold") : "text-slate-600"}`}
+                  >
+                    {row.render(w)}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="px-4 pb-3 pt-2 text-[11px] text-slate-400 space-y-0.5">
+        {anyPartial && <div>* נתוני שיחות (קביעות, קריאות לקביעה) חלקיים בחלונות ישנים — הודעות השיחה נמחקות אחרי כ־7 ימים.</div>}
+        <div>אג׳ לפי {AGENT_ILS_PER_USD}₪/$ · רק קריאות סוכן הלקוחות (kind customer); פינגים נספרים בנפרד.</div>
+        {sandbox > 0 && (
+          <div>
+            סנדבוקס (לא נכלל בעלויות):
+            <span dir="ltr" className="mr-1">{usd3(sandbox)}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

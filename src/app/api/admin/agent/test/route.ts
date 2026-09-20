@@ -1,3 +1,24 @@
+/**
+ * POST /api/admin/agent/test
+ *
+ * Two modes, both owner-only, both SANDBOX: nothing is sent on WhatsApp,
+ * mutating tools (book / cancel / escalate…) are simulated, and the throw-away
+ * conversation never shows in the inbox.
+ *
+ * 1) Scripted scenario (the original owner self-test):
+ *    { scenario: "new_price" | "returning_move" | "unknown" | "custom", messages?: string[] }
+ *
+ * 2) Replay harness (docs/PLAN-COST.md stage B): one customer turn per request so
+ *    a real past conversation can be replayed message by message against the
+ *    LIVE prompt/tools or the CANDIDATE ones, then compared.
+ *    { action: "turn", phone, text, variant?: "live" | "candidate", contextPhone? }
+ *      → { replies, toolLog, tools, usage, ms }
+ *    { action: "cleanup", phone } → deletes the sandbox conversation.
+ *    `phone` must be in the reserved fake range 9725099xxxxxx (never a customer).
+ *    `contextPhone` (a real customer) only feeds the customer-context block —
+ *    name, history, nudges — the conversation itself is stored under `phone`.
+ *    agent_usage rows of replay turns are tagged kind "sandbox".
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import Anthropic from "@anthropic-ai/sdk";
@@ -91,20 +112,22 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(results);
 }
 
-
-/**
- * POST /api/admin/agent/test — run one scripted scenario through the REAL agent
- * of this business in sandbox mode: nothing is sent on WhatsApp, mutating tools
- * (book / cancel / escalate…) are simulated, and the throw-away conversation is
- * deleted afterwards. Lets the owner see within seconds whether a prompt change
- * broke something.
- * Body: { scenario: "new_price" | "returning_move" | "unknown" | "custom", messages?: string[] }
- */
 const SCENARIOS: Record<string, { label: string; messages: string[] }> = {
   new_price:      { label: "לקוח חדש שואל מחיר",        messages: ["היי כמה עולה תספורת?", "ומתי יש לכם פנוי השבוע?"] },
   returning_move: { label: "לקוח חוזר רוצה להזיז תור",   messages: ["היי, אני רוצה להזיז את התור שלי לשעה מאוחרת יותר"] },
   unknown:        { label: "שאלה שאין עליה תשובה",       messages: ["אתם עושים גם צביעת שיער לנשים? וכמה זה עולה?"] },
 };
+
+const SANDBOX_PHONE = /^9725099\d{6}$/;
+
+async function cleanupSandbox(businessId: string, phone: string) {
+  const convs = await prisma.conversation.findMany({ where: { businessId, phone }, select: { id: true } });
+  if (convs.length) {
+    await prisma.conversationMessage.deleteMany({ where: { conversationId: { in: convs.map(c => c.id) } } }).catch(() => {});
+    await prisma.conversation.deleteMany({ where: { id: { in: convs.map(c => c.id) } } }).catch(() => {});
+  }
+  await prisma.messageLog.deleteMany({ where: { businessId, customerPhone: phone } }).catch(() => {});
+}
 
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
@@ -112,6 +135,50 @@ export async function POST(req: NextRequest) {
   const business = await getSessionBusiness(req, { id: true });
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
   const body = await req.json().catch(() => ({}));
+  const { runCustomerAgent } = await import("@/lib/agent/customer-agent");
+
+  // ── Replay harness ─────────────────────────────────────────────────────────
+  if (body.action === "cleanup" || body.action === "turn") {
+    const phone = String(body.phone ?? "");
+    if (!SANDBOX_PHONE.test(phone)) return NextResponse.json({ error: "phone must be a sandbox number (9725099xxxxxx)" }, { status: 400 });
+    if (body.action === "cleanup") { await cleanupSandbox(business.id, phone); return NextResponse.json({ ok: true }); }
+
+    const text = String(body.text ?? "").trim();
+    if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
+    const variant = body.variant === "candidate" ? "candidate" : "live";
+    const contextPhone = typeof body.contextPhone === "string" && /^972\d{8,9}$/.test(body.contextPhone) ? body.contextPhone : undefined;
+    const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
+    const sandbox = {
+      replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone,
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, toolsOverride: AGENT_TOOLS_CANDIDATE } : {}),
+    };
+    const startedAt = new Date();
+    try {
+      await runCustomerAgent({ businessId: business.id, phone, incomingText: text, sandbox });
+    } catch (e) {
+      return NextResponse.json({ error: e instanceof Error ? e.message : "agent failed", replies: sandbox.replies, toolLog: sandbox.toolLog }, { status: 500 });
+    }
+    const conv = await prisma.conversation.findFirst({ where: { businessId: business.id, phone }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    const [tools, usage] = await Promise.all([
+      conv ? prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: "tool", createdAt: { gte: startedAt } }, orderBy: { createdAt: "asc" }, select: { toolName: true, toolInput: true, content: true } }) : [],
+      conv ? prisma.agentUsage.findMany({ where: { businessId: business.id, conversationId: conv.id, createdAt: { gte: startedAt } }, select: { model: true, costUsd: true, cacheWriteTokens: true, cacheReadTokens: true, inputTokens: true, outputTokens: true } }) : [],
+    ]);
+    return NextResponse.json({
+      ok: true, variant,
+      replies: sandbox.replies, toolLog: sandbox.toolLog,
+      tools: tools.map(t => ({ name: t.toolName, input: t.toolInput, result: t.content.slice(0, 160) })),
+      usage: {
+        calls: usage.length,
+        costUsd: usage.reduce((s, u) => s + u.costUsd, 0),
+        cacheWrite: usage.reduce((s, u) => s + u.cacheWriteTokens, 0),
+        cacheRead: usage.reduce((s, u) => s + u.cacheReadTokens, 0),
+        output: usage.reduce((s, u) => s + u.outputTokens, 0),
+      },
+      ms: Date.now() - startedAt.getTime(),
+    });
+  }
+
+  // ── Scripted scenario (original) ───────────────────────────────────────────
   const scenario = SCENARIOS[body.scenario as string];
   const messages: string[] = scenario ? scenario.messages
     : Array.isArray(body.messages) ? body.messages.filter((m: unknown) => typeof m === "string" && m.trim()).slice(0, 3) : [];
@@ -121,24 +188,17 @@ export async function POST(req: NextRequest) {
   const phone = "97250" + String(Date.now()).slice(-7);
   const transcript: { role: "user" | "assistant"; text: string }[] = [];
   const toolLog: string[] = [];
-  const { runCustomerAgent } = await import("@/lib/agent/customer-agent");
   try {
     for (const m of messages) {
       transcript.push({ role: "user", text: m });
-      const sandbox = { replies: [] as string[], toolLog };
+      const sandbox = { replies: [] as string[], toolLog, usageKind: "sandbox" };
       await runCustomerAgent({ businessId: business.id, phone, incomingText: m, sandbox });
       for (const r of sandbox.replies) transcript.push({ role: "assistant", text: r });
     }
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "agent failed", transcript, toolLog }, { status: 500 });
   } finally {
-    // Clean up the sandbox conversation so it never shows in the inbox.
-    const convs = await prisma.conversation.findMany({ where: { businessId: business.id, phone }, select: { id: true } });
-    if (convs.length) {
-      await prisma.conversationMessage.deleteMany({ where: { conversationId: { in: convs.map(c => c.id) } } }).catch(() => {});
-      await prisma.conversation.deleteMany({ where: { id: { in: convs.map(c => c.id) } } }).catch(() => {});
-    }
-    await prisma.messageLog.deleteMany({ where: { businessId: business.id, customerPhone: phone } }).catch(() => {});
+    await cleanupSandbox(business.id, phone);
   }
   return NextResponse.json({ ok: true, label: scenario?.label ?? "תרחיש מותאם", transcript, toolLog });
 }
