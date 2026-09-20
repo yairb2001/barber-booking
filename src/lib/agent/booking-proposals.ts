@@ -50,16 +50,81 @@ export function confirmationQuestion(p: { firstName?: string | null; serviceName
   return `${who}רגע לפני שאני קובע לך את זה סופית — ${p.serviceName}${at} ${dayLabelHe(p.date)} בשעה ${p.startTime}\nמאשר?`;
 }
 
-// Punctuation only — NOT \W, which in JS also matches every Hebrew letter and
-// would turn "לא, מחר" into a plain "no" (same trap as in closures/reply.ts).
-const PUNCT = "[\\s,.!?…\"'׳״\\-]*";
-const YES_WORDS = "כן+|מאשר(?:ת)?|סבבה|אוקיי|אוקי|יאללה|יאלה|בטח|מעולה|אחלה|טוב|בסדר|קבע|תקבע|מאושר|אישור|yes|ok|okay|sure|confirm(?:ed)?|👍|👍🏻|👍🏼|👍🏽|✅";
-const NO_WORDS = "לא תודה|לא מתאים(?: לי)?|לא רוצה|לא|בטל|תבטל|no|nope|cancel";
-const TAIL = "(?:תודה רבה|תודה|אחי|גבר|בבקשה)?";
-const YES = new RegExp("^" + PUNCT + "(?:" + YES_WORDS + ")" + PUNCT + TAIL + PUNCT + "$", "i");
-const NO = new RegExp("^" + PUNCT + "(?:" + NO_WORDS + ")" + PUNCT + TAIL + PUNCT + "$", "i");
-export const isPlainYes = (t: string) => YES.test(t.trim());
-export const isPlainNo = (t: string) => NO.test(t.trim());
+// ── Reply classifier ────────────────────────────────────────────────────────
+// Built from the real replies to "מאשר?" in DOMINANT's conversations (20.9.2026,
+// 26 samples: כן ×11, מאשר ×9, מתאים, "מאשר👍🏼", "כן תודה", "פגז אחי תודה") plus the
+// short replies seen elsewhere (חיובי, סבבה, "בסדר אחי", "yes please", "Yea it's
+// fine", "וואלה אוקיי"). Token based: every word must be a YES stem or a filler;
+// any NO stem, any question mark, any other word (a time, a barber, "אבל") means
+// "not a plain yes" and the model takes it. Hebrew stems are matched as prefixes
+// so מאשר/מאשרת/מאשרים/אישרתי all count. Never \W — it matches Hebrew letters.
+const YES_STEMS = [
+  "כן", "מאשר", "אשר", "אישר", "אישור", "מאושר", "מתאים", "סבבה", "סבב", "אוקי", "אוקיי", "אוקיה", "בסדר", "טוב", "מעולה", "אחלה", "יאללה", "יאלה",
+  "בטח", "ברור", "כמובן", "חיובי", "מצוין", "מצויין", "סגור", "קבע", "תקבע", "נקבע", "תסגור", "תסגרי", "פגז", "מושלם", "בכיף", "מגניב", "אמן", "נלך",
+  "yes", "yep", "yeah", "yea", "ya", "sure", "fine", "ok", "okay", "okk", "confirm", "confirmed", "great", "perfect", "good", "deal", "alright",
+  "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "✅", "🙏", "🙏🏻", "🙏🏼", "👌", "💪", "🔥", "❤️", "🤙", "🤙🏼", "🤝",
+];
+const FILLER = ["תודה", "רבה", "אחי", "גבר", "בבקשה", "מותק", "כפרה", "אח", "אחלה", "לי", "אני", "זה", "בוא", "על", "ממש", "מאוד", "אז", "אה", "וואלה", "וואו", "נתראה", "להתראות", "ביי", "please", "thanks", "thank", "you", "bro", "it's", "its", "that's", "thats", "then", "man"];
+const NO_STEMS = ["לא", "לאא", "פחות", "עזוב", "עזבי", "רגע", "אולי", "תחכה", "בטל", "תבטל", "לבטל", "מבטל", "ביטול", "no", "nope", "nah", "cancel", "wait", "hold", "maybe", "❌", "👎"];
+const CHANGE_HINTS = /אבל|רק|במקום|אחר|אחרת|יותר|פחות|מאוחר|מוקדם|אפשר|יש|מה|מתי|למה|איפה|אצל|עם|בלי|ספר|תספורת|זקן|מספריים/;
+const stripEmojiSkin = (t: string) => t.replace(/\uD83C[\uDFFB-\uDFFF]/g, ""); // skin-tone modifiers, no u-flag (es5 target)
+function tokens(text: string): string[] {
+  return stripEmojiSkin(text.toLowerCase())
+    .replace(/[\u0591-\u05C7]/g, "")                          // niqqud
+    .replace(/['׳’]/g, "")                                  // apostrophes join (it's → its)
+    .replace(/[,.!…"״\-–—()\[\]:;]+/g, " ")                  // punctuation (keep ? for the check below)
+    .split(/\s+/).map(t => t.trim()).filter(Boolean);
+}
+const isYesToken = (t: string) => YES_STEMS.some(st => t === st || (/^[א-ת]/.test(st) && t.startsWith(st) && t.length - st.length <= 3) || (/^[a-z]/.test(st) && t === st));
+const isNoToken = (t: string) => NO_STEMS.some(st => t === st || (/^[א-ת]/.test(st) && t.startsWith(st) && t.length - st.length <= 2));
+export type ReplyClass = "yes" | "no" | "other";
+/** `proposedTime` lets "כן, 15:00" count as a yes when 15:00 is exactly what was proposed. */
+export function classifyReply(text: string, proposedTime?: string | null): ReplyClass {
+  const raw = text.trim();
+  if (!raw) return "other";
+  if (raw.includes("?") || raw.includes("؟")) return "other";
+  let t = raw;
+  if (proposedTime) { const hh = proposedTime.replace(/^0/, ""); t = t.replace(new RegExp("(^|[\\s,])(ב-?|ל-?)?(0?" + hh.replace(":", ":") + ")(?=$|[\\s,.!])", "g"), " "); }
+  const toks = tokens(t);
+  if (toks.length === 0) return proposedTime && raw !== t ? "yes" : "other";
+  if (toks.length > 7) return "other";
+  if (toks.some(isNoToken)) return "no";
+  if (/\d/.test(toks.join(" "))) return "other";               // a time or a date → the model decides
+  const meaningful = toks.filter(x => !FILLER.includes(x) && /[a-zA-Zא-ת0-9]/.test(x) || isYesToken(x)); // symbol-only tokens (🤷🏻‍♂️) are filler
+  if (!meaningful.length) return "other";                       // "תודה" alone is not a yes
+  if (meaningful.every(isYesToken)) return "yes";
+  if (CHANGE_HINTS.test(raw)) return "other";
+  return "other";
+}
+export const isPlainYes = (t: string, proposedTime?: string | null) => classifyReply(t, proposedTime) === "yes";
+export const isPlainNo = (t: string) => classifyReply(t) === "no";
+
+// ── Cancellation in code ─────────────────────────────────────────────────────
+const CANCEL_INTENT = /לבטל|ביטול|תבטל|מבטל|בטל את|לבטלל|cancel/i;
+const OTHER_INTENT = /לקבוע|להזיז|להעביר|לדחות|במקום|להקדים|לאחר|לשנות|ולקבוע|אחר|תור נוסף|עוד תור|reschedule|move|book/i;
+/** "אני רוצה לבטל את התור" with exactly ONE upcoming appointment → the code asks
+ *  the confirmation; anything richer (two appointments, "cancel and rebook",
+ *  a day that doesn't match) stays with the model. */
+export async function maybeStartCancelFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null }): Promise<ProposalOutcome> {
+  const text = p.text.trim();
+  if (!CANCEL_INTENT.test(text) || OTHER_INTENT.test(text) || text.split(/\s+/).length > 14 || !p.customer) return {};
+  const nowBiz = getBusinessNow();
+  const todayStart = new Date(nowBiz.date + "T00:00:00.000Z");
+  const upcoming = (await prisma.appointment.findMany({
+    where: { businessId: p.businessId, customerId: p.customer.id, date: { gte: todayStart }, status: { in: ["pending", "confirmed"] } },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }], take: 3,
+    select: { id: true, date: true, startTime: true, staff: { select: { name: true } }, service: { select: { name: true } } },
+  })).filter(a => a.date.toISOString().slice(0, 10) !== nowBiz.date || Number(a.startTime.split(":")[0]) * 60 + Number(a.startTime.split(":")[1]) >= nowBiz.minutes);
+  if (upcoming.length !== 1) return {};
+  const a = upcoming[0];
+  const phone = normalizeIsraeliPhone(p.phone);
+  const dateISO = a.date.toISOString().slice(0, 10);
+  await prisma.bookingProposal.updateMany({ where: { businessId: p.businessId, phone, status: "pending" }, data: { status: "superseded", respondedAt: new Date() } });
+  await prisma.bookingProposal.create({
+    data: { businessId: p.businessId, phone, conversationId: p.conversationId, kind: "cancel", date: a.date, startTime: a.startTime, note: JSON.stringify({ appointmentId: a.id, staffName: a.staff.name, serviceName: a.service.name }), expiresAt: new Date(Date.now() + CONFIRM_TTL_MS) },
+  });
+  return { reply: `${firstNameOf(p.customer.name) ? firstNameOf(p.customer.name) + ", " : ""}לבטל את התור ${dayLabelHe(dateISO)} בשעה ${a.startTime} אצל ${a.staff.name}?` };
+}
 
 export async function findPendingProposal(businessId: string, phone: string) {
   const p = normalizeIsraeliPhone(phone);
@@ -112,14 +177,32 @@ export async function handleIncomingForProposal(p: {
   execTool: ExecTool; sandbox: boolean;
 }): Promise<ProposalOutcome> {
   const pending = await findPendingProposal(p.businessId, p.phone);
-  if (!pending) return {};
+  if (!pending) return maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
   const text = p.text.trim();
   const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string }; } catch { return {}; } })();
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
 
+  if (pending.kind === "cancel") {
+    const cm = (() => { try { return JSON.parse(pending.note ?? "{}") as { appointmentId?: string; staffName?: string }; } catch { return {}; } })();
+    const what = `התור ${dayLabelHe(dateISO)} בשעה ${pending.startTime} אצל ${cm.staffName ?? ""}`;
+    const cls = classifyReply(text);
+    if (cls === "yes" && cm.appointmentId) {
+      const result = await p.execTool("cancel_appointment", { appointmentId: cm.appointmentId });
+      const ok = p.sandbox || /✅|בוטל/.test(result);
+      await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
+      if (ok) return { reply: `בוטל. אם תרצה לקבוע מחדש, אני כאן 👍` };
+      return { context: `הלקוח אישר לבטל את ${what} אבל הביטול נכשל: "${result.slice(0, 160)}". הסבר בכנות ועזור.` };
+    }
+    if (cls === "no") {
+      await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
+      return { reply: `סבבה, התור נשאר כמו שהוא 👍` };
+    }
+    return { context: `שאלת את הלקוח אם לבטל את ${what} והוא ענה משהו אחר: "${text.slice(0, 120)}". אם הוא רוצה להזיז במקום לבטל — request_appointment_move; אם רוצה לבטל בכל זאת — cancel_appointment עם המזהה שבהנחיות, אחרי אישור.` };
+  }
+
   if (pending.kind === "confirm") {
     const what = `${meta.serviceName ?? ""} אצל ${meta.staffName ?? ""} ${dayLabelHe(dateISO)} בשעה ${pending.startTime}`;
-    if (isPlainYes(text)) {
+    if (isPlainYes(text, pending.startTime)) {
       const result = await p.execTool("book_appointment", {
         staffId: pending.staffId ?? "", serviceId: pending.serviceId ?? "", date: dateISO, startTime: pending.startTime ?? "",
         customerName: pending.customerName ?? p.customer?.name ?? "", ...(meta.note ? { note: meta.note } : {}),
