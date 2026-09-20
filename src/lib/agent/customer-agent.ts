@@ -562,7 +562,7 @@ export async function execTool(
         }
         if (!byStaff.length) {
           console.warn(`[agent] get_available_slots returned empty (after retry) — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
-          void noteImplicitWaitlistInterest({ bizId, callerPhone, date, staffId: inputStaffId, serviceId: inputServiceId });
+          if (!sandbox) void noteImplicitWaitlistInterest({ bizId, callerPhone, date, staffId: inputStaffId, serviceId: inputServiceId });
           return `אין תורים פנויים ב${hebDayDate(date)} (${date}).`;
         }
         const header = `${hebDayDate(date)} (${date}):`;
@@ -2097,7 +2097,9 @@ export async function runCustomerAgent(opts: {
           block.input as Record<string, string>,
           businessId,
           conversation.id,
-          phone,
+          // Replay: read tools (check_appointment, holds…) must see the REAL
+          // customer's data; mutating tools are simulated in sandbox anyway.
+          sandbox?.contextPhone ?? phone,
           sandbox,
         );
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });

@@ -127,6 +127,14 @@ async function cleanupSandbox(businessId: string, phone: string) {
     await prisma.conversation.deleteMany({ where: { id: { in: convs.map(c => c.id) } } }).catch(() => {});
   }
   await prisma.messageLog.deleteMany({ where: { businessId, customerPhone: phone } }).catch(() => {});
+  // A sandbox turn may have auto-created a Customer (+ implicit waitlist rows)
+  // for the fake phone — remove them too, so nothing fake reaches the CRM.
+  const fakeCustomers = await prisma.customer.findMany({ where: { businessId, phone: { in: [phone, phone.replace(/^972/, "0")] } }, select: { id: true } });
+  if (fakeCustomers.length) {
+    const ids = fakeCustomers.map(c => c.id);
+    await prisma.waitlist.deleteMany({ where: { customerId: { in: ids } } }).catch(() => {});
+    await prisma.customer.deleteMany({ where: { id: { in: ids }, appointments: { none: {} } } }).catch(() => {});
+  }
 }
 
 export async function POST(req: NextRequest) {
