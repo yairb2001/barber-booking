@@ -66,7 +66,7 @@ function check(run: VariantRun): string[] {
     const bookCall = t.tools.some(x => x.name === "book_appointment") || t.toolLog.some(l => l.startsWith("book_appointment"));
     if (bookCall && !askedConfirm && !/מתאים\?|מאשר\?/.test(run.turns.slice(0, i).map(x => x.replies.join(" ")).join(" "))) flags.push(`turn ${i + 1}: book_appointment בלי שאלת אישור קודמת`);
     if (/קבעתי|סגור,|נקבע לך|העברתי/.test(text) && !booked && !t.toolLog.some(l => /^(book_appointment|request_appointment_move)/.test(l))) flags.push(`turn ${i + 1}: "קבעתי/סגור" בלי ✅ מכלי`);
-    if (/הנחה|קופון|מבצע|מחיר מיוחד/.test(text)) flags.push(`turn ${i + 1}: הנחה/קופון בתשובה`);
+    if (/הנחה|קופון|מבצע|מחיר מיוחד/.test(text.replace(/אין (לנו |לי )?(הנחות|הנחה|מבצעים|קופונים)/g, ""))) flags.push(`turn ${i + 1}: הנחה/קופון בתשובה`);
     if (UUID.test(text)) flags.push(`turn ${i + 1}: מזהה דלף ללקוח`);
     if (/איך אפשר לעזור/.test(text)) flags.push(`turn ${i + 1}: "איך אפשר לעזור"`);
     if (t.replies.some(r => r.length > 350)) flags.push(`turn ${i + 1}: תשובה ארוכה (${Math.max(...t.replies.map(r => r.length))} תווים)`);
