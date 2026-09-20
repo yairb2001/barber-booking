@@ -77,7 +77,7 @@ function check(run: VariantRun): string[] {
 }
 
 async function replay(ep: Episode, variant: string): Promise<VariantRun> {
-  const phone = "9725099" + String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
+  const phone = "972000" + String(Math.floor(Math.random() * 1e7)).padStart(7, "0");
   const contextPhone = ep.phone.replace(/^0/, "972").replace(/\D/g, "");
   const turns: TurnResult[] = [];
   try {

@@ -14,7 +14,7 @@
  *    { action: "turn", phone, text, variant?: "live" | "candidate", contextPhone? }
  *      → { replies, toolLog, tools, usage, ms }
  *    { action: "cleanup", phone } → deletes the sandbox conversation.
- *    `phone` must be in the reserved fake range 9725099xxxxxx (never a customer).
+ *    `phone` must be in the reserved fake range 972000xxxxxxx (never a real number).
  *    `contextPhone` (a real customer) only feeds the customer-context block —
  *    name, history, nudges — the conversation itself is stored under `phone`.
  *    agent_usage rows of replay turns are tagged kind "sandbox".
@@ -118,7 +118,9 @@ const SCENARIOS: Record<string, { label: string; messages: string[] }> = {
   unknown:        { label: "שאלה שאין עליה תשובה",       messages: ["אתם עושים גם צביעת שיער לנשים? וכמה זה עולה?"] },
 };
 
-const SANDBOX_PHONE = /^9725099\d{6}$/;
+// 972 000 xxx xxxx cannot be a real Israeli number (no subscriber number starts
+// with 0) — the earlier 9725099… range collided with real 050‑99 customers.
+const SANDBOX_PHONE = /^972000\d{7}$/;
 
 async function cleanupSandbox(businessId: string, phone: string) {
   const convs = await prisma.conversation.findMany({ where: { businessId, phone }, select: { id: true } });
@@ -148,7 +150,7 @@ export async function POST(req: NextRequest) {
   // ── Replay harness ─────────────────────────────────────────────────────────
   if (body.action === "cleanup" || body.action === "turn") {
     const phone = String(body.phone ?? "");
-    if (!SANDBOX_PHONE.test(phone)) return NextResponse.json({ error: "phone must be a sandbox number (9725099xxxxxx)" }, { status: 400 });
+    if (!SANDBOX_PHONE.test(phone)) return NextResponse.json({ error: "phone must be a sandbox number (972000xxxxxxx)" }, { status: 400 });
     if (body.action === "cleanup") { await cleanupSandbox(business.id, phone); return NextResponse.json({ ok: true }); }
 
     const text = String(body.text ?? "").trim();
