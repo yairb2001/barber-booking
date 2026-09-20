@@ -73,7 +73,10 @@ const YES_STEMS = [
   "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "✅", "🙏", "🙏🏻", "🙏🏼", "👌", "💪", "🔥", "❤️", "🤙", "🤙🏼", "🤝",
 ];
 const FILLER = ["יש", "תודה", "רבה", "אחי", "גבר", "בבקשה", "מותק", "כפרה", "אח", "אחלה", "לי", "אני", "זה", "בוא", "על", "ממש", "מאוד", "אז", "אה", "וואלה", "וואו", "נתראה", "להתראות", "ביי", "please", "thanks", "thank", "you", "bro", "it's", "its", "that's", "thats", "then", "man"];
-const NO_STEMS = ["לא", "לאא", "פחות", "עזוב", "עזבי", "רגע", "אולי", "תחכה", "בטל", "תבטל", "לבטל", "מבטל", "ביטול", "no", "nope", "nah", "cancel", "wait", "hold", "maybe", "❌", "👎"];
+const NO_STEMS = ["לא", "לאא", "פחות", "עזוב", "עזבי", "רגע", "אולי", "תחכה", "no", "nope", "nah", "wait", "hold", "maybe", "❌", "👎"];
+// Cancel verbs mean "no" to a booking question but "yes" to a cancellation question.
+const CANCEL_VERBS = ["בטל", "תבטל", "לבטל", "מבטל", "ביטול", "cancel"];
+const MOVE_HINTS = /זיז|עביר|דחה|דחות|קדים|שנה|שנות|במקום|נוסף|עוד תור|move|resched|instead/i;
 const CHANGE_HINTS = /אבל|רק|במקום|אחר|אחרת|יותר|פחות|מאוחר|מוקדם|אפשר|יש|מה|מתי|למה|איפה|אצל|עם|בלי|ספר|תספורת|זקן|מספריים/;
 const stripEmojiSkin = (t: string) => t.replace(/\uD83C[\uDFFB-\uDFFF]/g, ""); // skin-tone modifiers, no u-flag (es5 target)
 function tokens(text: string): string[] {
@@ -86,9 +89,11 @@ function tokens(text: string): string[] {
 }
 const isYesToken = (t: string) => YES_STEMS.some(st => t === st || (/^[א-ת]/.test(st) && t.startsWith(st) && t.length - st.length <= 3) || (/^[a-z]/.test(st) && t === st));
 const isNoToken = (t: string) => NO_STEMS.some(st => t === st || (/^[א-ת]/.test(st) && t.startsWith(st) && t.length - st.length <= 2));
+const isCancelToken = (t: string) => CANCEL_VERBS.some(st => t === st || (/^[א-ת]/.test(st) && t.startsWith(st) && t.length - st.length <= 2));
 export type ReplyClass = "yes" | "no" | "other";
-/** `proposedTime` lets "כן, 15:00" count as a yes when 15:00 is exactly what was proposed. */
-export function classifyReply(text: string, proposedTime?: string | null): ReplyClass {
+/** `proposedTime` lets "כן, 15:00" count as a yes when 15:00 is exactly what was proposed.
+ *  `mode` "cancel": the question was "לבטל את התור?", so "כן תבטל" / "בטל" are a yes. */
+export function classifyReply(text: string, proposedTime?: string | null, mode: "confirm" | "cancel" = "confirm"): ReplyClass {
   const raw = text.trim();
   if (!raw) return "other";
   if (raw.includes("?") || raw.includes("؟")) return "other";
@@ -97,15 +102,19 @@ export function classifyReply(text: string, proposedTime?: string | null): Reply
   const toks = tokens(t);
   if (toks.length === 0) return proposedTime && raw !== t ? "yes" : "other";
   if (toks.length > 7) return "other";
+  // "לא, תזיז" to a cancel question is a move request, not "keep it" → the model handles it
+  if (mode === "cancel" && MOVE_HINTS.test(raw)) return "other";
   if (toks.some(isNoToken)) return "no";
+  if (mode === "confirm" && toks.some(isCancelToken)) return "no";
   if (/\d/.test(toks.join(" "))) return "other";               // a time or a date → the model decides
-  const meaningful = toks.filter(x => !FILLER.includes(x) && /[a-zA-Zא-ת0-9]/.test(x) || isYesToken(x)); // symbol-only tokens (🤷🏻‍♂️) are filler
+  const yesTok = (x: string) => isYesToken(x) || (mode === "cancel" && isCancelToken(x));
+  const meaningful = toks.filter(x => !FILLER.includes(x) && /[a-zA-Zא-ת0-9]/.test(x) || yesTok(x)); // symbol-only tokens (🤷🏻‍♂️) are filler
   if (!meaningful.length) return "other";                       // "תודה" alone is not a yes
-  if (meaningful.every(isYesToken)) return "yes";
+  if (meaningful.every(yesTok)) return "yes";
   if (CHANGE_HINTS.test(raw)) return "other";
   // Lenient: a short reply that contains a yes word and nothing negative,
   // numeric or questioning ("כן קבעה", "אישור אחי") is a yes.
-  if (meaningful.length <= 3 && meaningful.some(isYesToken)) return "yes";
+  if (meaningful.length <= 3 && meaningful.some(yesTok)) return "yes";
   return "other";
 }
 export const isPlainYes = (t: string, proposedTime?: string | null) => classifyReply(t, proposedTime) === "yes";
@@ -197,7 +206,7 @@ export async function handleIncomingForProposal(p: {
   if (pending.kind === "cancel") {
     const cm = (() => { try { return JSON.parse(pending.note ?? "{}") as { appointmentId?: string; staffName?: string }; } catch { return {}; } })();
     const what = `התור ${dayLabelHe(dateISO)} בשעה ${pending.startTime} אצל ${cm.staffName ?? ""}`;
-    const cls = classifyReply(text);
+    const cls = classifyReply(text, null, "cancel");
     if (cls === "yes" && cm.appointmentId) {
       const result = await p.execTool("cancel_appointment", { appointmentId: cm.appointmentId });
       const ok = p.sandbox || /✅|בוטל/.test(result);
