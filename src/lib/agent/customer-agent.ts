@@ -30,7 +30,7 @@ import { computeDayAvailability, computeParallelSlots, resolveStaffService } fro
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
-import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName } from "@/lib/agent/booking-proposals";
+import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
@@ -343,6 +343,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         customerName: { type: "string", description: "שם מלא. לקוח רשום — כפי שרשום. לקוח חדש — פרטי + משפחה (נשאל רק בסוף)." },
         mentionStaff: { type: "boolean", description: "true רק אם הלקוח ביקש ספר בשם או שסוכם על הקבוע שלו — אז שם הספר מופיע בשאלה." },
         originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
+        customerConfirmed: { type: "boolean", description: "true רק כשהלקוח כבר ענה בחיוב, במילים שלו, לשאלת האישור שהמערכת שלחה על בדיוק התור הזה — אז המערכת קובעת מיד בלי לשאול שוב." },
         note: { type: "string", description: "אופציונלי, רק כשהתור עבור מישהו אחר: 'התור בפועל עבור: <שם>'." },
       },
       required: ["staffId", "serviceId", "date", "startTime", "customerName"],
@@ -918,6 +919,20 @@ export async function execTool(
         const avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
         if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
           return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
+        }
+        // The customer already said yes in his own words (the classifier missed it,
+        // the model caught it): book now instead of asking the same question again.
+        if (String((input as Record<string, unknown>).customerConfirmed) === "true") {
+          const pending = await findPendingProposal(bizId, phone);
+          const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
+          if (same) {
+            const meta = (() => { try { return JSON.parse(pending!.note ?? "{}") as { note?: string | null; originalRequest?: string | null }; } catch { return {}; } })();
+            const result = await execTool("book_appointment", { staffId: staff.id, serviceId: service.id, date, startTime, customerName: registeredName ? customer!.name : customerName, ...(meta.note ? { note: meta.note } : {}) }, bizId, conversationId, callerPhone, sandbox);
+            const ok = !!sandbox || result.startsWith("✅");
+            await prisma.bookingProposal.update({ where: { id: pending!.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
+            if (ok) return "BOOKED\n" + bookedMessage({ staffName: staff.name, date, startTime, originalRequest: meta.originalRequest });
+            return `שגיאה: הקביעה נכשלה — ${result.slice(0, 200)}`;
+          }
         }
         const question = await createConfirmProposal({
           businessId: bizId, phone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
@@ -2209,8 +2224,8 @@ export async function runCustomerAgent(opts: {
       messages.push({ role: "user", content: toolResults });
       // propose_booking is terminal: the CODE sends the confirmation question —
       // no further model call (docs/PLAN-COST.md stage C).
-      const proposed = toolResults.find(r => typeof r.content === "string" && r.content.startsWith("PROPOSED\n"));
-      if (proposed) { assistantText = (proposed.content as string).slice("PROPOSED\n".length); break; }
+      const proposed = toolResults.find(r => typeof r.content === "string" && (r.content.startsWith("PROPOSED\n") || r.content.startsWith("BOOKED\n")));
+      if (proposed) { assistantText = (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, ""); break; }
       continue;
     }
 

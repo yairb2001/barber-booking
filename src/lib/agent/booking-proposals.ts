@@ -44,6 +44,13 @@ export function firstNameOf(name: string | null | undefined): string {
   return (name ?? "").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().split(/\s+/)[0] || "";
 }
 
+/** The fixed closing line after a code-confirmed booking. */
+export function bookedMessage(p: { staffName: string; date: string; startTime: string; originalRequest?: string | null }): string {
+  let reply = `סגור, קבעתי לך אצל ${p.staffName} ${dayLabelHe(p.date)} בשעה ${p.startTime}. נתראה 💈`;
+  if (p.originalRequest) reply += `\n\nדרך אגב, רוצה שאעדכן אותך אם יתפנה ${p.originalRequest}?`;
+  return reply;
+}
+
 /** The fixed final-confirmation question (owner's mandated phrasing). */
 export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
@@ -61,16 +68,17 @@ export function confirmationQuestion(p: { firstName?: string | null; serviceName
 // so מאשר/מאשרת/מאשרים/אישרתי all count. Never \W — it matches Hebrew letters.
 const YES_STEMS = [
   "כן", "מאשר", "אשר", "אישר", "אישור", "מאושר", "מתאים", "סבבה", "סבב", "אוקי", "אוקיי", "אוקיה", "בסדר", "טוב", "מעולה", "אחלה", "יאללה", "יאלה",
-  "בטח", "ברור", "כמובן", "חיובי", "מצוין", "מצויין", "סגור", "קבע", "תקבע", "נקבע", "תסגור", "תסגרי", "פגז", "מושלם", "בכיף", "מגניב", "אמן", "נלך",
+  "בטח", "ברור", "כמובן", "חיובי", "מצוין", "מצויין", "סגור", "קבע", "תקבע", "נקבע", "תסגור", "תסגרי", "פגז", "מושלם", "בכיף", "מגניב", "אמן", "נלך", "קדימה", "לך", "תמשיך",
   "yes", "yep", "yeah", "yea", "ya", "sure", "fine", "ok", "okay", "okk", "confirm", "confirmed", "great", "perfect", "good", "deal", "alright",
   "👍", "👍🏻", "👍🏼", "👍🏽", "👍🏾", "👍🏿", "✅", "🙏", "🙏🏻", "🙏🏼", "👌", "💪", "🔥", "❤️", "🤙", "🤙🏼", "🤝",
 ];
-const FILLER = ["תודה", "רבה", "אחי", "גבר", "בבקשה", "מותק", "כפרה", "אח", "אחלה", "לי", "אני", "זה", "בוא", "על", "ממש", "מאוד", "אז", "אה", "וואלה", "וואו", "נתראה", "להתראות", "ביי", "please", "thanks", "thank", "you", "bro", "it's", "its", "that's", "thats", "then", "man"];
+const FILLER = ["יש", "תודה", "רבה", "אחי", "גבר", "בבקשה", "מותק", "כפרה", "אח", "אחלה", "לי", "אני", "זה", "בוא", "על", "ממש", "מאוד", "אז", "אה", "וואלה", "וואו", "נתראה", "להתראות", "ביי", "please", "thanks", "thank", "you", "bro", "it's", "its", "that's", "thats", "then", "man"];
 const NO_STEMS = ["לא", "לאא", "פחות", "עזוב", "עזבי", "רגע", "אולי", "תחכה", "בטל", "תבטל", "לבטל", "מבטל", "ביטול", "no", "nope", "nah", "cancel", "wait", "hold", "maybe", "❌", "👎"];
 const CHANGE_HINTS = /אבל|רק|במקום|אחר|אחרת|יותר|פחות|מאוחר|מוקדם|אפשר|יש|מה|מתי|למה|איפה|אצל|עם|בלי|ספר|תספורת|זקן|מספריים/;
 const stripEmojiSkin = (t: string) => t.replace(/\uD83C[\uDFFB-\uDFFF]/g, ""); // skin-tone modifiers, no u-flag (es5 target)
 function tokens(text: string): string[] {
   return stripEmojiSkin(text.toLowerCase())
+    .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, "") // bidi/format marks WhatsApp adds ("‏מאושר" — real miss, 20.9.2026)
     .replace(/[\u0591-\u05C7]/g, "")                          // niqqud
     .replace(/['׳’]/g, "")                                  // apostrophes join (it's → its)
     .replace(/[,.!…"״\-–—()\[\]:;]+/g, " ")                  // punctuation (keep ? for the check below)
@@ -95,6 +103,9 @@ export function classifyReply(text: string, proposedTime?: string | null): Reply
   if (!meaningful.length) return "other";                       // "תודה" alone is not a yes
   if (meaningful.every(isYesToken)) return "yes";
   if (CHANGE_HINTS.test(raw)) return "other";
+  // Lenient: a short reply that contains a yes word and nothing negative,
+  // numeric or questioning ("כן קבעה", "אישור אחי") is a yes.
+  if (meaningful.length <= 3 && meaningful.some(isYesToken)) return "yes";
   return "other";
 }
 export const isPlainYes = (t: string, proposedTime?: string | null) => classifyReply(t, proposedTime) === "yes";
@@ -211,9 +222,7 @@ export async function handleIncomingForProposal(p: {
       const ok = p.sandbox || result.startsWith("✅");
       if (ok) {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "accepted", respondedAt: new Date() } });
-        let reply = `סגור, קבעתי לך אצל ${meta.staffName ?? ""} ${dayLabelHe(dateISO)} בשעה ${pending.startTime}. נתראה 💈`;
-        if (meta.originalRequest) reply += `\n\nדרך אגב, רוצה שאעדכן אותך אם יתפנה ${meta.originalRequest}?`;
-        return { reply };
+        return { reply: bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest }) };
       }
       // The slot was taken between the question and the yes — hand the agent a precise brief.
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
@@ -223,7 +232,7 @@ export async function handleIncomingForProposal(p: {
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
       return { context: `הלקוח דחה את ההצעה (${what}). שאל בקצרה מה כן מתאים לו (יום/שעה/ספר) והצע חלופה; אם היום/השעה שרצה במקור לא היו פנויים — הצע רשימת המתנה.` };
     }
-    return { context: `הצעת ללקוח תור (${what}) והוא עדיין לא אישר — ענה עכשיו: "${text.slice(0, 120)}". אם הוא מבקש שינוי (שעה/יום/ספר) — סדר את השינוי ואז propose_booking מחדש; אם זו שאלה צדדית — ענה וחזור לשאלת האישור. אל תקבע בלי propose_booking.` };
+    return { context: `הצעת ללקוח תור (${what}) והוא עדיין לא אישר — ענה עכשיו: "${text.slice(0, 120)}". אם זו בעצם הסכמה במילים שלו ("מאושר", "יש אישור", "סגור", "קדימה") — קרא ל-propose_booking עם בדיוק אותם פרטים ו-customerConfirmed=true, והמערכת תקבע מיד בלי לשאול שוב. אם הוא מבקש שינוי (שעה/יום/ספר) — סדר את השינוי ואז propose_booking מחדש (בלי customerConfirmed). אם זו שאלה צדדית — ענה וחזור לשאלת האישור. אל תשלח שוב את אותה שאלת אישור.` };
   }
 
   if (pending.kind === "nudge") {
