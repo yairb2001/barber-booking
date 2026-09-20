@@ -266,14 +266,20 @@ export async function handleIncomingForProposal(p: {
   return {};
 }
 
-/** Context for the turn AFTER a code-confirmed booking that offered the waitlist. */
+/** Context for the turns AFTER a code-confirmed booking (24h): the booking is
+ *  done — the model must not propose it again (with the availability snapshot in
+ *  the context it once did, treating the still-listed slot as "not booked"),
+ *  and if the waitlist was offered, "כן" means join_waitlist. */
 export async function afterBookingWaitlistContext(businessId: string, phone: string): Promise<string | null> {
   const last = await prisma.bookingProposal.findFirst({
     where: { businessId, phone: normalizeIsraeliPhone(phone), kind: "confirm", status: "accepted", respondedAt: { gte: new Date(Date.now() - 24 * 3600_000) } },
     orderBy: { respondedAt: "desc" },
   });
   if (!last) return null;
-  const meta = (() => { try { return JSON.parse(last.note ?? "{}") as { originalRequest?: string | null }; } catch { return {}; } })();
-  if (!meta.originalRequest) return null;
-  return `אחרי שהתור נקבע הצענו לו: "רוצה שאעדכן אותך אם יתפנה ${meta.originalRequest}?". אם הוא עונה כן — join_waitlist למה שרצה במקור (${meta.originalRequest}); אם לא — תודה קצרה וזהו.`;
+  const meta = (() => { try { return JSON.parse(last.note ?? "{}") as { originalRequest?: string | null; staffName?: string; serviceName?: string }; } catch { return {}; } })();
+  const dateISO = last.date ? last.date.toISOString().slice(0, 10) : "";
+  const ago = Math.round((Date.now() - (last.respondedAt?.getTime() ?? Date.now())) / 60_000);
+  let ctx = `המערכת כבר קבעה לו לפני ${ago < 1 ? "רגע" : `${ago} דק׳`} את התור: ${meta.serviceName ?? ""} אצל ${meta.staffName ?? ""} ${dayLabelHe(dateISO)} בשעה ${last.startTime} — הוא קבוע וסגור, גם אם השעה עדיין מופיעה בזמינות שבהנחיות. אל תציע אותו שוב ואל תקרא ל-propose_booking עליו; "תודה"/"סבבה" = סגירת שיחה קצרה.`;
+  if (meta.originalRequest) ctx += ` אחרי הקביעה הצענו לו: "רוצה שאעדכן אותך אם יתפנה ${meta.originalRequest}?" — אם הוא עונה כן → join_waitlist למה שרצה במקור (${meta.originalRequest}); אם לא → תודה קצרה.`;
+  return ctx;
 }

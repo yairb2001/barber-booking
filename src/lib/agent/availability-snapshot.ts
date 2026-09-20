@@ -73,6 +73,10 @@ export async function buildAvailabilitySnapshot(p: {
     lines.push(`${dayName} ${dd.getUTCDate()}.${dd.getUTCMonth() + 1}: ${parts.length ? parts.join(" | ") : "אין"}`);
   }
   const notes: string[] = [];
+  // Barbers with nothing free in the whole window are named explicitly — otherwise
+  // the model "double-checks" them day by day (owner's replay, 20.9.2026).
+  const fullyBooked = index.staff.filter(s => !Array.from({ length: days }, (_, d) => addDaysISO(today, d)).some(iso => index.slots(s.id, iso, p.serviceId ?? null).length));
+  if (fullyBooked.length) notes.push(`אין שום מקום ב-${days} הימים האלה אצל: ${fullyBooked.map(label).join(", ")} — אל תבדוק אותם יום-יום; רוצה אותם → find_next_available עם ה-staffId שלהם`);
   if (hasPool) {
     const outside = index.staff.filter(s => !s.inQuickPool).map(label);
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);

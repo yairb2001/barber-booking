@@ -491,7 +491,7 @@ export async function execTool(
   bizId: string,
   conversationId: string,
   callerPhone: string,
-  sandbox?: { toolLog: string[] },
+  sandbox?: { toolLog: string[]; proposalPhone?: string },
 ): Promise<string> {
   if (sandbox && MUTATING_TOOLS.has(name)) {
     sandbox.toolLog.push(`${name}(${JSON.stringify(input)})`);
@@ -905,6 +905,10 @@ export async function execTool(
         const { staffId: sIn, serviceId: svIn, date, startTime, customerName, note, originalRequest } = input;
         const mentionStaff = String((input as Record<string, unknown>).mentionStaff) === "true";
         const phone = normalizeIsraeliPhone(callerPhone);
+        // Sandbox replays read the REAL customer's data via callerPhone but must
+        // never leave a proposal under that customer's number (real incident:
+        // a replay stored a pending booking for a real phone, 20.9.2026).
+        const proposalPhone = normalizeIsraeliPhone(sandbox?.proposalPhone ?? callerPhone);
         let [staff, service] = await Promise.all([
           prisma.staff.findFirst({ where: { id: sIn, businessId: bizId }, select: { id: true, name: true } }),
           prisma.service.findFirst({ where: { id: svIn, businessId: bizId }, select: { id: true, name: true } }),
@@ -924,7 +928,7 @@ export async function execTool(
         // The customer already said yes in his own words (the classifier missed it,
         // the model caught it): book now instead of asking the same question again.
         if (String((input as Record<string, unknown>).customerConfirmed) === "true") {
-          const pending = await findPendingProposal(bizId, phone);
+          const pending = await findPendingProposal(bizId, proposalPhone);
           const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
           if (same) {
             const meta = (() => { try { return JSON.parse(pending!.note ?? "{}") as { note?: string | null; originalRequest?: string | null }; } catch { return {}; } })();
@@ -936,7 +940,7 @@ export async function execTool(
           }
         }
         const question = await createConfirmProposal({
-          businessId: bizId, phone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
+          businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
           date, startTime, customerName: registeredName ? customer!.name : customerName, note: note || null, mentionStaff,
           originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName),
         });
@@ -1922,6 +1926,8 @@ export type SandboxOptions = {
   usageKind?: string;
   /** 3 = stage-C tool set (propose_booking, no catalog/check/info/book tools); 4 = + availability snapshot in context */
   promptVersion?: number;
+  /** Replay: proposals must be keyed by the SANDBOX phone (the conversation's), never by contextPhone (a real customer). */
+  proposalPhone?: string;
 };
 
 export async function runCustomerAgent(opts: {
@@ -1939,6 +1945,7 @@ export async function runCustomerAgent(opts: {
   sandbox?: SandboxOptions;
 }): Promise<void> {
   const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
+  if (sandbox) sandbox.proposalPhone = phone;
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
