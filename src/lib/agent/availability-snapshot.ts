@@ -15,6 +15,7 @@
  */
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
+import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
 
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const BOOKING_CONTEXT = /תור|לקבוע|לקבע|פנוי|פנויה|פנויים|מקום|מחר|היום|השבוע|שבוע|יום |ביום|שעה|שעות|מתי|בוקר|צהריים|ערב|לילה|הכי קרוב|אצל|ספר|תספורת|זקן|מספריים|book|appointment|available|slot|tomorrow|today|week/i;
@@ -43,6 +44,8 @@ export async function buildAvailabilitySnapshot(p: {
   regularStaffId?: string | null;
   /** short names by staff id (first name), to keep the block small */
   shortName?: (id: string, name: string) => string;
+  /** The customer's message: a range/day/barber question gets a code-filtered line appended. */
+  askText?: string | null;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
@@ -77,6 +80,13 @@ export async function buildAvailabilitySnapshot(p: {
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
+  // Code-filtered answer for "מחר אחרי 17:00" / "בערב השבוע" / "הכי מוקדם מחר" —
+  // the model quotes it instead of scanning the list itself.
+  let focus = "";
+  if (p.askText) {
+    const ask = parseAvailabilityAsk(p.askText, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
+    if (ask) focus = "\n" + focusLine(index, ask, p.serviceId ?? null, label, today, days, p.regularStaffId);
+  }
   return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
-    lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "");
+    lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "") + focus;
 }
