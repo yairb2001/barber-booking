@@ -673,9 +673,12 @@ function AudioBubble({ src, dark }: { src: string; dark?: boolean }) {
         className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm ${dark ? "bg-white/25 text-white" : "bg-emerald-500 text-white"}`}>
         {playing ? "❚❚" : "▶"}
       </button>
-      <input type="range" min={0} max={dur || 0} step={0.1} value={Math.min(t, dur || 0)}
-        onChange={e => { const a = ref.current; if (a) { a.currentTime = Number(e.target.value); setT(a.currentTime); } }}
-        className={`flex-1 h-1 ${dark ? "accent-white" : "accent-emerald-600"}`} />
+      {/* Explicit track + thumb (a native range input drew no track in the bubble). */}
+      <div className={`flex-1 h-1.5 rounded-full relative cursor-pointer ${dark ? "bg-white/30" : "bg-slate-200"}`}
+        onClick={e => { const a = ref.current; if (!a || !dur) return; const r = e.currentTarget.getBoundingClientRect(); const p = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); a.currentTime = p * dur; setT(a.currentTime); }}>
+        <div className={`absolute inset-y-0 left-0 rounded-full ${dark ? "bg-white" : "bg-emerald-500"}`} style={{ width: `${dur ? Math.min(100, (t / dur) * 100) : 0}%` }} />
+        <div className={`absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full shadow ${dark ? "bg-white" : "bg-emerald-600"}`} style={{ left: `calc(${dur ? Math.min(100, (t / dur) * 100) : 0}% - 6px)` }} />
+      </div>
       <span className={`text-[11px] tabular-nums ${dark ? "text-white/80" : "text-slate-500"}`}>{fmt(playing || t > 0 ? t : dur)}</span>
     </div>
   );
