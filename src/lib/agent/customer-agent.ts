@@ -345,7 +345,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         mentionStaff: { type: "boolean", description: "true רק אם הלקוח ביקש ספר בשם או שסוכם על הקבוע שלו — אז שם הספר מופיע בשאלה." },
         originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
         customerConfirmed: { type: "boolean", description: "true רק כשהלקוח כבר ענה בחיוב, במילים שלו, לשאלת האישור שהמערכת שלחה על בדיוק התור הזה — אז המערכת קובעת מיד בלי לשאול שוב." },
-        note: { type: "string", description: "אופציונלי, רק כשהתור עבור מישהו אחר: 'התור בפועל עבור: <שם>'." },
+        note: { type: "string", description: "אופציונלי — הערה לספר: התור עבור מישהו אחר ('התור בפועל עבור: <שם>') או העדפה שהלקוח ציין ('רק תספורת בלי זקן')." },
       },
       required: ["staffId", "serviceId", "date", "startTime"],
     },
@@ -942,7 +942,8 @@ export async function execTool(
           const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
           if (same) {
             const meta = (() => { try { return JSON.parse(pending!.note ?? "{}") as { note?: string | null; originalRequest?: string | null }; } catch { return {}; } })();
-            const result = await execTool("book_appointment", { staffId: staff.id, serviceId: service.id, date, startTime, customerName: registeredName ? customer!.name : customerName, ...(meta.note ? { note: meta.note } : {}) }, bizId, conversationId, callerPhone, sandbox);
+            const noteOut = (note && String(note).trim()) || meta.note;
+            const result = await execTool("book_appointment", { staffId: staff.id, serviceId: service.id, date, startTime, customerName: registeredName ? customer!.name : customerName, ...(noteOut ? { note: noteOut } : {}) }, bizId, conversationId, callerPhone, sandbox);
             const ok = !!sandbox || result.startsWith("✅");
             await prisma.bookingProposal.update({ where: { id: pending!.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
             if (ok) return "BOOKED\n" + bookedMessage({ staffName: staff.name, date, startTime, originalRequest: meta.originalRequest });
@@ -2274,7 +2275,15 @@ export async function runCustomerAgent(opts: {
       // propose_booking is terminal: the CODE sends the confirmation question —
       // no further model call (docs/PLAN-COST.md stage C).
       const proposed = toolResults.find(r => typeof r.content === "string" && (r.content.startsWith("PROPOSED\n") || r.content.startsWith("BOOKED\n")));
-      if (proposed) { assistantText = (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, ""); break; }
+      if (proposed) {
+        // Keep a short, question-free line the model wrote before the tool call
+        // ("אין בעיה, רק תספורת — אותו מחיר") so the customer sees he was heard.
+        // Real miss 21.9.2026: "רק תספורת בלי זקן" → bare "סגור, קבעתי לך".
+        const preText = response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join(" ").trim();
+        const keep = preText && preText.length <= 200 && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,/.test(preText);
+        assistantText = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
+        break;
+      }
       continue;
     }
 

@@ -10,7 +10,7 @@
  * the confirmation goes out, so a slot taken meanwhile is caught there.
  *
  * Size is the whole game (every injected token is paid at full price on every
- * turn): runs of evenly spaced slots collapse to "13:00–15:30 כל 30", closed
+ * turn): slots are listed explicitly ("13:00 · 13:30"), closed
  * days are one word, and the block is only injected in booking contexts.
  */
 import { buildAvailabilityIndex } from "@/lib/availability-index";
@@ -23,21 +23,16 @@ export function looksLikeBookingContext(texts: string[]): boolean {
   return texts.some(t => BOOKING_CONTEXT.test(t));
 }
 
-/** "13:00–15:30 כל 30 · 17:00" — runs of ≥3 evenly spaced slots collapse to a range. */
+/** Explicit list ("13:00 · 13:30 · 14:00"), at most MAX_LISTED per barber-day.
+ *  Ranges ("15:10–19:10 כל 30") were tried and misread by the model: on 21.9.2026
+ *  it told a customer "nothing after 17:00" while 17:40–19:10 were free. */
+const MAX_LISTED = 12;
 export function compressSlots(slots: string[]): string {
   if (!slots.length) return "";
-  const mins = slots.map(timeToMinutes).sort((a, b) => a - b);
-  const out: string[] = [];
-  let i = 0;
-  while (i < mins.length) {
-    let j = i + 1;
-    const step = j < mins.length ? mins[j] - mins[i] : 0;
-    if (step > 0 && step <= 60) { while (j + 1 < mins.length && mins[j + 1] - mins[j] === step) j++; }
-    const len = j - i + 1;
-    if (len >= 3 && step > 0) { out.push(`${fmt(mins[i])}–${fmt(mins[j])} כל ${step}`); i = j + 1; }
-    else { out.push(fmt(mins[i])); i++; }
-  }
-  return out.join(" · ");
+  const mins = Array.from(new Set(slots.map(timeToMinutes))).sort((a, b) => a - b);
+  const shown = mins.slice(0, MAX_LISTED).map(fmt);
+  const rest = mins.length - shown.length;
+  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
 }
 const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
@@ -82,6 +77,6 @@ export async function buildAvailabilitySnapshot(p: {
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
-  return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; "כל 30" = כל 30 דקות בטווח). ענה ממנה והצע רק שעות שמופיעות כאן; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "");
 }
