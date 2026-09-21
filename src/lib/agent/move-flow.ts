@@ -15,7 +15,7 @@ const NOT_MOVE = /לבטל|ביטול|תבטל|תור נוסף|עוד תור|מ�
 const EARLIER = /להקדים|תקדים|מוקדם יותר|יותר מוקדם|קודם/;
 const LATER = /לאחר|לדחות|תדחה|מאוחר יותר|יותר מאוחר|אחר כך/;
 const KEEP = /להשאיר|תשאיר|נשאר|לא להזיז|לא צריך|עזוב|סבבה ככה|בסדר ככה|נשאיר/;
-const SWAP_YES = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|^1\b|כן/;
+const SWAP_YES = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|^1\b/;
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const MOVE_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -115,7 +115,7 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
       const result = await p.execTool("request_appointment_move", { appointmentId: meta.appointmentId, targetDate: meta.targetDate, targetStartTime: meta.targetTime });
       const ok = p.sandbox || result.startsWith("✅");
       await close(pending.id, ok ? "accepted" : "rejected");
-      if (ok) return { reply: `סגור, התור עבר ל${dayLabelHe(meta.targetDate)} בשעה ${meta.targetTime} אצל ${meta.staffName}. נתראה 💈` };
+      if (ok) return { reply: `סגור, התור עבר ל${dayLabelHe(meta.targetDate).replace(/^ב/, "")} בשעה ${meta.targetTime} אצל ${meta.staffName}. נתראה 💈` };
       return { context: `הלקוח אישר להעביר את ${what} ל-${meta.targetDate} ${meta.targetTime} אבל ההעברה נכשלה: "${result.slice(0, 200)}". הסבר בכנות והצע חלופה.` };
     }
     if (cls === "no") { await close(pending.id, "rejected"); return { reply: `סבבה, ${what} נשאר כמו שהוא 👍` }; }
@@ -146,9 +146,21 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
   const hi = first ? first + ", " : "";
   const what = `התור ${dayLabelHe(meta.dateISO)} בשעה ${meta.startTime} אצל ${meta.staffName}`;
   const ctx = (extra: string) => ({ context: `הלקוח מזיז את ${what} (מזהה ${meta.appointmentId}). ${extra} כתב: "${text.slice(0, 120)}". שעה/יום ברורים → request_appointment_move (insistExactTime רק אם מתעקש על שעה תפוסה); רוצה להשאיר → אמור שהתור נשאר; אחרת עזור בקצרה.` });
-  const direction = EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : meta.direction ?? null;
-  const day = parseTargetDay(text, today) ?? meta.targetDate ?? meta.dateISO;
+  const saidDirection = EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null;
+  const direction = saidDirection ?? meta.direction ?? null;
+  const saidDay = parseTargetDay(text, today);
+  const day = saidDay ?? meta.targetDate ?? meta.dateISO;
   if (day < today) return ctx("היום שביקש כבר עבר.");
+  // Nothing we can act on (no time, no day, no direction) after the first
+  // message → the model answers, with the flow as context (proposal stays open).
+  if (existingId) {
+    const probeSlots = await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id);
+    const probeSpan = probeSlots.length ? { first: timeToMinutes(probeSlots[0]), last: timeToMinutes(probeSlots[probeSlots.length - 1]) } : null;
+    if (!saidDirection && !saidDay && !parseTargetTime(text, probeSpan, day === meta.dateISO ? meta.startTime : null)) {
+      const state = meta.stage === "swapOrPick" ? `הוצע לו: ${meta.targetTime} תפוס, פנוי ${(meta.options ?? []).join(", ")}, או החלפה.` : meta.stage === "pick" ? `הוצעו לו: ${(meta.options ?? []).join(", ")}.` : meta.stage === "confirm" ? `נשאל אם להעביר ל-${meta.targetDate} ${meta.targetTime}.` : "נשאל לאיזו שעה/יום.";
+      return ctx(state);
+    }
+  }
   const daySlots = await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id);
   const span = daySlots.length ? { first: timeToMinutes(daySlots[0]), last: timeToMinutes(daySlots[daySlots.length - 1]) } : null;
   const time = parseTargetTime(text, span, day === meta.dateISO ? meta.startTime : null);
@@ -177,7 +189,7 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
   // no time — a direction ("להקדים") or a day → list what fits
   const cur = timeToMinutes(meta.startTime);
   const fit = daySlots.filter(s => !sameDay || (direction === "earlier" ? timeToMinutes(s) < cur : direction === "later" ? timeToMinutes(s) > cur : true));
-  if (direction || parseTargetDay(text, today) || meta.stage !== "target") {
+  if (direction || saidDay || (existingId && meta.stage === "pick")) {
     if (fit.length) {
       const shown = direction === "later" ? fit.slice(0, 4) : fit.slice(-4);
       const next: MoveMeta = { ...meta, stage: "pick", targetDate: day, options: shown, direction };
