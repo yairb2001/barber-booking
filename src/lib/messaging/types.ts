@@ -91,4 +91,6 @@ export interface MessagingProvider {
   isConfigured(): boolean;
   /** Send a plain WhatsApp text message to a phone (E.164 or local). */
   sendText(phone: string, body: string): Promise<SendResult>;
+  /** Send a file by public URL (audio .ogg arrives as a WhatsApp voice note). */
+  sendFileByUrl?(phone: string, file: { urlFile: string; fileName: string; caption?: string }): Promise<SendResult>;
 }

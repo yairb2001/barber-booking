@@ -48,6 +48,27 @@ export class GreenApiProvider implements MessagingProvider {
     }
   }
 
+  /** Docs: https://green-api.com/en/docs/api/sending/SendFileByUrl/ — type is
+   *  detected from the extension; an .ogg (opus) arrives as a native voice note. */
+  async sendFileByUrl(phone: string, file: { urlFile: string; fileName: string; caption?: string }): Promise<SendResult> {
+    if (!this.isConfigured()) return { ok: false, error: "Green API not configured" };
+    const chatId = toGreenChatId(phone);
+    const url = `https://api.green-api.com/waInstance${this.instanceId}/sendFileByUrl/${this.token}`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, urlFile: file.urlFile, fileName: file.fileName, ...(file.caption ? { caption: file.caption } : {}) }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) { const text = await res.text().catch(() => ""); return { ok: false, error: `Green API HTTP ${res.status}: ${text.slice(0, 200)}` }; }
+      const data = (await res.json()) as { idMessage?: string };
+      return { ok: true, providerId: data.idMessage };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    }
+  }
+
   /**
    * Read the instance authorization state.
    * Returns one of: authorized | notAuthorized | starting | yellowCard | blocked.

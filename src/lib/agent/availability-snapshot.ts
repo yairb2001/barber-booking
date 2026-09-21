@@ -46,10 +46,14 @@ export async function buildAvailabilitySnapshot(p: {
   shortName?: (id: string, name: string) => string;
   /** The customer's message: a range/day/barber question gets a code-filtered line appended. */
   askText?: string | null;
+  /** Barbers this customer is blocked from — shown as fully booked for him. */
+  excludeStaffIds?: string[];
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
-  const index = await buildAvailabilityIndex(p.businessId, today, days);
+  const rawIndex = await buildAvailabilityIndex(p.businessId, today, days);
+  const excluded = new Set(p.excludeStaffIds ?? []);
+  const index = excluded.size ? { ...rawIndex, slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svc) } : rawIndex;
   const hasPool = index.staff.some(s => s.inQuickPool);
   const short = p.shortName ?? ((id, name) => name.trim().split(/\s+/)[0]);
   // Two barbers may share a first name (יאיר בוחבוט / יאיר הרוש) — disambiguate.

@@ -56,17 +56,32 @@ async function computeDayAvailabilityRetrying(
   callerPhone?: string,
 ): Promise<ReturnType<typeof computeDayAvailability>> {
   const opts = { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) };
+  const blocked = await callerBlockedStaffIds(bizId, callerPhone);
   let result = await computeDayAvailability(bizId, date, staffId, serviceId, opts);
   for (let attempt = 0; !result.length && attempt < 2; attempt++) {
     await sleep(250);
     result = await computeDayAvailability(bizId, date, staffId, serviceId, opts);
   }
-  return result;
+  return blocked.size ? result.map(r => blocked.has(r.staffId) ? { ...r, slots: [] } : r) : result;
 }
 
 // Slots held FOR this caller (calendar-closure alternatives) must look free to
 // them — see computeDayAvailability. One lookup per caller, remembered briefly.
 const callerIdCache = new Map<string, { id: string | undefined; at: number }>();
+// Per-barber blocks (CustomerStaffBlock): for THIS customer that barber simply
+// has no free time — in the snapshot, the availability tools and the booking
+// guard alike (owner's rule, 21.9.2026: "שיגיד לו שהכל מלא אצל הספר הספציפי").
+const blockedStaffCache = new Map<string, { at: number; ids: string[] }>();
+async function callerBlockedStaffIds(bizId: string, callerPhone?: string): Promise<Set<string>> {
+  const customerId = await callerCustomerId(bizId, callerPhone);
+  if (!customerId) return new Set();
+  const hit = blockedStaffCache.get(customerId);
+  if (hit && Date.now() - hit.at < 60_000) return new Set(hit.ids);
+  const rows = await prisma.customerStaffBlock.findMany({ where: { customerId }, select: { staffId: true } }).catch(() => []);
+  const ids = rows.map(r => r.staffId);
+  blockedStaffCache.set(customerId, { at: Date.now(), ids });
+  return new Set(ids);
+}
 async function callerCustomerId(bizId: string, callerPhone?: string): Promise<string | undefined> {
   if (!callerPhone) return undefined;
   const phone = normalizeIsraeliPhone(callerPhone);
@@ -667,7 +682,9 @@ export async function execTool(
         for (let d = 0; d < MAX_SCAN_DAYS; d++) {
           const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
           const ds = dObj.toISOString().slice(0, 10);
-          const byStaff = await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) });
+          const blockedForCaller = await callerBlockedStaffIds(bizId, callerPhone);
+          const byStaff = (await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) }))
+            .map(r => blockedForCaller.has(r.staffId) ? { ...r, slots: [] } : r);
           if (byStaff.length) {
             // Return the FULL day per barber (morning through evening), not just
             // the first few. Truncating to the earliest slots hid the evening
@@ -2162,7 +2179,8 @@ export async function runCustomerAgent(opts: {
           }
         }
         if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null });
+        const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds });
         customerContext += `\n${snap}`;
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }

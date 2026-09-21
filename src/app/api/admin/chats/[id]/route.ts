@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const conv = await prisma.conversation.findFirst({
     where: { id: params.id, businessId: business.id },
     include: {
-      customer: { select: { id: true, name: true, phone: true, isBlocked: true } },
+      customer: { select: { id: true, name: true, phone: true, isBlocked: true, staffBlocks: { select: { staff: { select: { name: true } } } } } },
       messages: {
         where: { role: { not: "tool" } },
         orderBy: { createdAt: "asc" },
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   let customerName = conv.customer?.name ?? null;
   let customerId   = conv.customer?.id ?? null;
   let blocked      = conv.customer?.isBlocked ?? false;
+  let staffBlocks: string[] = conv.customer?.staffBlocks.map(b => b.staff.name) ?? [];
   if (!customerName) {
     const normalized = normalizeIsraeliPhone(conv.phone);
     const local      = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
@@ -58,9 +59,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         businessId: business.id,
         OR: [{ phone: normalized }, { phone: local }, { phone: conv.phone }],
       },
-      select: { id: true, name: true, isBlocked: true },
+      select: { id: true, name: true, isBlocked: true, staffBlocks: { select: { staff: { select: { name: true } } } } },
     });
-    if (matched) { customerName = matched.name; customerId = matched.id; blocked = matched.isBlocked; }
+    if (matched) { customerName = matched.name; customerId = matched.id; blocked = matched.isBlocked; staffBlocks = matched.staffBlocks.map(b => b.staff.name); }
   }
   if (!customerName) customerName = conv.whatsappName ?? null;
 
@@ -72,6 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     status: conv.status,
     escalated,
     blocked,
+    staffBlocks,
     escalatedAt: conv.escalatedAt,
     lastMessageAt: conv.lastMessageAt,
     messages: conv.messages.map(m => ({

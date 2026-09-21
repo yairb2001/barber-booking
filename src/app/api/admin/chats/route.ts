@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     orderBy: { lastMessageAt: "desc" },
     take: 500,
     include: {
-      customer: { select: { id: true, name: true, isBlocked: true } },
+      customer: { select: { id: true, name: true, isBlocked: true, staffBlocks: { select: { staff: { select: { name: true } } } } } },
       messages: {
         where: { role: { in: ["user", "assistant"] } },
         orderBy: { createdAt: "desc" },
@@ -67,11 +67,11 @@ export async function GET(req: NextRequest) {
   // can still be matched to a known customer by phone.
   const allCustomers = await prisma.customer.findMany({
     where: { businessId: business.id },
-    select: { id: true, name: true, phone: true, isBlocked: true },
+    select: { id: true, name: true, phone: true, isBlocked: true, staffBlocks: { select: { staff: { select: { name: true } } } } },
   });
-  const phoneToCustomer = new Map<string, { id: string; name: string; isBlocked: boolean }>();
+  const phoneToCustomer = new Map<string, { id: string; name: string; isBlocked: boolean; staffBlocks: string[] }>();
   for (const c of allCustomers) {
-    phoneToCustomer.set(normalizeIsraeliPhone(c.phone), { id: c.id, name: c.name, isBlocked: c.isBlocked });
+    phoneToCustomer.set(normalizeIsraeliPhone(c.phone), { id: c.id, name: c.name, isBlocked: c.isBlocked, staffBlocks: c.staffBlocks.map(b => b.staff.name) });
   }
 
   const now = Date.now();
@@ -153,6 +153,7 @@ export async function GET(req: NextRequest) {
       status: c.status,
       escalated,
       blocked: c.customer?.isBlocked ?? matchedByPhone?.isBlocked ?? false,
+      staffBlocks: c.customer?.staffBlocks.map(b => b.staff.name) ?? matchedByPhone?.staffBlocks ?? [],
       needsHuman,
       needsHandling,
       lastMessageAt: c.lastMessageAt,
