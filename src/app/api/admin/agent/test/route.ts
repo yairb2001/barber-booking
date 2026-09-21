@@ -156,12 +156,12 @@ export async function POST(req: NextRequest) {
 
     const text = String(body.text ?? "").trim();
     if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
-    const variant = body.variant === "candidate" ? "candidate" : "live";
+    const variant = body.variant === "candidate" ? "candidate" : body.variant === "focus" ? "focus" : "live";
     const contextPhone = typeof body.contextPhone === "string" && /^972\d{8,9}$/.test(body.contextPhone) ? body.contextPhone : undefined;
     const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone,
-      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : {}),
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
     // Test hook: pretend a rhythm nudge offered these slots to the sandbox phone.

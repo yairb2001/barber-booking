@@ -2132,7 +2132,9 @@ export async function runCustomerAgent(opts: {
   // bookings, continuing a barber's manual offer — live OUTSIDE the cached
   // prefix and are injected only when the conversation actually needs them.
   // Active for the candidate prompt (replay) and for businesses switched to it.
-  const promptV4 = sandbox?.promptVersion === 4 || bizSettingsOf(biz.settings).agentPromptV4 === true;
+  const promptV4 = (sandbox?.promptVersion ?? 0) >= 4 || bizSettingsOf(biz.settings).agentPromptV4 === true;
+  // "v5": the code-filtered availability line — off in production until replayed.
+  const focusLine = (sandbox?.promptVersion ?? 0) >= 5 || bizSettingsOf(biz.settings).agentFocusLine === true;
   const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true || bizSettingsOf(biz.settings).agentPromptV3 === true || sandbox?.promptVersion === 3 || promptV4;
   if (promptV2) {
     const extra = situationalGuidance(incomingText, history);
@@ -2160,7 +2162,7 @@ export async function runCustomerAgent(opts: {
           }
         }
         if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: incomingText });
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null });
         customerContext += `\n${snap}`;
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }
