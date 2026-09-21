@@ -153,6 +153,11 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
   if (day < today) return ctx("היום שביקש כבר עבר.");
   // Nothing we can act on (no time, no day, no direction) after the first
   // message → the model answers, with the flow as context (proposal stays open).
+  // Same goes for repeating a direction we already answered ("אין שעה מאוחרת
+  // יותר" must not be sent twice — real replay, 21.9.2026).
+  if (existingId && meta.stage === "keepOrOther" && !saidDay && saidDirection && saidDirection === meta.direction && !parseTargetTime(text, null, day === meta.dateISO ? meta.startTime : null)) {
+    return ctx(`כבר נאמר לו שאין אצל ${meta.staffName} שעה ${meta.direction === "earlier" ? "מוקדמת" : "מאוחרת"} יותר ${day === meta.dateISO ? "באותו יום" : day}; הצע יום אחר / ספר אחר / להשאיר, בלי לחזור על אותו משפט.`);
+  }
   if (existingId) {
     const probeSlots = await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id);
     const probeSpan = probeSlots.length ? { first: timeToMinutes(probeSlots[0]), last: timeToMinutes(probeSlots[probeSlots.length - 1]) } : null;
