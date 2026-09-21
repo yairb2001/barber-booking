@@ -36,6 +36,12 @@ async function main() {
   // promote-v3: same as promote, plus settings.agentPromptV3 (stage C: propose_booking
   // tool set, code-confirmed bookings). The DB prompt written is whatever
   // DOMINANT_CANDIDATE_PROMPT currently is (v3 text since 20.9.2026).
+  // Flag-only switch for the code-filtered availability line (no prompt change).
+  if (cmd === "focus-on" || cmd === "focus-off") {
+    await prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify({ ...settings, agentFocusLine: cmd === "focus-on" }) } });
+    console.log(`agentFocusLine=${cmd === "focus-on"}`);
+    return;
+  }
   if (cmd === "promote" || cmd === "promote-v3" || cmd === "promote-v4") {
     const dir = path.join(process.cwd(), "prompt-backups");
     fs.mkdirSync(dir, { recursive: true });
