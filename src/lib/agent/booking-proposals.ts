@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { resolvePick } from "@/lib/closures/reply";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
+import { maybeStartMoveFlow, handleMoveReply } from "@/lib/agent/move-flow";
 
 export const CONFIRM_TTL_MS = 2 * 3600_000;
 export const NUDGE_TTL_MS = 5 * 86_400_000;
@@ -247,11 +248,15 @@ export async function handleIncomingForProposal(p: {
   const pending = await findPendingProposal(p.businessId, p.phone);
   if (!pending) {
     if (p.lastAssistant && isPureAck(p.text) && leavesNothingOpen(p.lastAssistant.content) && Date.now() - p.lastAssistant.createdAt.getTime() < ACK_WINDOW_MS) return { silent: true };
-    return maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
+    const cancel = await maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
+    if (cancel.reply || cancel.context) return cancel;
+    return maybeStartMoveFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
   }
   const text = p.text.trim();
   const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string; mentionStaff?: boolean; awaitingName?: boolean; partialName?: string | null }; } catch { return {}; } })();
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
+
+  if (pending.kind === "move") return handleMoveReply(p, pending);
 
   if (pending.kind === "cancel") {
     const cm = (() => { try { return JSON.parse(pending.note ?? "{}") as { appointmentId?: string; staffName?: string }; } catch { return {}; } })();
