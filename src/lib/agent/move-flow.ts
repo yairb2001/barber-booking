@@ -45,10 +45,13 @@ export function parseTargetDay(text: string, today: string): string | null {
  *  appointment's own time ("יש לי תור ב-17:30, אפשר להקדים?"). */
 export function parseTargetTime(text: string, span: { first: number; last: number } | null, exclude?: string | null): string | null {
   const t = text.replace(/[‎‏‪-‮⁦-⁩﻿]/g, "");
+  // "2.10" is a date (day.month), "6.30" is a time — a dotted pair whose second
+  // part is a plausible month and not a quarter-hour is dropped before time parsing.
+  const t2 = t.replace(/(^|[\s,\-])\d{1,2}[./](0?[1-9]|1[0-2])(?=$|[\s?,.!])/g, (m0: string, pre: string, mo: string) => /^(00|15|30|45)$/.test(mo) ? m0 : pre);
   const cands: number[] = [];
-  const m1 = t.match(/(?:^|[^\d])(\d{1,2})[:.](\d{2})(?!\d)/); if (m1) cands.push(Number(m1[1]) * 60 + Number(m1[2]));
-  const m2 = !m1 && t.match(/(?:^|[^\d:])(\d{2})(\d{2})(?!\d)/); if (m2 && Number(m2[1]) <= 23 && Number(m2[2]) <= 59) cands.push(Number(m2[1]) * 60 + Number(m2[2]));
-  const m3 = !m1 && !m2 && t.match(/(?:^|[^\d.:/])ב?-?(\d{1,2})(?!\d|[./:]\d)/); if (m3) cands.push(Number(m3[1]) * 60);
+  const m1 = t2.match(/(?:^|[^\d])(\d{1,2})[:.](\d{2})(?!\d)/); if (m1) cands.push(Number(m1[1]) * 60 + Number(m1[2]));
+  const m2 = !m1 && t2.match(/(?:^|[^\d:])(\d{2})(\d{2})(?!\d)/); if (m2 && Number(m2[1]) <= 23 && Number(m2[2]) <= 59) cands.push(Number(m2[1]) * 60 + Number(m2[2]));
+  const m3 = !m1 && !m2 && t2.match(/(?:^|[^\d.:/])ב?-?(\d{1,2})(?!\d|[./:]\d)/); if (m3) cands.push(Number(m3[1]) * 60);
   if (!cands.length) return null;
   let m = cands[0];
   if (m % 60 === 0 || cands.length) {
