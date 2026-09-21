@@ -33,6 +33,7 @@ import {
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { handleOptOutKeywordReply } from "@/lib/messaging/opt-out";
+import { put } from "@vercel/blob";
 import { handleClosureReply } from "@/lib/closures/reply";
 import { getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
@@ -71,6 +72,7 @@ interface GreenApiWebhook {
     textMessageData?: { textMessage: string };
     extendedTextMessageData?: { text: string };
     quotedMessage?: unknown;
+    fileMessageData?: { downloadUrl?: string; caption?: string; fileName?: string; mimeType?: string; jpegThumbnail?: string };
   };
 }
 
@@ -104,6 +106,44 @@ function extractText(body: GreenApiWebhook): string | null {
 /** A short Hebrew label for a non-text message, so media the agent can't read
  *  still shows up in the chat inbox instead of vanishing. Returns null for types
  *  we don't want to surface (reactions, unknown). */
+/** image | video | audio | document | sticker — what the admin chat can render. */
+function mediaKind(typeMessage: string | undefined): string | null {
+  switch (typeMessage) {
+    case "imageMessage":    return "image";
+    case "videoMessage":    return "video";
+    case "audioMessage":    return "audio";
+    case "documentMessage": return "document";
+    case "stickerMessage":  return "sticker";
+    default: return null;
+  }
+}
+const MAX_MEDIA_BYTES = 25 * 1024 * 1024;
+function mediaExt(mime: string | undefined, fileName?: string): string {
+  if (fileName && /\.[A-Za-z0-9]{1,5}$/.test(fileName)) return fileName.split(".").pop()!.toLowerCase();
+  const m = (mime || "").split(";")[0].trim();
+  const map: Record<string, string> = { "audio/ogg": "ogg", "audio/opus": "opus", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "audio/wav": "wav", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "video/mp4": "mp4", "video/3gpp": "3gp", "application/pdf": "pdf" };
+  return map[m] || "bin";
+}
+/** Copy an incoming WhatsApp file into our own storage (Vercel Blob) so the
+ *  admin chat can play/show it later; falls back to Green API's link. */
+async function storeIncomingMedia(p: { bizId: string; idMessage?: string; downloadUrl?: string; mimeType?: string; fileName?: string; kind: string }): Promise<{ url: string; mime: string | null; name: string | null } | null> {
+  if (!p.downloadUrl) return null;
+  const mime = (p.mimeType || "").split(";")[0].trim() || null;
+  const name = p.kind === "document" ? (p.fileName || null) : null;
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return { url: p.downloadUrl, mime, name };
+  try {
+    const res = await fetch(p.downloadUrl);
+    if (!res.ok) return { url: p.downloadUrl, mime, name };
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > MAX_MEDIA_BYTES) return { url: p.downloadUrl, mime, name };
+    const key = `wa-media/${p.bizId}/${(p.idMessage || Date.now().toString(36)).replace(/[^A-Za-z0-9_-]/g, "")}.${mediaExt(p.mimeType, p.fileName)}`;
+    const blob = await put(key, buf, { access: "public", addRandomSuffix: false, contentType: mime || undefined });
+    return { url: blob.url, mime, name };
+  } catch (e) {
+    console.error("[webhook] media store failed", e);
+    return { url: p.downloadUrl, mime, name };
+  }
+}
 function mediaLabel(typeMessage: string | undefined): string | null {
   switch (typeMessage) {
     case "imageMessage":    return "📷 תמונה";
@@ -376,7 +416,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // In either case return 200 immediately so Green API stops retrying.
   const DEDUP_WINDOW_MS = 30_000;
   const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS);
-  const existingMsg = await prisma.conversationMessage.findFirst({
+  // Two voice notes in a row share the same placeholder text — never dedup media.
+  const existingMsg = isNonText ? null : await prisma.conversationMessage.findFirst({
     where: {
       conversationId: conv.id,
       role: "user",
@@ -390,8 +431,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ ok: true, skipped: "duplicate_message" });
   }
 
+  const fmd = body.messageData?.fileMessageData;
+  const kind = isNonText ? mediaKind(body.messageData?.typeMessage) : null;
+  const media = kind ? await storeIncomingMedia({ bizId: biz.id, idMessage: body.idMessage, downloadUrl: fmd?.downloadUrl, mimeType: fmd?.mimeType, fileName: fmd?.fileName, kind }) : null;
+  const caption = kind ? (fmd?.caption || "").trim() : "";
   await prisma.conversationMessage.create({
-    data: { conversationId: conv.id, role: "user", source: "agent", content: text },
+    data: {
+      conversationId: conv.id, role: "user", source: "agent", content: caption || text,
+      ...(media && kind ? { mediaUrl: media.url, mediaType: kind, mediaMime: media.mime, mediaName: media.name } : {}),
+    },
   });
   await prisma.conversation.update({
     where: { id: conv.id },
@@ -401,6 +449,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       ...(senderName && { whatsappName: senderName }),
     },
   });
+
+  // Blocked customer (Customer.isBlocked): the message stays in the inbox for
+  // the record, but nothing answers — no greeting, no agent, no push (owner's
+  // rule, 21.9.2026: "חסום — אין מענה"). Booking was already blocked; the agent wasn't.
+  const blockedCustomer = await prisma.customer.findFirst({ where: { businessId: biz.id, phone: { in: phoneVariants(phone) }, isBlocked: true, deletedAt: null }, select: { id: true } }).catch(() => null);
+  if (blockedCustomer) return NextResponse.json({ ok: true, blocked: true, saved: true });
 
   // ── 1b. Agent move/swap reply routing ───────────────────────────────────────
   // Now that the reply is saved to the chat, check whether THIS message is a

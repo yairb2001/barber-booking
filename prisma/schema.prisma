@@ -740,6 +740,12 @@ model ConversationMessage {
   // Which team member typed a manual (source=admin) reply. Drives who gets the
   // push when the customer answers: only the people in the conversation.
   sentByStaffId  String?  @map("sent_by_staff_id")   // JSON of the tool's input args (e.g. which staffId was asked)
+  // Incoming WhatsApp media (voice note / image / video / document), stored in
+  // Vercel Blob so the admin chat can play/show it like WhatsApp does.
+  mediaUrl       String?  @map("media_url")
+  mediaType      String?  @map("media_type")   // audio | image | video | document | sticker
+  mediaMime      String?  @map("media_mime")
+  mediaName      String?  @map("media_name")
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation   Conversation @relation(fields: [conversationId], references: [id])

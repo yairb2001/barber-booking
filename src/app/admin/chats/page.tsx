@@ -8,6 +8,7 @@ type ChatListItem = {
   phone: string;
   customerName: string | null;
   whatsappName?: string | null;
+  blocked?: boolean;
   customerId?: string | null;
   snoozedUntil?: string | null;
   status: string;
@@ -34,6 +35,10 @@ type ChatMessage = {
   source: "agent" | "admin" | "system";
   content: string;
   createdAt: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;   // image | audio | video | document | sticker
+  mediaMime?: string | null;
+  mediaName?: string | null;
 };
 
 type ChatDetail = {
@@ -43,6 +48,7 @@ type ChatDetail = {
   customerId: string | null;
   status: string;
   escalated: boolean;
+  blocked?: boolean;
   escalatedAt: string | null;
   lastMessageAt: string | null;
   messages: ChatMessage[];
@@ -338,7 +344,7 @@ export default function ChatsPage() {
           }`}>
             {needsHandling && <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />}
             <span className="truncate">
-              {c.customerName || c.phone}
+              {c.blocked && <span className="text-red-500 ml-1" title="לקוח חסום">🚫</span>}{c.customerName || c.phone}
               {c.whatsappName && <span className="block text-[10px] font-normal text-slate-400 truncate">בוואטסאפ: {c.whatsappName}</span>}
             </span>
           </span>
@@ -470,7 +476,12 @@ export default function ChatsPage() {
                 title="קבע תור ללקוח הזה — האישור יופיע גם כאן בשיחה">
                 📅 קבע תור
               </button>
-              {activeThread.id && (
+              {detail?.blocked && (
+                <span className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-red-50 border-red-200 text-red-700" title="לקוח חסום — הסוכן לא עונה לו">
+                  🚫 חסום
+                </span>
+              )}
+              {activeThread.id && !detail?.blocked && (
                 <button
                   onClick={() => toggleAgent(activeThread.escalated)}
                   className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${
@@ -520,7 +531,16 @@ export default function ChatsPage() {
                           {m.source === "admin" ? "👤 אתה" : "🤖 סוכן"}
                         </p>
                       )}
-                      <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>
+                      {m.mediaUrl && m.mediaType === "image" && (
+                        <a href={m.mediaUrl} target="_blank" rel="noreferrer"><img src={m.mediaUrl} alt="" className="rounded-xl max-w-[240px] max-h-[320px] object-cover mb-1" /></a>
+                      )}
+                      {m.mediaUrl && m.mediaType === "sticker" && <img src={m.mediaUrl} alt="" className="w-28 h-28 object-contain mb-1" />}
+                      {m.mediaUrl && m.mediaType === "audio" && <AudioBubble src={m.mediaUrl} dark={m.role === "assistant" && m.source === "admin"} />}
+                      {m.mediaUrl && m.mediaType === "video" && <video src={m.mediaUrl} controls playsInline className="rounded-xl max-w-[240px] mb-1" />}
+                      {m.mediaUrl && m.mediaType === "document" && (
+                        <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm underline mb-1">📄 {m.mediaName || "קובץ"}</a>
+                      )}
+                      {(!m.mediaUrl || !MEDIA_LABEL.test(m.content)) && <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>}
                       <p className={`text-[10px] mt-1 ${
                         m.role === "user" ? "text-slate-400"
                         : m.source === "admin" ? "text-white/60"
@@ -625,6 +645,38 @@ function CallsList({ rows, onOpenChat }: { rows: CallRow[] | null; onOpenChat: (
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// Placeholder text the webhook stores for media without a caption — hidden when the media itself renders.
+const MEDIA_LABEL = /^(📷 תמונה|🎥 סרטון|🎤 הודעה קולית|📎 קובץ|😀 סטיקר)$/;
+
+// WhatsApp-style voice note: play/pause, seek bar, elapsed / total time.
+function AudioBubble({ src, dark }: { src: string; dark?: boolean }) {
+  const ref = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [t, setT] = useState(0);
+  const [dur, setDur] = useState(0);
+  const fmt = (s: number) => (Number.isFinite(s) ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}` : "0:00");
+  const toggle = () => { const a = ref.current; if (!a) return; if (a.paused) a.play().catch(() => {}); else a.pause(); };
+  return (
+    <div className="flex items-center gap-2 min-w-[210px] py-1" dir="ltr">
+      <audio
+        ref={ref} src={src} preload="metadata"
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setT(0); }}
+        onTimeUpdate={e => setT(e.currentTarget.currentTime)}
+        onLoadedMetadata={e => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDur(d); }}
+        onDurationChange={e => { const d = e.currentTarget.duration; if (Number.isFinite(d)) setDur(d); }}
+      />
+      <button onClick={toggle} aria-label={playing ? "השהה" : "נגן"}
+        className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 text-sm ${dark ? "bg-white/25 text-white" : "bg-emerald-500 text-white"}`}>
+        {playing ? "❚❚" : "▶"}
+      </button>
+      <input type="range" min={0} max={dur || 0} step={0.1} value={Math.min(t, dur || 0)}
+        onChange={e => { const a = ref.current; if (a) { a.currentTime = Number(e.target.value); setT(a.currentTime); } }}
+        className={`flex-1 h-1 ${dark ? "accent-white" : "accent-emerald-600"}`} />
+      <span className={`text-[11px] tabular-nums ${dark ? "text-white/80" : "text-slate-500"}`}>{fmt(playing || t > 0 ? t : dur)}</span>
     </div>
   );
 }

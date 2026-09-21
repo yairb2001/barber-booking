@@ -26,7 +26,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const conv = await prisma.conversation.findFirst({
     where: { id: params.id, businessId: business.id },
     include: {
-      customer: { select: { id: true, name: true, phone: true } },
+      customer: { select: { id: true, name: true, phone: true, isBlocked: true } },
       messages: {
         where: { role: { not: "tool" } },
         orderBy: { createdAt: "asc" },
@@ -49,6 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Customer.phone might be stored as "972..." or "0..." — try both formats.
   let customerName = conv.customer?.name ?? null;
   let customerId   = conv.customer?.id ?? null;
+  let blocked      = conv.customer?.isBlocked ?? false;
   if (!customerName) {
     const normalized = normalizeIsraeliPhone(conv.phone);
     const local      = normalized.startsWith("972") ? "0" + normalized.slice(3) : normalized;
@@ -57,9 +58,9 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         businessId: business.id,
         OR: [{ phone: normalized }, { phone: local }, { phone: conv.phone }],
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isBlocked: true },
     });
-    if (matched) { customerName = matched.name; customerId = matched.id; }
+    if (matched) { customerName = matched.name; customerId = matched.id; blocked = matched.isBlocked; }
   }
   if (!customerName) customerName = conv.whatsappName ?? null;
 
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     customerId,
     status: conv.status,
     escalated,
+    blocked,
     escalatedAt: conv.escalatedAt,
     lastMessageAt: conv.lastMessageAt,
     messages: conv.messages.map(m => ({
@@ -78,6 +80,10 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       source: m.source,
       content: m.content,
       createdAt: m.createdAt,
+      mediaUrl: m.mediaUrl ?? null,
+      mediaType: m.mediaType ?? null,
+      mediaMime: m.mediaMime ?? null,
+      mediaName: m.mediaName ?? null,
     })),
   });
 }

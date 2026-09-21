@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     orderBy: { lastMessageAt: "desc" },
     take: 500,
     include: {
-      customer: { select: { id: true, name: true } },
+      customer: { select: { id: true, name: true, isBlocked: true } },
       messages: {
         where: { role: { in: ["user", "assistant"] } },
         orderBy: { createdAt: "desc" },
@@ -67,11 +67,11 @@ export async function GET(req: NextRequest) {
   // can still be matched to a known customer by phone.
   const allCustomers = await prisma.customer.findMany({
     where: { businessId: business.id },
-    select: { id: true, name: true, phone: true },
+    select: { id: true, name: true, phone: true, isBlocked: true },
   });
-  const phoneToCustomer = new Map<string, { id: string; name: string }>();
+  const phoneToCustomer = new Map<string, { id: string; name: string; isBlocked: boolean }>();
   for (const c of allCustomers) {
-    phoneToCustomer.set(normalizeIsraeliPhone(c.phone), { id: c.id, name: c.name });
+    phoneToCustomer.set(normalizeIsraeliPhone(c.phone), { id: c.id, name: c.name, isBlocked: c.isBlocked });
   }
 
   const now = Date.now();
@@ -152,6 +152,7 @@ export async function GET(req: NextRequest) {
       snoozedUntil: snoozed ? c.snoozedUntil : null,
       status: c.status,
       escalated,
+      blocked: c.customer?.isBlocked ?? matchedByPhone?.isBlocked ?? false,
       needsHuman,
       needsHandling,
       lastMessageAt: c.lastMessageAt,
