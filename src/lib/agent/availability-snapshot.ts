@@ -77,6 +77,6 @@ export async function buildAvailabilitySnapshot(p: {
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
-  return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "");
 }
