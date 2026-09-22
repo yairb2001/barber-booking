@@ -44,7 +44,17 @@ export async function keepAgentCachesWarm(now = new Date()): Promise<{ pinged: s
     if (at && (!v.any || at > v.any)) v.any = at;
     byBiz.set(r.businessId, v);
   }
+  // Opt-in per business (settings.agentKeepWarm). The cache is per business, so
+  // pings never pay off across tenants — only inside a shop with ~1+ conversation
+  // an hour. At a single shop's volume it is break-even at best (owner's call,
+  // 22.9.2026), so it is OFF unless the business turns it on.
+  const optedIn = new Set<string>();
+  if (byBiz.size) {
+    const rows = await prisma.business.findMany({ where: { id: { in: Array.from(byBiz.keys()) } }, select: { id: true, settings: true } });
+    for (const b of rows) { try { if (b.settings && JSON.parse(b.settings).agentKeepWarm === true) optedIn.add(b.id); } catch { /* ignore */ } }
+  }
   for (const [businessId, v] of Array.from(byBiz.entries())) {
+    if (!optedIn.has(businessId)) continue;
     if (!v.real || !v.any) continue;
     const idle = now.getTime() - v.any.getTime();
     if (idle < PING_AFTER_MS || idle >= TTL_MS) continue;
