@@ -3868,6 +3868,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
         {wizard && (
           <ClosureWizard staffId={staffId} date={date} fromTime={wizard.fromTime} toTime={wizard.toTime} today={todayISO()}
             onCancel={() => setWizard(null)}
+            onSilent={() => { setWizard(null); onRefresh(); }}
             onDone={(id) => { setWizard(null); setOpenClosureId(id); setDayApptCount(0); onRefresh(); }} />
         )}
 

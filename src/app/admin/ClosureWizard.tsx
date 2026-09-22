@@ -43,9 +43,11 @@ const DEFAULT_TEMPLATE =
 תגיד לי מה מביניהם מתאים, ואם תרצה שעה או יום אחר — תגיד לי ואדאג לך.
 ושוב סליחה על השינויים.`;
 
-export default function ClosureWizard({ staffId, date, fromTime, toTime, today, onCancel, onDone }: {
+export default function ClosureWizard({ staffId, date, fromTime, toTime, today, onCancel, onDone, onSilent }: {
   staffId: string; date: string; fromTime?: string | null; toTime?: string | null; today: string;
   onCancel: () => void; onDone: (closureId: string) => void;
+  /** X / "סגור בלי הודעה": the hours are blocked for new bookings, appointments and customers untouched. */
+  onSilent?: () => void;
 }) {
   useModalBack(true, onCancel);
   const [step, setStep] = useState<1 | 2>(1);
@@ -108,16 +110,39 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
 
   const toSend = plan ? plan.displaced.filter(d => !excluded.has(d.appointmentId)).length : 0;
 
+  // X = close the hours quietly (owner's choice, 22.9.2026): often the closure
+  // is just to keep a cancelled slot from being rebooked while he rearranges by
+  // hand. Nothing is sent; "המשך להודעה" stays for the real בלת"מ.
+  const [closingSilently, setClosingSilently] = useState(false);
+  async function closeSilently() {
+    if (closingSilently) return;
+    if (!onSilent) { onCancel(); return; }
+    setClosingSilently(true); setError(null);
+    try {
+      const res = await fetch("/api/admin/closures", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ staffId, date, fromTime: fromTime ?? null, toTime: toTime ?? null, reason: reason || null, silent: true }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      onSilent();
+    } catch (e) { setError(e instanceof Error ? e.message : "שגיאה"); setClosingSilently(false); }
+  }
+
   return (
-    <div className="fixed inset-0 z-[70] bg-black/40 flex items-end sm:items-center justify-center" onClick={onCancel}>
+    <div className="fixed inset-0 z-[70] bg-black/40 flex items-end sm:items-center justify-center" onClick={closeSilently}>
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} dir="rtl">
         <div className="sticky top-0 bg-white border-b border-neutral-100 px-4 py-3 flex items-center justify-between">
           <div>
             <h2 className="font-bold text-neutral-900">סגירת יומן · {dateLabel(date)} · {range}</h2>
             <p className="text-xs text-neutral-500">{plan ? `${plan.staffName} · ${plan.displaced.length} תורים נופלים` : "בודק מה נופל…"}</p>
           </div>
-          <button onClick={onCancel} className="text-neutral-400 text-xl px-2">✕</button>
+          <button onClick={closeSilently} disabled={closingSilently} title="סגור את השעות בלי לשלוח הודעה" className="text-neutral-400 text-xl px-2 disabled:opacity-40">✕</button>
         </div>
+        {onSilent && (
+          <div className="px-4 pt-2 flex items-center justify-between text-[11px] text-neutral-500">
+            <span>✕ = השעות נסגרות לקביעה, התורים נשארים ואף אחד לא מקבל הודעה</span>
+            <button onClick={onCancel} className="underline text-neutral-400">בטל בלי לשנות</button>
+          </div>
+        )}
         <div className="flex gap-1.5 px-4 pt-3"><i className="flex-1 h-1 rounded bg-teal-500" /><i className={`flex-1 h-1 rounded ${step === 2 ? "bg-teal-500" : "bg-neutral-200"}`} /></div>
 
         {loading && <div className="p-8 text-center text-neutral-400">מחשב חלופות לכל לקוח…</div>}

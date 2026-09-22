@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
-import { executeClosure } from "@/lib/closures/execute";
+import { executeClosure, closeHoursSilently } from "@/lib/closures/execute";
 import { summarizeClosure } from "@/lib/closures/status";
 
 /**
@@ -25,6 +25,11 @@ export async function POST(req: NextRequest) {
   // Optional: persist an edited wording as the business template for next time.
   if (body.saveTemplate === true && typeof body.templateOverride === "string" && body.templateOverride.trim()) {
     await prisma.business.update({ where: { id: session.businessId }, data: { closureNoticeTemplate: body.templateOverride.trim() } }).catch(() => {});
+  }
+  // silent: block the hours only — no cancellations, no messages, no closure card.
+  if (body.silent === true) {
+    await closeHoursSilently({ businessId: session.businessId, staffId, date, fromTime: t(body.fromTime), toTime: t(body.toTime) }, typeof body.reason === "string" ? body.reason.slice(0, 200) : null);
+    return NextResponse.json({ ok: true, silent: true });
   }
   try {
     const result = await executeClosure(

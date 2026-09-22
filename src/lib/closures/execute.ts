@@ -32,6 +32,36 @@ export type ExecuteResult = {
   perCustomer: { appointmentId: string; customerName: string; state: "sent" | "excluded" | "failed" }[];
 };
 
+/** The schedule override a closure implies: whole day → not working; partial → the remaining hours. */
+async function applyOverride(tx: Pick<typeof prisma, "staffScheduleOverride" | "staffSchedule">, input: ClosureInput, reason: string | null | undefined, dateObj: Date) {
+  const existing = await tx.staffScheduleOverride.findFirst({ where: { staffId: input.staffId, date: dateObj } });
+  let overrideData: { isWorking: boolean; slots?: string | null };
+  if (!input.fromTime || !input.toTime) overrideData = { isWorking: false, slots: null };
+  else {
+    const sched = await tx.staffSchedule.findFirst({ where: { staffId: input.staffId, dayOfWeek: dateObj.getUTCDay() } });
+    const base: { start: string; end: string }[] = existing?.slots ? JSON.parse(existing.slots) : sched?.slots ? JSON.parse(sched.slots) : [];
+    const f = timeToMinutes(input.fromTime), t = timeToMinutes(input.toTime);
+    const kept: { start: string; end: string }[] = [];
+    for (const s of base) {
+      const a = timeToMinutes(s.start), b = timeToMinutes(s.end);
+      if (a < f) kept.push({ start: s.start, end: minutesToTime(Math.min(b, f)) });
+      if (b > t) kept.push({ start: minutesToTime(Math.max(a, t)), end: s.end });
+    }
+    overrideData = kept.length ? { isWorking: true, slots: JSON.stringify(kept) } : { isWorking: false, slots: null };
+  }
+  if (existing) await tx.staffScheduleOverride.update({ where: { id: existing.id }, data: { ...overrideData, reason: reason ?? existing.reason } });
+  else await tx.staffScheduleOverride.create({ data: { staffId: input.staffId, date: dateObj, ...overrideData, reason: reason ?? null } });
+}
+
+/** "Close quietly": block the hours for NEW bookings, touch nothing else — the
+ *  existing appointments stay, nobody is messaged, no closure card. For the
+ *  owner who closes a slot so a cancelled hour isn't rebooked, and wants to
+ *  rearrange by hand (owner's request, 22.9.2026). */
+export async function closeHoursSilently(input: ClosureInput, reason?: string | null): Promise<void> {
+  const dateObj = new Date(input.date + "T00:00:00.000Z");
+  await prisma.$transaction(async tx => { await applyOverride(tx, input, reason, dateObj); });
+}
+
 export async function executeClosure(input: ClosureInput, opts: ExecuteOptions = {}): Promise<ExecuteResult> {
   // Re-plan at execution time: the gate the barber saw is the gate we enforce,
   // and a slot may have been taken in the meantime.
@@ -58,23 +88,7 @@ export async function executeClosure(input: ClosureInput, opts: ExecuteOptions =
       },
     });
     // Schedule override: whole day → not working; partial → keep the remaining hours.
-    const existing = await tx.staffScheduleOverride.findFirst({ where: { staffId: input.staffId, date: dateObj } });
-    let overrideData: { isWorking: boolean; slots?: string | null };
-    if (!input.fromTime || !input.toTime) overrideData = { isWorking: false, slots: null };
-    else {
-      const sched = await tx.staffSchedule.findFirst({ where: { staffId: input.staffId, dayOfWeek: dateObj.getUTCDay() } });
-      const base: { start: string; end: string }[] = existing?.slots ? JSON.parse(existing.slots) : sched?.slots ? JSON.parse(sched.slots) : [];
-      const f = timeToMinutes(input.fromTime), t = timeToMinutes(input.toTime);
-      const kept: { start: string; end: string }[] = [];
-      for (const s of base) {
-        const a = timeToMinutes(s.start), b = timeToMinutes(s.end);
-        if (a < f) kept.push({ start: s.start, end: minutesToTime(Math.min(b, f)) });
-        if (b > t) kept.push({ start: minutesToTime(Math.max(a, t)), end: s.end });
-      }
-      overrideData = kept.length ? { isWorking: true, slots: JSON.stringify(kept) } : { isWorking: false, slots: null };
-    }
-    if (existing) await tx.staffScheduleOverride.update({ where: { id: existing.id }, data: { ...overrideData, reason: opts.reason ?? existing.reason } });
-    else await tx.staffScheduleOverride.create({ data: { staffId: input.staffId, date: dateObj, ...overrideData, reason: opts.reason ?? null } });
+    await applyOverride(tx, input, opts.reason, dateObj);
 
     for (const d of plan.displaced) {
       await tx.appointment.update({
