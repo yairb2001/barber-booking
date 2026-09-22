@@ -1960,6 +1960,8 @@ export type SandboxOptions = {
   promptVersion?: number;
   /** Replay: proposals must be keyed by the SANDBOX phone (the conversation's), never by contextPhone (a real customer). */
   proposalPhone?: string;
+  /** Replay: force one model for the whole run (bypasses the router) so two models can be compared on the same episode. */
+  modelOverride?: string;
 };
 
 export async function runCustomerAgent(opts: {
@@ -2232,7 +2234,7 @@ export async function runCustomerAgent(opts: {
       execTool,
     });
   } else {
-  let model = pickInitialModel(incomingText, recentToolRows.map(t => t.toolName), history.map(h => h.content));
+  let model = sandbox?.modelOverride ?? pickInitialModel(incomingText, recentToolRows.map(t => t.toolName), history.map(h => h.content));
   // A reschedule legitimately chains many tools (check + slots + cancel +
   // services + staff + book), so keep enough headroom to also compose a reply.
   const MAX_ITERATIONS = 8;
@@ -2269,7 +2271,7 @@ export async function runCustomerAgent(opts: {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
-        if (SMART_TOOLS.has(block.name)) model = MODEL_SMART; // escalate next iteration
+        if (SMART_TOOLS.has(block.name) && !sandbox?.modelOverride) model = MODEL_SMART; // escalate next iteration
         const result = await execTool(
           block.name,
           block.input as Record<string, string>,

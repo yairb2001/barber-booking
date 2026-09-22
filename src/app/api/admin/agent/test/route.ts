@@ -159,8 +159,9 @@ export async function POST(req: NextRequest) {
     const variant = body.variant === "candidate" ? "candidate" : body.variant === "focus" ? "focus" : "live";
     const contextPhone = typeof body.contextPhone === "string" && /^972\d{8,9}$/.test(body.contextPhone) ? body.contextPhone : undefined;
     const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
+    const modelOverride = typeof body.model === "string" && /^claude-[a-z0-9.-]+$/.test(body.model) ? body.model : undefined;
     const sandbox = {
-      replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone,
+      replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone, modelOverride,
       ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
@@ -181,7 +182,7 @@ export async function POST(req: NextRequest) {
       conv ? prisma.agentUsage.findMany({ where: { businessId: business.id, conversationId: conv.id, createdAt: { gte: startedAt } }, select: { model: true, costUsd: true, cacheWriteTokens: true, cacheReadTokens: true, inputTokens: true, outputTokens: true } }) : [],
     ]);
     return NextResponse.json({
-      ok: true, variant,
+      ok: true, variant, model: modelOverride ?? null,
       replies: sandbox.replies, toolLog: sandbox.toolLog,
       tools: tools.map(t => ({ name: t.toolName, input: t.toolInput, result: t.content.slice(0, 160) })),
       usage: {
