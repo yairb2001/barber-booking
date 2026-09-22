@@ -2303,8 +2303,12 @@ export async function runCustomerAgent(opts: {
         // Keep a short, question-free line the model wrote before the tool call
         // ("אין בעיה, רק תספורת — אותו מחיר") so the customer sees he was heard.
         // Real miss 21.9.2026: "רק תספורת בלי זקן" → bare "סגור, קבעתי לך".
-        const preText = response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join(" ").trim();
-        const keep = preText && preText.length <= 200 && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,/.test(preText);
+        // Only the first paragraph, and only when it says something ("אין בעיה, רק
+        // תספורת, אותו מחיר"); bare acks ("סבבה!") and "רגע קובע לך…" filler add a
+        // useless bubble before the system's question (real chat, 22.9.2026).
+        const preText = (response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("\n").trim().split(/\n\s*\n+/)[0] ?? "").trim();
+        const preWords = preText.split(/\s+/).filter(w => /[a-zA-Zא-ת]/.test(w));
+        const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)\b/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך/.test(preText);
         assistantText = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
         break;
       }
