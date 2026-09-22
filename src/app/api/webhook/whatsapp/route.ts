@@ -435,11 +435,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const kind = isNonText ? mediaKind(body.messageData?.typeMessage) : null;
   const media = kind ? await storeIncomingMedia({ bizId: biz.id, idMessage: body.idMessage, downloadUrl: fmd?.downloadUrl, mimeType: fmd?.mimeType, fileName: fmd?.fileName, kind }) : null;
   const caption = kind ? (fmd?.caption || "").trim() : "";
-  await prisma.conversationMessage.create({
+  const savedUserMsg = await prisma.conversationMessage.create({
     data: {
       conversationId: conv.id, role: "user", source: "agent", content: caption || text,
       ...(media && kind ? { mediaUrl: media.url, mediaType: kind, mediaMime: media.mime, mediaName: media.name } : {}),
     },
+    select: { id: true, createdAt: true },
   });
   await prisma.conversation.update({
     where: { id: conv.id },
@@ -632,7 +633,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
 
   // ── 3. Run agent — message is already persisted; agent will skip its own save ──
-  await runCustomerAgent({ businessId: biz.id, phone, incomingText: text, alreadyPersisted: true });
+  // Burst coalescing: people often send "היי יש תור היום?" and, seconds later,
+  // "או מחר". Each webhook would run the agent (two model calls, two replies
+  // that cross each other). Wait a short grace period; if a newer message from
+  // this customer arrived meanwhile, this request yields — the last webhook in
+  // the burst runs the agent once, with all the messages in the history.
+  // (4% of customer messages are bursts, 2–21.9.2026.)
+  const burstGraceMs = 4000;
+  await new Promise(r => setTimeout(r, burstGraceMs));
+  const newer = await prisma.conversationMessage.findFirst({
+    where: { conversationId: conv.id, role: "user", createdAt: { gt: savedUserMsg.createdAt } },
+    select: { id: true },
+  });
+  if (newer) return NextResponse.json({ ok: true, coalesced: true });
+  const burst = await prisma.conversationMessage.findMany({
+    where: { conversationId: conv.id, role: "user", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000), lte: savedUserMsg.createdAt } },
+    orderBy: { createdAt: "asc" }, select: { content: true, createdAt: true },
+  });
+  // Only the run of user messages with NO assistant reply between them.
+  const lastReply = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+  const runOf = burst.filter(m => !lastReply || m.createdAt > lastReply.createdAt).map(m => m.content);
+  const incoming = runOf.length > 1 ? runOf.join("\n") : text;
+  await runCustomerAgent({ businessId: biz.id, phone, incomingText: incoming, alreadyPersisted: true });
 
   return NextResponse.json({ ok: true });
 
