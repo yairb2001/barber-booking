@@ -1578,11 +1578,15 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   if (settings.aiProvider === "openai") return null; // nothing to warm on that path
   const catalogBlock = await buildCatalogBlock(businessId);
   const systemPrompt = buildSystemPrompt({ ...stablePromptParams(biz.name, agentConfig, catalogBlock), now: nowLabel() });
+  // The cached prefix is tools + stable system block — the ping must send the
+  // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
+  // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
+  const pingTools = selectTools(AGENT_TOOLS, { v3: settings.agentPromptV3 === true || settings.agentPromptV4 === true, hasCatalog: !!catalogBlock });
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
     system: systemPrompt,
-    tools: AGENT_TOOLS,
+    tools: pingTools,
     messages: [{ role: "user", content: "." }],
   });
   void recordAgentUsage({ businessId, provider: "anthropic", model: MODEL_SMART, kind: "cache_warm", usage: res.usage });
