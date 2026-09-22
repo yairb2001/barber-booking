@@ -6,7 +6,7 @@ import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage, cancellationText } from "@/lib/messaging";
-import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
+import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
 
 
 /**
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
     apptDate: appt.date, startTime: appt.startTime, bookedAt: appt.createdAt,
   });
   if (policy.blocked) {
-    return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(policy.minHours) }, { status: 400 });
+    return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(policy.minHours, await getShopPhone(appt.businessId)) }, { status: 400 });
   }
 
   await prisma.appointment.update({

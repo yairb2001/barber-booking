@@ -32,7 +32,7 @@ import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availab
 import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
-import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, hoursUntilAppointment } from "@/lib/cancellation-policy";
+import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, hoursUntilAppointment, getShopPhone } from "@/lib/cancellation-policy";
 
 // Hebrew label for a change-request kind (used in owner alerts).
 function kindLabelHe(kind: string): string {
@@ -298,8 +298,9 @@ export async function requestAppointmentMove(opts: {
     const policy = await checkCancellationWindow({
       businessId: bizId, staffId: appt.staffId,
       apptDate: appt.date, startTime: appt.startTime, bookedAt: appt.createdAt,
+      targetDate, targetStartTime,
     });
-    if (policy.blocked) return CANCELLATION_WINDOW_MESSAGE(policy.minHours);
+    if (policy.blocked) return CANCELLATION_WINDOW_MESSAGE(policy.minHours, await getShopPhone(bizId));
   }
 
   // Same time/date as now? Nothing to do.

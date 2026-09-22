@@ -68,6 +68,9 @@ export async function checkCancellationWindow(opts: {
   apptDate: Date;
   startTime: string;
   bookedAt: Date;
+  /** Where the customer wants to move to. Moving EARLIER is never blocked (see below). */
+  targetDate?: string;
+  targetStartTime?: string;
 }): Promise<{ blocked: boolean; minHours: number }> {
   const minHours = await getEffectiveCancellationHours(opts.businessId, opts.staffId);
   if (minHours <= 0) return { blocked: false, minHours };
@@ -75,13 +78,28 @@ export async function checkCancellationWindow(opts: {
   const hoursLeft = hoursUntilAppointment(opts.apptDate, opts.startTime);
   if (hoursLeft >= minHours) return { blocked: false, minHours };
 
+  // Moving EARLIER costs the shop nothing — the customer still comes, and the
+  // slot that frees up is later, so there's more time to fill it. The policy
+  // exists to stop last-minute LOSSES, not to stop someone arriving sooner.
+  if (opts.targetDate && opts.targetStartTime) {
+    const target = hoursUntilAppointment(new Date(opts.targetDate + "T00:00:00.000Z"), opts.targetStartTime);
+    if (target < hoursLeft) return { blocked: false, minHours };
+  }
+
   const hoursAtBooking = hoursBetween(opts.bookedAt, opts.apptDate, opts.startTime);
   const wasBookedLastMinute = hoursAtBooking < minHours;
   return { blocked: !wasBookedLastMinute, minHours };
 }
 
-export const CANCELLATION_WINDOW_MESSAGE = (hours: number) =>
-  `לא ניתן לבטל/להזיז תור בפחות מ-${hours} שעות לפני המועד. ביטול בטווח הזמן הזה מחויב במחיר מלא לפי המדיניות שלנו.`;
+export const CANCELLATION_WINDOW_MESSAGE = (hours: number, shopPhone?: string | null) =>
+  `לא ניתן לבטל/להזיז תור בפחות מ-${hours} שעות לפני המועד. ביטול בטווח הזמן הזה מחויב במחיר מלא לפי המדיניות שלנו.` +
+  (shopPhone ? ` אבל תמיד אפשר להתקשר למספרה ל-${shopPhone} ולדבר ישירות עם הספר — ייתכן שהוא יאשר. הצע את זה ללקוח בכל פעם שאתה חוסם בקשה בגלל המדיניות.` : "");
+
+/** The number to give a customer who wants to talk to a barber directly. */
+export async function getShopPhone(businessId: string): Promise<string | null> {
+  const b = await prisma.business.findUnique({ where: { id: businessId }, select: { phone: true, whatsappNumber: true } });
+  return b?.phone || b?.whatsappNumber || null;
+}
 
 /** Customer-facing policy note shown on booking/my-appointments screens. null = nothing to show (no restriction). */
 export function formatCancellationPolicyMessage(hours: number, customText: string | null | undefined): string | null {

@@ -34,7 +34,7 @@ import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
-import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
+import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -1053,7 +1053,7 @@ export async function execTool(
             businessId: bizId, staffId: appt.staffId,
             apptDate: appt.date, startTime: appt.startTime, bookedAt: appt.createdAt,
           });
-          if (policy.blocked) return CANCELLATION_WINDOW_MESSAGE(policy.minHours);
+          if (policy.blocked) return CANCELLATION_WINDOW_MESSAGE(policy.minHours, await getShopPhone(bizId));
         }
 
         await prisma.appointment.update({
