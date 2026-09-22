@@ -39,12 +39,19 @@ const NONE = /אין (לנו |לו |לה |לי |שום |כלום|מקום|פנו
       for (const iso of ask.days) for (const s of pool) for (const sl of index.slots(s.id, iso, svc?.id ?? null)) { anyDay.add(sl); if (inRange(sl)) truth.add(sl); }
       const flags: string[] = [];
       const explicitDay = ask.dayLabel !== "בימים הקרובים";
-      if (explicitDay && ask.days.length === 1) {
+      // A cancel/move question quotes the customer's OWN appointment time — not an availability claim.
+      const aboutOwnAppt = /לבטל|להזיז|התור שלך|התור הקיים|הקיים שלך|להעביר/.test(reply);
+      // "אצלו" = the customer's regular barber; the checker can't resolve him → skip the none-check.
+      const pronounBarber = /אצלו|אצלה|שלו\b/.test(turn.text);
+      // "אצל X אין" where X is a barber who really has nothing → correct, not a false none.
+      const namedNone = index.staff.find(st => { const first = st.name.trim().split(/\s+/)[0]; return new RegExp("אצל " + st.name.trim().replace(/\s+/g, "\\s+") + "[^.]{0,20}אין|אצל " + first + "[^.]{0,20}אין|אין[^.]{0,25}אצל " + first).test(reply); });
+      const namedNoneTrue = namedNone ? !ask.days.some(iso => index.slots(namedNone.id, iso, svc?.id ?? null).some(inRange)) : false;
+      if (explicitDay && ask.days.length === 1 && !aboutOwnAppt) {
         const mentioned = Array.from(reply.matchAll(/(?:^|[^\d:])(\d{1,2}):(\d{2})(?!\d)/g)).map(m => `${m[1].padStart(2, "0")}:${m[2]}`);
         const bad = mentioned.filter(x => !anyDay.has(x) && !new Set(index.staff.flatMap(s => Array.from({ length: 6 }, (_, d) => index.slots(s.id, addDays(today, d), svc?.id ?? null)).flat())).has(x));
         if (bad.length) flags.push(`invented ${bad.join(",")}`);
       }
-      if (explicitDay && truth.size && NONE.test(reply) && !Array.from(truth).some(x => reply.includes(x))) flags.push(`false-none (free: ${Array.from(truth).slice(0, 5).join(",")})`);
+      if (explicitDay && truth.size && NONE.test(reply) && !pronounBarber && !namedNoneTrue && !Array.from(truth).some(x => reply.includes(x))) flags.push(`false-none (free: ${Array.from(truth).slice(0, 5).join(",")})`);
       if (flags.some(f => f.startsWith("invented"))) t.invented++;
       if (flags.some(f => f.startsWith("false-none"))) t.falseNone++;
       if (verbose || flags.length) lines.push(`   👤 ${turn.text.slice(0, 60)}  → ${reply.replace(/\s+/g, " ").slice(0, 110)}${flags.length ? "\n      ⚑ " + flags.join("; ") : ""}`);
