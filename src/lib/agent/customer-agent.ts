@@ -1503,7 +1503,7 @@ function hebDayDate(iso: string): string {
   });
   // Next week's day → say so inside the tool result, so the model repeats it.
   const d = dayDistance(iso, getBusinessNow().date);
-  return d.isNext ? base.replace(/^(יום \S+)/, "$1 הבא") : base;
+  return d.isNext ? base.replace(/^(יום [^\s,]+)/, "$1 הבא") : base;
 }
 
 const HE_WEEKDAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
