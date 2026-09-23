@@ -1,5 +1,6 @@
 "use client";
 
+import { dayDistance } from "@/lib/day-distance";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
@@ -41,16 +42,17 @@ function BackArrow({ href }: { href: string }) {
 }
 
 // ── Hebrew date label: "יום שלישי, 12 ביוני" ─────────────────────────────────
-function dateLabel(iso: string): { weekday: string; full: string; rel: string } {
+function dateLabel(iso: string): { weekday: string; full: string; rel: string; risky?: boolean } {
   const d = new Date(String(iso).slice(0, 10) + "T00:00:00");
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const diff = Math.round((d.getTime() - today.getTime()) / 86400000);
   const weekday = d.toLocaleDateString("he-IL", { weekday: "long" });
   const full = d.toLocaleDateString("he-IL", { day: "numeric", month: "long" });
-  let rel = "";
-  if (diff === 0) rel = "היום";
-  else if (diff === 1) rel = "מחר";
-  return { weekday, full, rel };
+  // Always say how far away it is — a customer who books "יום חמישי" a week out
+  // must not read the card as this coming Thursday (see day-distance.ts).
+  const dist = dayDistance(String(iso).slice(0, 10), new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10));
+  const rel = diff === 0 ? "היום" : diff === 1 ? "מחר" : dist.label;
+  return { weekday: dist.isNext ? `${weekday} הבא` : weekday, full, rel, risky: dist.risky };
 }
 
 export default function MyAppointmentsPage() {

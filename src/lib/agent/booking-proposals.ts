@@ -19,6 +19,7 @@
  *
  * Everything the model used to do here is deterministic, so it is code.
  */
+import { dayDistance } from "@/lib/day-distance";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { resolvePick } from "@/lib/closures/reply";
@@ -40,6 +41,17 @@ export function dayLabelHe(iso: string): string {
   return `ביום ${DAY[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }
 
+/** "ביום חמישי *הבא*, 2.10 (בעוד 8 ימים)" — the phrasing that stops a customer
+ *  from turning up a week early. Bold is WhatsApp bold; the site formats its own. */
+export function dayLabelWithDistance(iso: string): string {
+  const today = getBusinessNow().date;
+  const d = dayDistance(iso, today);
+  if (d.days <= 2) return d.label;
+  const dt = new Date(iso + "T00:00:00.000Z");
+  const dm = `${dt.getUTCDate()}.${dt.getUTCMonth() + 1}`;
+  return `ביום ${d.weekday}${d.isNext ? " *הבא*" : ""}, ${dm} (${d.label})`;
+}
+
 export function firstNameOf(name: string | null | undefined): string {
   // WhatsApp names sometimes carry bidi control marks (\u202a…) — never echo them.
   return (name ?? "").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().split(/\s+/)[0] || "";
@@ -47,7 +59,7 @@ export function firstNameOf(name: string | null | undefined): string {
 
 /** The fixed closing line after a code-confirmed booking. */
 export function bookedMessage(p: { staffName: string; date: string; startTime: string; originalRequest?: string | null }): string {
-  let reply = `סגור, קבעתי לך אצל ${p.staffName} ${dayLabelHe(p.date)} בשעה ${p.startTime}. נתראה 💈`;
+  let reply = `סגור, קבעתי לך אצל ${p.staffName} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}. נתראה 💈`;
   if (p.originalRequest) reply += `\n\nדרך אגב, רוצה שאעדכן אותך אם יתפנה ${p.originalRequest}?`;
   return reply;
 }
@@ -56,7 +68,7 @@ export function bookedMessage(p: { staffName: string; date: string; startTime: s
 export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
   const at = p.mentionStaff ? ` אצל ${p.staffName}` : "";
-  return `${who}רגע לפני שאני קובע לך את זה סופית — ${p.serviceName}${at} ${dayLabelHe(p.date)} בשעה ${p.startTime}\nמאשר?`;
+  return `${who}רגע לפני שאני קובע לך את זה סופית — ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
 }
 
 // ── Reply classifier ────────────────────────────────────────────────────────

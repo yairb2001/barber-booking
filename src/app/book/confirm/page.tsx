@@ -1,5 +1,6 @@
 "use client";
 
+import { dayDistance } from "@/lib/day-distance";
 import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
@@ -209,6 +210,28 @@ function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playSt
 }
 
 // ── Row helper ─────────────────────────────────────────────────────────────────
+/** How far away the appointment is — the line that stops a customer turning up
+ *  a week early. Loud on purpose between 7 and 13 days, where the mistake happens. */
+function DaysUntilBanner({ dateISO }: { dateISO: string }) {
+  if (!dateISO) return null;
+  const today = new Date();
+  const todayISO = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const d = dayDistance(dateISO, todayISO);
+  if (d.days < 0) return null;
+  const risky = d.risky;
+  return (
+    <div className={`rounded-2xl px-4 py-3 text-center border ${risky ? "bg-amber-50 border-amber-300" : "bg-slate-50 border-slate-200"}`}>
+      <p className={`text-2xl font-extrabold leading-none ${risky ? "text-amber-900" : "text-slate-900"}`}>{d.label}</p>
+      {d.days > 2 && (
+        <p className={`text-[13px] mt-1.5 ${risky ? "text-amber-900" : "text-slate-600"}`}>
+          {d.isNext ? <>יום {d.weekday} <b className="underline decoration-2 underline-offset-2">הבא</b></> : <>יום {d.weekday}</>}
+          {risky && <span className="block text-[11px] mt-0.5 font-semibold">שים לב — לא יום {d.weekday} הקרוב</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function SummaryRow({ label, value, large, compact }: { label: string; value: React.ReactNode; large?: boolean; compact?: boolean }) {
   return (
     <div className={`flex justify-between items-center px-5 ${compact ? "py-1.5" : "py-3.5"} border-b border-slate-100 last:border-0`}>
@@ -706,6 +729,8 @@ function ConfirmPageContent() {
             );
           })()}
 
+          <DaysUntilBanner dateISO={successDate} />
+
           {/* Summary */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <SummaryRow label="ספר" value={searchParams.get("staffName")} />
@@ -792,6 +817,7 @@ function ConfirmPageContent() {
           <div className="px-5 pt-2 pb-0.5">
             <p className="text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase">סיכום התור</p>
           </div>
+          <div className="px-3 pb-2"><DaysUntilBanner dateISO={date} /></div>
           <SummaryRow label="ספר" value={staffInfo?.name || "..."} compact />
           <SummaryRow label="שירות" value={serviceInfo?.name || "..."} compact />
           <SummaryRow label="תאריך" value={dateLabel} compact />

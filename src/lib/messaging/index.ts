@@ -1,3 +1,5 @@
+import { dayDistance } from "@/lib/day-distance";
+import { getBusinessNow } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
 import { DEFAULT_CALL_NEW_MISSED_TEMPLATE, DEFAULT_CALL_NEW_ANSWERED_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_TEMPLATE } from "@/lib/automations/call-templates";
@@ -516,7 +518,7 @@ export const DEFAULT_CONFIRMATION_TEMPLATE =
 `שלום {{name}} 👋
 
 תור נקבע בהצלחה ב*{{business}}* ✂️
-📅 {{date}}
+📅 {{date}}{{days_line}}
 🕒 {{time}} – {{end_time}}
 💈 {{service}} אצל {{staff}}
 💰 {{price}}₪{{address_line}}
@@ -702,6 +704,8 @@ export const TEMPLATE_DEFS = {
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "days_line",    label: "שורת \"בעוד X ימים\" (ריקה להיום/מחר/מחרתיים)" },
+      { key: "days_until",   label: "\"בעוד 8 ימים (יום חמישי *הבא*)\"" },
       { key: "calendar_line", label: "קישור להוספה ליומן" },
     ],
   },
@@ -718,6 +722,8 @@ export const TEMPLATE_DEFS = {
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "days_line",    label: "שורת \"בעוד X ימים\" (ריקה להיום/מחר/מחרתיים)" },
+      { key: "days_until",   label: "\"בעוד 8 ימים (יום חמישי *הבא*)\"" },
     ],
   },
   reminder_24h_new: {
@@ -733,6 +739,8 @@ export const TEMPLATE_DEFS = {
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "days_line",    label: "שורת \"בעוד X ימים\" (ריקה להיום/מחר/מחרתיים)" },
+      { key: "days_until",   label: "\"בעוד 8 ימים (יום חמישי *הבא*)\"" },
     ],
   },
   reminder_24h_returning: {
@@ -748,6 +756,8 @@ export const TEMPLATE_DEFS = {
       { key: "staff",        label: "שם הספר" },
       { key: "address_line", label: "כתובת" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "days_line",    label: "שורת \"בעוד X ימים\" (ריקה להיום/מחר/מחרתיים)" },
+      { key: "days_until",   label: "\"בעוד 8 ימים (יום חמישי *הבא*)\"" },
     ],
   },
   reminder_2h: {
@@ -849,6 +859,8 @@ export const TEMPLATE_DEFS = {
       { key: "price",        label: "מחיר" },
       { key: "address_line", label: "כתובת (שורה נפרדת אם קיימת)" },
       { key: "cancel_line",  label: "קישור לצפייה/ביטול תור" },
+      { key: "days_line",    label: "שורת \"בעוד X ימים\" (ריקה להיום/מחר/מחרתיים)" },
+      { key: "days_until",   label: "\"בעוד 8 ימים (יום חמישי *הבא*)\"" },
     ],
   },
   rhythm_nudge: {
@@ -1045,10 +1057,15 @@ export function confirmationText(
     date: params.dateISO, time: params.startTime, duration: params.durationMinutes || 30,
     details: `אצל ${params.staffName}`, location: params.address || "",
   }) : "";
+  // How far away it is, spelled out — a customer reading only this message must
+  // not think "יום חמישי" is the one two days from now (see day-distance.ts).
+  const dist = params.dateISO ? dayDistance(params.dateISO, getBusinessNow().date) : null;
   return applyTemplate(tmpl, {
     name:         firstName(params.customerName),
     business:     formatBusinessName(params.businessName),
     date:         params.dateLabel,
+    days_until:   dist && dist.days > 2 ? (dist.isNext ? `${dist.label} (יום ${dist.weekday} *הבא*)` : dist.label) : (dist?.label ?? ""),
+    days_line:    dist && dist.days > 2 ? `\n⏳ ${dist.isNext ? `${dist.label} — יום ${dist.weekday} *הבא*` : dist.label}` : "",
     time:         params.startTime,
     end_time:     params.endTime,
     staff:        params.staffName,

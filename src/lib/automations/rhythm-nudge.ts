@@ -95,7 +95,10 @@ export function dayLabel(iso: string, todayISO: string): string {
   if (diff === 0) return "היום";
   if (diff === 1) return "מחר";
   const d = new Date(iso + "T00:00:00Z");
-  return `יום ${HEB_DAYS[getDayOfWeekISO(iso)]} ה-${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
+  // "הבא" whenever that weekday comes round before the offered date — a customer
+  // reading "יום חמישי" a week out otherwise plans for the wrong one.
+  const next = diff >= 7 ? " *הבא*" : "";
+  return `יום ${HEB_DAYS[getDayOfWeekISO(iso)]}${next} ה-${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }
 /**
  * Options grouped by day, one line per day, so the message reads as a list:
