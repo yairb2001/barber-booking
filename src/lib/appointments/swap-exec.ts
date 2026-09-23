@@ -129,7 +129,7 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     const text =
       `היי ${firstName(p.customer.name)}, התור שלך ב-${business.name} ל-${hebDate(p.date)} ` +
       `בשעה ${p.startTime} בוטל. מוזמן/ת לתאם תור חדש מתי שנוח 🙏`;
-    await recordInConversation(proposal.requesterConversationId, text);
+    await recordInConversationByPhone(business.id, p.customer.phone, text);
     try {
       await sendMessage({
         businessId: business.id,
@@ -194,9 +194,11 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
       newStaffName: newStaff?.name || p.staff.name,
       serviceName: p.service.name,
     }, business.appointmentMovedTemplate);
-    // Mirror into the requester's agent chat so the thread stays coherent
-    // (otherwise it looks like the agent went silent after "I'm checking").
-    await recordInConversation(proposal.requesterConversationId, text);
+    // Mirror into the PRIMARY customer's own thread. Not requesterConversationId:
+    // in the admin-initiated flow that field holds the CANDIDATE's conversation
+    // (it is set to whoever was asked, so their "כן" lands in the right thread),
+    // and mirroring there put one customer's confirmation in another's chat.
+    await recordInConversationByPhone(business.id, p.customer.phone, text);
     // Awaited + logged so a send failure is visible (was fire-and-forget).
     try {
       await sendMessage({
@@ -296,7 +298,7 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
   // Requester (primary): mirror the confirmation into their agent chat thread,
   // then send via WhatsApp. Awaited + logged individually so one failure doesn't
   // silently swallow the other and so failures are actually visible.
-  await recordInConversation(proposal.requesterConversationId, primaryConfirm);
+  await recordInConversationByPhone(business.id, p.customer.phone, primaryConfirm);
   try {
     await sendMessage({
       businessId: business.id,
