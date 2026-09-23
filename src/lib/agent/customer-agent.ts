@@ -109,12 +109,46 @@ async function callerCustomerId(bizId: string, callerPhone?: string): Promise<st
  * though — skips silently rather than interrupting the conversation to ask
  * for one just for this side effect.
  */
+/**
+ * What hours did the customer ask about? Pure text parsing (no model call) of
+ * his own message, so a freed slot only pings people it actually suits.
+ * Returns the time-of-day bucket and, when he named an hour, that hour.
+ */
+export function parseRequestedTime(text: string): { timeOfDay: "morning" | "afternoon" | "evening" | "any"; time: string | null } {
+  const t = (text || "").replace(/[־–—]/g, "-");
+  let time: string | null = null;
+  const hhmm = t.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
+  if (hhmm) {
+    let h = Number(hhmm[1]);
+    // "ב-5:30" in an evening context means 17:30 — barbershop hours start ~09:00.
+    if (h < 8 && /אחה"?צ|אחרי הצהריים|בערב|ערב/.test(t)) h += 12;
+    else if (h >= 1 && h <= 7) h += 12; // 1:00–7:00 is never a barbershop morning slot
+    time = `${String(h).padStart(2, "0")}:${hhmm[2]}`;
+  } else {
+    const bare = t.match(/\b(?:ב|מ|אחרי|לפני)?-?\s?([01]?\d|2[0-3])\b\s*(?:בערב|בבוקר|בצהריים)?/);
+    if (bare && /שעה|ב-?\d|בערב|בבוקר|בצהריים/.test(t)) {
+      let h = Number(bare[1]);
+      if (h >= 1 && h <= 7) h += 12;
+      if (h >= 8 && h <= 22) time = `${String(h).padStart(2, "0")}:00`;
+    }
+  }
+  const timeOfDay: "morning" | "afternoon" | "evening" | "any" =
+    /בוקר|מוקדם/.test(t) ? "morning"
+    : /ערב|מאוחר|אחרי 1[7-9]|אחרי 2[0-2]/.test(t) ? "evening"
+    : /צהר/.test(t) ? "afternoon"
+    : time ? (Number(time.slice(0, 2)) < 12 ? "morning" : Number(time.slice(0, 2)) < 17 ? "afternoon" : "evening")
+    : "any";
+  return { timeOfDay, time };
+}
+
 async function noteImplicitWaitlistInterest(opts: {
   bizId: string;
   callerPhone: string;
   date: string;
   staffId?: string;
   serviceId?: string;
+  /** The customer's own words for this ask — parsed for the hours he wanted. */
+  askText?: string;
 }): Promise<void> {
   const { bizId, callerPhone, date, staffId, serviceId } = opts;
   if (!serviceId) return;
@@ -134,6 +168,7 @@ async function noteImplicitWaitlistInterest(opts: {
     }
 
     const dateObj = new Date(`${date}T00:00:00.000Z`);
+    const want = parseRequestedTime(opts.askText ?? "");
     const existing = await prisma.waitlist.findFirst({
       where: {
         businessId: bizId,
@@ -143,9 +178,18 @@ async function noteImplicitWaitlistInterest(opts: {
         date: dateObj,
         status: { in: ["waiting", "notified"] },
       },
-      select: { id: true },
+      select: { id: true, preferredTimeOfDay: true, preferredTime: true },
     });
-    if (existing) return; // already noted this exact ask — don't duplicate
+    if (existing) {
+      // Same day asked again, this time with hours ("ומה יש בערב?") — sharpen it.
+      if ((want.timeOfDay !== "any" && existing.preferredTimeOfDay === "any") || (want.time && !existing.preferredTime)) {
+        await prisma.waitlist.update({ where: { id: existing.id }, data: {
+          ...(want.timeOfDay !== "any" ? { preferredTimeOfDay: want.timeOfDay } : {}),
+          ...(want.time ? { preferredTime: want.time } : {}),
+        } });
+      }
+      return; // already noted this exact ask — don't duplicate
+    }
 
     await prisma.waitlist.create({
       data: {
@@ -155,7 +199,8 @@ async function noteImplicitWaitlistInterest(opts: {
         serviceId,
         date: dateObj,
         isFlexible: false,
-        preferredTimeOfDay: "any",
+        preferredTimeOfDay: want.timeOfDay,
+        preferredTime: want.time,
         status: "waiting",
         source: "declined_offer",
       },
@@ -507,6 +552,8 @@ export async function execTool(
   conversationId: string,
   callerPhone: string,
   sandbox?: { toolLog: string[]; proposalPhone?: string },
+  /** The customer's message that triggered this turn — parsed for the hours he asked about. */
+  askText?: string,
 ): Promise<string> {
   if (sandbox && MUTATING_TOOLS.has(name)) {
     sandbox.toolLog.push(`${name}(${JSON.stringify(input)})`);
@@ -612,7 +659,7 @@ export async function execTool(
         }
         if (!byStaff.length) {
           console.warn(`[agent] get_available_slots returned empty (after retry) — biz=${bizId} date=${date} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"}`);
-          if (!sandbox) void noteImplicitWaitlistInterest({ bizId, callerPhone, date, staffId: inputStaffId, serviceId: inputServiceId });
+          if (!sandbox) void noteImplicitWaitlistInterest({ bizId, callerPhone, date, staffId: inputStaffId, serviceId: inputServiceId, askText });
           return `אין תורים פנויים ב${hebDayDate(date)} (${date}).`;
         }
         const header = `${hebDayDate(date)} (${date}):`;
@@ -2281,6 +2328,7 @@ export async function runCustomerAgent(opts: {
           // customer's data; mutating tools are simulated in sandbox anyway.
           sandbox?.contextPhone ?? phone,
           sandbox,
+          incomingText,
         );
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 

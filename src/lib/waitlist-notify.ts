@@ -76,6 +76,16 @@ export function matchesTimePreference(startTime: string, pref: string): boolean 
   return hour >= start && hour < end;
 }
 
+/** He named an hour ("יש ב-18:30?") — only ping him for slots near it. */
+export const PREFERRED_TIME_TOLERANCE_MIN = 75;
+export function matchesEntryTime(startTime: string, entry: { preferredTimeOfDay: string | null; preferredTime: string | null }): boolean {
+  if (entry.preferredTime) {
+    const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    return Math.abs(mins(startTime) - mins(entry.preferredTime)) <= PREFERRED_TIME_TOLERANCE_MIN;
+  }
+  return matchesTimePreference(startTime, entry.preferredTimeOfDay || "any");
+}
+
 // ── Notification triggers ─────────────────────────────────────────────────────
 
 /**
@@ -213,8 +223,20 @@ async function triggerWaitlist(opts: {
 
     // For cancellations: only notify if the cancelled slot matches their preference
     if (triggerType === "cancellation" && startTime) {
-      if (!matchesTimePreference(startTime, pref)) continue;
+      if (!matchesEntryTime(startTime, entry)) continue;
       if (!(await isSlotStillOpen(entry.service.id))) continue;
+    }
+
+    // Agent-registered interest: does he already hold an appointment? Then the
+    // freed slot is a SWAP offer ("רוצה שאחליף?"), never a second booking.
+    let existingAppointment: string | undefined;
+    if (entry.source === "declined_offer") {
+      const upcoming = await prisma.appointment.findFirst({
+        where: { businessId, customerId: (entry as { customerId?: string }).customerId, status: { in: ["pending", "confirmed"] }, date: { gte: new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z") } },
+        orderBy: [{ date: "asc" }, { startTime: "asc" }],
+        select: { date: true, startTime: true },
+      }).catch(() => null);
+      if (upcoming) existingAppointment = `${upcoming.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })} ב-${upcoming.startTime}`;
     }
 
     tasks.push(
@@ -224,7 +246,7 @@ async function triggerWaitlist(opts: {
         triggerType,
         business.slug,
         business.waitlistNotifyTemplate,
-        { freedTime: triggerType === "cancellation" ? startTime : undefined, immediate },
+        { freedTime: triggerType === "cancellation" ? startTime : undefined, immediate, existingAppointment },
       ),
     );
   }
@@ -292,6 +314,8 @@ export type WaitlistEntryForNotify = {
   businessId: string;
   date: Date;
   preferredTimeOfDay: string | null;
+  /** Exact hour he asked about, when he named one. */
+  preferredTime?: string | null;
   customer: { name: string; phone: string };
   service: { name: string };
   staff: { name: string } | null;
@@ -327,6 +351,8 @@ export function sendWaitlistEntryNotification(
     freedTime?: string;
     /** true → send right now; false/undefined → enqueue for the drip-queue. */
     immediate?: boolean;
+    /** "מחר ב-14:00" — he already has one, so offer a swap instead of a second booking. */
+    existingAppointment?: string;
   },
 ) {
   const { freedTime, immediate } = opts ?? {};
@@ -358,9 +384,14 @@ export function sendWaitlistEntryNotification(
   if (entry.source === "declined_offer") {
     const staffLine = staffName ? ` אצל ${staffName}` : "";
     const openLabel = triggerType === "day_open" ? "התפנה יום" : `התפנה תור${timeLabel ? ` ${timeLabel}` : ""}`;
-    body =
-      `היי ${firstName(entry.customer.name)}, שאלת אצלנו על ${entry.service.name}${staffLine} ב-${dateLabel} ולא היה מקום — ` +
-      `${openLabel}. מעניין אותך?`;
+    // He settled for another time and already holds an appointment → this is a
+    // swap offer, not a second booking. Written in code (never by the model) so
+    // the wording can't drift, and only for entries the agent registered.
+    body = opts?.existingAppointment
+      ? `היי ${firstName(entry.customer.name)}, שאלת על ${dateLabel}${staffLine} ולא היה מקום אז — ${openLabel}. ` +
+        `יש לך תור ${opts.existingAppointment} — רוצה שאחליף לזה?`
+      : `היי ${firstName(entry.customer.name)}, שאלת אצלנו על ${entry.service.name}${staffLine} ב-${dateLabel} ולא היה מקום — ` +
+        `${openLabel}. רוצה שאתפוס לך?`;
   } else {
     // Render the owner's editable template (or the built-in default).
     body = applyTemplate(customTemplate || DEFAULT_WAITLIST_NOTIFY_TEMPLATE, {

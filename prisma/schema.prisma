@@ -553,6 +553,10 @@ model Waitlist {
   isFlexible   Boolean  @default(false) @map("is_flexible")
   status              String   @default("waiting") // waiting, notified, booked, expired, awaiting_declined_confirm
   preferredTimeOfDay  String?  @map("preferred_time_of_day") // morning | afternoon | any
+  /// Exact "HH:MM" the customer asked about ("יש ב-18:30?"). When set, a freed
+  /// slot must fall within PREFERRED_TIME_TOLERANCE of it — the time-of-day
+  /// bucket alone is too coarse for someone who named an hour.
+  preferredTime       String?  @map("preferred_time")
   // "explicit" — customer actively asked to be waitlisted (join_waitlist tool,
   // the public /book waitlist form, or an admin manually adding one). Shown in
   // the admin waitlist screen/calendar badges as normal.
