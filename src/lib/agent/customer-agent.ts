@@ -13,6 +13,7 @@
  *  5. Save assistant reply + send via Green API
  */
 
+import { dayDistance } from "@/lib/day-distance";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { computeCustomerInsights } from "@/lib/customer-insights";
@@ -1497,9 +1498,12 @@ export function defaultAgentBody(agentName: string, businessName: string): strin
  *  or labels a date "tomorrow" when it isn't). Anchored at noon UTC so the
  *  calendar day never shifts across the timezone boundary. */
 function hebDayDate(iso: string): string {
-  return new Date(`${iso}T12:00:00.000Z`).toLocaleDateString("he-IL", {
+  const base = new Date(`${iso}T12:00:00.000Z`).toLocaleDateString("he-IL", {
     weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jerusalem",
   });
+  // Next week's day → say so inside the tool result, so the model repeats it.
+  const d = dayDistance(iso, getBusinessNow().date);
+  return d.isNext ? base.replace(/^(יום \S+)/, "$1 הבא") : base;
 }
 
 const HE_WEEKDAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];

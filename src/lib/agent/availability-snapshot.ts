@@ -13,6 +13,7 @@
  * turn): slots are listed explicitly ("13:00 · 13:30"), closed
  * days are one word, and the block is only injected in booking contexts.
  */
+import { dayDistance } from "@/lib/day-distance";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
@@ -64,7 +65,9 @@ export async function buildAvailabilitySnapshot(p: {
   const lines: string[] = [];
   for (let d = 0; d < days; d++) {
     const iso = addDaysISO(today, d);
-    const dayName = d === 0 ? "היום" : d === 1 ? "מחר" : DAY[getDayOfWeekISO(iso)];
+    // "הבא" on next week's days — a customer offered "רביעי" on Thursday plans
+    // for the wrong Wednesday otherwise (see day-distance.ts).
+    const dayName = d === 0 ? "היום" : d === 1 ? "מחר" : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
     const dd = new Date(iso + "T00:00:00.000Z");
     const parts: string[] = [];
     for (const s of index.staff) {
