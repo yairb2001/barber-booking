@@ -46,6 +46,13 @@ export async function GET(req: NextRequest) {
     where.staffId = staffIdParam;
   }
 
+  // Hidden appointments are dropped from the calendar grid for EVERY barber
+  // (?includeHidden=1 brings them back for the 👁 review mode). Nothing else
+  // filters on hiddenAt — revenue, stats, rhythm, history and availability all
+  // keep counting these appointments exactly as before.
+  const includeHidden = searchParams.get("includeHidden") === "1";
+  if (!includeHidden) where.hiddenAt = null;
+
   // Narrow relations: the calendar reads a handful of fields, and full rows
   // (staff.settings, staff.passwordHash, customer.notes…) made a week ~470KB.
   const appointments = await prisma.appointment.findMany({
@@ -88,7 +95,7 @@ export async function GET(req: NextRequest) {
     // Same-day back-to-back bookings (father + son on one card): star only the first block.
     const isFirstVisit = !a.customer?.knownBefore && !a.status.startsWith("cancelled") && firstByCustomer.get(a.customerId) === a.date.getTime()
       && !appointments.some(o => o.customerId === a.customerId && o.date.getTime() === a.date.getTime() && !o.status.startsWith("cancelled") && o.startTime < a.startTime);
-    return { ...a, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0), isFirstVisit };
+    return { ...a, hiddenAt: a.hiddenAt, customerNoShows: acked ? 0 : (noShowByCustomer.get(a.customerId) || 0), isFirstVisit };
   });
   mark("flags");
   // Server-Timing lets us read where the time goes from the browser / curl.

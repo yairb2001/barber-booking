@@ -410,6 +410,12 @@ model Appointment {
 
   recurringId    String?  @map("recurring_id")
   closureId      String?  @map("closure_id") // set when cancelled by a calendar closure (specs/calendar-closure.md)
+  // Hidden from the calendar grid only — a barber tidying a past slot out of the
+  // view. Purely visual: revenue, stats, rhythm, history and availability all
+  // still count this appointment exactly as before. Only allowed once the
+  // appointment's time has arrived, and only by its own barber (or the owner).
+  hiddenAt       DateTime? @map("hidden_at")
+  hiddenByStaffId String?  @map("hidden_by_staff_id")
 
   business       Business @relation(fields: [businessId], references: [id])
   customer       Customer @relation(fields: [customerId], references: [id])

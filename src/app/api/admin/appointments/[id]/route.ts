@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
-import { timeToMinutes } from "@/lib/utils";
+import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { sendProactiveMessage, cancellationText, noShowText } from "@/lib/messaging";
 import { pushToOwner } from "@/lib/native/push";
@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: params.id },
     select: {
       status: true, date: true, staffId: true, startTime: true, businessId: true,
-      serviceId: true, endTime: true, price: true,
+      serviceId: true, endTime: true, price: true, hiddenAt: true,
     },
   });
   if (!before) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -38,6 +38,35 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!perms.canViewAllCalendars) {
       return NextResponse.json({ error: "אין הרשאה לתור זה" }, { status: 403 });
     }
+  }
+
+  // ── Hide / unhide on the calendar (visual only) ───────────────────────────
+  // Opt-in per business (settings.hideAppointments). Allowed only once the
+  // appointment's time has arrived — a future booking can never be hidden — and
+  // only by the barber it belongs to (the owner may hide any). Nothing here
+  // touches status, revenue or availability: the row is untouched apart from
+  // the two hidden_* columns.
+  if (body.hidden !== undefined) {
+    const biz = await prisma.business.findUnique({ where: { id: before.businessId }, select: { settings: true } });
+    let enabled = false;
+    try { enabled = JSON.parse(biz?.settings || "{}").hideAppointments === true; } catch { /* off */ }
+    if (!enabled) return NextResponse.json({ error: "הסתרת תורים לא מופעלת לעסק הזה" }, { status: 400 });
+    if (!session.isOwner && session.staffId !== before.staffId) {
+      return NextResponse.json({ error: "אפשר להסתיר רק תורים שלך" }, { status: 403 });
+    }
+    if (body.hidden === true) {
+      const now = getBusinessNow();
+      const dateISO = before.date.toISOString().slice(0, 10);
+      const started = dateISO < now.date || (dateISO === now.date && timeToMinutes(before.startTime) <= now.minutes);
+      if (!started) return NextResponse.json({ error: "אפשר להסתיר רק תור שזמנו כבר הגיע" }, { status: 400 });
+    }
+    await prisma.appointment.update({
+      where: { id: params.id },
+      data: body.hidden === true
+        ? { hiddenAt: new Date(), hiddenByStaffId: session.staffId ?? null }
+        : { hiddenAt: null, hiddenByStaffId: null },
+    });
+    return NextResponse.json({ ok: true, hidden: body.hidden === true });
   }
 
   // Build update data

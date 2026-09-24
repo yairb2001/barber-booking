@@ -36,6 +36,9 @@ const DragActiveCtx = React.createContext<boolean>(false);
 // Business feature: appointment confirmations ("reply 1"). When on, upcoming
 // appointments without confirmedAt render with a dashed border.
 const ConfirmationsCtx = React.createContext<boolean>(false);
+/** Opt-in per business (settings.hideAppointments): a barber can take a past
+ *  appointment off the calendar grid. Visual only — every count still includes it. */
+const HideApptsCtx = React.createContext<boolean>(false);
 
 // Detects narrow viewports so draft blocks etc. can switch to a vertical
 // stacked layout instead of the squished horizontal pill that happens in
@@ -223,6 +226,7 @@ type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
   customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
+  hiddenAt?: string | null;  // hidden from the calendar grid (visual only)
   isFirstVisit?: boolean;   // ★ the customer's first appointment here (unless marked "known before")
   confirmedAt?: string | null; // customer replied "1" to the reminder (confirmations feature)
   customServiceName?: string | null;
@@ -808,6 +812,11 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
+      )}
+      {appt.hiddenAt && (
+        <span className="absolute inset-0 rounded-[inherit] bg-neutral-200/60 pointer-events-none flex items-start justify-center pt-0.5">
+          <span className="text-[9px] font-bold text-neutral-600 bg-white/85 rounded px-1">מוסתר</span>
+        </span>
       )}
       {(!!appt.customerNoShows || appt.isFirstVisit) && (
         <span className="absolute top-0.5 right-0.5 z-10 flex gap-0.5 text-[9px] leading-none">
@@ -1790,6 +1799,30 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [hasNote, setHasNote] = useState(false);
   // "עוד פעולות" fold + the permanent (per-customer) note editor state.
   const [moreOpen, setMoreOpen] = useState(false);
+  const hideApptsOn = React.useContext(HideApptsCtx);
+  const [hiding, setHiding] = useState(false);
+  const [hiddenNow, setHiddenNow] = useState<boolean | null>(null);
+  const isHidden = hiddenNow ?? !!appt.hiddenAt;
+  // Only once its time has arrived — a future booking can never be taken off the grid.
+  const apptStarted = (() => {
+    const d = new Date(appt.date).toISOString().slice(0, 10);
+    const now = new Date();
+    const todayISO = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const [h, m] = appt.startTime.split(":").map(Number);
+    return d < todayISO || (d === todayISO && h * 60 + m <= now.getHours() * 60 + now.getMinutes());
+  })();
+  async function toggleHidden() {
+    setHiding(true);
+    try {
+      const res = await fetch(`/api/admin/appointments/${appt.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden: !isHidden }),
+      });
+      if (res.ok) { setHiddenNow(!isHidden); onReload?.(); }
+      else { const j = await res.json().catch(() => ({})); alert(j.error || "לא הצלחנו להסתיר"); }
+    } catch { /* ignore */ }
+    setHiding(false);
+  }
   const [permNote, setPermNote] = useState("");
   const [permDraft, setPermDraft] = useState("");
   const [permSaving, setPermSaving] = useState(false);
@@ -2837,6 +2870,17 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           </button>
         </div>
         {moreOpen && (<>
+        {hideApptsOn && (apptStarted || isHidden) && (
+          <div className="px-4 py-2 border-b border-neutral-100">
+            <button onClick={toggleHidden} disabled={hiding}
+              className={`w-full text-right py-2 px-3 rounded-lg border text-xs font-medium transition disabled:opacity-50 ${isHidden ? "border-amber-300 bg-amber-50 text-amber-800" : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"}`}>
+              {hiding ? "רגע…" : isHidden ? "👁 בטל הסתרה — התור יחזור ליומן" : "🙈 הסתר מהיומן"}
+            </button>
+            <p className="text-[10.5px] text-neutral-400 mt-1">
+              {isHidden ? "התור מוסתר מהיומן של כל הצוות. הנתונים בדשבורד לא הושפעו." : "מעלים את התור מהיומן של כל הצוות. ההכנסות, ההיסטוריה והסטטיסטיקות נשארות כמו שהן."}
+            </p>
+          </div>
+        )}
         <div className="px-4 py-2 border-b border-neutral-100">
           {appt.recurringId ? (
             <button onClick={() => setShowCancelRecurring(v => !v)}
@@ -4448,6 +4492,9 @@ export default function AdminCalendar() {
   // Calendar display hours — loaded from business settings
   const [calStart, setCalStart] = useState(DAY_START);
   const [confirmationsOn, setConfirmationsOn] = useState(false);
+  const [hideApptsOn, setHideApptsOn] = useState(false);
+  // 👁 review mode — brings hidden appointments back into the grid, greyed out.
+  const [showHidden, setShowHidden] = useState(false);
   const [calEnd, setCalEnd] = useState(DAY_END);
   // Business-default booking horizon (days). Per-staff overrides live in staff.settings.
   const [bizHorizon, setBizHorizon] = useState(30);
@@ -5039,7 +5086,7 @@ export default function AdminCalendar() {
     }
     setServices(sv);
     if (biz && typeof biz.bookingHorizonDays === "number") setBizHorizon(biz.bookingHorizonDays);
-    if (biz?.settings) { try { setConfirmationsOn(JSON.parse(biz.settings).apptConfirmations === true); } catch { /* ignore */ } }
+    if (biz?.settings) { try { const bs = JSON.parse(biz.settings); setConfirmationsOn(bs.apptConfirmations === true); setHideApptsOn(bs.hideAppointments === true); } catch { /* ignore */ } }
     if (isFirstLoad) {
       let serverStart = DAY_START;
       let serverEnd = DAY_END;
@@ -5137,7 +5184,7 @@ export default function AdminCalendar() {
     const endDate   = dates[dates.length - 1];
     // One range request for the whole view (was one request per day — 7 for a week, ~30 for a month).
     const [apptResults, overridesRaw] = await Promise.all([
-      fetch(`/api/admin/appointments?from=${startDate}&to=${endDate}`).then(r => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`/api/admin/appointments?from=${startDate}&to=${endDate}${showHidden ? "&includeHidden=1" : ""}`).then(r => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`/api/admin/schedule-overrides?startDate=${startDate}&endDate=${endDate}`)
         .then(r => r.ok ? r.json() : [])
         .catch(() => []),
@@ -5160,7 +5207,7 @@ export default function AdminCalendar() {
       .then(d => setSwapProposals(Array.isArray(d) ? d : []))
       .catch(() => {});
     setLoading(false);
-  }, [getDates, allStaff]);
+  }, [getDates, allStaff, showHidden]);
 
   useEffect(() => { loadAppointments(); }, [loadAppointments]);
 
@@ -5963,7 +6010,7 @@ export default function AdminCalendar() {
         {/* calendar can't slide out from under the finger mid-move.          */}
         <div ref={gridRef} className="flex-1 overflow-y-auto overflow-x-auto"
           style={(dragMove || breakDrag) ? { touchAction: "none", overscrollBehavior: "contain" } : undefined}>
-          <ConfirmationsCtx.Provider value={confirmationsOn}>
+          <ConfirmationsCtx.Provider value={confirmationsOn}><HideApptsCtx.Provider value={hideApptsOn}>
           <DragActiveCtx.Provider value={dragMove !== null || breakDrag !== null}>
           <TapGuardCtx.Provider value={tapGuardUntil}>
           <HHCtx.Provider value={hourHeight}>
@@ -6251,7 +6298,7 @@ export default function AdminCalendar() {
           </HHCtx.Provider>
           </TapGuardCtx.Provider>
           </DragActiveCtx.Provider>
-          </ConfirmationsCtx.Provider>
+          </HideApptsCtx.Provider></ConfirmationsCtx.Provider>
         </div>
       </div>
     );
@@ -6449,6 +6496,13 @@ export default function AdminCalendar() {
               <button onClick={() => setHourHeight(h => Math.min(220, h + 20))} disabled={hourHeight >= 220}
                 className="w-7 h-7 flex items-center justify-center text-base font-bold text-neutral-700 disabled:text-neutral-300 hover:bg-white rounded-md transition">+</button>
             </div>
+          )}
+
+          {hideApptsOn && (
+            <button onClick={() => setShowHidden(v => !v)} title={showHidden ? "חזור ליומן הרגיל" : "הצג תורים מוסתרים"}
+              className={`shrink-0 px-2 py-1 rounded-lg text-xs font-medium border transition ${showHidden ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50"}`}>
+              {showHidden ? "👁 מוסתרים" : "👁"}
+            </button>
           )}
 
           {isMobile && (
