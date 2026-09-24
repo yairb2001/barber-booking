@@ -1619,8 +1619,9 @@ const STATUS_META: Record<string, { label: string; badgeClass: string }> = {
   no_show:             { label: "לא הגיע", badgeClass: "bg-neutral-100 text-neutral-500" },
 };
 
-function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkSwap, onApproveSwap, confirmationsOn = false }: {
+function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkSwap, onApproveSwap, confirmationsOn = false, hideApptsOn = false }: {
   confirmationsOn?: boolean;
+  hideApptsOn?: boolean;
   appt: Appt; onClose: () => void;
   onChange: (id: string, status: string) => void;
   onReload?: () => void;
@@ -1799,7 +1800,6 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [hasNote, setHasNote] = useState(false);
   // "עוד פעולות" fold + the permanent (per-customer) note editor state.
   const [moreOpen, setMoreOpen] = useState(false);
-  const hideApptsOn = React.useContext(HideApptsCtx);
   const [hiding, setHiding] = useState(false);
   const [hiddenNow, setHiddenNow] = useState<boolean | null>(null);
   const isHidden = hiddenNow ?? !!appt.hiddenAt;
@@ -6613,6 +6613,7 @@ export default function AdminCalendar() {
       )}
       {selectedAppt && <ApptModal
         confirmationsOn={confirmationsOn}
+        hideApptsOn={hideApptsOn}
         appt={selectedAppt}
         onClose={() => setSelectedAppt(null)}
         onChange={handleStatusChange}
