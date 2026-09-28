@@ -480,8 +480,8 @@ export default function AutomationsSettingsPage() {
 
 
 // ── "הגיע הזמן לתור" — rhythm nudge (specs/rhythm-nudge.md) ──────────────────
-type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null; newCustomerDays: number | null; quietAfterActivityDays: number };
-const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null, newCustomerDays: null, quietAfterActivityDays: 3 };
+type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null; newCustomerDays: number | null; quietAfterActivityDays: number; shortRhythmDays: number; shortRhythmLateDays: number };
+const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null, newCustomerDays: null, quietAfterActivityDays: 3, shortRhythmDays: 14, shortRhythmLateDays: 1 };
 
 function RhythmNudgeCard() {
   const [cfg, setCfg] = useState<RhythmCfg>(RHYTHM_DEFAULTS);
@@ -580,6 +580,16 @@ function RhythmNudgeCard() {
         <input type="number" min={0} max={30} value={cfg.quietAfterActivityDays} onChange={e => setCfg(c => ({ ...c, quietAfterActivityDays: Number(e.target.value) }))} onBlur={() => save(cfg)}
           className="w-16 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
         <p className="text-sm text-neutral-700">ימי שקט אחרי הברזה / ביטול / הודעה מהלקוח <span className="text-neutral-400 text-xs">(0 = בלי)</span></p>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap text-sm text-neutral-700">
+        <span>לקוח שמגיע כל</span>
+        <input type="number" min={0} max={60} value={cfg.shortRhythmDays} onChange={e => setCfg(c => ({ ...c, shortRhythmDays: Number(e.target.value) }))} onBlur={() => save(cfg)}
+          className="w-14 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
+        <span>ימים או פחות — רק אחרי שאיחר ב־</span>
+        <input type="number" min={0} max={14} value={cfg.shortRhythmLateDays} onChange={e => setCfg(c => ({ ...c, shortRhythmLateDays: Number(e.target.value) }))} onBlur={() => save(cfg)}
+          className="w-14 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
+        <span>ימים <span className="text-neutral-400 text-xs">(0 בשורה הראשונה = כבוי)</span></span>
       </div>
 
       {staff.length > 1 && (

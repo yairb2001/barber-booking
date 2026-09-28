@@ -32,11 +32,17 @@ export type RhythmSettings = {
   notBefore: string | null;     // YYYY-MM-DD — never send before this date (launch guard)
   newCustomerDays: number | null; // pace for one-visit customers; null = the shop's median rhythm
   quietAfterActivityDays: number; // skip anyone who no-showed / cancelled / wrote to us this recently
+  /** Fast-rhythm customers (average interval ≤ this many days) book on their own —
+   *  no heads-up before the due date for them, only once they are late. 0 = off. */
+  shortRhythmDays: number;
+  /** …and "late" means this many days past their own average. */
+  shortRhythmLateDays: number;
 };
 export const RHYTHM_DEFAULTS: RhythmSettings = {
   enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true,
   includeNewCustomers: false, excludedStaffIds: [], notBefore: null,
   newCustomerDays: null, quietAfterActivityDays: 3,
+  shortRhythmDays: 14, shortRhythmLateDays: 1,
 };
 export function getRhythmSettings(raw: string | null | undefined): RhythmSettings {
   try {
@@ -54,6 +60,8 @@ export function getRhythmSettings(raw: string | null | undefined): RhythmSetting
       notBefore: typeof r.notBefore === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.notBefore) ? r.notBefore : null,
       newCustomerDays: typeof r.newCustomerDays === "number" && isFinite(r.newCustomerDays) && r.newCustomerDays >= 1 ? Math.round(r.newCustomerDays) : null,
       quietAfterActivityDays: num(r.quietAfterActivityDays, RHYTHM_DEFAULTS.quietAfterActivityDays),
+      shortRhythmDays: num(r.shortRhythmDays, RHYTHM_DEFAULTS.shortRhythmDays),
+      shortRhythmLateDays: num(r.shortRhythmLateDays, RHYTHM_DEFAULTS.shortRhythmLateDays),
     };
   } catch { return { ...RHYTHM_DEFAULTS }; }
 }
@@ -308,8 +316,16 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       } else {
         if (recentAutoPhones.has(phone)) { skip("automation_7d"); continue; }
         const anchor = daysToDue > 0 ? dueISO : todayISO;
+        // Fast-rhythm regular (his own average ≤ shortRhythmDays): he books himself,
+        // so a heads-up before the due date is noise. Only once he's late — N days
+        // past his average — and no "day is filling up" early send either.
+        const shortRhythm = !isNew && cfg.shortRhythmDays > 0 && !!ins.avgIntervalDays && ins.avgIntervalDays <= cfg.shortRhythmDays;
         if (opts.ignoreTiming) {
           reason = `preview (due in ${daysToDue}d)`;
+        } else if (shortRhythm) {
+          if (daysToDue > -cfg.shortRhythmLateDays) { skip("short_rhythm_not_late"); continue; }
+          if (daysToDue < -PAST_DUE_WINDOW) { skip("past_window"); continue; }
+          reason = `fast rhythm (${ins.avgIntervalDays}d) — ${-daysToDue}d late`;
         } else if (daysToDue <= cfg.leadDays && daysToDue >= -PAST_DUE_WINDOW) {
           reason = daysToDue >= 0 ? `due in ${daysToDue}d (lead ${cfg.leadDays})` : `${-daysToDue}d past due`;
         } else if (daysToDue > cfg.leadDays && daysToDue <= cfg.earlyWindowDays) {
