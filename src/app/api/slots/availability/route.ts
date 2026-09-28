@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withActiveHolds } from "@/lib/slot-holds";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
@@ -61,10 +62,10 @@ export async function GET(request: Request) {
     prisma.staffScheduleOverride.findMany({
       where: { staffId, date: { gte: rangeStart, lte: rangeEnd } },
     }),
-    prisma.appointment.findMany({
+    withActiveHolds(prisma.appointment.findMany({
       where: { staffId, date: { gte: rangeStart, lte: rangeEnd }, status: { in: ["pending", "confirmed"] } },
       select: { date: true, startTime: true, endTime: true },
-    }),
+    }), { staffIds: [staffId], from: rangeStart, to: rangeEnd }),
     prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } }),
   ]);
 

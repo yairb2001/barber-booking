@@ -392,6 +392,35 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
   );
 }
 
+// ── Slot hold — a time the closure wizard offered a displaced customer. Locked
+//    for everyone else (booking pages, agent) until it expires; shown here so
+//    the barber knows why it looks free but customers can't take it. Taps pass
+//    through: the barber can still book over it by hand. ──
+type SlotHoldBlock = { id: string; staffId: string; date: string; startTime: string; endTime: string; expiresAt: string; customerName: string | null };
+function HoldBlocks({ holds, staffId, date, hourHeight, calStart }: { holds: SlotHoldBlock[]; staffId: string; date: string; hourHeight: number; calStart: number }) {
+  const now = Date.now();
+  const mine = holds.filter(h => h.staffId === staffId && h.date === date && new Date(h.expiresAt).getTime() > now);
+  if (!mine.length) return null;
+  return (
+    <>
+      {mine.map(h => {
+        const top = apptTop(h.startTime, hourHeight, calStart);
+        const height = ((toMin(h.endTime) - toMin(h.startTime)) / 60) * hourHeight;
+        const until = new Date(h.expiresAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
+        const who = h.customerName ? h.customerName.split(" ")[0] : "לקוח";
+        return (
+          <div key={h.id} title={`שמור ל${h.customerName ?? "לקוח"} (הוצע בסגירת יומן) עד ${until}`}
+            className="absolute left-0.5 right-0.5 rounded-lg border border-dashed border-violet-400 bg-violet-50/90 text-violet-700 pointer-events-none z-[5] flex flex-col items-center justify-center overflow-hidden"
+            style={{ top, height }}>
+            {height >= 14 && <span className="text-[9px] font-semibold leading-none px-1 truncate max-w-full">🔒 שמור ל{who}</span>}
+            {height >= 30 && <span className="text-violet-500 text-[8px] leading-none mt-0.5">עד {until}</span>}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 // ── Break card — looks like an appointment block, in the break (amber) palette.
 //    Tap → edit; long-press → drag to a new time/column (like a regular appt). ──
 function BreakCard({ top, height, name, startMin, endMin, isMoving, onClick, onLongPress }: {
@@ -4749,6 +4778,7 @@ export default function AdminCalendar() {
 
   // ── Swap flow ────────────────────────────────────────────────────────────────
   const [swapProposals, setSwapProposals] = useState<SwapProposal[]>([]);
+  const [slotHolds, setSlotHolds] = useState<SlotHoldBlock[]>([]);
   // When `swapMode` is active, the calendar enters "select candidates" mode:
   // tapping any other appointment toggles it as a SWAP candidate; tapping an
   // empty time slot toggles it as a MOVE candidate. Long-press / drag are
@@ -5201,6 +5231,11 @@ export default function AdminCalendar() {
       map[`${ov.staffId}|${ov.date}`] = { isWorking: ov.isWorking, slots: ov.slots, breaks: ov.breaks };
     }
     setOverrideMap(map);
+    // 🔒 closure-wizard holds in view (small; refreshed with the calendar)
+    fetch(`/api/admin/slot-holds?from=${startDate}&to=${endDate}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setSlotHolds(Array.isArray(d) ? d : []))
+      .catch(() => {});
     // Reload swap proposals (open ones across the whole business — small list, OK to load all)
     fetch("/api/admin/swap-proposals?status=open")
       .then(r => r.ok ? r.json() : [])
@@ -6057,6 +6092,7 @@ export default function AdminCalendar() {
                           movingBreak={breakDrag}
                           onBreakLongPress={(idx, br, sMin, eMin, x, y) => startBreakDrag(s.id, date, idx, br, sMin, eMin, x, y)}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date, breakIdx: idx, initial: br })} />
+                        <HoldBlocks holds={slotHolds} staffId={s.id} date={date} hourHeight={hourHeight} calStart={calStart} />
                         {/* Break drag drop-ghost */}
                         {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === date && (() => {
                           const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight, calStart);
@@ -6188,6 +6224,7 @@ export default function AdminCalendar() {
                           movingBreak={breakDrag}
                           onBreakLongPress={(idx, br, sMin, eMin, x, y) => startBreakDrag(s.id, d, idx, br, sMin, eMin, x, y)}
                           onBreakClick={(idx, br) => setEditingBreak({ staffId: s.id, date: d, breakIdx: idx, initial: br })} />
+                        <HoldBlocks holds={slotHolds} staffId={s.id} date={d} hourHeight={hourHeight} calStart={calStart} />
                         {/* Break drag drop-ghost */}
                         {breakDrag?.dropTarget?.staffId === s.id && breakDrag?.dropTarget?.date === d && (() => {
                           const ghostTop = apptTop(breakDrag.dropTarget!.startTime, hourHeight, calStart);

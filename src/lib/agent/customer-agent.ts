@@ -2237,7 +2237,7 @@ export async function runCustomerAgent(opts: {
         }
         if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds });
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null });
         customerContext += `\n${snap}`;
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }

@@ -8,6 +8,7 @@
  * nearest appointment first. Spec: specs/calendar-closure.md §3.4
  */
 import { prisma } from "@/lib/prisma";
+import { CLOSURE_HOLD_MINUTES } from "@/lib/slot-holds";
 import { sendProactiveMessage } from "@/lib/messaging/index";
 import { timeToMinutes, minutesToTime } from "@/lib/utils";
 import { planClosure, type ClosureInput, type ClosurePlan, type SlotOption } from "./plan";
@@ -77,6 +78,10 @@ export async function executeClosure(input: ClosureInput, opts: ExecuteOptions =
   const template = (opts.templateOverride?.trim() || business?.closureNoticeTemplate?.trim() || DEFAULT_CLOSURE_NOTICE_TEMPLATE);
   const dateObj = new Date(input.date + "T00:00:00.000Z");
   const expiresAt = new Date(Date.now() + HOLD_HOURS * 3600_000);
+  // The offered slots themselves are locked for a shorter while — an hour — so
+  // the shop isn't frozen for a day; after that they're bookable again, and a
+  // late "yes" on a slot someone else took is handled in reply.ts.
+  const holdExpiresAt = new Date(Date.now() + CLOSURE_HOLD_MINUTES * 60_000);
 
   // ── one transaction: closure + override + cancellations + proposals + holds ──
   const closure = await prisma.$transaction(async tx => {
@@ -110,7 +115,7 @@ export async function executeClosure(input: ClosureInput, opts: ExecuteOptions =
           data: {
             businessId: input.businessId, staffId: o.staffId, date: new Date(o.date + "T00:00:00.000Z"),
             startTime: o.startTime, endTime: minutesToTime(timeToMinutes(o.startTime) + d.service.durationMinutes),
-            customerId: d.customer.id, proposalId: proposal.id, expiresAt,
+            customerId: d.customer.id, proposalId: proposal.id, expiresAt: holdExpiresAt,
           },
         });
       }

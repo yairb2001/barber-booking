@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { activeHolds } from "@/lib/slot-holds";
 import { rateLimit } from "@/lib/rate-limit";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
@@ -252,6 +253,13 @@ export async function POST(request: NextRequest) {
       { error: "הסלוט כבר תפוס, נסה שעה אחרת" },
       { status: 409 }
     );
+  }
+
+  // A slot the closure wizard is holding for another (displaced) customer is
+  // taken until the hold expires — the customer it was offered to may book it.
+  const held = await activeHolds({ staffIds: [staffId], from: dateObj, to: dateObj, exemptCustomerId: customer?.id ?? null });
+  if (held.some(h => timeToMinutes(startTime) < timeToMinutes(h.endTime) && timeToMinutes(endTime) > timeToMinutes(h.startTime))) {
+    return NextResponse.json({ error: "הסלוט כבר תפוס, נסה שעה אחרת" }, { status: 409 });
   }
 
   // ── Existing-appointment guard ───────────────────────────────────────────────

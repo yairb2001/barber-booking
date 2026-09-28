@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { withActiveHolds } from "@/lib/slot-holds";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
@@ -115,14 +116,15 @@ export async function GET(request: Request) {
   // miss those rows and present a taken slot as free → double-booking.
   const dayStart = date;
   const dayEnd = new Date(date.getTime() + 24 * 60 * 60 * 1000);
-  const appointments = await prisma.appointment.findMany({
+  // + live holds (closure-wizard alternatives offered to another customer).
+  const appointments = await withActiveHolds(prisma.appointment.findMany({
     where: {
       staffId,
       date: { gte: dayStart, lt: dayEnd },
       status: { in: ["pending", "confirmed"] },
     },
     select: { startTime: true, endTime: true },
-  });
+  }), { staffIds: [staffId], from: dayStart, to: dayStart });
 
   let slots = generateSlots(scheduleSlots, breaks, duration, appointments);
 

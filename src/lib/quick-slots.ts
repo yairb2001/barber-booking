@@ -3,6 +3,7 @@
  * (/api/quick-slots) and the admin "הכי קרוב" popover (/api/admin/quick-slots).
  */
 import { prisma } from "@/lib/prisma";
+import { withActiveHolds } from "@/lib/slot-holds";
 import {
   generateSlots,
   timeToMinutes,
@@ -193,10 +194,10 @@ export async function computeQuickSlots(opts: {
       where: { staffId: { in: staffIds }, date: { gte: firstDate, lte: lastDate } },
       select: { staffId: true, date: true, isWorking: true, slots: true, breaks: true },
     }),
-    prisma.appointment.findMany({
+    withActiveHolds(prisma.appointment.findMany({
       where: { staffId: { in: staffIds }, date: { gte: firstDate, lte: lastDate }, status: { in: ["pending", "confirmed"] } },
       select: { staffId: true, date: true, startTime: true, endTime: true },
-    }),
+    }), { staffIds, from: firstDate, to: lastDate }),
   ]);
 
   const schedByKey = new Map<string, { isWorking: boolean; slots: string; breaks: string | null }>();

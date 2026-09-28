@@ -9,6 +9,7 @@
  * Per-customer barber blocks are the caller's job (pass blockedStaffIds).
  */
 import { prisma } from "@/lib/prisma";
+import { activeHolds } from "@/lib/slot-holds";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export type StaffRow = { id: string; name: string; isAvailable: boolean; inQuickPool: boolean; leadMinutes: number; firstLeadMinutes: number };
@@ -21,7 +22,8 @@ export type AvailabilityIndex = {
   staffByLoad(dateISO: string): StaffRow[];
 };
 
-export async function buildAvailabilityIndex(businessId: string, fromISO: string, days: number): Promise<AvailabilityIndex> {
+/** exemptHoldsCustomerId: the customer we're talking to still sees the slots held FOR him as free. */
+export async function buildAvailabilityIndex(businessId: string, fromISO: string, days: number, opts: { exemptHoldsCustomerId?: string | null } = {}): Promise<AvailabilityIndex> {
   const toISO = addDaysISO(fromISO, Math.max(0, days - 1));
   const first = new Date(fromISO + "T00:00:00.000Z"), last = new Date(toISO + "T00:00:00.000Z");
   const [biz, staffRows, services] = await Promise.all([
@@ -34,7 +36,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
     prisma.staffSchedule.findMany({ where: { staffId: { in: staffIds } }, select: { staffId: true, dayOfWeek: true, isWorking: true, slots: true, breaks: true } }),
     prisma.staffScheduleOverride.findMany({ where: { staffId: { in: staffIds }, date: { gte: first, lte: last } }, select: { staffId: true, date: true, isWorking: true, slots: true, breaks: true } }),
     prisma.appointment.findMany({ where: { staffId: { in: staffIds }, date: { gte: first, lte: last }, status: { in: ["pending", "confirmed"] } }, select: { staffId: true, date: true, startTime: true, endTime: true } }),
-  ]);
+    activeHolds({ staffIds, from: first, to: last, exemptCustomerId: opts.exemptHoldsCustomerId }).catch(() => []),
+  ]).then(([sc, ov, ap, holds]) => [sc, ov, [...ap, ...holds]] as const);
   const numFrom = (raw: string | null, key: string, d: number) => { try { const v = raw ? Number(JSON.parse(raw)[key]) : NaN; return isNaN(v) ? d : v; } catch { return d; } };
   const staff: StaffRow[] = staffRows.map(s => ({
     id: s.id, name: s.name, isAvailable: s.isAvailable, inQuickPool: s.inQuickPool,
