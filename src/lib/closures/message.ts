@@ -64,6 +64,15 @@ export function renderClosureText(
   const label = (o: typeof a) => (v.originalDate && o.date === v.originalDate ? `באותו יום ב‑${o.startTime}${who(o)}` : describeSlot(o));
   const optionA = a ? label(a) : "";
   const optionB = b ? ` או ${a && b.date === a.date ? `ב‑${b.startTime}${who(b)}` : label(b)}` : "";
+  // A custom template without {{option_a}} sent the first notice with no times at
+  // all (28.9 — the times only showed up in the reminder). The offered, held
+  // slots must always be in the message: add the line before the closing line.
+  if (a && !template.includes("{{option_a}}")) {
+    const lines = template.replace(/\s+$/, "").split("\n");
+    const offer = "אני יכול לקבוע לך במקום זאת {{option_a}}{{option_b}}.";
+    if (lines.length > 1) lines.splice(lines.length - 1, 0, offer); else lines.push(offer);
+    template = lines.join("\n");
+  }
   return template
     .replace(/\{\{name\}\}/g, firstName(v.name))
     .replace(/\{\{barber\}\}/g, firstName(v.barber))
