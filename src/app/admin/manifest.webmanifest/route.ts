@@ -20,8 +20,8 @@ import { NextResponse } from "next/server";
 export async function GET() {
   return NextResponse.json(
     {
-      name: "DOMINANT ניהול",
-      short_name: "ניהול",
+      name: "Chator",
+      short_name: "Chator",
       description: "ממשק ניהול למספרה",
       lang: "he",
       dir: "rtl",

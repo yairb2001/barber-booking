@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   manifest: "/admin/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "DOMINANT ניהול",
+    title: "Chator",
     statusBarStyle: "default",
   },
   // Management app = the Chator product icon. The customer storefront keeps

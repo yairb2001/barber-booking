@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.cutor.app",
-  appName: "Cutor",
+  appName: "Chator",
   // We don't bundle the Next.js app — the WebView loads the live Vercel URL.
   // `webDir` still needs to exist so Capacitor can sync; we create a minimal
   // placeholder in `public/native-shell/`.

@@ -93,7 +93,7 @@ export default function SettingsHubPage() {
         ))}
         {/* Which build this device is running — the first question when
             "something looks old" after a deploy. */}
-        <p className="text-[11px] text-neutral-400 text-center pt-2" dir="ltr">Cutor · build {BUILD_LABEL}</p>
+        <p className="text-[11px] text-neutral-400 text-center pt-2" dir="ltr">Chator · build {BUILD_LABEL}</p>
       </div>
     </div>
   );
