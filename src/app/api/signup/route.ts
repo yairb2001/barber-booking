@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
 import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
+import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -38,7 +39,8 @@ const TRIAL_DAYS = 14;
 
 export async function POST(req: NextRequest) {
   try {
-    const { businessName, phone, password, confirmPassword } = await req.json();
+    const { businessName, phone, password, confirmPassword, businessType: rawType } = await req.json();
+    const businessType = isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE;
 
     if (!businessName || typeof businessName !== "string" || businessName.trim().length < 2) {
       return NextResponse.json({ error: "נא להזין שם עסק" }, { status: 400 });
@@ -88,6 +90,7 @@ export async function POST(req: NextRequest) {
         slug,
         phone,
         passwordHash,
+        businessType,
         tier: "basic",
         trialEndsAt,
         whatsappStatus: "not_requested",

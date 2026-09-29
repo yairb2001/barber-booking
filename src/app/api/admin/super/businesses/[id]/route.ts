@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
+import { isBusinessType } from "@/lib/vocab";
 
 /**
  * PATCH /api/admin/super/businesses/[id]
  * Platform-owner actions on a single tenant. Accepts any subset of:
  *   monthlyPrice, setupFee, tier   → set billing
+ *   businessType                   → the vertical (barber_men | barber_women | nails | cosmetics)
  *   extendTrialDays: number        → push trialEndsAt forward N days from now
  *   markPaid: boolean              → set/clear paidAt (converts trial → paying)
  *   suspend: boolean               → set/clear suspendedAt
@@ -21,6 +23,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.setupFee === "number") data.setupFee = Math.max(0, Math.round(body.setupFee));
   if (body.setupFee === null) data.setupFee = null;
   if (typeof body.tier === "string" && ["basic", "pro", "premium"].includes(body.tier)) data.tier = body.tier;
+  if (isBusinessType(body.businessType)) data.businessType = body.businessType;
 
   if (typeof body.extendTrialDays === "number" && body.extendTrialDays > 0) {
     data.trialEndsAt = new Date(Date.now() + body.extendTrialDays * 86400000);
@@ -35,7 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updated = await prisma.business.update({
     where: { id: params.id },
     data,
-    select: { id: true, monthlyPrice: true, setupFee: true, tier: true, paidAt: true, suspendedAt: true, trialEndsAt: true },
+    select: { id: true, monthlyPrice: true, setupFee: true, tier: true, businessType: true, paidAt: true, suspendedAt: true, trialEndsAt: true },
   });
   return NextResponse.json({ ok: true, business: updated });
 }

@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useVocab } from "@/components/VocabProvider";
 
 type Service = {
   id: string;
@@ -35,7 +36,8 @@ type StaffInfo = {
 
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
-  const steps = ["ספר", "שירות", "זמן"];
+  const v = useVocab();
+  const steps = [v.staff, "שירות", "זמן"];
   return (
     <div className="flex items-center gap-0">
       {steps.map((label, i) => {

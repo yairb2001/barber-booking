@@ -24,6 +24,23 @@ import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
  * switches themes the server keeps serving the previously cached palette for
  * the first paint (stale) while the client fetch shows the new one → flash.
  */
+/** The current tenant's business type (vocabulary) — same resolution as the
+ *  theme: slug from the pathname, else the fallback/root business. */
+export async function getServerBusinessType(): Promise<string | null> {
+  noStore();
+  try {
+    const slug = tenantSlugFromPathname(headers().get("x-pathname"));
+    if (slug) {
+      const biz = await prisma.business.findUnique({ where: { slug }, select: { businessType: true } });
+      if (biz) return biz.businessType;
+    }
+    const business = await fallbackBusiness({ select: { businessType: true } });
+    return business?.businessType ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getServerTheme(): Promise<Theme> {
   noStore();
   const preview = previewTheme(cookies().get(THEME_PREVIEW_COOKIE)?.value);

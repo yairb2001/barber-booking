@@ -11,7 +11,9 @@
  * 2) Replay harness (docs/PLAN-COST.md stage B): one customer turn per request so
  *    a real past conversation can be replayed message by message against the
  *    LIVE prompt/tools or the CANDIDATE ones, then compared.
- *    { action: "turn", phone, text, variant?: "live" | "candidate", contextPhone? }
+ *    { action: "turn", phone, text, variant?: "live" | "candidate" | "focus" | "template", contextPhone? }
+ *      "template" = this business on the compact default template (prompt-template.ts)
+ *      with the v4 tool set — as if its custom prompt were cleared; nothing is written.
  *      → { replies, toolLog, tools, usage, ms }
  *    { action: "cleanup", phone } → deletes the sandbox conversation.
  *    `phone` must be in the reserved fake range 972000xxxxxxx (never a real number).
@@ -156,13 +158,23 @@ export async function POST(req: NextRequest) {
 
     const text = String(body.text ?? "").trim();
     if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });
-    const variant = body.variant === "candidate" ? "candidate" : body.variant === "focus" ? "focus" : "live";
+    const variant = body.variant === "candidate" ? "candidate" : body.variant === "focus" ? "focus" : body.variant === "template" ? "template" : "live";
     const contextPhone = typeof body.contextPhone === "string" && /^972\d{8,9}$/.test(body.contextPhone) ? body.contextPhone : undefined;
     const { DOMINANT_CANDIDATE_PROMPT, AGENT_TOOLS_CANDIDATE } = await import("@/lib/agent/prompt-candidates");
     const modelOverride = typeof body.model === "string" && /^claude-[a-z0-9.-]+$/.test(body.model) ? body.model : undefined;
+    let templateBody: string | null = null;
+    if (variant === "template") {
+      const { stablePromptParams } = await import("@/lib/agent/customer-agent");
+      const { buildBookingLink } = await import("@/lib/link-first");
+      const [biz, cfg] = await Promise.all([
+        prisma.business.findUnique({ where: { id: business.id }, select: { id: true, slug: true, name: true, businessType: true, settings: true } }),
+        prisma.agentConfig.findUnique({ where: { businessId: business.id }, include: { faqs: { orderBy: { sortOrder: "asc" } } } }),
+      ]);
+      if (biz) templateBody = stablePromptParams(biz, cfg ? { ...cfg, systemPrompt: null } : null, "", await buildBookingLink(biz)).defaultBody;
+    }
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone, modelOverride,
-      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : {}),
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : templateBody ? { promptOverride: templateBody, promptVersion: 4 } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
     // Test hook: pretend a rhythm nudge offered these slots to the sandbox phone.

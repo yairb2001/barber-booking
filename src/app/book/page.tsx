@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useVocab } from "@/components/VocabProvider";
 
 type QuickSlot = {
   staffId: string;
@@ -55,6 +56,7 @@ function BackArrow({ href }: { href: string }) {
 
 export default function ChooseBarberPage() {
   const slug = useSlug();
+  const v = useVocab();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   // Nearest available slot per barber (covers ALL barbers, not just the quick pool)
@@ -138,7 +140,7 @@ export default function ChooseBarberPage() {
         <div className="flex items-center justify-between">
           <BackArrow href={publicHref(slug, "/")} />
           <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
-            בחירת ספר
+            בחירת {v.staff}
           </h1>
           {/* Step indicator intentionally omitted on the barber-selection screen — it's the entry step, no progress to show */}
           <div className="w-9" />
@@ -245,7 +247,7 @@ export default function ChooseBarberPage() {
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
               </span>
               <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-                התורים הקרובים - כל הספרים
+                התורים הקרובים - כל {v.staffPluralDef}
               </p>
             </div>
             <Link
@@ -281,7 +283,7 @@ export default function ChooseBarberPage() {
           {/* Divider */}
           <div className="mt-5 mb-1 flex items-center gap-3">
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[12px] font-bold tracking-[0.15em]" style={{ color: "var(--text-sec)" }}>או בחר ספר</span>
+            <span className="text-[12px] font-bold tracking-[0.15em]" style={{ color: "var(--text-sec)" }}>או {v.choose} {v.staff}</span>
             <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
           </div>
         </div>
@@ -291,7 +293,7 @@ export default function ChooseBarberPage() {
       {!loading && quickSlots.length === 0 && (
         <div className="px-4 pt-6 pb-2">
           <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>הצוות שלנו</p>
-          <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>בחר את הספר שלך</h2>
+          <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>{v.choose} את {v.staffDef} שלך</h2>
         </div>
       )}
 
@@ -339,7 +341,7 @@ export default function ChooseBarberPage() {
                   {/* Name */}
                   <div className="absolute inset-x-0 z-10 px-2 text-center" style={{ bottom: 38 }}>
                     <p className="font-bold text-[11px] text-white leading-tight"
-                      style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>לא משנה לי הספר</p>
+                      style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>לא משנה לי {v.staffDef}</p>
                     <p className="text-[9px] text-white/85 leading-tight truncate mt-0.5"
                       style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>התור הקרוב ביותר</p>
                   </div>
@@ -347,7 +349,7 @@ export default function ChooseBarberPage() {
                   {/* CTA → shared calendar of everyone */}
                   <div className="absolute bottom-1.5 inset-x-2 z-10 flex items-center justify-center py-1.5"
                     style={{ background: "var(--brand)", borderRadius: 10 }}>
-                    <span className="text-[10px] font-bold text-white">כל הספרים</span>
+                    <span className="text-[10px] font-bold text-white">כל {v.staffPluralDef}</span>
                   </div>
                 </Link>
               );

@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useVocab } from "@/components/VocabProvider";
 
 type TeamSlot = {
   staffId: string;
@@ -46,6 +47,7 @@ function BackArrow({ href }: { href: string }) {
 
 function TeamUpcomingContent() {
   const slug = useSlug();
+  const v = useVocab();
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
   const [slots, setSlots] = useState<TeamSlot[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +125,7 @@ function TeamUpcomingContent() {
               style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>📅</div>
             <div className="text-center">
               <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>אין תורים פנויים בקרוב</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>נסה לבחור ספר ותאריך ביומן</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{v.tryVerb} לבחור {v.staff} ותאריך ביומן</p>
             </div>
           </div>
         )}

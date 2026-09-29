@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
 import { getLlmHealth } from "@/lib/platform-health";
+import { BUSINESS_TYPES, businessTypeOf } from "@/lib/vocab";
 
 /**
  * GET /api/admin/super
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     await Promise.all([
       prisma.business.findMany({
         select: {
-          id: true, name: true, slug: true, tier: true, phone: true, settings: true,
+          id: true, name: true, slug: true, tier: true, phone: true, settings: true, businessType: true,
           monthlyPrice: true, setupFee: true, paidAt: true, suspendedAt: true,
           trialEndsAt: true, whatsappStatus: true, waLiveState: true, createdAt: true,
         },
@@ -68,6 +69,8 @@ export async function GET(req: NextRequest) {
       publicPath: b.id === rootId ? "/" : `/${b.slug}`,
       isRoot: b.id === rootId,
       tier: b.tier,
+      businessType: businessTypeOf(b),
+      businessTypeLabel: BUSINESS_TYPES.find(t => t.id === businessTypeOf(b))?.label ?? b.businessType,
       ownerPhone: ownerPhone(b.settings, b.phone),
       monthlyPrice: b.monthlyPrice ?? null,
       setupFee: b.setupFee ?? null,

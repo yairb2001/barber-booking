@@ -5,6 +5,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useVocab } from "@/components/VocabProvider";
 import { getStoredAttribution } from "@/lib/attribution";
 
 type StaffInfo = { id: string; name: string };
@@ -106,6 +107,7 @@ function AddToCalendar({
   date: string; time: string; durationMin: number; location: string;
   dateLabel?: string; price?: string;
 }) {
+  const v = useVocab();
   // Build tz-safe wall-clock timestamps from the appointment strings (no Date()
   // parsing → no device-timezone drift). Times are Israel local; we tag the
   // event with TZID=Asia/Jerusalem so it lands correctly on any device.
@@ -120,7 +122,7 @@ function AddToCalendar({
 
   const detailParts = [
     serviceName && `שירות: ${serviceName}`,
-    staffName && `ספר: ${staffName}`,
+    staffName && `${v.staff}: ${staffName}`,
     dateLabel && `תאריך: ${dateLabel}`,
     time && `שעה: ${time}`,
     price && `מחיר: ₪${price}`,
@@ -245,6 +247,7 @@ function SummaryRow({ label, value, large, compact }: { label: string; value: Re
 // ── Main page content ──────────────────────────────────────────────────────────
 function ConfirmPageContent() {
   const slug = useSlug();
+  const v = useVocab();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -733,7 +736,7 @@ function ConfirmPageContent() {
 
           {/* Summary */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-            <SummaryRow label="ספר" value={searchParams.get("staffName")} />
+            <SummaryRow label={v.staff} value={searchParams.get("staffName")} />
             <SummaryRow label="שירות" value={searchParams.get("serviceName")} />
             <SummaryRow label="תאריך" value={successDateLabel} />
             <SummaryRow label="שעה" value={<span dir="ltr">{successTime}</span>} />
@@ -818,7 +821,7 @@ function ConfirmPageContent() {
             <p className="text-[10px] font-bold tracking-[0.25em] text-slate-400 uppercase">סיכום התור</p>
           </div>
           <div className="px-3 pb-2"><DaysUntilBanner dateISO={date} /></div>
-          <SummaryRow label="ספר" value={staffInfo?.name || "..."} compact />
+          <SummaryRow label={v.staff} value={staffInfo?.name || "..."} compact />
           <SummaryRow label="שירות" value={serviceInfo?.name || "..."} compact />
           <SummaryRow label="תאריך" value={dateLabel} compact />
           <SummaryRow label="שעה" value={<span dir="ltr">{time}</span>} compact />
@@ -856,7 +859,7 @@ function ConfirmPageContent() {
                 הערה לתור <span className="text-slate-300 font-normal">(אופציונלי)</span>
               </label>
               <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-                placeholder="משהו שכדאי שהספר ידע? (לדוגמה: תספורת לאירוע)"
+                placeholder={`משהו שכדאי ש${v.staffDef} ${v.knows}? (לדוגמה: ${v.defaultService} לאירוע)`}
                 className={inputClass + " resize-none"}
                 style={{ "--tw-ring-color": "var(--brand)" } as React.CSSProperties} />
             </div>

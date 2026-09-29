@@ -18,7 +18,7 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, timeToMinutes, minutesToTime } from "@/lib/utils";
 import { computeDayAvailability, resolveStaffService } from "@/lib/agent/availability";
-import { SETUP_FIELDS, missingCoreFields, unansweredFields, type SetupConfig } from "@/lib/agent/setup-fields";
+import { setupFieldsFor, missingCoreFields, unansweredFields, type SetupConfig } from "@/lib/agent/setup-fields";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
@@ -1071,12 +1071,16 @@ export async function execOwnerTool(
 
     // ── Setup interview: current status + the next question to ask ───────────
     case "get_setup_status": {
-      const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
+      const [cfg, bizRow] = await Promise.all([
+        prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } }),
+        prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true } }),
+      ]);
+      const SETUP_FIELDS = setupFieldsFor(bizRow?.businessType);
       let setup: SetupConfig = {};
       if (cfg?.setupConfig) { try { setup = JSON.parse(cfg.setupConfig) as SetupConfig; } catch { setup = {}; } }
       const answered = SETUP_FIELDS.filter(f => setup[f.key] !== undefined && setup[f.key] !== "");
-      const missing = missingCoreFields(setup);
-      const pending = unansweredFields(setup);
+      const missing = missingCoreFields(setup, bizRow?.businessType);
+      const pending = unansweredFields(setup, bizRow?.businessType);
       const coreTotal = SETUP_FIELDS.filter(f => f.core).length;
       if (!pending.length) {
         return `כל שדות ההגדרה מולאו (${answered.length}/${SETUP_FIELDS.length}). הסוכן מוגדר. אם הבעלים רוצה לשנות משהו — שאל מה, וקרא ל-save_setup_field עם השדה המתאים.`;
@@ -1098,7 +1102,8 @@ export async function execOwnerTool(
     case "save_setup_field": {
       const key = String(input.key || "").trim();
       const rawVal = String(input.value ?? "").trim();
-      const field = SETUP_FIELDS.find(f => f.key === key);
+      const bizType = (await prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true } }))?.businessType;
+      const field = setupFieldsFor(bizType).find(f => f.key === key);
       if (!field) return `שגיאה: שדה לא מוכר (${key}). קרא ל-get_setup_status לקבלת מזהי השדות.`;
       if (!rawVal) return `שגיאה: לא התקבלה תשובה לשדה ${key}.`;
       let value: string | boolean = rawVal;
@@ -1120,8 +1125,8 @@ export async function execOwnerTool(
         create: { businessId, setupConfig: JSON.stringify(setup) },
         update: { setupConfig: JSON.stringify(setup) },
       });
-      const missing = missingCoreFields(setup);
-      const pending = unansweredFields(setup);
+      const missing = missingCoreFields(setup, bizType);
+      const pending = unansweredFields(setup, bizType);
       const progress = missing.length
         ? `נשארו ${missing.length} שדות ליבה.`
         : pending.length ? `כל שדות הליבה מולאו — הסוכן מוכן לאוויר. עוד ${pending.length} שאלות רשות לליטוש.` : `כל השדות מולאו! ההגדרה הושלמה.`;

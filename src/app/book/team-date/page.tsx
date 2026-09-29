@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useVocab } from "@/components/VocabProvider";
 import { israeliHoliday } from "@/lib/israeli-holidays";
 
 type TeamSlot = {
@@ -65,6 +66,7 @@ function BackArrow({ href }: { href: string }) {
 
 function TeamDatePageContent() {
   const slug = useSlug();
+  const v = useVocab();
 
   const searchParams = useSearchParams();
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
@@ -240,7 +242,7 @@ function TeamDatePageContent() {
         <div className="flex items-center gap-3 mt-2.5">
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#22c55e" }} />
-            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>יש ספרים פנויים</span>
+            <span className="text-[10px]" style={{ color: "var(--text-muted)" }}>יש {v.staffPlural} {v.freePlural}</span>
           </div>
           <div className="flex items-center gap-1">
             <span className="text-[9px]">🕎</span>

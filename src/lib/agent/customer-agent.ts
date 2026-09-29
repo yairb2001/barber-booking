@@ -30,6 +30,9 @@ import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
+import { compactAgentBody } from "@/lib/agent/prompt-template";
+import { vocabFor, vocabOf, type Vocab } from "@/lib/vocab";
+import { buildBookingLink } from "@/lib/link-first";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
@@ -1572,8 +1575,18 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     }),
     prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true } }),
   ]);
-  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true } });
-  const info = [biz?.address ? `כתובת: ${biz.address}` : "", biz?.phone ? `טלפון: ${biz.phone}` : "", biz?.about ? biz.about.replace(/\s+/g, " ").slice(0, 300) : ""].filter(Boolean).join(" · ");
+  const [biz, schedules] = await Promise.all([
+    prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true, businessType: true, settings: true } }),
+    prisma.staffSchedule.findMany({ where: { staff: { businessId, isAvailable: true }, isWorking: true }, select: { dayOfWeek: true }, distinct: ["dayOfWeek"] }),
+  ]);
+  const v = vocabOf(biz);
+  // Open days, from the staff schedules — so the template's "closed day" rule
+  // has a fact to lean on instead of a hard-coded "שבת סגור".
+  const open = new Set(schedules.map(x => x.dayOfWeek));
+  const dayNames = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  const closed = dayNames.filter((_, i) => !open.has(i));
+  const daysLine = open.size ? `ימי פעילות: ${dayNames.filter((_, i) => open.has(i)).join(", ")}${closed.length ? ` (${closed.join(", ")} סגור)` : ""}` : "";
+  const info = [biz?.address ? `כתובת: ${biz.address}` : "", biz?.phone ? `טלפון: ${biz.phone}` : "", daysLine, biz?.about ? biz.about.replace(/\s+/g, " ").slice(0, 300) : ""].filter(Boolean).join(" · ");
   if (!staff.length || !services.length) return info ? `פרטי העסק: ${info}` : "";
   const hasPool = staff.some(s => s.inQuickPool);
   const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
@@ -1582,33 +1595,65 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     const list = own.length
       ? own.map(ss => svc(ss.customName ?? ss.service.name, ss.customPrice ?? ss.service.price, ss.customDuration ?? ss.service.durationMinutes, ss.customNote ?? ss.service.note, ss.service.id))
       : services.map(sv => svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id));
-    const pool = hasPool && !s.inQuickPool ? " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו" : "";
+    const pool = hasPool && !s.inQuickPool ? (v.staffFem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
     return `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
-  const block = "הספרים והשירותים (עדכני. המחיר והמשך הם של כל ספר בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n" + lines.join("\n") + (info ? `\nפרטי העסק: ${info}` : "");
+  const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (info ? `\nפרטי העסק: ${info}` : "");
   return block.length > 4500 ? (info ? `פרטי העסק: ${info}` : "") : block;
 }
 
 /** The business-level inputs of the CACHED prefix — one place, so the customer
  *  agent and the cache-warm ping build a byte-identical stable block. */
+export type PromptBusiness = { name: string; businessType?: string | null; settings?: string | null };
+
 export function stablePromptParams(
-  businessName: string,
+  biz: PromptBusiness,
   agentConfig: { agentName: string | null; systemPrompt: string | null; setupConfig: string | null; faqs: Array<{ question: string; answer: string }> } | null,
   catalogBlock: string,
+  /** Public booking link (buildBookingLink) — quoted by the template when the customer asks for the site. */
+  bookingLink?: string | null,
 ) {
-  let setupBlock = "";
+  const vocab = vocabOf(biz);
+  let setup: SetupConfig | null = null;
   if (agentConfig?.setupConfig) {
-    try { setupBlock = compileSetupConfig(JSON.parse(agentConfig.setupConfig) as SetupConfig); }
+    try { setup = JSON.parse(agentConfig.setupConfig) as SetupConfig; }
     catch { /* malformed setupConfig — fall back to no shop layer */ }
   }
+  const custom = agentConfig?.systemPrompt?.trim() || "";
+  // Compact template (stage 0): the default body for every business without a
+  // hand-tuned prompt. The setup layer then skips the keys the template already
+  // rendered (default service, address style) so the two never contradict.
+  const agentName = agentConfig?.agentName ?? "הסוכן";
+  const defaultBody = custom ? "" : compactAgentBody({
+    agentName, businessName: biz.name, vocab,
+    defaultService: typeof setup?.defaultService === "string" ? setup.defaultService : null,
+    addressStyle: typeof setup?.address === "string" ? setup.address : null,
+    bookingLink: bookingLink ?? null,
+  });
+  const setupBlock = setup ? compileSetupConfig(setup, vocab, custom ? undefined : { skipTemplateKeys: true }) : "";
   return {
-    agentName: agentConfig?.agentName ?? "הסוכן",
-    businessName,
-    customSystemPrompt: agentConfig?.systemPrompt,
+    agentName,
+    businessName: biz.name,
+    customSystemPrompt: custom || null,
+    defaultBody,
     setupBlock,
     faqs: agentConfig?.faqs ?? [],
     catalogBlock,
   };
+}
+
+/** Which prompt generation a business runs (stage 0: v2–v4 are the default for
+ *  everyone, opt-out per business with settings.agentPromptV4 = false). A
+ *  hand-written prompt without any flag keeps the legacy tool set — its rules
+ *  still name book_appointment / check_appointment, which v3+ drops. */
+export function promptFlagsFor(settingsRaw: string | null | undefined, o: { hasCustomPrompt: boolean; sandbox?: { promptVersion?: number; promptOverride?: string } | null }): { v2: boolean; v3: boolean; v4: boolean; focus: boolean } {
+  const s = bizSettingsOf(settingsRaw);
+  const pv = o.sandbox?.promptVersion ?? 0;
+  const v4 = pv >= 4 || s.agentPromptV4 === true || (s.agentPromptV4 !== false && !o.hasCustomPrompt);
+  const v3 = pv === 3 || s.agentPromptV3 === true || v4;
+  const v2 = !!o.sandbox?.promptOverride || s.agentPromptV2 === true || v3;
+  const focus = pv >= 5 || s.agentFocusLine === true;
+  return { v2, v3, v4, focus };
 }
 
 const nowLabel = () => new Date().toLocaleString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Jerusalem" });
@@ -1620,19 +1665,20 @@ const nowLabel = () => new Date().toLocaleString("he-IL", { weekday: "long", yea
  *  (cacheRead ≈ prefix) from a miss (cacheWrite ≈ prefix = the TTL had expired). */
 export async function warmCustomerAgentCache(businessId: string): Promise<{ cacheRead: number; cacheWrite: number } | null> {
   const [biz, agentConfig] = await Promise.all([
-    prisma.business.findUnique({ where: { id: businessId }, select: { name: true, settings: true } }),
+    prisma.business.findUnique({ where: { id: businessId }, select: { id: true, slug: true, name: true, settings: true, businessType: true } }),
     prisma.agentConfig.findUnique({ where: { businessId }, include: { faqs: { orderBy: { sortOrder: "asc" } } } }),
   ]);
   if (!biz) return null;
   let settings: Record<string, unknown> = {};
   if (biz.settings) { try { settings = JSON.parse(biz.settings); } catch { /* ignore */ } }
   if (settings.aiProvider === "openai") return null; // nothing to warm on that path
-  const catalogBlock = await buildCatalogBlock(businessId);
-  const systemPrompt = buildSystemPrompt({ ...stablePromptParams(biz.name, agentConfig, catalogBlock), now: nowLabel() });
+  const [catalogBlock, bookingLink] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz)]);
+  const systemPrompt = buildSystemPrompt({ ...stablePromptParams(biz, agentConfig, catalogBlock, bookingLink), now: nowLabel() });
   // The cached prefix is tools + stable system block — the ping must send the
   // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
   // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
-  const pingTools = selectTools(AGENT_TOOLS, { v3: settings.agentPromptV3 === true || settings.agentPromptV4 === true, hasCatalog: !!catalogBlock });
+  const flags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim() });
+  const pingTools = selectTools(AGENT_TOOLS, { v3: flags.v3, hasCatalog: !!catalogBlock });
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
@@ -1648,6 +1694,8 @@ export function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
   customSystemPrompt?: string | null;
+  /** The compact template body (stablePromptParams) — used when there is no custom prompt. */
+  defaultBody?: string;
   setupBlock?: string;
   faqs: Array<{ question: string; answer: string }>;
   catalogBlock?: string;
@@ -1656,6 +1704,7 @@ export function buildSystemPrompt(params: {
 }): Anthropic.TextBlockParam[] {
   const body =
     params.customSystemPrompt?.trim() ||
+    params.defaultBody?.trim() ||
     defaultAgentBody(params.agentName, params.businessName);
 
   // Stable, business-level chunk (personality + FAQs). Identical across every
@@ -1979,20 +2028,22 @@ function bizSettingsOf(raw: string | null | undefined): Record<string, unknown> 
  *  DOMINANT prompt (paid on every call, cached or not); now it is injected into
  *  the per-turn block only when the conversation shows the situation. */
 const GROUP_RE = /חבר|אח שלי|אחי |הילד|הבן|הבת|ביחד|במקביל|שנינו|שלושתנו|גם ל|עוד אחד|עוד תור|שני תורים|לשניים|לשנינו|באותה שעה/;
-export const GROUP_GUIDANCE =
-  "קביעה לכמה אנשים: המטרה שיגיעו יחד באותה שעה, כל אחד אצל ספר אחר. שעות מקבילות רק מ-find_parallel_slots (count = מספר האנשים) — אסור להרכיב צמד ספר+שעה בעצמך מרשימה רגילה. " +
-  "לקוח חדש או שלא אכפת לו מהספר → שבץ במקביל בלי לשאול; יש לו ספר קבוע → שאל פעם אחת אם חשוב לו להישאר אצלו. " +
-  "כבר יש לו תור → אל תיגע בו ואל תקבע לו שני; קבע רק לחבר באותה שעה אצל ספר אחר. אין ספר שני פנוי → או להזיז את הקיים (request_appointment_move) ואז לקבוע לחבר, או להשאיר — לעולם לא להשאיר וגם להוסיף. " +
-  "שני תורים רצופים אצל אותו ספר = ברירה אחרונה, והסבר שזה רצוף ולא במקביל. אל תקבע לאותו אדם שני תורים באותו יום בלי שביקש — התור הנוסף הוא לחבר. " +
-  "אם הלקוח כבר נתן שעה שונה לכל אחד — זו לא מקביליות: קבע כל אחד בנפרד כרגיל.";
+export const groupGuidance = (v: Vocab) =>
+  `קביעה לכמה אנשים: המטרה שיגיעו יחד באותה שעה, כל אחד אצל ${v.staff} ${v.other}. שעות מקבילות רק מ-find_parallel_slots (count = מספר האנשים) — אסור להרכיב צמד ${v.staff}+שעה בעצמך מרשימה רגילה. ` +
+  `לקוח חדש או שלא אכפת לו מ${v.staffDef} → שבץ במקביל בלי לשאול; יש לו ${v.staff} ${v.staffFem ? "קבועה" : "קבוע"} → שאל פעם אחת אם חשוב לו להישאר אצל${v.staffFem ? "ה" : "ו"}. ` +
+  `כבר יש לו תור → אל תיגע בו ואל תקבע לו שני; קבע רק לחבר באותה שעה אצל ${v.staff} ${v.other}. אין ${v.staff} ${v.staffFem ? "שנייה פנויה" : "שני פנוי"} → או להזיז את הקיים (request_appointment_move) ואז לקבוע לחבר, או להשאיר — לעולם לא להשאיר וגם להוסיף. ` +
+  `שני תורים רצופים אצל ${v.staffFem ? "אותה" : "אותו"} ${v.staff} = ברירה אחרונה, והסבר שזה רצוף ולא במקביל. אל תקבע לאותו אדם שני תורים באותו יום בלי שביקש — התור הנוסף הוא לחבר. ` +
+  `אם הלקוח כבר נתן שעה שונה לכל אחד — זו לא מקביליות: קבע כל אחד בנפרד כרגיל.`;
+/** DOMINANT wording (barber_men) — kept byte-identical for the live prompt. */
+export const GROUP_GUIDANCE = groupGuidance(vocabFor("barber_men"));
 export const MANUAL_OFFER_GUIDANCE =
   "בשיחה הזאת יש הודעות שנכתבו ידנית על ידי הספר, או הצעת שעה מלפני יותר משעה. התייחס אליהן כאילו אתה כתבת: אותו קו, אותה הבטחה, בלי להתחיל מחדש ובלי להציג את עצמך. " +
   "אם הוצעו יום ושעה ספציפיים והלקוח מאשר — אל תשאל שוב איזה יום ושעה. הסדר: 1) get_available_slots לאותו יום ולספר שהוצע — ההצעה ישנה והשעה יכלה להיתפס; " +
   "2) פנויה → שאלת האישור הסופית בנוסח הקבוע (לא \"רק לוודא, בסדר?\") ואחרי כן book_appointment; 3) נתפסה → אמור בכנות והצע את הקרובה שכן פנויה.";
-export function situationalGuidance(incomingText: string, history: { role: string; content: string; source: string | null; createdAt: Date }[]): string {
+export function situationalGuidance(incomingText: string, history: { role: string; content: string; source: string | null; createdAt: Date }[], vocab?: Vocab): string {
   const parts: string[] = [];
   const recentText = [incomingText, ...history.slice(-6).map(h => h.content)].join("\n");
-  if (GROUP_RE.test(recentText)) parts.push(GROUP_GUIDANCE);
+  if (GROUP_RE.test(recentText)) parts.push(vocab ? groupGuidance(vocab) : GROUP_GUIDANCE);
   const lastAssistant = [...history].reverse().find(h => h.role === "assistant");
   const manual = history.some(h => h.role === "assistant" && h.source === "admin");
   const staleOffer = !!lastAssistant && Date.now() - lastAssistant.createdAt.getTime() > 3600_000 && /\d{1,2}:\d{2}/.test(lastAssistant.content);
@@ -2036,7 +2087,7 @@ export async function runCustomerAgent(opts: {
   const [biz, agentConfig] = await Promise.all([
     prisma.business.findUnique({
       where: { id: businessId },
-      select: { id: true, name: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, settings: true },
+      select: { id: true, name: true, slug: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, settings: true },
     }),
     prisma.agentConfig.findUnique({
       where: { businessId },
@@ -2206,12 +2257,13 @@ export async function runCustomerAgent(opts: {
   // bookings, continuing a barber's manual offer — live OUTSIDE the cached
   // prefix and are injected only when the conversation actually needs them.
   // Active for the candidate prompt (replay) and for businesses switched to it.
-  const promptV4 = (sandbox?.promptVersion ?? 0) >= 4 || bizSettingsOf(biz.settings).agentPromptV4 === true;
+  const promptFlags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim(), sandbox });
+  const promptV4 = promptFlags.v4;
   // "v5": the code-filtered availability line — off in production until replayed.
-  const focusLine = (sandbox?.promptVersion ?? 0) >= 5 || bizSettingsOf(biz.settings).agentFocusLine === true;
-  const promptV2 = !!sandbox?.promptOverride || bizSettingsOf(biz.settings).agentPromptV2 === true || bizSettingsOf(biz.settings).agentPromptV3 === true || sandbox?.promptVersion === 3 || promptV4;
+  const focusLine = promptFlags.focus;
+  const promptV2 = promptFlags.v2;
   if (promptV2) {
-    const extra = situationalGuidance(incomingText, history);
+    const extra = situationalGuidance(incomingText, history, vocabOf(biz));
     if (extra) customerContext += `\n${extra}`;
   }
   // Prompt v4 (owner's idea, 20.9.2026): the next days' availability of EVERY
@@ -2237,7 +2289,7 @@ export async function runCustomerAgent(opts: {
         }
         if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null });
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, vocab: vocabOf(biz) });
         customerContext += `\n${snap}`;
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }
@@ -2245,16 +2297,16 @@ export async function runCustomerAgent(opts: {
 
   // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
   // so both build the identical prefix (setup-interview block, FAQs, catalog).
-  const catalogBlock = await buildCatalogBlock(businessId);
+  const [catalogBlock, bookingLink] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz)]);
   const configForPrompt = sandbox?.promptOverride
     ? { agentName: agentConfig?.agentName ?? null, systemPrompt: sandbox.promptOverride, setupConfig: agentConfig?.setupConfig ?? null, faqs: agentConfig?.faqs ?? [] }
     : agentConfig;
   const systemPrompt = buildSystemPrompt({
-    ...stablePromptParams(biz.name, configForPrompt, catalogBlock),
+    ...stablePromptParams(biz, configForPrompt, catalogBlock, bookingLink),
     now: nowLabel(),
     customerContext,
   });
-  const promptV3 = sandbox?.promptVersion === 3 || bizSettingsOf(biz.settings).agentPromptV3 === true || promptV4;
+  const promptV3 = promptFlags.v3;
   const tools = sandbox?.toolsOverride ?? selectTools(AGENT_TOOLS, { v3: promptV3, hasCatalog: !!catalogBlock });
   const usageKind = sandbox?.usageKind ?? "customer";
 

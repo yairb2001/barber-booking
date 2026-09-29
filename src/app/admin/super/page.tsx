@@ -2,10 +2,11 @@
 
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import type { AgentCostResult } from "@/lib/analytics/agent-cost";
+import { BUSINESS_TYPES } from "@/lib/vocab";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Biz = {
-  id: string; name: string; slug: string; publicPath: string; isRoot: boolean; tier: string; ownerPhone: string | null;
+  id: string; name: string; slug: string; publicPath: string; isRoot: boolean; tier: string; businessType: string; businessTypeLabel: string; ownerPhone: string | null;
   monthlyPrice: number | null; setupFee: number | null;
   paidAt: string | null; suspendedAt: string | null;
   trialEndsAt: string | null; trialDaysLeft: number | null;
@@ -566,6 +567,7 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
   const [monthly, setMonthly] = useState(String(b.monthlyPrice ?? ""));
   const [setup, setSetup] = useState(String(b.setupFee ?? ""));
   const [tier, setTier] = useState(b.tier);
+  const [bizType, setBizType] = useState(b.businessType);
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -597,10 +599,11 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
             <span className="font-bold text-slate-800">{b.name}</span>
             <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${badge.c}`}>{badge.t}</span>
             {b.tier === "premium" && <span className="text-[11px] text-amber-600">★ פרימיום</span>}
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-teal-50 text-teal-700">{b.businessTypeLabel}</span>
           </div>
           <div className="text-xs text-slate-500 mt-0.5" dir="ltr" style={{ textAlign: "right" }}>{b.ownerPhone || "—"}</div>
           <div className="text-[11px] text-slate-400 mt-1">
-            {b.staffCount} ספרים · {b.customerCount} לקוחות · {b.apptCount} תורים · פעילות אחרונה {fmtDate(b.lastActivityAt)}
+            {b.staffCount} אנשי צוות · {b.customerCount} לקוחות · {b.apptCount} תורים · פעילות אחרונה {fmtDate(b.lastActivityAt)}
           </div>
           <div className="text-[11px] text-slate-400 mt-0.5">
             {b.monthlyPrice ? `${NIS}${b.monthlyPrice}/חודש` : "ללא מחיר"}{b.setupFee ? ` · הטמעה ${NIS}${b.setupFee}` : ""}
@@ -625,7 +628,13 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
               <option value="basic">basic</option><option value="pro">pro</option><option value="premium">premium</option>
             </select>
           </label>
-          <button disabled={busy} onClick={() => patch({ monthlyPrice: monthly ? Number(monthly) : null, setupFee: setup ? Number(setup) : null, tier })}
+          <label className="text-xs text-slate-500">
+            סוג עסק
+            <select value={bizType} onChange={(e) => setBizType(e.target.value)} className="block rounded-lg border border-slate-200 px-2 py-1 text-sm bg-white">
+              {BUSINESS_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+            </select>
+          </label>
+          <button disabled={busy} onClick={() => patch({ monthlyPrice: monthly ? Number(monthly) : null, setupFee: setup ? Number(setup) : null, tier, businessType: bizType })}
             className="bg-teal-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg">שמור</button>
           <button onClick={() => setEditing(false)} className="text-slate-400 text-xs px-2 py-1.5">ביטול</button>
         </div>

@@ -40,6 +40,8 @@ const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${Str
 
 export async function buildAvailabilitySnapshot(p: {
   businessId: string;
+  /** Business vocabulary (ספר / ספרית / …) for the header; default = barber_men wording. */
+  vocab?: { staff: string } | null;
   days?: number;
   serviceId?: string | null;
   regularStaffId?: string | null;
@@ -96,6 +98,6 @@ export async function buildAvailabilitySnapshot(p: {
     const ask = parseAvailabilityAsk(p.askText, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
     if (ask) focus = "\n" + focusLine(index, ask, p.serviceId ?? null, label, today, days, p.regularStaffId);
   }
-  return `זמינות ל-${days} הימים הקרובים, לכל ספר, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "") + focus;
 }
