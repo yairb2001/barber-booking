@@ -72,7 +72,10 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null } | null>(null);
+  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null } | null>(null);
+  // Header title = the logged-in business (each shop sees its own name — this was
+  // hard-coded "DOMINANT" for everyone); the product name until /me answers.
+  const bizTitle = me?.businessName?.trim() || "Chator";
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
   // "A newer build is live" — polled every 5 min + on tab focus. The native
@@ -258,7 +261,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       `}>
         <div className="px-4 py-4 border-b border-slate-200 flex items-center justify-between">
           <div>
-            <div className="text-slate-900 font-bold text-base tracking-tight">DOMINANT</div>
+            <div className="text-slate-900 font-bold text-base tracking-tight truncate">{bizTitle}</div>
             <div className="text-slate-500 text-xs">
               {me ? (isOwner ? "מנהל ראשי" : `שלום ${me.staff?.name || "ספר"}`) : "ניהול מספרה"}
             </div>
@@ -370,13 +373,13 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             ☰
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <Link href="/admin" className="text-slate-900 font-bold text-sm shrink-0 tracking-tight"
+            <Link href="/admin" className="text-slate-900 font-bold text-sm shrink-0 tracking-tight truncate max-w-[45vw]"
               onClick={() => {
                 // Same URL as the current page → Next.js won't navigate/remount, so
                 // the calendar page wouldn't otherwise know this was clicked. Tell it
                 // directly so a barber always lands back on their own week view.
                 if (pathname === "/admin") window.dispatchEvent(new Event("dominant:go-home"));
-              }}>DOMINANT</Link>
+              }}>{bizTitle}</Link>
             <span className="text-slate-300 text-xs shrink-0">·</span>
             <span className="text-slate-600 text-sm truncate">{currentLabel}</span>
           </div>

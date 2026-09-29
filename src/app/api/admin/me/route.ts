@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
   const business = await prisma.business.findUnique({
     where: { id: session.businessId },
     select: {
+      name: true,
       chatsEnabled: true,
       settings: true,
       phone: true,
@@ -129,6 +130,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     businessId: session.businessId,
+    businessName: business?.name ?? null,
     isRootBusiness,
     publicPath,
     role: session.role,
