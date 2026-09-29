@@ -1520,6 +1520,18 @@ export default function Dashboard() {
                 onClick={() => openCustomerList("returning")}
               />
             )}
+            {/* Tips this month — money that went to the barbers, deliberately
+                shown right next to turnover so the separation is obvious. */}
+            {!isFutureMonth && (
+              <StatCard
+                label="טיפים החודש"
+                value={`₪${(a.tipsTotals?.total ?? 0).toLocaleString("he-IL")}`}
+                color="text-emerald-600"
+                sub={(a.tipsTotals?.count ?? 0) > 0
+                  ? `מ-${a.tipsTotals!.count} תורים · לא נכלל במחזור`
+                  : "טרם נרשמו טיפים החודש"}
+              />
+            )}
             {!isFutureMonth && (
               <StatCard
                 label="הברזות החודש"
