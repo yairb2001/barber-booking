@@ -13,6 +13,11 @@ const nextConfig = {
   },
   async rewrites() {
     return {
+      // /for-business = the Chator sales landing (static HTML in public/chator/landing.html,
+      // built in the marketing workspace). beforeFiles so it wins over any page route.
+      beforeFiles: [
+        { source: "/for-business", destination: "/chator/landing.html" },
+      ],
       // `fallback` rewrites run ONLY after every filesystem route (static, /book/*,
       // the dynamic [slug] tree) has been checked — i.e. only for paths that would
       // otherwise 404. This makes ANY current-or-future /book page automatically
