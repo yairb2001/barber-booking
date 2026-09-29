@@ -105,7 +105,7 @@ export function dayLabel(iso: string, todayISO: string): string {
   const d = new Date(iso + "T00:00:00Z");
   // "הבא" whenever that weekday comes round before the offered date — a customer
   // reading "יום חמישי" a week out otherwise plans for the wrong one.
-  const next = diff >= 7 ? " *הבא*" : "";
+  const next = diff >= 7 && diff <= 13 ? " *הבא*" : ""; // same 7–13 rule as day-distance.ts
   return `יום ${HEB_DAYS[getDayOfWeekISO(iso)]}${next} ה-${d.getUTCDate()}.${d.getUTCMonth() + 1}`;
 }
 /**

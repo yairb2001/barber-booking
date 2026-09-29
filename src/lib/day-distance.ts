@@ -34,13 +34,13 @@ const toUTC = (iso: string) => new Date(iso + "T00:00:00.000Z").getTime();
 export function dayDistance(dateISO: string, todayISO: string): DayDistance {
   const days = Math.round((toUTC(dateISO) - toUTC(todayISO)) / 86_400_000);
   const weekday = HEB_DAYS[new Date(dateISO + "T00:00:00.000Z").getUTCDay()];
-  // "הבא" is about the CALENDAR WEEK, not a 7-day count. Today Thursday and the
-  // slot on Wednesday is 6 days away but it is next week's Wednesday — exactly
-  // the case a customer misreads. Weeks start Sunday (Israel). Two weeks out or
-  // more, "הבא" would be wrong; the spelled-out distance carries it instead.
-  const weekStart = (iso: string) => { const d = new Date(iso + "T00:00:00.000Z"); return toUTC(iso) - d.getUTCDay() * 86_400_000; };
-  const weeksApart = Math.round((weekStart(dateISO) - weekStart(todayISO)) / (7 * 86_400_000));
-  const isNext = weeksApart === 1;
+  // "הבא" only when the same weekday comes round BEFORE the appointment, i.e.
+  // 7–13 days out: today Tuesday, booked for Thursday in 9 days → "חמישי הבא"
+  // (there's a Thursday in 2 days he could confuse it with). Today Tuesday,
+  // Sunday in 5 days → just "יום ראשון": it IS the nearest Sunday, and "הבא" +
+  // "לא ראשון הקרוב" told the customer the opposite (Yair, 29.9 — replaces the
+  // calendar-week rule). 14+ days out, the spelled-out distance carries it.
+  const isNext = days >= 7 && days <= 13;
   const label =
     days < 0 ? "עבר"
     : days === 0 ? "היום"
