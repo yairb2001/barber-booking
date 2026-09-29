@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
-import { resolveTheme } from "@/lib/themes";
+import { resolveTheme, previewTheme, THEME_PREVIEW_COOKIE } from "@/lib/themes";
 import { fallbackBusiness } from "@/lib/tenant";
 import { getReferralConfig, getReferralFriendSource, getReferralSources } from "@/lib/referral";
 import { formatCancellationPolicyMessage } from "@/lib/cancellation-policy";
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
     : {};
 
   // Resolve full theme palette from settings
-  const theme = resolveTheme(business.settings);
+  const theme = previewTheme(req.cookies.get(THEME_PREVIEW_COOKIE)?.value) ?? resolveTheme(business.settings);
 
   // Extract heroVideoUrl + whatsappPrefill from settings JSON
   let heroVideoUrl: string | null = null;

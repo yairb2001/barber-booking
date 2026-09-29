@@ -1,7 +1,7 @@
 import { unstable_noStore as noStore } from "next/cache";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { resolveTheme, type Theme } from "@/lib/themes";
+import { resolveTheme, previewTheme, THEME_PREVIEW_COOKIE, type Theme } from "@/lib/themes";
 import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
 
 /**
@@ -26,6 +26,8 @@ import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
  */
 export async function getServerTheme(): Promise<Theme> {
   noStore();
+  const preview = previewTheme(cookies().get(THEME_PREVIEW_COOKIE)?.value);
+  if (preview) return preview;
   try {
     const slug = tenantSlugFromPathname(headers().get("x-pathname"));
     if (slug) {

@@ -14,7 +14,7 @@
 
 export type ThemeId =
   | "onyx" | "velvet" | "vintage" | "mono" | "teal"
-  | "forest" | "azure" | "ember" | "royal";
+  | "forest" | "azure" | "ember" | "royal" | "dominant";
 
 export type Theme = {
   id: ThemeId;
@@ -232,9 +232,37 @@ export const THEMES: Record<ThemeId, Theme> = {
     fontDisplay: "var(--font-bellefair)",
     fontBody:    "var(--font-heebo)",
   },
+
+  // ─── 10. Dominant — the DOMINANT brand board (09/2026): navy #0A1633 for
+  //     text, copper #A6775B for the call to action, cream #F3EFE9 surfaces ──
+  dominant: {
+    id: "dominant",
+    name: "דומיננט",
+    description: "כחול דומיננט · חום נחושת",
+    isDark: false,
+    bg:        "#F3EFE9",
+    bgAlt:     "#EAE3D9",
+    card:      "#FFFFFF",
+    headerBg:  "rgba(243,239,233,0.95)",
+    brand:     "#A6775B",
+    brandSoft: "#C39A7F",
+    textPri:   "#0A1633",
+    textSec:   "#3E4760",
+    textMuted: "#8C8A86",
+    divider:   "rgba(10,22,51,0.10)",
+    fontDisplay: "var(--font-heebo)",
+    fontBody:    "var(--font-heebo)",
+  },
 };
 
 export const DEFAULT_THEME: ThemeId = "onyx";
+
+/** Preview a preset on THIS browser only (cookie set by /api/theme-preview) —
+ *  the owner sees it on the customer pages, customers keep the saved theme. */
+export const THEME_PREVIEW_COOKIE = "theme_preview";
+export function previewTheme(cookieValue: string | null | undefined): Theme | null {
+  return cookieValue && cookieValue in THEMES ? THEMES[cookieValue as ThemeId] : null;
+}
 
 /** Resolve theme from business.settings JSON (with backward compat). */
 export function resolveTheme(settingsJson: string | null | undefined): Theme {
