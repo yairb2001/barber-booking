@@ -17,6 +17,15 @@ export const metadata: Metadata = {
     title: "DOMINANT ניהול",
     statusBarStyle: "default",
   },
+  // Management app = the Chator product icon. The customer storefront keeps
+  // the root /icon-*.png icons (the business's own), so only /admin changes.
+  icons: {
+    icon: [
+      { url: "/chator/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/chator/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/chator/apple-touch-icon.png",
+  },
 };
 
 // A staff session's JWT stays valid for 30 days regardless of DB state (so

@@ -32,9 +32,9 @@ export async function GET() {
       background_color: "#ffffff",
       theme_color: "#0d9488",
       icons: [
-        { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-        { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
-        { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        { src: "/chator/icon-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/chator/icon-512.png", sizes: "512x512", type: "image/png" },
+        { src: "/chator/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       ],
     },
     { headers: { "Content-Type": "application/manifest+json" } }
