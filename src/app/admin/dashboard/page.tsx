@@ -174,6 +174,17 @@ type Analytics = {
     units:   number;
     revenue: number;
   };
+  tipsByStaff?: {
+    staffId: string;
+    name:    string;
+    total:   number;
+    count:   number;
+  }[];
+  tipsTotals?: {
+    total: number;
+    count: number;
+    share: number;
+  };
   weekly: {
     thisWeek: { appointments: number; revenue: number };
     lastWeek: { appointments: number; revenue: number };
@@ -744,6 +755,59 @@ function ServicePieChart({ data }: { data: Analytics["serviceBreakdown"] }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── TipsCard — tips per barber, measured separately from turnover ──────────────
+// The owner computes barber commissions from the service price ONLY, so tips are
+// reported in their own card and are never added to revenue anywhere.
+function TipsCard({ rows, totals }: {
+  rows: NonNullable<Analytics["tipsByStaff"]>;
+  totals: Analytics["tipsTotals"];
+}) {
+  const maxTotal = rows.reduce((m, r) => Math.max(m, r.total), 0);
+  const avg = totals && totals.count > 0 ? Math.round(totals.total / totals.count) : 0;
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-5">
+      <div className="mb-4">
+        <h3 className="font-semibold text-neutral-800 text-sm">💰 טיפים</h3>
+        <p className="text-xs text-neutral-400 mt-0.5">נמדד בנפרד — לא נכלל במחזור ולא בחישוב האחוזים</p>
+      </div>
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="bg-emerald-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-emerald-600">₪{totals?.total ?? 0}</p>
+          <p className="text-[11px] text-neutral-500 mt-0.5">סה״כ טיפים</p>
+        </div>
+        <div className="bg-emerald-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-emerald-600">₪{avg}</p>
+          <p className="text-[11px] text-neutral-500 mt-0.5">ממוצע לטיפ</p>
+        </div>
+        <div className="bg-emerald-50 rounded-xl p-3 text-center">
+          <p className="text-2xl font-bold text-emerald-600">{totals?.count ?? 0}</p>
+          <p className="text-[11px] text-neutral-500 mt-0.5">תורים עם טיפ</p>
+        </div>
+      </div>
+      {rows.length > 0 && (
+        <div className="space-y-3">
+          {rows.map(r => (
+            <div key={r.staffId}>
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-neutral-700 font-medium flex-1 truncate">{r.name}</span>
+                <span className="text-neutral-400 text-xs ml-2">{r.count} תורים</span>
+                <span className="font-bold text-neutral-800 w-16 text-left">₪{r.total}</span>
+              </div>
+              <div className="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                <div className="h-full bg-emerald-400 rounded-full"
+                  style={{ width: `${maxTotal > 0 ? (r.total / maxTotal) * 100 : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-neutral-400 mt-3 leading-snug">
+        נרשם ב-{totals?.share ?? 0}% מהתורים בתקופה. ככל שתרשמו יותר טיפים בכרטיס התור, המספר מדויק יותר.
+      </p>
     </div>
   );
 }
@@ -1629,6 +1693,11 @@ export default function Dashboard() {
           {/* ── Product sales — measured separately, NOT part of turnover ── */}
           {a.productSales && a.productSales.length > 0 && (
             <ProductSalesCard rows={a.productSales} totals={a.productSalesTotals} />
+          )}
+
+          {/* ── Tips — measured separately, NOT part of turnover or commissions ── */}
+          {a.tipsTotals && a.tipsTotals.count > 0 && (
+            <TipsCard rows={a.tipsByStaff ?? []} totals={a.tipsTotals} />
           )}
 
           {/* ── Deep data — owners only ── */}

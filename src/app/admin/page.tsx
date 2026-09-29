@@ -225,6 +225,7 @@ type Service = { id: string; name: string; price: number; durationMinutes: numbe
 type Appt = {
   id: string; startTime: string; endTime: string; status: string; price: number; date: string;
   note: string | null; staffNote: string | null;
+  tipAmount?: number | null;   // tip for this visit — reported separately, never in turnover
   customerNoShows?: number; // # of past no-shows by this customer (calendar warning)
   hiddenAt?: string | null;  // hidden from the calendar grid (visual only)
   isFirstVisit?: boolean;   // ★ the customer's first appointment here (unless marked "known before")
@@ -1681,6 +1682,29 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [savedSoldItems, setSavedSoldItems] = useState<SoldItem[]>([]);
   const [savingProducts, setSavingProducts] = useState(false);
 
+  // ── Tip (טיפ) ─────────────────────────────────────────────────────────────
+  // What the customer left for the barber on this visit. Like product sales it is
+  // measured SEPARATELY and never counted in turnover — commissions come from the
+  // service price only.
+  const [showTip, setShowTip] = useState(false);
+  const [tipInput, setTipInput] = useState<string>(appt.tipAmount != null ? String(appt.tipAmount) : "");
+  const [savedTip, setSavedTip] = useState<number | null>(appt.tipAmount ?? null);
+  const [savingTip, setSavingTip] = useState(false);
+  const tipDirty = (tipInput.trim() === "" ? null : Number(tipInput)) !== savedTip;
+
+  async function saveTip() {
+    const val = tipInput.trim() === "" ? null : Number(tipInput);
+    if (val !== null && (!isFinite(val) || val < 0)) return;
+    setSavingTip(true);
+    await fetch(`/api/admin/appointments/${appt.id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipAmount: val }),
+    });
+    setSavedTip(val);
+    setSavingTip(false);
+    onReload?.();
+  }
+
   // ── Inline single-field editing ──────────────────────────────────────────
   // Each pencil edits ONLY its own field (name / date / time / price) instead
   // of opening the full edit form.
@@ -3082,6 +3106,42 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               )}
               <p className="text-[11px] text-neutral-400 leading-snug">
                 מכירות מוצרים נספרות בנפרד למדידה בלבד — אינן משפיעות על המחזור.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Tip — טיפ. Measured separately; never part of turnover or commissions. */}
+        <div className="px-4 py-2 border-b border-neutral-100">
+          <button type="button" onClick={() => setShowTip(v => !v)} className="w-full text-right py-2 px-3 rounded-lg border border-neutral-200 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition">
+            💰 טיפ{savedTip != null ? ` (₪${savedTip})` : ""}
+          </button>
+
+          {showTip && (
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-neutral-500 shrink-0">₪</span>
+                <input
+                  type="number" min="0" step="1" inputMode="decimal"
+                  value={tipInput}
+                  onChange={e => setTipInput(e.target.value)}
+                  placeholder="כמה טיפ השאיר הלקוח"
+                  className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                />
+                {savedTip != null && (
+                  <button type="button" onClick={() => setTipInput("")}
+                    className="text-red-400 hover:text-red-600 text-xs shrink-0">נקה</button>
+                )}
+              </div>
+
+              {tipDirty && (
+                <button onClick={saveTip} disabled={savingTip}
+                  className="w-full bg-teal-600 text-white text-sm rounded-lg py-2 disabled:opacity-50">
+                  {savingTip ? "שומר..." : "שמור טיפ"}
+                </button>
+              )}
+              <p className="text-[11px] text-neutral-400 leading-snug">
+                הטיפ נספר בנפרד למדידה בלבד — אינו משפיע על המחזור ולא על חישוב האחוזים.
               </p>
             </div>
           )}

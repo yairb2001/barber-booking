@@ -82,6 +82,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.staffId   !== undefined) data.staffId   = body.staffId;
   if (body.serviceId !== undefined) data.serviceId = body.serviceId;
   if (body.price     !== undefined) data.price     = Number(body.price);
+  // Tip for this visit. Empty string / null clears it. Never touches `price` —
+  // tips are reported separately and are excluded from turnover and commissions.
+  if (body.tipAmount !== undefined) {
+    const t = body.tipAmount === null || body.tipAmount === "" ? null : Number(body.tipAmount);
+    data.tipAmount = t === null || !isFinite(t) || t <= 0 ? null : t;
+  }
 
   // ── Temporary / ad-hoc service (שירות זמני) ────────────────────────────────
   // Same placeholder pattern as creating a new appointment (POST /appointments):

@@ -393,6 +393,11 @@ model Appointment {
   customServiceName String? @map("custom_service_name")
   note           String?
   staffNote      String?  @map("staff_note")
+  // Tip the customer left for the barber on this visit. Recorded by the barber
+  // in the appointment card. Counted and reported SEPARATELY from `price` and is
+  // never folded into turnover — commissions are computed from `price` only
+  // (same principle as ProductSale). null = no tip recorded.
+  tipAmount      Float?   @map("tip_amount")
   referralSource String?  @map("referral_source")
   referredById   String?  @map("referred_by_id")
   walkIn         Boolean  @default(false) @map("walk_in")

@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
     where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, ...sf },
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
+      tipAmount: true,
       startTime: true, serviceId: true, cancelledAt: true,
       customer: { select: { id: true, referralSource: true, name: true, knownBefore: true } },
       staff:    { select: { id: true, name: true } },
@@ -336,6 +337,29 @@ export async function GET(req: NextRequest) {
     revenue: productSales.reduce((s, p) => s + p.total, 0),
   };
 
+  // ── Tips (טיפים) ─────────────────────────────────────────────────────────────
+  // What customers left for the barbers, recorded per appointment in the calendar
+  // card. INTENTIONALLY separate from totalRevenue — the owner computes barber
+  // commissions from the service price only, never from tips. Same principle as
+  // product sales above: measured and shown, never folded into turnover.
+  const tipAppts = activeAppts.filter(a => (a.tipAmount ?? 0) > 0);
+  const tipByStaff = new Map<string, { name: string; total: number; count: number }>();
+  for (const a of tipAppts) {
+    const v = tipByStaff.get(a.staffId) ?? { name: a.staff?.name ?? "—", total: 0, count: 0 };
+    v.total += a.tipAmount ?? 0;
+    v.count++;
+    tipByStaff.set(a.staffId, v);
+  }
+  const tipsByStaff = Array.from(tipByStaff.entries())
+    .map(([staffId, v]) => ({ staffId, name: v.name, total: Math.round(v.total), count: v.count }))
+    .sort((a, b) => b.total - a.total);
+  const tipsTotals = {
+    total: Math.round(tipAppts.reduce((s, a) => s + (a.tipAmount ?? 0), 0)),
+    count: tipAppts.length,
+    // Share of visits where a tip was recorded — tells the owner how complete the data is.
+    share: totalAppointments > 0 ? Math.round((tipAppts.length / totalAppointments) * 100) : 0,
+  };
+
   // Unique customers with active appointments
   const periodCustMap = new Map<string, { referralSource: string | null; knownBefore: boolean }>();
   for (const a of activeAppts) {
@@ -436,6 +460,7 @@ export async function GET(req: NextRequest) {
       activityBreakdown: { total: 0, oneTime: 0, active: 0, regulars: 0 },
       returnRate: { windowDays: returnWindowDays, cohortSize: 0, returned: 0, rate: 0 },
       dailyRevenue, staffSummary: [],
+      tipsByStaff, tipsTotals,
       serviceBreakdown, staffUniqueCustomers: [],
       productSales, productSalesTotals,
     });
