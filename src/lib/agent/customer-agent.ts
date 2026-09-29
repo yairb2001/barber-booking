@@ -1642,6 +1642,15 @@ export function stablePromptParams(
   };
 }
 
+/** The service the default prompt assumes when a customer just says "רוצה תור":
+ *  the setup-interview answer, else the vocabulary default of the business type. */
+export function defaultServiceName(biz: { businessType?: string | null; settings?: string | null }, agentConfig: { setupConfig: string | null } | null): string {
+  if (agentConfig?.setupConfig) {
+    try { const s = JSON.parse(agentConfig.setupConfig) as SetupConfig; if (typeof s.defaultService === "string" && s.defaultService.trim()) return s.defaultService.trim(); } catch { /* ignore */ }
+  }
+  return vocabOf(biz).defaultService;
+}
+
 /** Which prompt generation a business runs (stage 0: v2–v4 are the default for
  *  everyone, opt-out per business with settings.agentPromptV4 = false). A
  *  hand-written prompt without any flag keeps the legacy tool set — its rules
@@ -2287,7 +2296,16 @@ export async function runCustomerAgent(opts: {
             if (top && past.length >= 2 && top[1] / past.length >= 0.7) regularStaffId = top[0];
           }
         }
-        if (!serviceId) serviceId = (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
+        // No history → the service the prompt tells the agent to assume ("אין →
+        // תספורת + זקן"): its slot grid is what propose_booking will verify, so
+        // the snapshot must be built for the SAME service. Before 29.9 it took
+        // the first visible service (30 min at the demo shop) while the default
+        // was 45 min — 18:00 showed as free and was then rejected, 8 calls.
+        if (!serviceId) {
+          const wanted = defaultServiceName(biz, agentConfig);
+          const byName = wanted ? await prisma.service.findFirst({ where: { businessId, isVisible: true, name: { equals: wanted, mode: "insensitive" } }, select: { id: true } }) : null;
+          serviceId = byName?.id ?? (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
+        }
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
         const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, vocab: vocabOf(biz) });
         customerContext += `\n${snap}`;

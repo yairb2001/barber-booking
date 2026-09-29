@@ -5,6 +5,7 @@
  *   npx tsx --env-file=.env scripts/replay-local.ts --business shop-p9hh --scenarios scripts/replay-scenarios.json [--only new-booking,cancel] [--out /tmp/dir]
  *   npx tsx --env-file=.env scripts/replay-local.ts --business shop-p9hh --corpus-from dominant --n 20 --days 45 [--out /tmp/dir]
  *   --template   run the business on the compact template (as if its custom prompt were cleared), without touching the DB
+ *   --dry        list the selected episodes and exit (no calls)
  *   --via-api    send the turns to production's POST /api/admin/agent/test (deployed code, production API key) instead of
  *                running the agent in this process; the owner session is minted locally from AUTH_SECRET (must match prod).
  *                env REPLAY_BASE overrides the host. --template maps to variant "template" there.
@@ -31,11 +32,12 @@ async function apiTurn(session: string, body: Record<string, unknown>) {
   const res = await fetch(`${BASE}/api/admin/agent/test`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: `admin_session=${session}` }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({})) as Record<string, unknown>;
   if (!res.ok) throw new Error(`${res.status} ${JSON.stringify(json).slice(0, 200)}`);
-  return json as { replies: string[]; tools: { name: string }[]; toolLog: string[]; usage: { calls: number; costUsd: number }; ms: number };
+  return json as { replies: string[]; tools: { name: string; input: string | null; result: string }[]; toolLog: string[]; usage: { calls: number; costUsd: number }; ms: number };
 }
 
 type Scenario = { id: string; title: string; turns: string[] };
-type Turn = { text: string; replies: string[]; tools: string[]; calls: number; costUsd: number; ms: number; error?: string };
+type Turn = { text: string; replies: string[]; tools: string[]; toolResults?: string[]; calls: number; costUsd: number; ms: number; error?: string };
+const ACK_RE = /^(תודה|תודה רבה|סבבה|אחלה|מעולה|יאללה|ביי|נתראה|אוקי|אוקיי|בסדר|thanks|thank you|ty|ok|okay|cool|great)[\s!.👍🙏]*$/i;
 type Run = { id: string; title: string; turns: Turn[]; calls: number; costUsd: number; flags: string[] };
 
 const args: Record<string, string> = Object.fromEntries(process.argv.slice(2).map((a, i, arr): [string, string] | [] => a.startsWith("--") ? [a.slice(2), arr[i + 1] && !arr[i + 1].startsWith("--") ? arr[i + 1] : "1"] : []).filter((x): x is [string, string] => x.length === 2));
@@ -90,7 +92,7 @@ function flagsOf(run: Run): string[] {
     if (UUID.test(txt)) f.push("uuid leaked");
     if (/\*\*/.test(txt)) f.push("markdown");
     if (t.error) f.push(`error: ${t.error.slice(0, 80)}`);
-    if (t.replies.length === 0 && !t.error) f.push(`silent turn: "${t.text.slice(0, 30)}"`);
+    if (t.replies.length === 0 && !t.error && !ACK_RE.test(t.text.trim())) f.push(`silent turn: "${t.text.slice(0, 30)}"`);
   }
   return f;
 }
@@ -115,6 +117,7 @@ async function main() {
   const out = args.out ?? `/tmp/claude-501/replay-${slug}-${Date.now()}`;
   fs.mkdirSync(out, { recursive: true });
   console.log(`${biz.name} (${biz.businessType}) · ${scenarios.length} episodes → ${out}`);
+  if (args.dry) { for (const sc of scenarios) console.log(`  ${sc.id}  ${sc.title}\n    ${sc.turns.map(t => t.replace(/\n/g, " ").slice(0, 70)).join("\n    ")}`); return; }
 
   const runs: Run[] = [];
   for (const sc of scenarios) {
@@ -127,7 +130,7 @@ async function main() {
           let turn: Turn;
           try {
             const r = await apiTurn(session, { action: "turn", phone, text, variant: args.template ? "template" : "live" });
-            turn = { text, replies: r.replies ?? [], tools: (r.tools ?? []).map(t => t.name).filter(Boolean) as string[], calls: r.usage?.calls ?? 0, costUsd: r.usage?.costUsd ?? 0, ms: Date.now() - t0 };
+            turn = { text, replies: r.replies ?? [], tools: (r.tools ?? []).map(t => t.name).filter(Boolean) as string[], toolResults: (r.tools ?? []).map(t => `${t.name}(${(t.input ?? "").slice(0, 90)}) → ${(t.result ?? "").replace(/\n/g, " ").slice(0, 140)}`), calls: r.usage?.calls ?? 0, costUsd: r.usage?.costUsd ?? 0, ms: Date.now() - t0 };
           } catch (e) { turn = { text, replies: [], tools: [], calls: 0, costUsd: 0, ms: Date.now() - t0, error: String((e as Error).message ?? e) }; }
           run.turns.push(turn); run.calls += turn.calls; run.costUsd += turn.costUsd;
           await sleep(300);
@@ -162,7 +165,8 @@ async function main() {
     md.push(`## ${r.id} — ${r.title}  (${r.calls} calls, $${r.costUsd.toFixed(3)})${r.flags.length ? `  ⚑ ${r.flags.join("; ")}` : ""}`);
     for (const t of r.turns) {
       md.push(`- **לקוח:** ${t.text.replace(/\n/g, " ")}`);
-      if (t.tools.length) md.push(`  - כלים: ${t.tools.join(", ")}`);
+      if (t.toolResults?.length) for (const tr of t.toolResults) md.push(`  - 🔧 ${tr}`);
+      else if (t.tools.length) md.push(`  - כלים: ${t.tools.join(", ")}`);
       for (const rep of t.replies) md.push(`  - **סוכן:** ${rep.replace(/\n/g, " ⏎ ")}`);
       if (!t.replies.length) md.push(`  - **סוכן:** (שקט)`);
       if (t.error) md.push(`  - ❌ ${t.error}`);
