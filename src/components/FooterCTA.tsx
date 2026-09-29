@@ -7,7 +7,7 @@ export default function FooterCTA() {
   const slug = useSlug();
 
   return (
-    <div className="py-6 text-center bg-neutral-50 border-t border-neutral-100 space-y-3">
+    <div className="footer-cta py-6 text-center bg-neutral-50 border-t border-neutral-100 space-y-3">
       <p className="text-[12px] text-neutral-400 leading-relaxed">
         רוצה מערכת מתקדמת כזו לעסק שלך?{" "}
         <a

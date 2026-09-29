@@ -5,7 +5,7 @@ import { telHref } from "@/lib/messaging/phone";
 import Link from "next/link";
 import FooterCTA from "@/components/FooterCTA";
 import BusinessSwitcher from "@/components/BusinessSwitcher";
-import { type Theme } from "@/lib/themes";
+import { type Theme, darkSurfaceCss } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 import { captureAttribution } from "@/lib/attribution";
@@ -472,6 +472,9 @@ export default function HomePage() {
       --surface-alt: linear-gradient(180deg, var(--surface) 0, var(--surface-alt-solid) 32px, var(--surface-alt-solid) calc(100% - 32px), var(--surface) 100%);
       --card:        ${T.card};
       --line:        ${T.divider};
+      --text-pri:    ${T.textPri};
+      --text-sec:    ${T.textSec};
+      --text-muted:  ${T.textMuted};
     }
     *, *::before, *::after { box-sizing: border-box; }
     body {
@@ -490,10 +493,11 @@ export default function HomePage() {
     @media (prefers-reduced-motion: reduce) {
       .available-now-blink, .scroll-cue-arrow { animation: none !important; }
     }
+    ${T.isDark ? darkSurfaceCss(".theme-dark > section ~ section", ".theme-dark > div") + ".theme-dark > .footer-cta { background: var(--surface-alt-solid) !important; }" : ""}
   `;
 
   return (
-    <div className="min-h-screen flex flex-col text-slate-900" dir="rtl" style={{ background: "var(--bg-page)" }}>
+    <div className={`min-h-screen flex flex-col text-slate-900 ${T.isDark ? "theme-dark" : ""}`} dir="rtl" style={{ background: "var(--bg-page)" }}>
       <style>{cssVars}</style>
 
       {/* ══ STICKY HEADER (appears on scroll) ══════════════════════════════════ */}
@@ -502,10 +506,10 @@ export default function HomePage() {
           transform: scrolled ? "translateY(0)" : "translateY(-110%)",
           opacity: scrolled ? 1 : 0,
           pointerEvents: scrolled ? "auto" : "none",
-          background: "rgba(255,255,255,0.97)",
+          background: T.isDark ? T.headerBg : "rgba(255,255,255,0.97)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
-          borderBottom: "1px solid #E2E8F0",
+          borderBottom: T.isDark ? `1px solid ${T.divider}` : "1px solid #E2E8F0",
         }}>
         <div className="flex items-center gap-3 px-4 py-3">
           {business?.logoUrl && (
@@ -513,7 +517,7 @@ export default function HomePage() {
               <img src={business.logoUrl} alt="" className="w-full h-full object-cover" />
             </div>
           )}
-          <p className="flex-1 font-bold text-[15px] tracking-wide text-slate-900">
+          <p className="flex-1 font-bold text-[15px] tracking-wide text-slate-900" style={T.isDark ? { color: T.textPri } : undefined}>
             {business?.name || "DOMINANT"}
           </p>
           <Link href={publicHref(slug, "/book")}

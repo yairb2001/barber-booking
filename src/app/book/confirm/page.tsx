@@ -786,7 +786,7 @@ function ConfirmPageContent() {
     <div className="min-h-screen bg-slate-50 pb-24" dir="rtl">
 
       {/* Header */}
-      <div className="sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"
+      <div className="book-header sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"
         style={{ background: "rgba(255,255,255,0.97)" }}>
         <div className="flex items-center gap-3">
           <Link href={backFallback} onClick={onBack}
@@ -935,7 +935,7 @@ function ConfirmPageContent() {
 
         {/* Referral source — hidden once we already know how the customer found us */}
         {!referralKnown && (
-        <div className="rounded-2xl border-2 border-teal-400 shadow-sm p-5"
+        <div className="theme-card rounded-2xl border-2 border-teal-400 shadow-sm p-5"
           style={{ background: "linear-gradient(135deg, #f0fdfa 0%, #fff 100%)" }}>
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xl">🤝</span>

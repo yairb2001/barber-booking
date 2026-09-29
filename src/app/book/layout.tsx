@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Script from "next/script";
 import FooterCTA from "@/components/FooterCTA";
-import { type Theme } from "@/lib/themes";
+import { type Theme, darkSurfaceCss } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug } from "@/lib/public-nav";
 import { captureAttribution } from "@/lib/attribution";
@@ -46,7 +46,9 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
       --text-muted:  ${theme.textMuted};
       --divider:     ${theme.divider};
       --header-bg:   ${theme.headerBg};
+      --line:        ${theme.divider};
     }
+    ${theme.isDark ? darkSurfaceCss(".theme-dark") + " .theme-dark .footer-cta { background: var(--bg-alt) !important; } .theme-dark .book-header { background: var(--header-bg) !important; } .theme-dark .theme-card { background: var(--card) !important; } .theme-dark .bg-slate-50 { background-color: var(--bg) !important; }" : ""}
     *, *::before, *::after { box-sizing: border-box; }
     body {
       /* Use the same font as the customer home page on every booking screen
@@ -77,8 +79,10 @@ export default function BookLayout({ children }: { children: React.ReactNode }) 
           `}
         </Script>
       )}
-      {children}
-      <FooterCTA />
+      <div className={theme.isDark ? "theme-dark" : undefined}>
+        {children}
+        <FooterCTA />
+      </div>
     </>
   );
 }

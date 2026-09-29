@@ -14,7 +14,7 @@
 
 export type ThemeId =
   | "onyx" | "velvet" | "vintage" | "mono" | "teal"
-  | "forest" | "azure" | "ember" | "royal" | "dominant";
+  | "forest" | "azure" | "ember" | "royal" | "dominant" | "dominantDark";
 
 export type Theme = {
   id: ThemeId;
@@ -253,6 +253,27 @@ export const THEMES: Record<ThemeId, Theme> = {
     fontDisplay: "var(--font-heebo)",
     fontBody:    "var(--font-heebo)",
   },
+
+  // ─── 11. Dominant Dark — same board, navy as the SURFACE (60% navy): cream
+  //     text on navy, lighter navy cards, copper call to action ──
+  dominantDark: {
+    id: "dominantDark",
+    name: "דומיננט כהה",
+    description: "רקע כחול דומיננט · חום נחושת",
+    isDark: true,
+    bg:        "#0A1633",
+    bgAlt:     "#0E1B3D",
+    card:      "#14244B",
+    headerBg:  "rgba(10,22,51,0.95)",
+    brand:     "#A6775B",
+    brandSoft: "#C39A7F",
+    textPri:   "#F3EFE9",
+    textSec:   "#C3C8D4",
+    textMuted: "#8A93A8",
+    divider:   "rgba(243,239,233,0.12)",
+    fontDisplay: "var(--font-heebo)",
+    fontBody:    "var(--font-heebo)",
+  },
 };
 
 export const DEFAULT_THEME: ThemeId = "onyx";
@@ -280,4 +301,23 @@ export function resolveTheme(settingsJson: string | null | undefined): Theme {
     /* ignore */
   }
   return THEMES[DEFAULT_THEME];
+}
+
+/** Dark presets: the customer pages were written for light surfaces with
+ *  Tailwind greys/whites baked in. Remap those utility classes to the theme's
+ *  CSS variables (--text-pri/--text-sec/--text-muted/--card/--line), only
+ *  inside the given scopes — the hero photo keeps its own white-on-dark styling.
+ *  `blocks` = scopes whose white panels become navy cards; `textOnly` = scopes
+ *  where only text/border colours are remapped (overlays keep their fills). */
+export function darkSurfaceCss(blocks: string, textOnly?: string): string {
+  const scopes = [blocks, textOnly].filter(Boolean) as string[];
+  const sel = (cls: string[], sc: string[]) => sc.flatMap(s => cls.map(c => `${s} ${c}`)).join(",");
+  return `
+    ${sel([".text-slate-900", ".text-slate-800", ".text-neutral-900", ".text-neutral-800", ".text-gray-900"], scopes)} { color: var(--text-pri) !important; }
+    ${sel([".text-slate-700", ".text-slate-600", ".text-slate-500", ".text-neutral-700", ".text-neutral-600", ".text-neutral-500", ".text-gray-600", ".text-gray-500"], scopes)} { color: var(--text-sec) !important; }
+    ${sel([".text-slate-400", ".text-slate-300", ".text-neutral-400", ".text-neutral-300", ".text-gray-400"], scopes)} { color: var(--text-muted) !important; }
+    ${sel([".border-slate-100", ".border-slate-200", ".border-neutral-100", ".border-neutral-200", ".border-gray-100", ".border-gray-200"], scopes)}, ${scopes.join(",")} { border-color: var(--line) !important; }
+    ${sel([".bg-white", ".bg-neutral-50", ".bg-slate-100", ".bg-neutral-100", ".bg-gray-50", ".bg-gray-100"], [blocks])} { background-color: var(--card) !important; }
+    ${sel(["h1", "h2", "h3"], [blocks])} { color: var(--text-pri); }
+  `;
 }
