@@ -10,6 +10,7 @@ import { isBusinessType } from "@/lib/vocab";
  *   businessType                   → the vertical (barber_men | barber_women | nails | cosmetics)
  *   tokenBudgetIls: number | null  → the monthly token package as raw cost in ₪ (null = tier default)
  *   tokenTopupIls: number          → one-time addition to THIS month's package
+ *   greenApiInstanceId, greenApiToken, whatsappStatus → the number connection (stage 1 "חיבורים ממתינים")
  *   extendTrialDays: number        → push trialEndsAt forward N days from now
  *   markPaid: boolean              → set/clear paidAt (converts trial → paying)
  *   suspend: boolean               → set/clear suspendedAt
@@ -26,6 +27,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.setupFee === null) data.setupFee = null;
   if (typeof body.tier === "string" && ["basic", "pro", "premium"].includes(body.tier)) data.tier = body.tier;
   if (isBusinessType(body.businessType)) data.businessType = body.businessType;
+  if (typeof body.greenApiInstanceId === "string") data.greenApiInstanceId = body.greenApiInstanceId.trim() || null;
+  if (typeof body.greenApiToken === "string") data.greenApiToken = body.greenApiToken.trim() || null;
+  if (typeof body.whatsappStatus === "string" && ["not_requested", "requested", "connected"].includes(body.whatsappStatus)) data.whatsappStatus = body.whatsappStatus;
 
   // Token package lives in settings JSON (merge, never overwrite other keys).
   if (body.tokenBudgetIls === null || typeof body.tokenBudgetIls === "number" || typeof body.tokenTopupIls === "number") {

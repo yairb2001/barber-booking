@@ -408,6 +408,7 @@ export default function AutomationsSettingsPage() {
             האוטומציות שולחות הודעות WhatsApp. ודא שהחיבור מוגדר בעמוד וואטסאפ.
           </p>
 
+          <OutreachCapCard />
           <RhythmNudgeCard />
           <CallAutomationCard />
 
@@ -478,6 +479,41 @@ export default function AutomationsSettingsPage() {
   );
 }
 
+
+// ── Proactive-outreach cap (stage 1, src/lib/outreach-cap.ts) ─────────────────
+function OutreachCapCard() {
+  const [max, setMax] = useState<number>(2);
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    fetch("/api/admin/business").then(r => r.json()).then(biz => {
+      const v = biz?.settings?.maxProactivePerCustomerMonth;
+      if (typeof v === "number") setMax(v);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+  async function save(v: number) {
+    setMax(v);
+    await fetch("/api/admin/business", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settingsPatch: { maxProactivePerCustomerMonth: v } }) }).catch(() => {});
+    setSaved(true); setTimeout(() => setSaved(false), 1800);
+  }
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-semibold text-neutral-800 text-sm">📵 הודעות יזומות ללקוח</div>
+          <div className="text-xs text-neutral-500 mt-0.5">כמה פעמים בחודש מותר לפנות ללקוח ביוזמתנו: "הגיע הזמן לתור", "מתגעגעים", תודה אחרי ביקור. תזכורות ואישורים לתור קבוע לא נספרים.</div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={max} disabled={!loaded} onChange={e => save(Number(e.target.value))} className="rounded-lg border border-neutral-200 px-2 py-1.5 text-sm bg-white">
+            {[0, 1, 2, 3, 4].map(n => <option key={n} value={n}>{n === 0 ? "בלי הודעות יזומות" : `עד ${n} בחודש`}</option>)}
+          </select>
+          {saved && <span className="text-xs text-emerald-600">נשמר ✓</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── "הגיע הזמן לתור" — rhythm nudge (specs/rhythm-nudge.md) ──────────────────
 type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; fillThreshold: number; secondNudge: boolean; includeNewCustomers: boolean; excludedStaffIds: string[]; notBefore: string | null; newCustomerDays: number | null; quietAfterActivityDays: number; shortRhythmDays: number; shortRhythmLateDays: number };

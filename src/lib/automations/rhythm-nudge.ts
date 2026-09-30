@@ -16,6 +16,7 @@ import { computeCustomerInsights, type CustomerInsights } from "@/lib/customer-i
 import { computeQuickSlots } from "@/lib/quick-slots";
 import { buildAvailabilityIndex, type AvailabilityIndex } from "@/lib/availability-index";
 import { enqueueMessage, applyTemplate, firstName, staffDisplayName } from "@/lib/messaging";
+import { phonesWithinOutreachCap } from "@/lib/outreach-cap";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { recordNudgeOffer } from "@/lib/agent/booking-proposals";
@@ -386,6 +387,10 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
 
     // Most overdue first, then send.
     res.planned.sort((a, b) => (a.daysToDue ?? 0) - (b.daysToDue ?? 0));
+    // Stage 1: the business's monthly cap on proactive messages per customer.
+    const withinCap = await phonesWithinOutreachCap(b.id, res.planned.map(p => p.phone), b.settings, now);
+    const capped = res.planned.filter(p => !withinCap.has(p.phone)).length;
+    if (capped) { res.skipped.outreach_cap = (res.skipped.outreach_cap ?? 0) + capped; res.planned = res.planned.filter(p => withinCap.has(p.phone)); }
     if (!opts.dryRun) {
       for (const p of res.planned) {
         // The chat mirror happens in the drip queue at the moment of delivery,

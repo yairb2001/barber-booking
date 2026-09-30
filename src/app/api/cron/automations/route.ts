@@ -181,6 +181,14 @@ export async function GET(req: NextRequest) {
       return false; // already got both nudges this stretch
     });
 
+    // Stage 1: the business's monthly cap on proactive messages per customer.
+    {
+      const { phonesWithinOutreachCap } = await import("@/lib/outreach-cap");
+      const bizRow = await prisma.business.findUnique({ where: { id: auto.businessId }, select: { settings: true } });
+      const within = await phonesWithinOutreachCap(auto.businessId, customers.map(c => c.phone), bizRow?.settings ?? null, now);
+      customers = customers.filter(c => within.has(c.phone));
+    }
+
     const template = auto.template ||
       `שלום {{name}} 👋\n\nהתגעגענו אליך ב*{{business}}* ✂️\nבוא נקבע תור ונשמח לראות אותך שוב 😊\n\nלקביעת תור: {{booking_url}}`;
 

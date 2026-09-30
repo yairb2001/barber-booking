@@ -134,7 +134,7 @@ export async function tokenBudgetGate(businessId: string, phone: string): Promis
   const tpl = (typeof s.agentUnavailableMessage === "string" && s.agentUnavailableMessage.trim()) || DEFAULT_UNAVAILABLE_MESSAGE;
   const cust = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { name: true } });
   const first = (cust?.name ?? "").trim().split(/\s+/)[0] || "";
-  const unavailableMessage = tpl.replace(/\{\{\s*name\s*\}\}/g, first).replace(/\{\{\s*link\s*\}\}/g, link).replace(/היי\s*!/, "היי!").replace(/\s{2,}/g, " ").trim();
+  const unavailableMessage = tpl.replace(/\{\{\s*name\s*\}\}/g, first).replace(/\{\{\s*link\s*\}\}/g, link).replace(/היי\s+!/, "היי!").replace(/[ \t]{2,}/g, " ").trim();
   return { blocked: true, state, unavailableMessage };
 }
 

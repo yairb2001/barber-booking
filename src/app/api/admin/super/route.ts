@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
         select: {
           id: true, name: true, slug: true, tier: true, phone: true, settings: true, businessType: true,
           monthlyPrice: true, setupFee: true, paidAt: true, suspendedAt: true,
-          trialEndsAt: true, whatsappStatus: true, waLiveState: true, createdAt: true,
+          trialEndsAt: true, whatsappStatus: true, waLiveState: true, createdAt: true, greenApiInstanceId: true, onboardingCompletedAt: true,
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -80,6 +80,8 @@ export async function GET(req: NextRequest) {
       trialDaysLeft,
       whatsappStatus: b.whatsappStatus,
       waLiveState: b.waLiveState,
+      hasGreen: !!b.greenApiInstanceId,
+      onboardingDone: !!b.onboardingCompletedAt,
       createdAt: b.createdAt,
       staffCount,
       apptCount,
