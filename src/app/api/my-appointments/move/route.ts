@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
+import { refreshReminders } from "@/lib/reminders-sweep";
 import { jwtVerify } from "jose";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
@@ -93,7 +94,7 @@ export async function POST(req: NextRequest) {
   await prisma.appointment.update({ where: { id: appt.id }, data: { date: newDate, startTime, endTime, confirmedAt: null } });
   // Reminders were enqueued for the OLD time — drop the ones not yet sent so the
   // sweep re-creates them for the new time.
-  await prisma.messageLog.deleteMany({ where: { appointmentId: appt.id, status: "scheduled", kind: { in: ["reminder_24h", "reminder_2h"] } } }).catch(() => {});
+  await refreshReminders([appt.id]);
 
   const fmt = (d: Date) => d.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
   const oldLabel = fmt(oldDate), newLabel = fmt(newDate);

@@ -25,13 +25,32 @@ import { customerManageLink } from "@/lib/customer-link";
 const CANCELLED = ["cancelled_by_customer", "cancelled_by_staff", "no_show"];
 const H = 3_600_000;
 
-export async function sweepReminders(now = new Date()): Promise<{ enqueued24: number; enqueued2: number }> {
+/**
+ * An appointment just changed date / time / barber → its queued reminders
+ * carry the OLD slot in their text and fire at the OLD time. Drop them and
+ * enqueue fresh ones right away (today/tomorrow; later dates are picked up by
+ * the nightly scan, which de-dups on the rows we just removed). Call this from
+ * EVERY path that moves an appointment — swaps, moves, admin drag, agent tools.
+ * 26 customers got a reminder for a slot they no longer had (9–30.9.2026).
+ */
+export async function refreshReminders(appointmentIds: string[], now = new Date()): Promise<void> {
+  const ids = appointmentIds.filter(Boolean);
+  if (!ids.length) return;
+  try {
+    await prisma.messageLog.deleteMany({ where: { appointmentId: { in: ids }, status: "scheduled", kind: { in: ["reminder_24h", "reminder_2h"] } } });
+    await sweepReminders(now, { appointmentIds: ids });
+  } catch (err) {
+    console.error("[reminders] refresh after move failed", err);
+  }
+}
+
+export async function sweepReminders(now = new Date(), opts: { appointmentIds?: string[] } = {}): Promise<{ enqueued24: number; enqueued2: number }> {
   // Appointments whose calendar day is today or tomorrow (UTC-midnight rows).
   const dayStart = new Date(now.toISOString().slice(0, 10) + "T00:00:00.000Z");
   const dayEnd = new Date(dayStart.getTime() + 2 * 86_400_000 - 1);
 
   const appts = await prisma.appointment.findMany({
-    where: { status: "confirmed", date: { gte: dayStart, lte: dayEnd } },
+    where: { status: "confirmed", date: { gte: dayStart, lte: dayEnd }, ...(opts.appointmentIds ? { id: { in: opts.appointmentIds } } : {}) },
     include: { customer: true, staff: true, service: true, business: true },
   });
   if (!appts.length) return { enqueued24: 0, enqueued2: 0 };

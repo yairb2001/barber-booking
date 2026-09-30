@@ -14,6 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
+import { refreshReminders } from "@/lib/reminders-sweep";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, timeToMinutes, minutesToTime } from "@/lib/utils";
@@ -337,6 +338,7 @@ export async function execOwnerTool(
           data: { date: a1.date, startTime: a1.startTime, endTime: a1.endTime },
         }),
       ]);
+      await refreshReminders([a1.id, a2.id]);
 
       // Notify both customers immediately (they need to know now, not via drip).
       const notify = async (
@@ -445,6 +447,7 @@ export async function execOwnerTool(
           where: { id: appt.id },
           data: { date: newDate, startTime: newTime, endTime: newEnd },
         });
+        await refreshReminders([appt.id]);
       } catch (err: unknown) {
         if ((err as { code?: string }).code === "P2002") {
           return `שגיאה: ${newTime} ב-${newDateIso} כבר תפוס אצל ${appt.staff.name}. הצע שעה אחרת או החלפה.`;

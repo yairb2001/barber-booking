@@ -29,7 +29,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { getBusinessNow } from "@/lib/utils";
+import { getBusinessNow, appointmentInstant } from "@/lib/utils";
 import { deliverMessageLog, mirrorToConversation } from "@/lib/messaging";
 import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
@@ -118,6 +118,21 @@ let lastDemoSalesAgentRun = 0;
 /** Appointment-bound reminder kinds that must be re-validated before sending —
  *  a reminder for a cancelled/removed appointment must never go out. */
 const APPOINTMENT_REMINDER_KINDS = new Set(["reminder_24h", "reminder_2h"]);
+const REMINDER_OFFSET_MS: Record<string, number> = { reminder_24h: 24 * 3_600_000, reminder_2h: 2 * 3_600_000 };
+
+/** A reminder is built for one slot: scheduledFor = slot − 24h/2h. If the
+ *  appointment's slot no longer gives that time (±10 min) the appointment moved.
+ *  Exception: a reminder enqueued late (slot already < 24h/2h away) is clamped
+ *  to "now" — recognised by scheduledFor ≈ its own createdAt — and is fine. */
+function reminderIsStale(row: { kind: string; scheduledFor: Date | null; createdAt: Date }, appt: { date: Date; startTime: string }): boolean {
+  const offset = REMINDER_OFFSET_MS[row.kind];
+  if (!offset || !row.scheduledFor) return false;
+  const expected = appointmentInstant(appt.date, appt.startTime).getTime() - offset;
+  const at = row.scheduledFor.getTime();
+  if (Math.abs(at - expected) <= 10 * 60_000) return false;
+  const clampedToNow = Math.abs(at - row.createdAt.getTime()) < 2 * 60_000 && expected < at;
+  return !clampedToNow;
+}
 
 /** Appointment statuses that mean "no longer a live appointment". */
 const CANCELLED_STATUSES = new Set([
@@ -263,6 +278,8 @@ export async function GET(req: NextRequest) {
       body: true,
       kind: true,
       appointmentId: true,
+      scheduledFor: true,
+      createdAt: true,
     },
   });
 
@@ -275,22 +292,23 @@ export async function GET(req: NextRequest) {
         .map((r) => r.appointmentId as string),
     ),
   );
-  const apptStatusById = new Map<string, string>();
+  const apptById = new Map<string, { status: string; date: Date; startTime: string }>();
   if (reminderApptIds.length > 0) {
     const appts = await prisma.appointment.findMany({
       where: { id: { in: reminderApptIds } },
-      select: { id: true, status: true },
+      select: { id: true, status: true, date: true, startTime: true },
     });
-    for (const a of appts) apptStatusById.set(a.id, a.status);
+    for (const a of appts) apptById.set(a.id, a);
   }
 
   let skipped = 0;
+  const staleApptIds: string[] = [];
   const toDeliver: typeof claimed = [];
   for (const row of claimed) {
     if (APPOINTMENT_REMINDER_KINDS.has(row.kind) && row.appointmentId) {
-      const status = apptStatusById.get(row.appointmentId);
+      const appt = apptById.get(row.appointmentId);
       // Missing appointment (deleted) or a cancelled/no-show status → suppress.
-      if (!status || CANCELLED_STATUSES.has(status)) {
+      if (!appt || CANCELLED_STATUSES.has(appt.status)) {
         await prisma.messageLog.update({
           where: { id: row.id },
           data: { status: "skipped", error: "appointment_not_active" },
@@ -298,9 +316,18 @@ export async function GET(req: NextRequest) {
         skipped++;
         continue;
       }
+      // Moved since it was enqueued → the text names the old slot. Safety net
+      // behind refreshReminders(): drop the row and enqueue a fresh one below.
+      if (reminderIsStale(row, appt)) {
+        await prisma.messageLog.delete({ where: { id: row.id } }).catch(() => {});
+        staleApptIds.push(row.appointmentId);
+        skipped++;
+        continue;
+      }
     }
     toDeliver.push(row);
   }
+  if (staleApptIds.length) await sweepReminders(now, { appointmentIds: staleApptIds }).catch(() => {});
 
   if (toDeliver.length === 0) {
     return NextResponse.json({ ok: true, processed: claimed.length, sent: 0, failed: 0, skipped, throttled });

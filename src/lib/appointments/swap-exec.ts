@@ -12,6 +12,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { refreshReminders } from "@/lib/reminders-sweep";
 import { sendMessage, swapConfirmationText, appointmentMovedText, firstName } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -182,6 +183,8 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
       return { ok: false, error: "לא ניתן היה לבצע את ההעברה — ייתכן שהשעה נתפסה בינתיים", status: 409 };
     }
 
+    await refreshReminders([p.id]); // queued reminders still named the old slot
+
     const newStaff = await prisma.staff.findUnique({
       where: { id: newPrimary.staffId },
       select: { name: true },
@@ -270,6 +273,8 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     console.error("[swap-exec] swap transaction failed:", err);
     return { ok: false, error: "לא ניתן היה לבצע את ההחלפה — ייתכן שאחת השעות נתפסה בינתיים", status: 409 };
   }
+
+  await refreshReminders([p.id, c.id]); // both traded slots — both reminders were stale
 
   const staffIds = Array.from(new Set([p.staffId, c.staffId]));
   const staffRecords = await prisma.staff.findMany({

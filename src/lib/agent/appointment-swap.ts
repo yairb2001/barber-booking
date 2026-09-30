@@ -25,6 +25,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { refreshReminders } from "@/lib/reminders-sweep";
 import type { Prisma } from "@prisma/client";
 import { sendMessage, swapProposalText, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -331,6 +332,7 @@ export async function requestAppointmentMove(opts: {
         endTime: computeEndTime(targetDate, targetStartTime, duration),
       },
     });
+    await refreshReminders([appt.id]);
     return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${appt.staff.name} (אותו ספר). אשר ללקוח שזה סודר.`;
   }
 
@@ -350,6 +352,7 @@ export async function requestAppointmentMove(opts: {
           price: eff.price,
         },
       });
+      await refreshReminders([appt.id]);
       return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${freeOther.name}. אמור ללקוח שאצל ${appt.staff.name} לא היה פנוי באותה שעה, אז קבעתי אצל ${freeOther.name} — ושאל אם זה מתאים לו.`;
     }
   }
@@ -708,6 +711,7 @@ export async function handleStaffApprovalReply(
           endTime: computeEndTime(iso, proposal.targetStartTime, dur),
         },
       });
+      await refreshReminders([proposal.primaryAppointmentId]);
       await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "approved", approvedAt: new Date() } });
       await notifyRequester(
         bizId,

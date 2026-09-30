@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { refreshReminders } from "@/lib/reminders-sweep";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
@@ -258,6 +259,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const msg = err instanceof Error ? err.message : "שגיאת מסד נתונים";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
+
+  // Moved (date / time / barber) → the queued reminders named the old slot.
+  const moved = before.date.getTime() !== appointment.date.getTime()
+    || before.startTime !== appointment.startTime || before.staffId !== appointment.staffId;
+  if (moved) await refreshReminders([appointment.id]);
 
   // If status just changed to completed → update customer's lastVisitAt
   // (Post-visit automations are now fired by /api/cron/automations-post-visit
