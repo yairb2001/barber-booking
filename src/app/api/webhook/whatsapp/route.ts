@@ -23,6 +23,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
+import { runDemoTurn } from "@/lib/agent/sales-agent";
+import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { handleConfirmReply } from "@/lib/confirmations";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
 import {
@@ -515,6 +517,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Real incident: customer messaged about a same-day appointment and got zero
   // reply, zero indication anything was wrong, for hours (2026-08-12 01:17).
   try {
+  // ── Stage 1 sales funnel: the demo shop's number ──────────────────────────
+  // Prospects arrive from the landing page with a prefilled text. Only a
+  // conversation tagged as demo/prospect runs the demo agent + the sales
+  // agent (src/lib/agent/sales-agent.ts); the number's other traffic keeps
+  // the human path below. The message is already persisted at this point.
+  if (biz.id === DEMO_BUSINESS_ID && !isNonText && text) {
+    const demo = await runDemoTurn({ phone, text, senderName, alreadyPersisted: true });
+    if (demo.handled) return NextResponse.json({ ok: true, demo: demo.mode });
+  }
+
   const agentConfig = await prisma.agentConfig.findUnique({
     where: { businessId: biz.id },
     select: { isEnabled: true },

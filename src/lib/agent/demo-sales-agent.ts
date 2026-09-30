@@ -88,6 +88,9 @@ export async function runDemoSalesAgent(
     where: {
       businessId: DEMO_BUSINESS_ID,
       createdAt: { gte: new Date(now.getTime() - MAX_CONVERSATION_AGE_MS) },
+      // Web-widget sessions only (demoPhoneFor → 9720…). WhatsApp prospects at
+      // the demo number are pitched inline by sales-agent.ts (stage 1).
+      phone: { startsWith: "9720" },
     },
     select: { id: true, phone: true, createdAt: true },
   });

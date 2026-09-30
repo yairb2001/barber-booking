@@ -16,6 +16,9 @@
  *      with the v4 tool set — as if its custom prompt were cleared; nothing is written.
  *      → { replies, toolLog, tools, usage, ms }
  *    { action: "cleanup", phone } → deletes the sandbox conversation.
+ *    { action: "demo-turn", phone, text, senderName? } → stage 1: the demo shop's routing
+ *      (tag → booking demo → pitch → sales agent → lead) in sandbox mode; only for the
+ *      demo business's own session. Returns replies, toolLog and the sales mode.
  *    `phone` must be in the reserved fake range 972000xxxxxxx (never a real number).
  *    `contextPhone` (a real customer) only feeds the customer-context block —
  *    name, history, nudges — the conversation itself is stored under `phone`.
@@ -151,10 +154,23 @@ export async function POST(req: NextRequest) {
   const { runCustomerAgent } = await import("@/lib/agent/customer-agent");
 
   // ── Replay harness ─────────────────────────────────────────────────────────
-  if (body.action === "cleanup" || body.action === "turn") {
+  if (body.action === "cleanup" || body.action === "turn" || body.action === "demo-turn") {
     const phone = String(body.phone ?? "");
     if (!SANDBOX_PHONE.test(phone)) return NextResponse.json({ error: "phone must be a sandbox number (972000xxxxxxx)" }, { status: 400 });
     if (body.action === "cleanup") { await cleanupSandbox(business.id, phone); return NextResponse.json({ ok: true }); }
+    if (body.action === "demo-turn") {
+      const { DEMO_BUSINESS_ID } = await import("@/lib/demo-widget");
+      if (business.id !== DEMO_BUSINESS_ID) return NextResponse.json({ error: "demo-turn runs only for the demo business" }, { status: 400 });
+      const { runDemoTurn } = await import("@/lib/agent/sales-agent");
+      const t = String(body.text ?? "").trim();
+      if (!t) return NextResponse.json({ error: "text required" }, { status: 400 });
+      const sandbox = { replies: [] as string[], toolLog: [] as string[] };
+      const startedAt = new Date();
+      const r = await runDemoTurn({ phone, text: t, senderName: typeof body.senderName === "string" ? body.senderName : null, sandbox });
+      const conv = await prisma.conversation.findFirst({ where: { businessId: business.id, phone }, orderBy: { createdAt: "desc" }, select: { id: true, salesState: true } });
+      const usage = conv ? await prisma.agentUsage.findMany({ where: { businessId: business.id, createdAt: { gte: startedAt }, OR: [{ conversationId: conv.id }, { conversationId: null }] }, select: { costUsd: true } }) : [];
+      return NextResponse.json({ ok: true, handled: r.handled, mode: r.mode ?? null, salesState: conv?.salesState ?? null, replies: sandbox.replies, toolLog: sandbox.toolLog, tools: [], usage: { calls: usage.length, costUsd: usage.reduce((s, u) => s + u.costUsd, 0) }, ms: Date.now() - startedAt.getTime() });
+    }
 
     const text = String(body.text ?? "").trim();
     if (!text) return NextResponse.json({ error: "text required" }, { status: 400 });

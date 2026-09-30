@@ -706,6 +706,9 @@ model Conversation {
   agentType   String   @default("customer")  // customer | barber
   status      String   @default("active")    // active | resolved | escalated
   summary     String?                         // auto-summary after close
+  // ── Stage 1 sales funnel (demo shop only): JSON { mode: "demo" | "pitched" | "sales" | "lead" | "declined", ... }
+  //    written by src/lib/agent/sales-agent.ts. Null = an ordinary conversation.
+  salesState  String?  @map("sales_state")
   // ── Manual escalation: when an admin sends a manual reply, agent is muted
   // for this conversation for 24h. Null = agent active. Logic is lazy:
   // checked on incoming message, cleared automatically when expired.
@@ -950,9 +953,16 @@ model Lead {
   id        String   @id @default(uuid())
   name      String?
   phone     String
-  source    String   @default("landing")  // landing | manual
+  source    String   @default("landing")  // landing | manual | whatsapp_demo (stage 1 sales agent)
   status    String   @default("new")       // new | contacted | demo | won | lost
   note      String?
+  // ── Stage 1 (docs/PLAN-MASTER.md): captured by the sales agent in the demo shop's WhatsApp ──
+  businessName   String?   @map("business_name")   // the prospect's shop, as he wrote it
+  businessType   String?   @map("business_type")   // vertical guessed/asked (default barber_men)
+  conversationId String?   @map("conversation_id") // the demo conversation the lead came from
+  summary        String?                           // one-paragraph recap of what he tried and asked
+  remindedAt     DateTime? @map("reminded_at")     // "lead untouched for 24h" reminder sent to the owner
+  businessId     String?   @map("business_id")     // the tenant created from this lead ("צור עסק מליד")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt         @map("updated_at")
 

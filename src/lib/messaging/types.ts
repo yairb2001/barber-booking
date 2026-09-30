@@ -10,6 +10,7 @@ export type MessageKind =
   | "manual"
   | "agent_broadcast" // owner/CEO-agent free message to a customer (mirrored into the conversation thread)
   | "agent_reply"
+  | "sales_reply"      // stage 1: the sales agent in the demo shop's WhatsApp (src/lib/agent/sales-agent.ts)
   | "agent_followup"   // nudge sent when a chat went quiet without a booking
   | "agent_question_followup" // fast nudge (~1h) when the agent asked a question and got no reply
   | "greeting_link"    // link-first: fixed greeting + booking link on first contact (0 tokens)
