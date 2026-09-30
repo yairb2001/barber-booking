@@ -136,6 +136,31 @@ export async function ensureEvolutionInstance(name: string): Promise<{ ok: boole
   return { ok: w.ok, created: false, error: w.error };
 }
 
+/**
+ * Pairing code ("קישור באמצעות מספר הטלפון") for a number WhatsApp refuses to link by QR.
+ * Baileys only hands one out on a brand-new connection, so the instance is recreated
+ * with the number attached; the webhook is re-registered on creation.
+ */
+export async function pairingCodeForNumber(name: string, number: string): Promise<{ ok: boolean; code?: string; error?: string }> {
+  if (!evolutionConfigured()) return { ok: false, error: "evolution_not_configured" };
+  await api("DELETE", `/instance/logout/${name}`).catch(() => null);
+  await api("DELETE", `/instance/delete/${name}`).catch(() => null);
+  await new Promise(r => setTimeout(r, 2500));
+  const r = await api<{ qrcode?: { pairingCode?: string | null } }>("POST", "/instance/create", {
+    instanceName: name, number: number.replace(/\D/g, ""), qrcode: true, integration: "WHATSAPP-BAILEYS",
+    webhook: { url: evolutionWebhookUrl(), byEvents: false, base64: false, events: WEBHOOK_EVENTS },
+    rejectCall: false, groupsIgnore: true, alwaysOnline: false, readMessages: false, readStatus: false, syncFullHistory: false,
+  }, 45_000);
+  if (!r.ok) return { ok: false, error: r.error };
+  let code = r.data?.qrcode?.pairingCode || null;
+  if (!code) {
+    await new Promise(r2 => setTimeout(r2, 4000));
+    const c = await api<{ pairingCode?: string | null }>("GET", `/instance/connect/${name}?number=${number.replace(/\D/g, "")}`);
+    code = c.data?.pairingCode || null;
+  }
+  return code ? { ok: true, code } : { ok: false, error: "no pairing code" };
+}
+
 export async function deleteEvolutionInstance(name: string): Promise<{ ok: boolean; error?: string }> {
   await api("DELETE", `/instance/logout/${name}`).catch(() => null);
   const r = await api("DELETE", `/instance/delete/${name}`);

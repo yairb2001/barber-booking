@@ -40,6 +40,44 @@ export function useWhatsAppQr(active: boolean) {
   return { data, loading };
 }
 
+/** "Can't scan?" fallback for businesses on our server: WhatsApp's "link with phone
+ *  number" flow. Asks the API for a code bound to the business's number and shows it. */
+export function PairingCodeFallback() {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [code, setCode] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  async function getCode() {
+    setBusy(true); setError(null); setCode(null); setOpen(true);
+    try {
+      const r = await fetch("/api/admin/whatsapp/pairing-code", { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.code) setError(j.error || "לא התקבל קוד, נסה שוב בעוד רגע");
+      else setCode(j.code);
+    } catch { setError("שגיאת רשת"); }
+    setBusy(false);
+  }
+  return (
+    <div className="mt-4 text-center">
+      {!open ? (
+        <button type="button" onClick={getCode} className="text-sm font-medium text-teal-700 underline underline-offset-2">לא מצליח לסרוק? קישור באמצעות מספר הטלפון</button>
+      ) : (
+        <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-4">
+          <p className="text-xs text-slate-600 mb-2">בטלפון: מכשירים מקושרים ← קישור מכשיר ← <b>קישור באמצעות מספר הטלפון</b> ← הקלידו את הקוד:</p>
+          {busy ? <div className="text-slate-400 text-sm py-2">מכין קוד…</div>
+            : code ? <div className="font-mono text-2xl tracking-[0.3em] font-bold text-slate-800 py-2" dir="ltr">{code.slice(0, 4)}-{code.slice(4)}</div>
+            : error ? <div className="text-sm text-red-600 py-2">{error}</div> : null}
+          <div className="flex items-center justify-center gap-3 mt-1">
+            <button type="button" onClick={getCode} disabled={busy} className="text-xs text-teal-700 underline underline-offset-2 disabled:opacity-50">קוד חדש</button>
+            <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-400">חזרה ל‑QR</button>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-2">הקוד תקף כמה דקות. הקוד קשור למספר של העסק כפי שהוגדר במערכת.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Connected / QR / error / loading states — the part that was byte-for-byte duplicated. */
 export function WhatsAppQrBody({ data, loading, errorHint }: { data: QrState | null; loading: boolean; errorHint: string }) {
   if (data?.connected) {

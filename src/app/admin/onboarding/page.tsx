@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
 import { setupFieldsFor, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
-import { useWhatsAppQr, WhatsAppQrBody } from "@/components/WhatsAppQrPanel";
+import { useWhatsAppQr, WhatsAppQrBody, PairingCodeFallback } from "@/components/WhatsAppQrPanel";
 
 /**
  * Setup wizard — stage 1 (docs/PLAN-MASTER.md, spec "אפיון שלב 1" §3).
@@ -406,6 +406,7 @@ export default function OnboardingPage() {
                 <WhatsAppQrBody data={qr.data} loading={qr.loading} errorHint="נסה שוב בעוד רגע." />
               )}
               {qr.data?.qr && <p className="text-xs text-slate-500 mt-2">במכשיר של העסק: וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר ← סרוק.</p>}
+              {qr.data?.qr && <PairingCodeFallback />}
               {qr.data?.connected && <p className="text-sm text-emerald-700 mt-2">{waTestSent ? "שלחנו לך הודעת בדיקה מהמספר של העסק." : ""}</p>}
             </>
           )}

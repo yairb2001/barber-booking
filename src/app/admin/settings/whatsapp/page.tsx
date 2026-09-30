@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { tierHas } from "@/lib/tier";
-import { useWhatsAppQr, WhatsAppQrBody } from "@/components/WhatsAppQrPanel";
+import { useWhatsAppQr, WhatsAppQrBody, PairingCodeFallback } from "@/components/WhatsAppQrPanel";
 
 // ── QR re-connect ────────────────────────────────────────────────────────────
 // Live GreenAPI linking: polls the instance state and, when the WhatsApp number
@@ -75,6 +75,7 @@ function OurServerConnection() {
             סרקו את הקוד מתוך אפליקציית הוואטסאפ במכשיר של העסק: <b>הגדרות ← מכשירים מקושרים ← קישור מכשיר</b>. הקוד מתחדש לבד עד שהסריקה עוברת. אין צורך בשום פרטים או טוקנים.
           </p>
           <WhatsAppQrBody data={data} loading={loading} errorHint="Chator עוד מכין את החיבור — המסך יתעדכן לבד." />
+          {!!data?.qr && <PairingCodeFallback />}
         </>
       )}
     </div>
