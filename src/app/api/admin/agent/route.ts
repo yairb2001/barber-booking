@@ -58,7 +58,19 @@ export async function PATCH(req: NextRequest) {
     offerOtherBarberAtRequestedTime,
     lateArrivalEnabled, lateArrivalGraceMinutes, lateArrivalSwapLeadMinutes, lateArrivalOfferSwapWithNext,
     lateArrivalNoShowMessage,
+    setupConfig,
   } = body;
+
+  // Setup-interview answers (stage 1 wizard): merge object into the stored JSON.
+  let mergedSetup: string | undefined;
+  if (setupConfig && typeof setupConfig === "object") {
+    const cur = await prisma.agentConfig.findUnique({ where: { businessId: biz.id }, select: { setupConfig: true } });
+    let existing: Record<string, unknown> = {};
+    try { existing = cur?.setupConfig ? JSON.parse(cur.setupConfig) : {}; } catch { existing = {}; }
+    const clean: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(setupConfig as Record<string, unknown>)) if (typeof v === "string" || typeof v === "boolean") clean[k] = v;
+    mergedSetup = JSON.stringify({ ...existing, ...clean });
+  }
 
   const config = await prisma.agentConfig.upsert({
     where:  { businessId: biz.id },
@@ -79,8 +91,10 @@ export async function PATCH(req: NextRequest) {
       lateArrivalSwapLeadMinutes: lateArrivalSwapLeadMinutes ?? 40,
       lateArrivalOfferSwapWithNext: lateArrivalOfferSwapWithNext ?? false,
       lateArrivalNoShowMessage: lateArrivalNoShowMessage || null,
+      ...(mergedSetup !== undefined && { setupConfig: mergedSetup }),
     },
     update: {
+      ...(mergedSetup !== undefined && { setupConfig: mergedSetup }),
       ...(isEnabled      !== undefined && { isEnabled }),
       ...(agentName      !== undefined && { agentName }),
       ...(systemPrompt   !== undefined && { systemPrompt:   systemPrompt   || null }),

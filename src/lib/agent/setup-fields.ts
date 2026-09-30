@@ -141,6 +141,13 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
     compile: v => `אמצעי תשלום מקובלים: ${v}.`,
   },
 
+  // ── D2. Style, in the owner's own words (the wizard's "short talk" field) ──
+  {
+    key: "styleNotes", group: "זהות וטון", core: false, type: "text",
+    question: v => `ספר בכמה מילים על הסגנון של ${v.placeDef} ומה חשוב לך שהסוכן ידע (למשל: "אנחנו משפחתיים, מדברים בגובה העיניים, לא מזכירים מבצעים")`,
+    compile: v => `סגנון העסק במילים של בעל העסק: ${v}`,
+  },
+
   // ── E. Escalation (text part; the phone number is a system toggle elsewhere) ──
   {
     key: "escalateWhen", group: "הסלמה", core: true, type: "text",

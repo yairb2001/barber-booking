@@ -77,6 +77,8 @@ export type Vocab = {
   serviceExamples: string;
   /** Whether street slang ("אחי") is an allowed address style (decision #9: barber_men only). */
   slangAllowed: boolean;
+  /** Starter catalog the setup wizard offers (market prices, editable). */
+  serviceCatalog: { name: string; price: number; duration: number }[];
 };
 
 const BASE: Record<BusinessType, Vocab> = {
@@ -89,6 +91,7 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוח", customerPlural: "לקוחות", customerFem: false, choose: "בחר", tryVerb: "נסה", knows: "ידע",
     defaultService: "תספורת + זקן", serviceExamples: "תספורת, תספורת + זקן, זקן",
     slangAllowed: true,
+    serviceCatalog: [{ name: "תספורת", price: 80, duration: 30 }, { name: "תספורת + זקן", price: 110, duration: 45 }, { name: "עיצוב זקן", price: 40, duration: 20 }, { name: "תספורת מספריים", price: 120, duration: 40 }, { name: "תספורת ילד", price: 60, duration: 25 }],
   },
   barber_women: {
     type: "barber_women", typeLabel: "מספרת נשים", placeKind: "מספרה לנשים",
@@ -99,6 +102,7 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "תספורת", serviceExamples: "תספורת, פן, צבע, גוונים",
     slangAllowed: false,
+    serviceCatalog: [{ name: "תספורת", price: 150, duration: 45 }, { name: "פן", price: 120, duration: 40 }, { name: "צבע", price: 300, duration: 90 }, { name: "גוונים", price: 450, duration: 150 }],
   },
   nails: {
     type: "nails", typeLabel: "סטודיו ציפורניים", placeKind: "סטודיו לציפורניים",
@@ -109,6 +113,7 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "מניקור ג'ל", serviceExamples: "מניקור ג'ל, בנייה, מילוי, פדיקור",
     slangAllowed: false,
+    serviceCatalog: [{ name: "מניקור ג'ל", price: 120, duration: 60 }, { name: "בנייה", price: 250, duration: 120 }, { name: "מילוי", price: 180, duration: 90 }, { name: "פדיקור", price: 150, duration: 60 }],
   },
   cosmetics: {
     type: "cosmetics", typeLabel: "מכון קוסמטיקה", placeKind: "מכון קוסמטיקה",
@@ -119,6 +124,7 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "טיפול פנים", serviceExamples: "טיפול פנים, הסרת שיער, עיצוב גבות",
     slangAllowed: false,
+    serviceCatalog: [{ name: "טיפול פנים", price: 350, duration: 75 }, { name: "עיצוב גבות", price: 80, duration: 20 }, { name: "הסרת שיער בשעווה", price: 150, duration: 45 }],
   },
 };
 

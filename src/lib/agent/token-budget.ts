@@ -32,8 +32,8 @@ export const USD_ILS = Number(process.env.TOKEN_USD_ILS) || 3.65;
 /** Sonnet input price, $ per token — the unit of a "weighted token". */
 const USD_PER_WEIGHTED_TOKEN = 3 / 1_000_000;
 
-export const DEFAULT_UNAVAILABLE_MESSAGE =
-  "היי {{name}}! הכי מהיר לקבוע תור דרך הקישור האישי שלך:\n{{link}}\n\nלכל דבר אחר נחזור אליך בהקדם.";
+import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
+export { DEFAULT_UNAVAILABLE_MESSAGE };
 
 export type TokenBudgetState = {
   month: string;             // "2026-09" (Israel time)
