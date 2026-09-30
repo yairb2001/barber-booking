@@ -48,6 +48,39 @@ function QrConnect() {
   );
 }
 
+// ── Our own WhatsApp server (stage 1 / channels §2) ─────────────────────────
+// The business's number is linked to Chator's server: no provider fields, no
+// tokens — just the live state and, when unlinked, a QR that refreshes itself.
+function OurServerConnection() {
+  const { data, loading } = useWhatsAppQr(true);
+  const connected = !!data?.connected;
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📲</span>
+          <h2 className="font-semibold text-neutral-800">הוואטסאפ של העסק</h2>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded-full ${connected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+          {connected ? "✓ מחובר" : loading && !data ? "בודק…" : "לא מחובר"}
+        </span>
+      </div>
+      {connected ? (
+        <p className="text-xs text-neutral-500 leading-relaxed">
+          המספר מקושר ל‑Chator. הסוכן, התזכורות והאישורים יוצאים מהמספר של העסק. אם החיבור יתנתק (למשל אחרי החלפת טלפון) יופיע כאן קוד חדש לסריקה, וגם נודיע לך.
+        </p>
+      ) : (
+        <>
+          <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
+            סרקו את הקוד מתוך אפליקציית הוואטסאפ במכשיר של העסק: <b>הגדרות ← מכשירים מקושרים ← קישור מכשיר</b>. הקוד מתחדש לבד עד שהסריקה עוברת. אין צורך בשום פרטים או טוקנים.
+          </p>
+          <WhatsAppQrBody data={data} loading={loading} errorHint="Chator עוד מכין את החיבור — המסך יתעדכן לבד." />
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function WhatsAppSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState("basic");
@@ -58,6 +91,7 @@ export default function WhatsAppSettingsPage() {
   const [messagingProvider, setMessagingProvider] = useState("green_api");
   const [greenApiInstanceId, setGreenApiInstanceId] = useState("");
   const [greenApiToken, setGreenApiToken] = useState("");
+  const [evolutionInstance, setEvolutionInstance] = useState<string | null>(null);
   const [chatsEnabled, setChatsEnabled] = useState(false);
   const [whatsappPrefill, setWhatsappPrefill] = useState("");
   const [saving, setSaving] = useState(false);
@@ -74,6 +108,7 @@ export default function WhatsAppSettingsPage() {
         setMessagingProvider(data.messagingProvider || "green_api");
         setGreenApiInstanceId(data.greenApiInstanceId || "");
         setGreenApiToken(data.greenApiToken || "");
+        setEvolutionInstance(data.evolutionInstance || null);
         setChatsEnabled(data.chatsEnabled ?? false);
         setTestPhone(data.phone || "");
         const s = data.settings || {};
@@ -120,7 +155,8 @@ export default function WhatsAppSettingsPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        whatsappNumber, messagingProvider, greenApiInstanceId, greenApiToken, chatsEnabled,
+        chatsEnabled,
+        ...(onOurServer ? {} : { whatsappNumber, messagingProvider, greenApiInstanceId, greenApiToken }),
         settingsPatch: { whatsappPrefill: whatsappPrefill.trim() },
       }),
     });
@@ -128,7 +164,8 @@ export default function WhatsAppSettingsPage() {
   }
 
   const canOwnWhatsapp = tierHas(tier, "ownWhatsapp");
-  const configured = !!(greenApiInstanceId && greenApiToken);
+  const onOurServer = messagingProvider === "evolution" && !!evolutionInstance;
+  const configured = onOurServer || !!(greenApiInstanceId && greenApiToken);
 
   return (
     <div className="p-8 overflow-auto h-full">
@@ -140,7 +177,9 @@ export default function WhatsAppSettingsPage() {
 
       {loading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
         <div className="space-y-5 max-w-xl">
-          {whatsappStatus !== "connected" && (
+          {onOurServer ? (
+            <OurServerConnection />
+          ) : whatsappStatus !== "connected" && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <div className="flex items-center gap-3 mb-3">
                 <span className="text-2xl">📲</span>
@@ -163,7 +202,7 @@ export default function WhatsAppSettingsPage() {
             </div>
           )}
 
-          {canOwnWhatsapp && (
+          {canOwnWhatsapp && !onOurServer && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
@@ -206,7 +245,7 @@ export default function WhatsAppSettingsPage() {
             </div>
           )}
 
-          {canOwnWhatsapp && configured && <QrConnect />}
+          {canOwnWhatsapp && configured && !onOurServer && <QrConnect />}
 
           <div className="bg-white border border-neutral-200 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-1">
