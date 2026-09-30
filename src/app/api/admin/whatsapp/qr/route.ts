@@ -25,7 +25,10 @@ export async function GET(req: NextRequest) {
   });
   if (!business) return NextResponse.json({ error: "business not found" }, { status: 404 });
 
-  const provider = providerForBusiness(business);
+  const wanted = new URL(req.url).searchParams.get("provider");
+  const provider = wanted === "evolution" && business.evolutionInstance
+    ? providerForBusiness({ ...business, messagingProvider: "evolution" })
+    : providerForBusiness(business);
   if (!provider || !(provider instanceof GreenApiProvider || provider instanceof EvolutionProvider) || !provider.isConfigured()) {
     return NextResponse.json({ error: "not_configured" }, { status: 400 });
   }

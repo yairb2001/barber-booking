@@ -97,6 +97,17 @@ export class GreenApiProvider implements MessagingProvider {
    * still requires scanning a fresh QR from the phone.
    * Docs: https://green-api.com/en/docs/api/account/Reboot/
    */
+  /** Unlink the number from this Green instance (migration to our own server). */
+  async logout(): Promise<{ ok: boolean; error?: string }> {
+    if (!this.isConfigured()) return { ok: false, error: "provider_not_configured" };
+    try {
+      const res = await fetch(`https://api.green-api.com/waInstance${this.instanceId}/logout/${this.token}`, { cache: "no-store", signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) return { ok: false, error: `Green API HTTP ${res.status}` };
+      const j = await res.json().catch(() => ({})) as { isLogout?: boolean };
+      return j.isLogout ? { ok: true } : { ok: false, error: "logout not confirmed" };
+    } catch (e) { return { ok: false, error: e instanceof Error ? e.message : "network" }; }
+  }
+
   async reboot(): Promise<{ ok: boolean; error?: string }> {
     if (!this.isConfigured()) return { ok: false, error: "not_configured" };
     const url = `https://api.green-api.com/waInstance${this.instanceId}/reboot/${this.token}`;

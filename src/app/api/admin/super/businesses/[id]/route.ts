@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { isBusinessType } from "@/lib/vocab";
 import { ensureEvolutionInstance, deleteEvolutionInstance } from "@/lib/messaging/evolution";
+import { GreenApiProvider } from "@/lib/messaging/green-api";
 
 /**
  * PATCH /api/admin/super/businesses/[id]
@@ -13,6 +14,8 @@ import { ensureEvolutionInstance, deleteEvolutionInstance } from "@/lib/messagin
  *   tokenTopupIls: number          → one-time addition to THIS month's package
  *   greenApiInstanceId, greenApiToken, whatsappStatus → the number connection (stage 1 "חיבורים ממתינים")
  *   messagingProvider: "evolution" | "green_api" → "evolution" creates the instance on our server (named after the slug)
+ *   prepareEvolution: true         → create the instance but keep sending through Green (scan first, switch after)
+ *   logoutGreen: true              → unlink the number from the Green instance (after the switch)
  *   extendTrialDays: number        → push trialEndsAt forward N days from now
  *   markPaid: boolean              → set/clear paidAt (converts trial → paying)
  *   suspend: boolean               → set/clear suspendedAt
@@ -32,6 +35,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.greenApiInstanceId === "string") data.greenApiInstanceId = body.greenApiInstanceId.trim() || null;
   if (typeof body.greenApiToken === "string") data.greenApiToken = body.greenApiToken.trim() || null;
   if (typeof body.whatsappStatus === "string" && ["not_requested", "requested", "connected"].includes(body.whatsappStatus)) data.whatsappStatus = body.whatsappStatus;
+  if (body.prepareEvolution === true) {
+    const biz = await prisma.business.findUnique({ where: { id: params.id }, select: { slug: true, evolutionInstance: true } });
+    if (!biz) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const name = biz.evolutionInstance || biz.slug;
+    const r = await ensureEvolutionInstance(name);
+    if (!r.ok) return NextResponse.json({ error: `יצירת המופע בשרת נכשלה: ${r.error}` }, { status: 502 });
+    data.evolutionInstance = name;
+  }
+  if (body.logoutGreen === true) {
+    const biz = await prisma.business.findUnique({ where: { id: params.id }, select: { whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true } });
+    if (biz?.greenApiInstanceId && biz.greenApiToken) {
+      const r = await new GreenApiProvider({ whatsappNumber: biz.whatsappNumber, greenApiInstanceId: biz.greenApiInstanceId, greenApiToken: biz.greenApiToken }).logout();
+      if (!r.ok) return NextResponse.json({ error: `ניתוק גרין נכשל: ${r.error}` }, { status: 502 });
+    }
+  }
   if (body.messagingProvider === "evolution" || body.messagingProvider === "green_api") {
     const biz = await prisma.business.findUnique({ where: { id: params.id }, select: { slug: true, evolutionInstance: true } });
     if (!biz) return NextResponse.json({ error: "not found" }, { status: 404 });

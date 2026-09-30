@@ -75,13 +75,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const typeMessage = TYPE_MAP[mtype] ?? "unknownMessage";
     const text = msg.conversation ?? msg.extendedTextMessage?.text ?? "";
 
-    // Outgoing: only messages typed on the phone itself (Evolution reports the
-    // device source); replies we sent through the API come back as "unknown"/"web"? —
-    // Baileys marks API sends without a device source, so anything with a real
-    // device source is a human taking over the chat.
+    // Outgoing: only messages typed on the phone itself count as "a human took
+    // over" (Green's outgoingMessageReceived). Evolution derives `source` from the
+    // message id: our own API sends (Baileys) look like "web", phone-typed ones
+    // are "android" / "ios". "web" must NOT mute the agent after every reply.
     if (key.fromMe) {
       const src = ev.data.source ?? "";
-      if (!["android", "ios", "desktop", "web"].includes(src)) return NextResponse.json({ ok: true, skipped: "api-sent" });
+      if (!["android", "ios"].includes(src)) return NextResponse.json({ ok: true, skipped: "api-sent" });
     }
 
     const media = ["imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage"].includes(typeMessage);
