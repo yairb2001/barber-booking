@@ -33,6 +33,7 @@ import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
 import { vocabFor, vocabOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
+import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
@@ -2073,6 +2074,8 @@ export type SandboxOptions = {
   proposalPhone?: string;
   /** Replay: force one model for the whole run (bypasses the router) so two models can be compared on the same episode. */
   modelOverride?: string;
+  /** Tests: apply the token-package gate (token-budget.ts) even in a sandbox run; the fixed message lands in `replies`. */
+  enforceBudget?: boolean;
 };
 
 export async function runCustomerAgent(opts: {
@@ -2337,6 +2340,28 @@ export async function runCustomerAgent(opts: {
   let bizSettings: Record<string, unknown> = {};
   if (biz.settings) { try { bizSettings = JSON.parse(biz.settings); } catch { /* malformed settings — use Claude default */ } }
   const aiProvider = bizSettings.aiProvider === "openai" ? "openai" : "anthropic";
+
+  // ── Token package (stage 1): everything above this line is code and keeps
+  // working when the month's package is used up; only the model is gated. ──
+  if (!preHandledReply && (!sandbox || sandbox.enforceBudget)) {
+    try {
+      const gate = await tokenBudgetGate(businessId, phone);
+      if (gate.blocked) {
+        console.log(`[agent] token package used up biz=${businessId} (${gate.state.pct}%) — agent silent`);
+        if (gate.unavailableMessage) {
+          if (sandbox) sandbox.replies.push(gate.unavailableMessage);
+          else {
+            await prisma.conversationMessage.create({ data: { conversationId: conversation.id, role: "assistant", content: gate.unavailableMessage, source: "agent" } });
+            await sendMessage({ businessId, customerPhone: phone, kind: "agent_unavailable", body: gate.unavailableMessage }).catch(e => console.error("[agent] unavailable message send failed", e));
+          }
+        }
+        if (!sandbox) {
+          pushChatEvent({ businessId, conversationId: conversation.id, phone, event: "reply", payload: { title: `💬 ${phone} (הסוכן מושהה — חבילה נגמרה)`, body: incomingText.slice(0, 120), url: `/admin/chats?phone=${encodeURIComponent(phone)}`, tag: `chat-${conversation.id}` } }).catch(() => {});
+        }
+        return;
+      }
+    } catch (e) { console.error("[agent] token budget gate failed (open)", e); }
+  }
 
   if (preHandledReply) {
     // resolved in code above — nothing to ask the model

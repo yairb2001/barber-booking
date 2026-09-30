@@ -4,6 +4,27 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import NewCustomersRetentionCard from "./RetentionCard";
 
+// ── Token package meter (stage 1): tokens only, no money ──────────────────────
+type Meter = { monthLabel: string; usedLabel: string; packageLabel: string; pct: number; level: "ok" | "warn" | "blocked" | "none" };
+function TokenMeterCard() {
+  const [m, setM] = useState<Meter | null>(null);
+  useEffect(() => { fetch("/api/admin/agent/usage-meter", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(setM).catch(() => {}); }, []);
+  if (!m || m.level === "none") return null;
+  const color = m.level === "blocked" ? "bg-red-500" : m.level === "warn" ? "bg-amber-500" : "bg-teal-600";
+  return (
+    <div className="bg-white rounded-2xl border border-neutral-200 p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-neutral-800">🤖 חבילת הסוכן · {m.monthLabel}</div>
+        <div className="text-xs text-neutral-500">נוצלו {m.usedLabel} מתוך {m.packageLabel} טוקנים</div>
+      </div>
+      <div className="mt-2 h-2.5 rounded-full bg-neutral-100 overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
+      <div className="mt-1.5 text-[11px] text-neutral-500">
+        {m.level === "blocked" ? "החבילה נגמרה לחודש — הסוכן לא עונה ללקוחות חדשים עד תחילת החודש; תזכורות ואישורים ממשיכים. להרחבה כתוב ליאיר." : m.level === "warn" ? `${m.pct}% נוצלו. כשהחבילה תיגמר הסוכן יפסיק לענות עד תחילת החודש.` : `${m.pct}% נוצלו. מתאפס ב‑1 לחודש.`}
+      </div>
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 const MONTHS_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
 
@@ -1398,6 +1419,8 @@ export default function Dashboard() {
           </p>
         </div>
       )}
+
+      {isOwner && <TokenMeterCard />}
 
       {/* ── Barber filter + deep-dive link (owners) ── */}
       {isOwner ? (

@@ -190,6 +190,7 @@ export async function POST(req: NextRequest) {
     }
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone, modelOverride,
+      enforceBudget: body.enforceBudget === true,
       ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : templateBody ? { promptOverride: templateBody, promptVersion: 4 } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)

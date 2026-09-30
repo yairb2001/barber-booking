@@ -11,6 +11,9 @@ export type MessageKind =
   | "agent_broadcast" // owner/CEO-agent free message to a customer (mirrored into the conversation thread)
   | "agent_reply"
   | "sales_reply"      // stage 1: the sales agent in the demo shop's WhatsApp (src/lib/agent/sales-agent.ts)
+  | "token_alert_80"   // stage 1: token package at 80% — one alert to the owner per month (token-budget.ts)
+  | "token_alert_100"  // stage 1: package used up — agent stops answering until next month
+  | "agent_unavailable" // stage 1: the fixed message a customer gets while the package is used up (once a day per phone)
   | "agent_followup"   // nudge sent when a chat went quiet without a booking
   | "agent_question_followup" // fast nudge (~1h) when the agent asked a question and got no reply
   | "greeting_link"    // link-first: fixed greeting + booking link on first contact (0 tokens)

@@ -117,6 +117,7 @@ type UsageRow = {
   costUsd: number; costUsdMonth: number;
   conversations: number; aiQuota: number;
   broadcasts: number; broadcastQuota: number;
+  budgetIls?: number; baseBudgetIls?: number; topupIls?: number; usedIls?: number; budgetPct?: number | null;
 };
 type UsageData = {
   rows: UsageRow[];
@@ -198,6 +199,7 @@ function Usage() {
               <th className="text-center font-medium p-3">מסלול</th>
               <th className="text-center font-medium p-3">שיחות / מכסה</th>
               <th className="text-center font-medium p-3">תפוצה / מכסה</th>
+              <th className="text-center font-medium p-3">חבילת טוקנים (₪ גלם)</th>
               <th className="text-center font-medium p-3">עלות החודש</th>
             </tr>
           </thead>
@@ -210,6 +212,13 @@ function Usage() {
                 </td>
                 <td className="p-3"><QuotaCell used={r.conversations} quota={r.aiQuota} /></td>
                 <td className="p-3"><QuotaCell used={r.broadcasts} quota={r.broadcastQuota} /></td>
+                <td className="p-3 text-center text-xs">
+                  {r.budgetIls ? (
+                    <span className={r.budgetPct != null && r.budgetPct >= 100 ? "text-red-600 font-semibold" : r.budgetPct != null && r.budgetPct >= 80 ? "text-amber-600 font-semibold" : "text-slate-700"}>
+                      {NIS}{(r.usedIls ?? 0).toFixed(1)} / {NIS}{r.budgetIls}{r.topupIls ? ` (+${r.topupIls})` : ""} · {r.budgetPct}%
+                    </span>
+                  ) : <span className="text-slate-300">—</span>}
+                </td>
                 <td className="p-3 text-center font-semibold text-emerald-700">{ils(r.costUsdMonth)}</td>
               </tr>
             ))}
@@ -581,6 +590,8 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
   const [setup, setSetup] = useState(String(b.setupFee ?? ""));
   const [tier, setTier] = useState(b.tier);
   const [bizType, setBizType] = useState(b.businessType);
+  const [budget, setBudget] = useState("");
+  const [topup, setTopup] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function patch(body: Record<string, unknown>) {
@@ -647,7 +658,15 @@ function BizCard({ b, reload }: { b: Biz; reload: () => void }) {
               {BUSINESS_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </label>
-          <button disabled={busy} onClick={() => patch({ monthlyPrice: monthly ? Number(monthly) : null, setupFee: setup ? Number(setup) : null, tier, businessType: bizType })}
+          <label className="text-xs text-slate-500">
+            חבילת טוקנים {NIS}/חודש
+            <input value={budget} onChange={(e) => setBudget(e.target.value)} type="number" placeholder="ברירת מחדל" className="block w-24 rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+          </label>
+          <label className="text-xs text-slate-500">
+            תוספת חד־פעמית {NIS}
+            <input value={topup} onChange={(e) => setTopup(e.target.value)} type="number" placeholder="0" className="block w-20 rounded-lg border border-slate-200 px-2 py-1 text-sm" />
+          </label>
+          <button disabled={busy} onClick={() => patch({ monthlyPrice: monthly ? Number(monthly) : null, setupFee: setup ? Number(setup) : null, tier, businessType: bizType, ...(budget !== "" ? { tokenBudgetIls: Number(budget) } : {}), ...(topup ? { tokenTopupIls: Number(topup) } : {}) })}
             className="bg-teal-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg">שמור</button>
           <button onClick={() => setEditing(false)} className="text-slate-400 text-xs px-2 py-1.5">ביטול</button>
         </div>

@@ -8,6 +8,8 @@ import { isBusinessType } from "@/lib/vocab";
  * Platform-owner actions on a single tenant. Accepts any subset of:
  *   monthlyPrice, setupFee, tier   → set billing
  *   businessType                   → the vertical (barber_men | barber_women | nails | cosmetics)
+ *   tokenBudgetIls: number | null  → the monthly token package as raw cost in ₪ (null = tier default)
+ *   tokenTopupIls: number          → one-time addition to THIS month's package
  *   extendTrialDays: number        → push trialEndsAt forward N days from now
  *   markPaid: boolean              → set/clear paidAt (converts trial → paying)
  *   suspend: boolean               → set/clear suspendedAt
@@ -24,6 +26,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (body.setupFee === null) data.setupFee = null;
   if (typeof body.tier === "string" && ["basic", "pro", "premium"].includes(body.tier)) data.tier = body.tier;
   if (isBusinessType(body.businessType)) data.businessType = body.businessType;
+
+  // Token package lives in settings JSON (merge, never overwrite other keys).
+  if (body.tokenBudgetIls === null || typeof body.tokenBudgetIls === "number" || typeof body.tokenTopupIls === "number") {
+    const cur = await prisma.business.findUnique({ where: { id: params.id }, select: { settings: true } });
+    let s: Record<string, unknown> = {};
+    try { s = cur?.settings ? JSON.parse(cur.settings) : {}; } catch { s = {}; }
+    if (body.tokenBudgetIls === null) delete s.tokenBudgetIls;
+    else if (typeof body.tokenBudgetIls === "number") s.tokenBudgetIls = Math.max(0, Math.round(body.tokenBudgetIls));
+    if (typeof body.tokenTopupIls === "number" && body.tokenTopupIls !== 0) {
+      const { currentMonth } = await import("@/lib/agent/token-budget");
+      const topups = Array.isArray(s.tokenTopups) ? (s.tokenTopups as unknown[]) : [];
+      topups.push({ month: currentMonth().key, ils: Math.round(body.tokenTopupIls), at: new Date().toISOString() });
+      s.tokenTopups = topups;
+    }
+    data.settings = JSON.stringify(s);
+  }
 
   if (typeof body.extendTrialDays === "number" && body.extendTrialDays > 0) {
     data.trialEndsAt = new Date(Date.now() + body.extendTrialDays * 86400000);

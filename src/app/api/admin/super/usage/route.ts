@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { tierQuota, tierLabel } from "@/lib/tier";
+import { budgetOf, currentMonth, USD_ILS } from "@/lib/agent/token-budget";
 
 /**
  * GET /api/admin/super/usage
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   }
 
   const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const { key: monthKey, start: monthStart } = currentMonth(now);
 
   const [allTime, monthCost, convoRows, broadcastRows, businesses] = await Promise.all([
     prisma.agentUsage.groupBy({
@@ -41,11 +42,12 @@ export async function GET(req: NextRequest) {
       where: { kind: { in: ["broadcast", "agent_broadcast"] }, createdAt: { gte: monthStart } },
       _count: { _all: true },
     }),
-    prisma.business.findMany({ select: { id: true, name: true, tier: true } }),
+    prisma.business.findMany({ select: { id: true, name: true, tier: true, settings: true } }),
   ]);
 
   const nameMap = new Map(businesses.map((b) => [b.id, b.name]));
   const tierMap = new Map(businesses.map((b) => [b.id, b.tier]));
+  const bizMap = new Map(businesses.map((b) => [b.id, b]));
   const monthCostMap = new Map(monthCost.map((g) => [g.businessId, g._sum.costUsd ?? 0]));
   const broadcastMap = new Map(broadcastRows.map((g) => [g.businessId, g._count._all]));
   const convoCountMap = new Map<string, number>();
@@ -78,6 +80,13 @@ export async function GET(req: NextRequest) {
         aiQuota: q.aiConversations,
         broadcasts: broadcastMap.get(id) ?? 0,
         broadcastQuota: q.broadcasts,
+        // Token package (stage 1): raw-cost budget in ₪ vs this month's real cost.
+        ...(() => {
+          const b = bizMap.get(id);
+          const bud = budgetOf(b ?? { tier, settings: null }, monthKey);
+          const usedIls = (monthCostMap.get(id) ?? 0) * USD_ILS;
+          return { budgetIls: bud.total, baseBudgetIls: bud.base, topupIls: bud.topup, usedIls, budgetPct: bud.total > 0 ? Math.round((usedIls / bud.total) * 100) : null };
+        })(),
       };
     })
     .sort((a, b) => b.costUsdMonth - a.costUsdMonth);
