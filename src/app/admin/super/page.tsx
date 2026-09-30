@@ -44,7 +44,7 @@ const LEAD_STATUS: Record<string, { label: string; cls: string }> = {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function SuperAdminPage() {
-  const [tab, setTab] = useState<"overview" | "leads" | "businesses" | "usage">("overview");
+  const [tab, setTab] = useState<"overview" | "leads" | "businesses" | "connections" | "usage">("overview");
   const [stats, setStats] = useState<Stats | null>(null);
   const [businesses, setBusinesses] = useState<Biz[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
