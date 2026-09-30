@@ -78,7 +78,7 @@ export class EvolutionProvider implements MessagingProvider {
 
   async reboot(): Promise<{ ok: boolean; error?: string }> {
     if (!this.isConfigured()) return { ok: false, error: "provider_not_configured" };
-    const r = await api("PUT", `/instance/restart/${this.instance}`);
+    const r = await api("POST", `/instance/restart/${this.instance}`);
     return r.ok ? { ok: true } : { ok: false, error: r.error };
   }
 
@@ -90,6 +90,15 @@ export class EvolutionProvider implements MessagingProvider {
     if (r.data?.base64) return { ok: true, type: "qrCode", qr: r.data.base64 };
     if (r.data?.instance?.state === "open") return { ok: true, type: "alreadyLogged", message: "connected" };
     return { ok: true, type: "pending", message: "no qr yet" };
+  }
+
+  /** Pairing code for "קישור באמצעות מספר הטלפון" (when QR linking is refused). Only on a fresh
+   *  connection attempt — the caller recreates the instance first (ensureEvolutionInstance with number). */
+  async getPairingCode(number: string): Promise<{ ok: boolean; code?: string; error?: string }> {
+    if (!this.isConfigured()) return { ok: false, error: "provider_not_configured" };
+    const r = await api<{ pairingCode?: string | null }>("GET", `/instance/connect/${this.instance}?number=${encodeURIComponent(number)}`);
+    if (!r.ok) return { ok: false, error: r.error };
+    return r.data?.pairingCode ? { ok: true, code: r.data.pairingCode } : { ok: false, error: "no pairing code (instance not fresh)" };
   }
 
   /** Unlink the number (the instance stays; a new QR relinks). */
