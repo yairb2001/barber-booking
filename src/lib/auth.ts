@@ -72,6 +72,23 @@ export async function verifySession(
   }
 }
 
+// ── Onboarding link (stage 1): a one-purpose token a new owner gets on WhatsApp.
+// Same secret, different `type`, so it can never pass as an admin session by
+// itself — /api/onboarding-link exchanges it for a real owner session.
+const ONBOARDING_TOKEN_TYPE = "onboarding_link";
+export async function signOnboardingToken(businessId: string, ttlSeconds = 7 * 24 * 3600): Promise<string> {
+  return new SignJWT({ businessId, type: ONBOARDING_TOKEN_TYPE })
+    .setProtectedHeader({ alg: ALG }).setIssuedAt().setExpirationTime(`${ttlSeconds}s`).sign(getSecret());
+}
+export async function verifyOnboardingToken(token: string | undefined): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, getSecret());
+    if (payload.type !== ONBOARDING_TOKEN_TYPE || typeof payload.businessId !== "string") return null;
+    return payload.businessId;
+  } catch { return null; }
+}
+
 export const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: process.env.NODE_ENV === "production",

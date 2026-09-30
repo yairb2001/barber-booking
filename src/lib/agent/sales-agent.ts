@@ -43,14 +43,14 @@ export type SalesState = {
 };
 
 /** Words that make a NEW conversation at the demo number a demo/prospect one. */
-const DEMO_TAG_RE = /הדמו|דמו באתר|דמו של|chator|צ'אטור|צ׳אטור|לעסק שלי|בעל מספרה|אני ספר\b|יש לי מספרה|כמה עולה המערכת|כמה זה עולה|איך מצטרפים|הסוכן שלכם|המערכת שלכם/i;
+const DEMO_TAG_RE = /הדמו|דמו באתר|דמו של|chator|צ'אטור|צ׳אטור|לעסק שלי|בעל מספרה|אני ספר(?![א-ת])|יש לי מספרה|כמה עולה המערכת|כמה זה עולה|איך מצטרפים|הסוכן שלכם|המערכת שלכם/i;
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
 /** Inside a tagged conversation: the customer is asking about the PRODUCT, not a haircut. */
-const PROSPECT_RE = /מערכת|סוכן|בוט|לעסק שלי|אני ספר\b|בעל מספרה|יש לי מספרה|מצטרפ|להצטרף|chator|צ'אטור|צ׳אטור|מנוי|לרכוש|איך זה עובד אצל/i;
+const PROSPECT_RE = /מערכת|סוכן|בוט|לעסק שלי|אני ספר(?![א-ת])|בעל מספרה|יש לי מספרה|מצטרפ|להצטרף|chator|צ'אטור|צ׳אטור|מנוי|לרכוש|איך זה עובד אצל/i;
 /** Price words count as "about the product" only after the pitch — in the demo, "כמה זה עולה" is about the haircut. */
 const PRICE_RE = /כמה זה עולה|מה המחיר|כמה עולה|מחיר/;
 const ACK_RE = /^(תודה|תודה רבה|סבבה|אחלה|מעולה|אוקיי|אוקי|בסדר|👍|🙏)[\s!.👍🙏]*$/;
-const DECLINE_RE = /^(לא|לא תודה|לא עכשיו|לא מעוניין|לא רלוונטי|אין צורך|לא כרגע|אולי בהמשך|עזוב)[\s!.]*$/;
+const DECLINE_RE = /^(לא|לא תודה|לא עכשיו|לא מעוניין|לא רלוונטי|אין צורך|לא כרגע|אולי בהמשך|עזוב|לא צריך)(,?\s*(תודה|תודה רבה|אחי|בינתיים))*[\s!.]*$/;
 const YES_RE = /^(כן|כן בטח|בטח|ברור|נכון|אני|כן אני|yes|yep)[\s!.]*$/i;
 
 const PITCH_BUBBLES = [
@@ -210,6 +210,8 @@ ${known ? `כבר ידוע: ${known}.` : ""}${senderName ? ` השם בוואטס
 - אל תשווה למתחרים בשם. אל תמציא לקוחות, מספרים או תוצאות שלא כתובים למטה.
 - אמר "לא עכשיו" / לא מעוניין → not_interested, ומשפט אדיב אחד. לא לוחצים.
 - שאלה על תספורת/תור בדמו → ענה בקצרה שהוא יכול להמשיך לקבוע כרגיל, וחזור לעניין.
+- הוא אישר שהוא ספר / בעל מספרה → ההודעה הבאה שלך מבקשת שם מלא ושם המספרה בשאלה אחת ("איך קוראים לך ומה שם המספרה?"), בלי שאלות חוויה לפני כן.
+- capture_lead הוא סופי: הטקסט שאתה כותב באותה הודעה נשלח, ואחריו ההצעה מהמערכת. אל תחזור על מחיר או על מה שכבר אמרת.
 
 ${SALES_KNOWLEDGE}
 
@@ -232,35 +234,29 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (!msgs.length || msgs[msgs.length - 1].role !== "user" || !(msgs[msgs.length - 1].content as string).includes(p.text)) msgs.push({ role: "user", content: p.text });
   if (msgs[0].role !== "user") msgs.unshift({ role: "user", content: "(תחילת השיחה)" });
 
-  const replies: string[] = [];
-  let leadCaptured = false;
-  for (let i = 0; i < 2; i++) {
-    const res = await anthropic.messages.create({ model: MODEL_SMART, max_tokens: 500, system: salesSystem(state, p.senderName), tools: SALES_TOOLS, messages: msgs });
-    void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
-    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
-    if (text) replies.push(...bubbles(text));
-    const tool = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
-    if (!tool) break;
-    msgs.push({ role: "assistant", content: res.content });
-    let result = "ok";
-    if (tool.name === "capture_lead" && state.mode !== "lead") {
-      const input = tool.input as { fullName?: string; businessName?: string; businessType?: string };
-      const fullName = (input.fullName ?? "").trim();
-      const businessName = (input.businessName ?? "").trim();
-      p.sandbox?.toolLog.push(`capture_lead(${JSON.stringify(input)})`);
-      const leadId = p.sandbox ? "sandbox" : await createLead({ phone: p.phone, conversationId: p.conversationId, fullName, businessName, businessType: input.businessType ?? null, source: state.source ?? null });
-      state = { ...state, mode: "lead", leadId, fullName: fullName || state.fullName, businessName: businessName || state.businessName };
-      leadCaptured = true;
-      result = "הליד נרשם. המערכת שולחת עכשיו את ההצעה בעצמה. אם אתה רוצה להוסיף משפט קצר לפני זה — כתוב אותו; אחרת ענה ריק.";
-    } else if (tool.name === "not_interested") {
-      p.sandbox?.toolLog.push("not_interested()");
-      state = { ...state, mode: "declined" };
-      result = "רשום. משפט אדיב אחד וסיום.";
-    }
-    msgs.push({ role: "user", content: [{ type: "tool_result", tool_use_id: tool.id, content: result }] });
+  // ONE model call per turn. A tool call is final: its result is not sent back
+  // to the model (a second call repeated the whole reply) — the text that came
+  // with the call is the reply, and the offer / decline line is appended by code.
+  const res = await anthropic.messages.create({ model: MODEL_SMART, max_tokens: 500, system: salesSystem(state, p.senderName), tools: SALES_TOOLS, messages: msgs });
+  void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
+  const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
+  const replies: string[] = text ? bubbles(text) : [];
+  const tool = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+  if (tool?.name === "capture_lead" && state.mode !== "lead") {
+    const input = tool.input as { fullName?: string; businessName?: string; businessType?: string };
+    const fullName = (input.fullName ?? "").trim();
+    const businessName = (input.businessName ?? "").trim();
+    p.sandbox?.toolLog.push(`capture_lead(${JSON.stringify(input)})`);
+    const leadId = p.sandbox ? "sandbox" : await createLead({ phone: p.phone, conversationId: p.conversationId, fullName, businessName, businessType: input.businessType ?? null, source: state.source ?? null });
+    state = { ...state, mode: "lead", leadId, fullName: fullName || state.fullName, businessName: businessName || state.businessName };
+    if (!replies.length) replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}!`);
+    replies.push(OFFER_TEXT);
+  } else if (tool?.name === "not_interested") {
+    p.sandbox?.toolLog.push("not_interested()");
+    state = { ...state, mode: "declined" };
+    if (!replies.length) replies.push(DECLINE_REPLY);
   }
-  if (leadCaptured) replies.push(OFFER_TEXT);
-  if (!replies.length) replies.push(state.mode === "declined" ? DECLINE_REPLY : "רגע, בודק ומיד חוזר אליך.");
+  if (!replies.length) replies.push("רגע, בודק ומיד חוזר אליך.");
 
   await saveState(p.conversationId, state);
   await reply(p.conversationId, p.phone, guardPrice(replies), p.sandbox);

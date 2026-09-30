@@ -23,7 +23,9 @@ type Stats = {
 type Lead = {
   id: string; name: string | null; phone: string; source: string;
   status: string; note: string | null; createdAt: string;
+  businessName?: string | null; summary?: string | null; businessId?: string | null; conversationId?: string | null;
 };
+const LEAD_SOURCE: Record<string, string> = { landing: "טופס באתר", manual: "ידני", whatsapp_demo: "וואטסאפ הדמו", whatsapp_keywords: "וואטסאפ (מילות מפתח)" };
 
 const NIS = "₪";
 const fmtDate = (s: string | null) =>
@@ -501,6 +503,15 @@ function Leads({ leads, reload }: { leads: Lead[]; reload: () => void }) {
     await fetch(`/api/admin/super/leads/${id}`, { method: "DELETE" });
     reload();
   }
+  async function createBusiness(l: Lead) {
+    if (!confirm(`${l.businessId ? "לשלוח שוב את קישור ההקמה" : "ליצור עסק"} ל-${l.businessName || l.name || l.phone}? הקישור יישלח לו בוואטסאפ מהמספר של הדמו.`)) return;
+    const res = await fetch(`/api/admin/super/leads/${l.id}/create-business`, { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { alert(j.error || "נכשל"); return; }
+    alert(`${j.created ? "העסק נוצר" : "העסק כבר קיים"} (${j.slug}). ${j.sent ? "הקישור נשלח בוואטסאפ." : "השליחה נכשלה — הקישור הועתק, שלח ידנית."}`);
+    if (!j.sent) navigator.clipboard?.writeText(j.link).catch(() => {});
+    reload();
+  }
   async function add(e: React.FormEvent) {
     e.preventDefault();
     if (!phone.trim()) return;
@@ -526,19 +537,21 @@ function Leads({ leads, reload }: { leads: Lead[]; reload: () => void }) {
             <div key={l.id} className="bg-white rounded-2xl border border-slate-200 p-3.5">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="font-semibold text-slate-800 text-sm">{l.name || "ללא שם"}</div>
+                  <div className="font-semibold text-slate-800 text-sm">{l.name || "ללא שם"}{l.businessName ? <span className="font-normal text-slate-500"> · {l.businessName}</span> : null}</div>
                   <div className="text-xs text-slate-500" dir="ltr" style={{ textAlign: "right" }}>{l.phone}</div>
                   <div className="text-[11px] text-slate-400 mt-0.5">
-                    {l.source === "landing" ? "מהאתר" : "ידני"} · {fmtDate(l.createdAt)}
+                    {LEAD_SOURCE[l.source] ?? l.source} · {fmtDate(l.createdAt)}{l.businessId ? " · ✓ עסק נוצר" : ""}
                   </div>
+                  {l.summary && <div className="text-[11px] text-slate-500 mt-1 leading-snug">מה ניסה: {l.summary.slice(0, 220)}</div>}
                 </div>
                 <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${LEAD_STATUS[l.status]?.cls || ""}`}>
                   {LEAD_STATUS[l.status]?.label || l.status}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                <a href={waLink(l.phone, `היי ${l.name || ""}, מדבר יאיר מ-DOMINANT 👋 ראיתי שהתעניינת במערכת`)} target="_blank" rel="noreferrer"
+                <a href={waLink(l.phone, `היי ${l.name || ""}, מדבר יאיר מ-Chator 👋 ראיתי שהתעניינת במערכת`)} target="_blank" rel="noreferrer"
                   className="bg-emerald-50 text-emerald-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-emerald-100">💬 וואטסאפ</a>
+                <button onClick={() => createBusiness(l)} className="bg-teal-50 text-teal-700 text-xs font-medium px-3 py-1.5 rounded-lg hover:bg-teal-100">{l.businessId ? "🔗 שלח קישור הקמה שוב" : "🏪 צור עסק + קישור הקמה"}</button>
                 <select value={l.status} onChange={(e) => setStatus(l.id, e.target.value)}
                   className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white">
                   {Object.entries(LEAD_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}

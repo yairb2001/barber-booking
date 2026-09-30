@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
+import { createBusinessFromLead } from "@/lib/leads";
 
 const STATUSES = ["new", "contacted", "demo", "won", "lost"];
 
@@ -13,8 +14,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.note === "string") data.note = body.note.trim() || null;
   if (typeof body.name === "string") data.name = body.name.trim() || null;
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "no valid fields" }, { status: 400 });
-  const lead = await prisma.lead.update({ where: { id: params.id }, data });
-  return NextResponse.json({ ok: true, lead });
+  let lead = await prisma.lead.update({ where: { id: params.id }, data });
+  // "נסגר" → the system does the rest: tenant + personal onboarding link (stage 1, §3).
+  let onboarding: { link: string; sent: boolean; created: boolean } | null = null;
+  if (data.status === "won" && !lead.businessId) {
+    try {
+      onboarding = await createBusinessFromLead(lead.id);
+      lead = (await prisma.lead.findUnique({ where: { id: lead.id } })) ?? lead;
+    } catch (e) { console.error("[leads] create from won lead failed", e); }
+  }
+  return NextResponse.json({ ok: true, lead, onboarding });
 }
 
 /** DELETE /api/admin/super/leads/[id] */
