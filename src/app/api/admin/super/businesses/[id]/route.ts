@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { isBusinessType } from "@/lib/vocab";
+import { ensureEvolutionInstance, deleteEvolutionInstance } from "@/lib/messaging/evolution";
 
 /**
  * PATCH /api/admin/super/businesses/[id]
@@ -11,6 +12,7 @@ import { isBusinessType } from "@/lib/vocab";
  *   tokenBudgetIls: number | null  → the monthly token package as raw cost in ₪ (null = tier default)
  *   tokenTopupIls: number          → one-time addition to THIS month's package
  *   greenApiInstanceId, greenApiToken, whatsappStatus → the number connection (stage 1 "חיבורים ממתינים")
+ *   messagingProvider: "evolution" | "green_api" → "evolution" creates the instance on our server (named after the slug)
  *   extendTrialDays: number        → push trialEndsAt forward N days from now
  *   markPaid: boolean              → set/clear paidAt (converts trial → paying)
  *   suspend: boolean               → set/clear suspendedAt
@@ -30,6 +32,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof body.greenApiInstanceId === "string") data.greenApiInstanceId = body.greenApiInstanceId.trim() || null;
   if (typeof body.greenApiToken === "string") data.greenApiToken = body.greenApiToken.trim() || null;
   if (typeof body.whatsappStatus === "string" && ["not_requested", "requested", "connected"].includes(body.whatsappStatus)) data.whatsappStatus = body.whatsappStatus;
+  if (body.messagingProvider === "evolution" || body.messagingProvider === "green_api") {
+    const biz = await prisma.business.findUnique({ where: { id: params.id }, select: { slug: true, evolutionInstance: true } });
+    if (!biz) return NextResponse.json({ error: "not found" }, { status: 404 });
+    if (body.messagingProvider === "evolution") {
+      const name = biz.evolutionInstance || biz.slug;
+      const r = await ensureEvolutionInstance(name);
+      if (!r.ok) return NextResponse.json({ error: `יצירת המופע בשרת נכשלה: ${r.error}` }, { status: 502 });
+      data.evolutionInstance = name;
+      data.messagingProvider = "evolution";
+      data.whatsappStatus = "requested";
+      data.waLiveState = "notAuthorized";
+    } else {
+      data.messagingProvider = "green_api";
+      if (body.dropEvolutionInstance === true && biz.evolutionInstance) { await deleteEvolutionInstance(biz.evolutionInstance).catch(() => null); data.evolutionInstance = null; }
+    }
+  }
 
   // Token package lives in settings JSON (merge, never overwrite other keys).
   if (body.tokenBudgetIls === null || typeof body.tokenBudgetIls === "number" || typeof body.tokenTopupIls === "number") {
@@ -60,7 +78,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const updated = await prisma.business.update({
     where: { id: params.id },
     data,
-    select: { id: true, monthlyPrice: true, setupFee: true, tier: true, businessType: true, paidAt: true, suspendedAt: true, trialEndsAt: true },
+    select: { id: true, monthlyPrice: true, setupFee: true, tier: true, businessType: true, paidAt: true, suspendedAt: true, trialEndsAt: true, messagingProvider: true, evolutionInstance: true, whatsappStatus: true },
   });
   return NextResponse.json({ ok: true, business: updated });
 }

@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const conv = await prisma.conversation.findFirst({ where: { id: params.id, businessId: business.id } });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const biz = await prisma.business.findUnique({ where: { id: business.id }, select: { messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true } });
+  const biz = await prisma.business.findUnique({ where: { id: business.id }, select: { messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true } });
   const provider = biz ? providerForBusiness(biz) : null;
   if (!provider?.sendFileByUrl) return NextResponse.json({ error: "provider cannot send files" }, { status: 500 });
 

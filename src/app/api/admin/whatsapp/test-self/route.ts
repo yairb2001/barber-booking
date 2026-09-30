@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionBusiness, requireOwner } from "@/lib/session";
-import { sendMessage } from "@/lib/messaging";
+import { sendMessage, providerForBusiness } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { prisma } from "@/lib/prisma";
 
@@ -12,9 +12,9 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true, name: true, phone: true, settings: true, greenApiInstanceId: true, greenApiToken: true });
+  const biz = await getSessionBusiness(req, { id: true, name: true, phone: true, settings: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
-  if (!biz.greenApiInstanceId || !biz.greenApiToken) return NextResponse.json({ error: "המספר עדיין לא חובר" }, { status: 400 });
+  if (!providerForBusiness(biz)?.isConfigured()) return NextResponse.json({ error: "המספר עדיין לא חובר" }, { status: 400 });
   let owner: string | null = null;
   try { const s = biz.settings ? JSON.parse(biz.settings) as { ownerLoginPhone?: string } : {}; owner = s.ownerLoginPhone || null; } catch { /* ignore */ }
   const to = owner || biz.phone;

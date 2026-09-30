@@ -78,7 +78,7 @@ export async function GET(req: NextRequest) {
   //    "agent enabled but not responding" — incoming messages never reach us.
   try {
     const biz = await getSessionBusiness(req, {
-      greenApiInstanceId: true, greenApiToken: true,
+      greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true,
     });
     const id = biz?.greenApiInstanceId;
     const token = biz?.greenApiToken;

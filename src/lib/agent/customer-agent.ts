@@ -2099,7 +2099,7 @@ export async function runCustomerAgent(opts: {
   const [biz, agentConfig] = await Promise.all([
     prisma.business.findUnique({
       where: { id: businessId },
-      select: { id: true, name: true, slug: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, settings: true },
+      select: { id: true, name: true, slug: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true, settings: true },
     }),
     prisma.agentConfig.findUnique({
       where: { businessId },

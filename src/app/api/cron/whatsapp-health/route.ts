@@ -13,6 +13,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
+import { EvolutionProvider, evolutionConfigured, evolutionServerOk } from "@/lib/messaging/evolution";
+import { providerForBusiness } from "@/lib/messaging";
+import { notifyPlatformOwner } from "@/lib/super-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -43,20 +46,29 @@ export async function GET(req: NextRequest) {
       whatsappNumber: true,
       messagingProvider: true,
       greenApiInstanceId: true,
-      greenApiToken: true,
+      greenApiToken: true, evolutionInstance: true,
       waDownSince: true,
     },
   });
 
   let checked = 0, down = 0, recovered = 0, rebooted = 0;
 
+  // Our own WhatsApp server: one alert to the platform owner per hour while it is unreachable.
+  let serverOk = true;
+  if (evolutionConfigured() && businesses.some(b => b.messagingProvider === "evolution")) {
+    const h = await evolutionServerOk();
+    serverOk = h.ok;
+    if (!h.ok) {
+      const recent = await prisma.messageLog.findFirst({ where: { kind: "manual", body: { startsWith: "🔴 שרת הוואטסאפ" }, createdAt: { gte: new Date(now.getTime() - 3600_000) } }, select: { id: true } });
+      if (!recent) notifyPlatformOwner(`🔴 שרת הוואטסאפ (Evolution) לא עונה: ${h.error ?? "unknown"}. ssh manceo → cd /opt/chator-wa && docker compose ps`).catch(() => {});
+    }
+  }
+
   for (const biz of businesses) {
     checked++;
-    const provider = new GreenApiProvider({
-      whatsappNumber: biz.whatsappNumber,
-      greenApiInstanceId: biz.greenApiInstanceId,
-      greenApiToken: biz.greenApiToken,
-    });
+    if (biz.messagingProvider === "evolution" && !serverOk) continue; // don't flip every business to "down" on a server blip
+    const provider = providerForBusiness(biz);
+    if (!provider || !(provider instanceof GreenApiProvider || provider instanceof EvolutionProvider) || !provider.isConfigured()) continue;
 
     const res = await provider.getState();
     // If GreenAPI itself failed to answer, record "error" but don't flip the

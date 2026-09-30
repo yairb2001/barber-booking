@@ -5,6 +5,7 @@ import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM
 import { DEFAULT_CALL_NEW_MISSED_TEMPLATE, DEFAULT_CALL_NEW_ANSWERED_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_TEMPLATE } from "@/lib/automations/call-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
+import { EvolutionProvider } from "./evolution";
 import { normalizeIsraeliPhone } from "./phone";
 
 /**
@@ -52,8 +53,12 @@ export function providerForBusiness(business: {
   whatsappNumber: string | null;
   greenApiInstanceId: string | null;
   greenApiToken: string | null;
+  evolutionInstance?: string | null;
 }): MessagingProvider | null {
   const kind = business.messagingProvider || "green_api";
+  if (kind === "evolution") {
+    return new EvolutionProvider({ whatsappNumber: business.whatsappNumber, evolutionInstance: business.evolutionInstance ?? null });
+  }
   if (kind === "green_api") {
     return new GreenApiProvider({
       whatsappNumber: business.whatsappNumber,
@@ -256,7 +261,7 @@ async function reconcileWaState(
     if (result.error === "provider_not_configured") return;
 
     const provider = providerForBusiness(business);
-    if (!(provider instanceof GreenApiProvider)) return;
+    if (!(provider instanceof GreenApiProvider) && !(provider instanceof EvolutionProvider)) return;
     const stateRes = await provider.getState();
     if (!stateRes.ok || !stateRes.state) return; // couldn't confirm → leave as-is
     if (!WA_DOWN_STATES.has(stateRes.state)) return; // not actually logged out

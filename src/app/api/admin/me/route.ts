@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions } from "@/lib/session";
 import { getReferralConfig } from "@/lib/referral";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
+import { EvolutionProvider } from "@/lib/messaging/evolution";
+import { providerForBusiness } from "@/lib/messaging";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
       messagingProvider: true,
       whatsappNumber: true,
       greenApiInstanceId: true,
-      greenApiToken: true,
+      greenApiToken: true, evolutionInstance: true,
       onboardingCompletedAt: true,
       cancellationPolicyMode: true,
       minCancellationHours: true,
@@ -54,8 +56,9 @@ export async function GET(req: NextRequest) {
   // is throttled across ALL admins via waCheckedAt (a single atomic "claim"), so
   // GreenAPI is hit at most once per WA_STALE_MS regardless of how many tabs poll.
   let waState = business?.waLiveState ?? null;
-  if (business?.greenApiInstanceId && business?.greenApiToken) {
-    const last = business.waCheckedAt?.getTime() ?? 0;
+  const liveProvider = business ? providerForBusiness(business) : null;
+  if (liveProvider && (liveProvider instanceof GreenApiProvider || liveProvider instanceof EvolutionProvider) && liveProvider.isConfigured()) {
+    const last = business!.waCheckedAt?.getTime() ?? 0;
     if (Date.now() - last > WA_STALE_MS) {
       const claim = await prisma.business.updateMany({
         where: {
@@ -66,12 +69,7 @@ export async function GET(req: NextRequest) {
       });
       if (claim.count > 0) {
         try {
-          const provider = new GreenApiProvider({
-            whatsappNumber: business.whatsappNumber,
-            greenApiInstanceId: business.greenApiInstanceId,
-            greenApiToken: business.greenApiToken,
-          });
-          const res = await provider.getState();
+          const res = await liveProvider.getState();
           if (res.ok && res.state) {
             waState = res.state;
             const isDown = WA_DOWN_STATES.has(res.state);
@@ -79,7 +77,7 @@ export async function GET(req: NextRequest) {
               where: { id: session.businessId },
               data: {
                 waLiveState: res.state,
-                waDownSince: isDown ? (business.waDownSince ?? new Date()) : null,
+                waDownSince: isDown ? (business!.waDownSince ?? new Date()) : null,
               },
             });
           }

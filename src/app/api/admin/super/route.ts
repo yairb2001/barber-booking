@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
         select: {
           id: true, name: true, slug: true, tier: true, phone: true, settings: true, businessType: true,
           monthlyPrice: true, setupFee: true, paidAt: true, suspendedAt: true,
-          trialEndsAt: true, whatsappStatus: true, waLiveState: true, createdAt: true, greenApiInstanceId: true, onboardingCompletedAt: true,
+          trialEndsAt: true, whatsappStatus: true, waLiveState: true, createdAt: true, greenApiInstanceId: true, onboardingCompletedAt: true, messagingProvider: true, evolutionInstance: true,
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -81,6 +81,8 @@ export async function GET(req: NextRequest) {
       whatsappStatus: b.whatsappStatus,
       waLiveState: b.waLiveState,
       hasGreen: !!b.greenApiInstanceId,
+      provider: b.messagingProvider || "green_api",
+      hasEvolution: !!b.evolutionInstance,
       onboardingDone: !!b.onboardingCompletedAt,
       createdAt: b.createdAt,
       staffCount,

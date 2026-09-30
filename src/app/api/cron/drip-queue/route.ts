@@ -342,7 +342,7 @@ export async function GET(req: NextRequest) {
       messagingProvider: true,
       whatsappNumber: true,
       greenApiInstanceId: true,
-      greenApiToken: true,
+      greenApiToken: true, evolutionInstance: true,
     },
   });
   const businessById = new Map(businesses.map((b) => [b.id, b]));

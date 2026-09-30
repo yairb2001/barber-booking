@@ -88,6 +88,8 @@ export type ProviderConfig = {
   whatsappNumber?: string | null;
   greenApiInstanceId?: string | null;
   greenApiToken?: string | null;
+  /** Our own WhatsApp server (Evolution API): the business's instance name. */
+  evolutionInstance?: string | null;
 };
 
 export interface MessagingProvider {

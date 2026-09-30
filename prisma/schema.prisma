@@ -28,7 +28,8 @@ model Business {
   businessType   String   @default("barber_men") @map("business_type") // barber_men | barber_women | nails | cosmetics
   // ── WhatsApp / Messaging ──
   whatsappNumber        String? @map("whatsapp_number")          // E.164 format, e.g. 972501234567
-  messagingProvider     String? @default("green_api") @map("messaging_provider") // green_api | meta_cloud | none
+  messagingProvider     String? @default("green_api") @map("messaging_provider") // green_api | evolution | meta_cloud | none
+  evolutionInstance     String? @unique @map("evolution_instance")  // instance name on our own WhatsApp server (src/lib/messaging/evolution.ts)
   greenApiInstanceId    String? @map("green_api_instance_id")
   greenApiToken         String? @map("green_api_token")
   // ── Feature flags ──

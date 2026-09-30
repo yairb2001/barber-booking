@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
+import { providerForBusiness } from "@/lib/messaging";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
+import { EvolutionProvider } from "@/lib/messaging/evolution";
 
 // GET /api/admin/whatsapp/qr
 // Any authenticated admin (owner OR barber). Returns the GreenAPI instance
@@ -17,17 +19,14 @@ export async function GET(req: NextRequest) {
 
   const business = await getSessionBusiness(req, {
     whatsappNumber: true,
+    messagingProvider: true,
     greenApiInstanceId: true,
-    greenApiToken: true,
+    greenApiToken: true, evolutionInstance: true,
   });
   if (!business) return NextResponse.json({ error: "business not found" }, { status: 404 });
 
-  const provider = new GreenApiProvider({
-    whatsappNumber: business.whatsappNumber,
-    greenApiInstanceId: business.greenApiInstanceId,
-    greenApiToken: business.greenApiToken,
-  });
-  if (!provider.isConfigured()) {
+  const provider = providerForBusiness(business);
+  if (!provider || !(provider instanceof GreenApiProvider || provider instanceof EvolutionProvider) || !provider.isConfigured()) {
     return NextResponse.json({ error: "not_configured" }, { status: 400 });
   }
 

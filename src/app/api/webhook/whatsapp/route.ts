@@ -239,7 +239,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const outInstance = body.instanceData?.idInstance;
     const outInstanceStr = outInstance != null ? String(outInstance) : null;
     let outBiz = outInstanceStr
-      ? await prisma.business.findFirst({ where: { greenApiInstanceId: outInstanceStr }, select: { id: true } })
+      ? await prisma.business.findFirst({ where: { OR: [{ greenApiInstanceId: outInstanceStr }, { evolutionInstance: outInstanceStr }] }, select: { id: true } })
       : null;
     if (!outBiz && !outInstanceStr) outBiz = await fallbackBusiness({ select: { id: true } });
     if (!outBiz) return NextResponse.json({ ok: true, skipped: "outgoing-no-biz" });
@@ -302,7 +302,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const instanceId = body.instanceData?.idInstance;
   const instanceIdStr = instanceId != null ? String(instanceId) : null;
   let biz = instanceIdStr
-    ? await prisma.business.findFirst({ where: { greenApiInstanceId: instanceIdStr }, select: { id: true, tier: true, settings: true, slug: true } })
+    ? await prisma.business.findFirst({ where: { OR: [{ greenApiInstanceId: instanceIdStr }, { evolutionInstance: instanceIdStr }] }, select: { id: true, tier: true, settings: true, slug: true } })
     : null;
 
   // Fallback ONLY when no instance id was provided (legacy single-tenant webhook).
