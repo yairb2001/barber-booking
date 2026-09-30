@@ -57,7 +57,9 @@ const PITCH_BUBBLES = [
   "אגב, שמת לב? קבעת תור בלי שאף אחד ענה לך — ככה זה עובד אצל מספרות שעובדות עם Chator, על הוואטסאפ של המספרה שלהן.",
   "אתה ספר או בעל מספרה? אם כן, אשמח להראות לך איך זה נראה אצלך.",
 ];
-const DECLINE_REPLY = "סבבה, בלי לחץ. התור שלך נשאר כמו שקבענו, ואם תרצה לשמוע עוד — אני כאן.";
+const declineReply = (state: SalesState) => state.pitchedAt
+  ? "סבבה, בלי לחץ. התור שלך נשאר כמו שקבענו, ואם תרצה לשמוע עוד — אני כאן."
+  : "סבבה, בלי לחץ. אפשר להמשיך לנסות את הדמו כרגיל, ואם תרצה לשמוע עוד — אני כאן.";
 
 export function parseSalesState(raw: string | null | undefined): SalesState | null {
   if (!raw) return null;
@@ -135,8 +137,9 @@ export async function runDemoTurn(p: {
   if ((state.mode === "pitched" || state.mode === "sales") && DECLINE_RE.test(text)) {
     state = { ...state, mode: "declined" };
     await saveState(conv.id, state);
-    await reply(conv.id, phone, [DECLINE_REPLY], p.sandbox);
-    return { handled: true, mode: state.mode, replies: [DECLINE_REPLY] };
+    const line = declineReply(state);
+    await reply(conv.id, phone, [line], p.sandbox);
+    return { handled: true, mode: state.mode, replies: [line] };
   }
 
   // "תודה" to the booking confirmation + pitch → silence (like the customer agent's pure acks).
@@ -211,7 +214,7 @@ ${known ? `כבר ידוע: ${known}.` : ""}${senderName ? ` השם בוואטס
 - אמר "לא עכשיו" / לא מעוניין → not_interested, ומשפט אדיב אחד. לא לוחצים.
 - שאלה על תספורת/תור בדמו → ענה בקצרה שהוא יכול להמשיך לקבוע כרגיל, וחזור לעניין.
 - הוא אישר שהוא ספר / בעל מספרה → ההודעה הבאה שלך מבקשת שם מלא ושם המספרה בשאלה אחת ("איך קוראים לך ומה שם המספרה?"), בלי שאלות חוויה לפני כן.
-- capture_lead הוא סופי: הטקסט שאתה כותב באותה הודעה נשלח, ואחריו ההצעה מהמערכת. אל תחזור על מחיר או על מה שכבר אמרת.
+- קיבלת שם ומספרה → ההודעה היא משפט קצר אחד בלבד ("מעולה דני, נעים מאוד!") + capture_lead. לא לחזור על המחיר, לא לסכם מה אמרת, לא להוסיף שאלה — ההצעה נשלחת מהמערכת מיד אחריך.
 
 ${SALES_KNOWLEDGE}
 
@@ -254,7 +257,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   } else if (tool?.name === "not_interested") {
     p.sandbox?.toolLog.push("not_interested()");
     state = { ...state, mode: "declined" };
-    if (!replies.length) replies.push(DECLINE_REPLY);
+    if (!replies.length) replies.push(declineReply(state));
   }
   if (!replies.length) replies.push("רגע, בודק ומיד חוזר אליך.");
 
