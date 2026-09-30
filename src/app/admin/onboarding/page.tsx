@@ -396,7 +396,15 @@ export default function OnboardingPage() {
             </>
           ) : (
             <>
-              <WhatsAppQrBody data={qr.data} loading={qr.loading} errorHint="Chator עוד מכין את החיבור — המסך יתעדכן לבד. אפשר להמשיך בינתיים." />
+              {qr.data?.error && !qr.data?.qr && !qr.data?.connected ? (
+                <div className="rounded-2xl px-4 py-5 text-center" style={{ background: C.mist }}>
+                  <div className="text-2xl mb-1">⏳</div>
+                  <p className="text-sm font-semibold" style={{ color: C.petrol }}>הבקשה התקבלה — Chator מכין את החיבור</p>
+                  <p className="text-xs text-slate-500 mt-1">בדרך כלל תוך שעה בשעות העבודה. כשיהיה מוכן יופיע כאן קוד לסריקה, וגם נעדכן אותך בוואטסאפ. אפשר להמשיך בינתיים.</p>
+                </div>
+              ) : (
+                <WhatsAppQrBody data={qr.data} loading={qr.loading} errorHint="נסה שוב בעוד רגע." />
+              )}
               {qr.data?.qr && <p className="text-xs text-slate-500 mt-2">במכשיר של העסק: וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר ← סרוק.</p>}
               {qr.data?.connected && <p className="text-sm text-emerald-700 mt-2">{waTestSent ? "שלחנו לך הודעת בדיקה מהמספר של העסק." : ""}</p>}
             </>
