@@ -49,6 +49,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ state: stateRes.state, connected: true });
   }
 
+  // Our own server: every QR request opens a new linking session and kills the one
+  // being scanned. While the client still holds a fresh QR (or a pairing code is
+  // pending) it sends ?hold=1 and we only report the state.
+  const ours = provider instanceof EvolutionProvider;
+  if (ours && new URL(req.url).searchParams.get("hold") === "1") {
+    return NextResponse.json({ state: stateRes.state, connected: false, keep: true, pollMs: 4000 });
+  }
+
   // Not authorized — fetch a fresh QR to display.
   const qrRes = await provider.getQr();
   if (!qrRes.ok) {
@@ -64,5 +72,6 @@ export async function GET(req: NextRequest) {
     type: qrRes.type,
     qr: qrRes.qr,
     message: qrRes.message,
+    ...(ours ? { pollMs: 4000 } : {}),
   });
 }

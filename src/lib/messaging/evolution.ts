@@ -55,6 +55,10 @@ async function api<T = unknown>(method: "GET" | "POST" | "PATCH" | "DELETE", pat
 /** The server answers "device … not found" with HTTP 500, not 404. */
 const missing = (r: { status: number; error?: string }) => r.status === 404 || /not found/i.test(r.error ?? "");
 
+/** Asking the server for a QR restarts the linking session, so the last QR is reused for a while (per warm instance). */
+const QR_REUSE_MS = 30_000;
+const qrCache = new Map<string, { qr: string; at: number }>();
+
 const jid = (phone: string) => `${normalizeIsraeliPhone(phone)}@s.whatsapp.net`;
 
 export class EvolutionProvider implements MessagingProvider {
@@ -101,6 +105,8 @@ export class EvolutionProvider implements MessagingProvider {
   /** Linking QR as a data URL (the server hands out a PNG link; the owner's browser can't fetch it without our credentials). */
   async getQr(): Promise<{ ok: boolean; type?: string; qr?: string; message?: string; error?: string }> {
     if (!this.isConfigured()) return { ok: false, error: "provider_not_configured" };
+    const cached = qrCache.get(this.device!);
+    if (cached && Date.now() - cached.at < QR_REUSE_MS) return { ok: true, type: "qrCode", qr: cached.qr };
     let r = await api<{ qr_link?: string; qr_duration?: number }>("GET", `/devices/${this.device}/login`, { timeoutMs: 30_000 });
     if (!r.ok && missing(r)) {
       // The device slot is gone (server reinstall) — recreate it and try once more.
@@ -115,7 +121,9 @@ export class EvolutionProvider implements MessagingProvider {
     const link = r.data?.qr_link;
     if (!link) return { ok: true, type: "pending", message: "no qr yet" };
     const png = await fetchAsDataUrl(link.replace(/^https?:\/\/[^/]+/, ""), "image/png");
-    return png ? { ok: true, type: "qrCode", qr: png } : { ok: false, error: "qr image unavailable" };
+    if (!png) return { ok: false, error: "qr image unavailable" };
+    qrCache.set(this.device!, { qr: png, at: Date.now() });
+    return { ok: true, type: "qrCode", qr: png };
   }
 
   /** Unlink the number (the device slot stays; a new QR relinks). */
@@ -149,6 +157,7 @@ export async function ensureEvolutionInstance(name: string): Promise<{ ok: boole
 export async function pairingCodeForNumber(name: string, number: string): Promise<{ ok: boolean; code?: string; error?: string }> {
   const made = await ensureEvolutionInstance(name);
   if (!made.ok) return { ok: false, error: made.error };
+  qrCache.delete(name);
   const r = await api<{ pair_code?: string }>("POST", `/devices/${name}/login/code?phone=${encodeURIComponent(number.replace(/\D/g, ""))}`, { timeoutMs: 30_000 });
   if (!r.ok) return { ok: false, error: r.error };
   const code = (r.data?.pair_code || "").replace(/[^A-Za-z0-9]/g, "");

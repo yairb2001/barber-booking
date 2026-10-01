@@ -7,7 +7,15 @@ import { useEffect, useState } from "react";
 // QR/connected/error rendering, previously implemented twice and drifting.
 export type QrState = { state?: string; connected?: boolean; qr?: string; type?: string; error?: string };
 
-/** Polls /api/admin/whatsapp/qr while `active`, re-polling every ~15s (the QR rotates) until connected. */
+// On our own server, asking for a QR *starts a new linking session* and drops the
+// previous one — so a scan (or a pairing code) dies if we ask again mid-way. The
+// hook therefore holds the QR it has for ~35s and only checks the state meanwhile,
+// and never asks for a QR while a pairing code is waiting to be typed. Shared at
+// module level so two mounted panels (banner + settings) don't fight each other.
+const QR_HOLD_MS = 35_000;
+const shared: { qr?: string; type?: string; at: number; pairingUntil: number } = { at: 0, pairingUntil: 0 };
+
+/** Polls /api/admin/whatsapp/qr while `active` until connected (pace set by the server: fast state checks on our server, ~15s on Green). */
 export function useWhatsAppQr(active: boolean) {
   const [data, setData] = useState<QrState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -20,15 +28,22 @@ export function useWhatsAppQr(active: boolean) {
       if (cancelled) return;
       setLoading(true);
       try {
-        const res = await fetch("/api/admin/whatsapp/qr", { cache: "no-store" });
-        const d: QrState = await res.json();
+        const now = Date.now();
+        const hold = now < shared.pairingUntil || (!!shared.qr && now - shared.at < QR_HOLD_MS);
+        const res = await fetch(`/api/admin/whatsapp/qr${hold ? "?hold=1" : ""}`, { cache: "no-store" });
+        const d: QrState & { keep?: boolean; pollMs?: number } = await res.json();
         if (cancelled) return;
-        setData(d);
+        if (d.keep) setData({ state: d.state, connected: false, qr: shared.qr, type: shared.type });
+        else {
+          if (d.qr) { shared.qr = d.qr; shared.type = d.type; shared.at = Date.now(); }
+          setData(d);
+        }
         setLoading(false);
-        if (!d.connected) timer = setTimeout(tick, 15000); // QR rotates — re-poll
+        if (d.connected) { shared.qr = undefined; shared.at = 0; shared.pairingUntil = 0; }
+        else timer = setTimeout(tick, d.pollMs ?? 15000);
       } catch {
         if (cancelled) return;
-        setData({ error: "network" });
+        setData(shared.qr ? { qr: shared.qr, type: shared.type } : { error: "network" });
         setLoading(false);
         timer = setTimeout(tick, 15000);
       }
@@ -53,7 +68,7 @@ export function PairingCodeFallback() {
       const r = await fetch("/api/admin/whatsapp/pairing-code", { method: "POST" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.code) setError(j.error || "לא התקבל קוד, נסה שוב בעוד רגע");
-      else setCode(j.code);
+      else { setCode(j.code); shared.pairingUntil = Date.now() + 170_000; }
     } catch { setError("שגיאת רשת"); }
     setBusy(false);
   }
@@ -69,7 +84,7 @@ export function PairingCodeFallback() {
             : error ? <div className="text-sm text-red-600 py-2">{error}</div> : null}
           <div className="flex items-center justify-center gap-3 mt-1">
             <button type="button" onClick={getCode} disabled={busy} className="text-xs text-teal-700 underline underline-offset-2 disabled:opacity-50">קוד חדש</button>
-            <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-400">חזרה ל‑QR</button>
+            <button type="button" onClick={() => { shared.pairingUntil = 0; shared.at = 0; setOpen(false); }} className="text-xs text-slate-400">חזרה ל‑QR</button>
           </div>
           <p className="text-[11px] text-slate-400 mt-2">הקוד תקף כמה דקות. הקוד קשור למספר של העסק כפי שהוגדר במערכת.</p>
         </div>
