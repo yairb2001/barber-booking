@@ -3,6 +3,7 @@ import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { providerForBusiness } from "@/lib/messaging";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
 import { EvolutionProvider } from "@/lib/messaging/evolution";
+import { prisma } from "@/lib/prisma";
 
 // GET /api/admin/whatsapp/qr
 // Any authenticated admin (owner OR barber). Returns the GreenAPI instance
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const business = await getSessionBusiness(req, {
+    id: true,
     whatsappNumber: true,
     messagingProvider: true,
     greenApiInstanceId: true,
@@ -40,6 +42,10 @@ export async function GET(req: NextRequest) {
 
   // Already linked — no QR needed.
   if (stateRes.state === "authorized") {
+    // Our own server sends no "connected" event — the scan screen polling this route is what records it.
+    if (provider instanceof EvolutionProvider) {
+      await prisma.business.update({ where: { id: business.id }, data: { waLiveState: "authorized", waCheckedAt: new Date(), waDownSince: null, whatsappStatus: "connected" } }).catch(() => null);
+    }
     return NextResponse.json({ state: stateRes.state, connected: true });
   }
 

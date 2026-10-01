@@ -37,9 +37,10 @@ export async function GET(req: NextRequest) {
 
   const businesses = await prisma.business.findMany({
     where: {
-      messagingProvider: "green_api",
-      greenApiInstanceId: { not: null },
-      greenApiToken: { not: null },
+      OR: [
+        { messagingProvider: "green_api", greenApiInstanceId: { not: null }, greenApiToken: { not: null } },
+        { messagingProvider: "evolution", evolutionInstance: { not: null } },
+      ],
     },
     select: {
       id: true,
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
     serverOk = h.ok;
     if (!h.ok) {
       const recent = await prisma.messageLog.findFirst({ where: { kind: "manual", body: { startsWith: "🔴 שרת הוואטסאפ" }, createdAt: { gte: new Date(now.getTime() - 3600_000) } }, select: { id: true } });
-      if (!recent) notifyPlatformOwner(`🔴 שרת הוואטסאפ (Evolution) לא עונה: ${h.error ?? "unknown"}. ssh manceo → cd /opt/chator-wa && docker compose ps`).catch(() => {});
+      if (!recent) notifyPlatformOwner(`🔴 שרת הוואטסאפ שלנו לא עונה: ${h.error ?? "unknown"}. ssh manceo → cd /opt/chator-wa && docker compose ps`).catch(() => {});
     }
   }
 
@@ -92,7 +93,7 @@ export async function GET(req: NextRequest) {
 
     await prisma.business.update({
       where: { id: biz.id },
-      data: { waLiveState: state, waCheckedAt: now, waDownSince },
+      data: { waLiveState: state, waCheckedAt: now, waDownSince, ...(isHealthy && biz.messagingProvider === "evolution" ? { whatsappStatus: "connected" } : {}) },
     });
   }
 
