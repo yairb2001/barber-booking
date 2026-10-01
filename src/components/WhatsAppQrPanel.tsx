@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 // Shared by the inline "reconnect" card in /admin/settings and the global
 // disconnect-banner modal in AdminLayoutClient — same GreenAPI polling +
 // QR/connected/error rendering, previously implemented twice and drifting.
-export type QrState = { state?: string; connected?: boolean; qr?: string; type?: string; error?: string };
+export type QrState = { state?: string; connected?: boolean; qr?: string; type?: string; error?: string; paused?: boolean };
 
 // On our own server, asking for a QR *starts a new linking session* and drops the
 // previous one — so a scan (or a pairing code) dies if we ask again mid-way. The
@@ -13,6 +13,10 @@ export type QrState = { state?: string; connected?: boolean; qr?: string; type?:
 // and never asks for a QR while a pairing code is waiting to be typed. Shared at
 // module level so two mounted panels (banner + settings) don't fight each other.
 const QR_HOLD_MS = 35_000;
+// A tab left open must not keep opening linking sessions forever: after this long
+// without a scan the QR is put away (state checks go on) until the owner asks again.
+const QR_IDLE_MS = 8 * 60_000;
+const RESUME_EVENT = "wa-qr-resume";
 const shared: { qr?: string; type?: string; at: number; pairingUntil: number } = { at: 0, pairingUntil: 0 };
 
 /** Polls /api/admin/whatsapp/qr while `active` until connected (pace set by the server: fast state checks on our server, ~15s on Green). */
@@ -24,23 +28,28 @@ export function useWhatsAppQr(active: boolean) {
     if (!active) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let since = Date.now();
+    const resume = () => { since = Date.now(); shared.at = 0; clearTimeout(timer); tick(); };
+    window.addEventListener(RESUME_EVENT, resume);
     async function tick() {
       if (cancelled) return;
       setLoading(true);
       try {
         const now = Date.now();
-        const hold = now < shared.pairingUntil || (!!shared.qr && now - shared.at < QR_HOLD_MS);
+        const idle = now - since > QR_IDLE_MS && now >= shared.pairingUntil;
+        const hold = idle || now < shared.pairingUntil || (!!shared.qr && now - shared.at < QR_HOLD_MS);
         const res = await fetch(`/api/admin/whatsapp/qr${hold ? "?hold=1" : ""}`, { cache: "no-store" });
         const d: QrState & { keep?: boolean; pollMs?: number } = await res.json();
         if (cancelled) return;
-        if (d.keep) setData({ state: d.state, connected: false, qr: shared.qr, type: shared.type });
+        if (d.keep && idle) setData({ state: d.state, connected: false, paused: true });
+        else if (d.keep) setData({ state: d.state, connected: false, qr: shared.qr, type: shared.type });
         else {
           if (d.qr) { shared.qr = d.qr; shared.type = d.type; shared.at = Date.now(); }
           setData(d);
         }
         setLoading(false);
         if (d.connected) { shared.qr = undefined; shared.at = 0; shared.pairingUntil = 0; }
-        else timer = setTimeout(tick, d.pollMs ?? 15000);
+        else timer = setTimeout(tick, idle ? 15000 : d.pollMs ?? 15000);
       } catch {
         if (cancelled) return;
         setData(shared.qr ? { qr: shared.qr, type: shared.type } : { error: "network" });
@@ -49,7 +58,7 @@ export function useWhatsAppQr(active: boolean) {
       }
     }
     tick();
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => { cancelled = true; clearTimeout(timer); window.removeEventListener(RESUME_EVENT, resume); };
   }, [active]);
 
   return { data, loading };
@@ -86,7 +95,7 @@ export function PairingCodeFallback() {
             <button type="button" onClick={getCode} disabled={busy} className="text-xs text-teal-700 underline underline-offset-2 disabled:opacity-50">קוד חדש</button>
             <button type="button" onClick={() => { shared.pairingUntil = 0; shared.at = 0; setOpen(false); }} className="text-xs text-slate-400">חזרה ל‑QR</button>
           </div>
-          <p className="text-[11px] text-slate-400 mt-2">הקוד תקף כמה דקות. הקוד קשור למספר של העסק כפי שהוגדר במערכת.</p>
+          <p className="text-[11px] text-slate-400 mt-2">הקוד תקף כשתי דקות. הקוד קשור למספר של העסק כפי שהוגדר במערכת.</p>
         </div>
       )}
     </div>
@@ -101,6 +110,14 @@ export function WhatsAppQrBody({ data, loading, errorHint }: { data: QrState | n
         <div className="text-3xl mb-1">✓</div>
         <p className="text-sm font-semibold text-emerald-800">ה-WhatsApp מחובר ופעיל</p>
         <p className="text-[11px] text-emerald-600 mt-1">המספר מקושר — הודעות יישלחו כרגיל.</p>
+      </div>
+    );
+  }
+  if (data?.paused) {
+    return (
+      <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-6 text-center">
+        <p className="text-sm text-slate-600 mb-3">הקוד הושהה כי עבר זמן בלי סריקה.</p>
+        <button type="button" onClick={() => window.dispatchEvent(new Event(RESUME_EVENT))} className="rounded-xl bg-slate-900 text-white text-sm font-semibold px-5 py-2.5">הצג קוד חדש</button>
       </div>
     );
   }
