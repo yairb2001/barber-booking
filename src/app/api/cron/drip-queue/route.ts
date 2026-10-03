@@ -391,8 +391,12 @@ export async function GET(req: NextRequest) {
  * failing). Push the owner of each affected business so someone looks.
  */
 async function checkStuckQueue(now: Date): Promise<void> {
-  const { minutes } = getBusinessNow();
+  const { minutes, date } = getBusinessNow();
   if (inQuietHours(minutes) || minutes < QUIET_END_MIN + 45) return; // let the morning backlog drain first
+  // Shabbat: the drain above holds everything on purpose, so "overdue" rows are
+  // expected, not a fault. Without this the owner got 37 pushes in one Shabbat
+  // (3.10.2026) — the per-instance dedupe map resets on every cold start.
+  if (getDayOfWeekISO(date) === 6) return;
   const overdue = await prisma.messageLog.findMany({
     where: { status: "scheduled", scheduledFor: { lt: new Date(now.getTime() - 30 * 60_000) } },
     select: { businessId: true },
