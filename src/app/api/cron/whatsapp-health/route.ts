@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
-import { EvolutionProvider, evolutionConfigured, evolutionServerOk } from "@/lib/messaging/evolution";
+import { EvolutionProvider, evolutionConfigured, evolutionServerOk, applyEvolutionWebhook } from "@/lib/messaging/evolution";
 import { providerForBusiness } from "@/lib/messaging";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 
@@ -78,6 +78,8 @@ export async function GET(req: NextRequest) {
 
     const isDown = DOWN_STATES.has(state);
     const isHealthy = state === "authorized";
+    // Our server: keep the incoming-messages webhook in place (idempotent; survives reinstalls).
+    if (isHealthy && biz.messagingProvider === "evolution" && biz.evolutionInstance) await applyEvolutionWebhook(biz.evolutionInstance).catch(() => null);
 
     // Self-heal: an "error" or otherwise stuck (non-healthy, non-down,
     // non-transient) state → try a single reboot to nudge it back.

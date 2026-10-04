@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { providerForBusiness } from "@/lib/messaging";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
-import { EvolutionProvider } from "@/lib/messaging/evolution";
+import { EvolutionProvider, applyEvolutionWebhook } from "@/lib/messaging/evolution";
 import { prisma } from "@/lib/prisma";
 
 // GET /api/admin/whatsapp/qr
@@ -44,6 +44,8 @@ export async function GET(req: NextRequest) {
   if (stateRes.state === "authorized") {
     // Our own server sends no "connected" event — the scan screen polling this route is what records it.
     if (provider instanceof EvolutionProvider) {
+      // …and the server accepts the webhook only now that the device is paired.
+      if (business.evolutionInstance) await applyEvolutionWebhook(business.evolutionInstance).catch(() => null);
       await prisma.business.update({ where: { id: business.id }, data: { waLiveState: "authorized", waCheckedAt: new Date(), waDownSince: null, whatsappStatus: "connected" } }).catch(() => null);
     }
     return NextResponse.json({ state: stateRes.state, connected: true });

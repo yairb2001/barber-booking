@@ -140,16 +140,28 @@ export function evolutionWebhookUrl(): string {
   return `${app}/api/webhook/gowa`;
 }
 
-/** Create the device slot for a business (or re-point its webhook). Idempotent. */
+const webhookConfig = () => ({ webhook_url: evolutionWebhookUrl(), webhook_secret: process.env.GOWA_WEBHOOK_SECRET || "", webhook_events: "message" });
+
+/**
+ * Point a LINKED device's incoming messages at /api/webhook/gowa. The server only
+ * stores the webhook once the device is paired (before that it answers "no rows"),
+ * so this runs right after linking (QR route) and again from the hourly health cron.
+ */
+export async function applyEvolutionWebhook(name: string): Promise<{ ok: boolean; error?: string }> {
+  const w = await api("PATCH", `/devices/${name}/webhook`, { json: webhookConfig() });
+  return { ok: w.ok, error: w.error };
+}
+
+/** Create the device slot for a business if it is missing. Idempotent. */
 export async function ensureEvolutionInstance(name: string): Promise<{ ok: boolean; created: boolean; error?: string }> {
   if (!evolutionConfigured()) return { ok: false, created: false, error: "wa_server_not_configured" };
-  const hook = { webhook_url: evolutionWebhookUrl(), webhook_secret: process.env.GOWA_WEBHOOK_SECRET || "", webhook_events: "message" };
   const existing = await api("GET", `/devices/${name}`);
   if (existing.ok) {
-    const w = await api("PATCH", `/devices/${name}/webhook`, { json: hook });
-    return { ok: w.ok, created: false, error: w.error };
+    // An unpaired slot can't hold a webhook yet — that must not block showing a QR / pairing code.
+    await applyEvolutionWebhook(name).catch(() => null);
+    return { ok: true, created: false };
   }
-  const r = await api("POST", "/devices", { json: { device_id: name, ...hook } });
+  const r = await api("POST", "/devices", { json: { device_id: name, ...webhookConfig() } });
   return r.ok ? { ok: true, created: true } : { ok: false, created: false, error: r.error };
 }
 
