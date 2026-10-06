@@ -1987,12 +1987,15 @@ async function loadCustomerContext(businessId: string, phone: string, isFirstTur
     const ranked = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
     const activeTotal = ranked.reduce((sum, r) => sum + r[1], 0);
     const [topName, topCount] = ranked[0] ?? ["", 0];
-    // Dominant = at least 3 visits to active barbers AND one of them holds ≥60%
-    // (or is the only active barber the customer has ever used).
+    // Dominant = at least 3 visits to active barbers AND one of them holds ≥70%
+    // (or is the only active barber the customer has ever used). 70% matches the
+    // availability snapshot and the closure wizard; at 60% a 2-of-3 customer whose
+    // LAST visit was with someone else was pinned to one barber and told "nothing
+    // this week" while the shop had room (יואב, 6.10.2026).
     const dominant =
-      !!topName && activeTotal >= 3 && (ranked.length === 1 || topCount / activeTotal >= 0.6);
+      !!topName && activeTotal >= 3 && (ranked.length === 1 || topCount / activeTotal >= 0.7);
     if (dominant) {
-      parts.push(`הספר הקבוע שלו הוא ${topName} (רוב הביקורים אצלו). אם הוא לא ביקש ספר אחר, אפשר להציע לו פעם אחת את ${topName} כרגיל ("אצל ${topName} כרגיל, או שלא קריטי?"). אם ענה שלא קריטי — קח את הפנוי ביותר.`);
+      parts.push(`הספר הקבוע שלו הוא ${topName} (רוב הביקורים אצלו). אם הוא לא ביקש ספר אחר, אפשר להציע לו פעם אחת את ${topName} כרגיל ("אצל ${topName} כרגיל, או שלא קריטי?"). אם ענה שלא קריטי — קח את הפנוי ביותר. אם ל${topName} אין מקום במה שביקש (היום, השבוע, היום שציין) — אל תעצור ב"אין": באותה הודעה אמור מתי ${topName} כן פנוי והצע גם את הפנוי אצל ספרים אחרים מהמאגר באותו חלון, ושאל אם לחכות ל${topName} או לקחת ספר אחר.`);
     } else {
       // Either the customer spreads visits around, or their old regular no longer
       // works here. Don't surface a barber from history; load-balance silently.
