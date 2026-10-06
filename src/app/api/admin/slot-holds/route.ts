@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   const holds = await prisma.slotHold.findMany({
     where, orderBy: [{ date: "asc" }, { startTime: "asc" }],
-    select: { id: true, staffId: true, date: true, startTime: true, endTime: true, expiresAt: true, customerId: true },
+    select: { id: true, staffId: true, date: true, startTime: true, endTime: true, expiresAt: true, customerId: true, holderKey: true },
   });
   const ids = Array.from(new Set(holds.map(h => h.customerId).filter((x): x is string => !!x)));
   const names = new Map((ids.length ? await prisma.customer.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : []).map(c => [c.id, c.name]));
@@ -29,5 +29,7 @@ export async function GET(req: NextRequest) {
     id: h.id, staffId: h.staffId, date: h.date.toISOString().slice(0, 10),
     startTime: h.startTime, endTime: h.endTime, expiresAt: h.expiresAt.toISOString(),
     customerName: (h.customerId && names.get(h.customerId)) || null,
+    // closure = the wizard's 1h alternative; whatsapp = the agent's 5-min proposal; web = confirm screen
+    source: h.holderKey?.startsWith("web:") ? "web" : h.holderKey?.startsWith("phone:") ? "whatsapp" : "closure",
   })));
 }

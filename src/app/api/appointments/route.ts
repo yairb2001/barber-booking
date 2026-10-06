@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { activeHolds } from "@/lib/slot-holds";
+import { activeHolds, holderKeyForWeb, releaseHolds } from "@/lib/slot-holds";
 import { rateLimit } from "@/lib/rate-limit";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
@@ -257,7 +257,8 @@ export async function POST(request: NextRequest) {
 
   // A slot the closure wizard is holding for another (displaced) customer is
   // taken until the hold expires — the customer it was offered to may book it.
-  const held = await activeHolds({ staffIds: [staffId], from: dateObj, to: dateObj, exemptCustomerId: customer?.id ?? null });
+  const webHoldKey = typeof body.holdToken === "string" && /^[\w-]{8,64}$/.test(body.holdToken) ? holderKeyForWeb(body.holdToken) : null;
+  const held = await activeHolds({ staffIds: [staffId], from: dateObj, to: dateObj, exemptCustomerId: customer?.id ?? null, exemptHolderKeys: [webHoldKey] });
   if (held.some(h => timeToMinutes(startTime) < timeToMinutes(h.endTime) && timeToMinutes(endTime) > timeToMinutes(h.startTime))) {
     return NextResponse.json({ error: "הסלוט כבר תפוס, נסה שעה אחרת" }, { status: 409 });
   }
@@ -350,6 +351,8 @@ export async function POST(request: NextRequest) {
       service: { select: { name: true } },
     },
   });
+  // The visitor's confirm-screen hold has done its job.
+  if (webHoldKey) await releaseHolds({ holderKey: webHoldKey });
 
   // Update customer last visit. Booking again = opting back in: clear a prior
   // messaging opt-out so reminders/automations resume for this customer.

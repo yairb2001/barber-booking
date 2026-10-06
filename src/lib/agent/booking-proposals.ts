@@ -21,6 +21,7 @@
  */
 import { dayDistance } from "@/lib/day-distance";
 import { prisma } from "@/lib/prisma";
+import { holdSlot, releaseHolds, holderKeyForPhone } from "@/lib/slot-holds";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { resolvePick } from "@/lib/closures/reply";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
@@ -177,10 +178,12 @@ export async function createConfirmProposal(p: {
   mentionStaff: boolean; originalRequest?: string | null; firstName?: string | null;
   /** New customer without a full name: the system asks for it and continues on its own. */
   awaitingName?: boolean; partialName?: string | null;
+  /** false = sandbox replay: never leave a real hold on the calendar. */
+  hold?: boolean;
 }): Promise<string> {
   const phone = normalizeIsraeliPhone(p.phone);
   await prisma.bookingProposal.updateMany({ where: { businessId: p.businessId, phone, status: "pending" }, data: { status: "superseded", respondedAt: new Date() } });
-  await prisma.bookingProposal.create({
+  const created = await prisma.bookingProposal.create({
     data: {
       businessId: p.businessId, phone, conversationId: p.conversationId, kind: "confirm",
       staffId: p.staffId, serviceId: p.serviceId, date: new Date(p.date + "T00:00:00.000Z"), startTime: p.startTime,
@@ -188,6 +191,23 @@ export async function createConfirmProposal(p: {
       expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
     },
   });
+  // The conversation has narrowed to ONE slot and we're waiting for a "כן":
+  // keep it off the site / other chats for 5 minutes (owner's spec, 6.10.2026).
+  // Listing many free times (get_available_slots) holds nothing.
+  if (p.hold !== false) {
+    try {
+      const [ss, svc, cust] = await Promise.all([
+        prisma.staffService.findFirst({ where: { staffId: p.staffId, serviceId: p.serviceId }, select: { customDuration: true } }),
+        prisma.service.findUnique({ where: { id: p.serviceId }, select: { durationMinutes: true } }),
+        prisma.customer.findFirst({ where: { businessId: p.businessId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true } }),
+      ]);
+      const dur = ss?.customDuration ?? svc?.durationMinutes ?? 30;
+      const [h, m] = p.startTime.split(":").map(Number);
+      const endMin = h * 60 + m + dur;
+      const endTime = `${String(Math.floor(endMin / 60)).padStart(2, "0")}:${String(endMin % 60).padStart(2, "0")}`;
+      await holdSlot({ businessId: p.businessId, staffId: p.staffId, dateISO: p.date, startTime: p.startTime, endTime, holderKey: holderKeyForPhone(phone), customerId: cust?.id ?? null, proposalId: created.id });
+    } catch (err) { console.error("[proposal] hold failed", err); }
+  }
   if (p.awaitingName) return p.partialName ? FAMILY_NAME_QUESTION : NAME_QUESTION;
   return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime });
 }
@@ -311,6 +331,7 @@ export async function handleIncomingForProposal(p: {
         customerName: pending.customerName ?? p.customer?.name ?? "", ...(meta.note ? { note: meta.note } : {}),
       });
       const ok = p.sandbox || result.startsWith("✅");
+      await releaseHolds({ proposalId: pending.id });
       if (ok) {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "accepted", respondedAt: new Date() } });
         return { reply: bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest }) };
@@ -321,6 +342,7 @@ export async function handleIncomingForProposal(p: {
     }
     if (isPlainNo(text)) {
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
+      await releaseHolds({ proposalId: pending.id });
       return { context: `הלקוח דחה את ההצעה (${what}). שאל בקצרה מה כן מתאים לו (יום/שעה/ספר) והצע חלופה; אם היום/השעה שרצה במקור לא היו פנויים — הצע רשימת המתנה.` };
     }
     return { context: `הצעת ללקוח תור (${what}) והוא עדיין לא אישר — ענה עכשיו: "${text.slice(0, 120)}". אם זו בעצם הסכמה במילים שלו ("מאושר", "יש אישור", "סגור", "קדימה") — קרא ל-propose_booking עם בדיוק אותם פרטים ו-customerConfirmed=true, והמערכת תקבע מיד בלי לשאול שוב. אם הוא מבקש שינוי (שעה/יום/ספר) — סדר את השינוי ואז propose_booking מחדש (בלי customerConfirmed). אם הוא מוסיף העדפה שלא משנה את התור ("רק תספורת בלי זקן", "בלי מכונה") — כתוב משפט קצר שמאשר לו ("אין בעיה, רק תספורת, אותו מחיר") ובאותה תשובה קרא ל-propose_booking עם אותם פרטים, customerConfirmed=true ו-note עם ההעדפה; המשפט שלך יישלח לפני הודעת הקביעה. אם זו שאלה צדדית — ענה וחזור לשאלת האישור. אל תשלח שוב את אותה שאלת אישור.` };
@@ -342,7 +364,7 @@ export async function handleIncomingForProposal(p: {
     ]);
     if (!staff || !service) return {};
     const { computeDayAvailability } = await import("@/lib/agent/availability");
-    const avail = await computeDayAvailability(p.businessId, chosen.date, staff.id, service.id, { exemptHoldsCustomerId: p.customer?.id });
+    const avail = await computeDayAvailability(p.businessId, chosen.date, staff.id, service.id, { exemptHoldsCustomerId: p.customer?.id, exemptHoldsHolderKey: holderKeyForPhone(p.phone) });
     const free = avail.find(a => a.staffId === staff.id)?.slots.includes(chosen.startTime) ?? false;
     await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "superseded", respondedAt: new Date() } });
     if (!free) return { context: `הלקוח בחר מההצעה שלנו את ${dayLabelHe(chosen.date)} בשעה ${chosen.startTime} אצל ${staff.name}, אבל השעה כבר נתפסה. אמור לו בכנות והצע את הקרובה שכן פנויה באותו יום ובאותו טווח (בדוק עם הכלי), ואז propose_booking.` };

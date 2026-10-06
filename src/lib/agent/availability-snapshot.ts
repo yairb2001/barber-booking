@@ -53,10 +53,12 @@ export async function buildAvailabilitySnapshot(p: {
   excludeStaffIds?: string[];
   /** Slots held for THIS customer (closure alternatives) stay free for him. */
   customerId?: string | null;
+  /** …and the slot the agent is holding for this phone (his own proposal). */
+  holderKey?: string | null;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
-  const rawIndex = await buildAvailabilityIndex(p.businessId, today, days, { exemptHoldsCustomerId: p.customerId });
+  const rawIndex = await buildAvailabilityIndex(p.businessId, today, days, { exemptHoldsCustomerId: p.customerId, exemptHoldsHolderKey: p.holderKey });
   const excluded = new Set(p.excludeStaffIds ?? []);
   const index = excluded.size ? { ...rawIndex, slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svc) } : rawIndex;
   const hasPool = index.staff.some(s => s.inQuickPool);

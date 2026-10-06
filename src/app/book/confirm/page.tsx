@@ -308,6 +308,34 @@ function ConfirmPageContent() {
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
 
+  // ── 5-minute hold on the chosen slot while this screen is open ─────────────
+  // Two visitors (or a visitor and a WhatsApp customer) must not both reach
+  // "קביעת תור" on the same time (owner's spec, 6.10.2026). The token is random
+  // and per tab; the server renews on every POST and releases on leaving.
+  const holdToken = useRef<string>("");
+  useEffect(() => {
+    if (!staffId || !serviceId || !date || !time || searchParams.get("success") === "true") return;
+    if (!holdToken.current) {
+      let t = "";
+      try { t = sessionStorage.getItem("book:holdToken") || ""; } catch { /* private mode */ }
+      if (!t) { t = (typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`); try { sessionStorage.setItem("book:holdToken", t); } catch { /* ignore */ } }
+      holdToken.current = t;
+    }
+    const token = holdToken.current;
+    const url = apiWithSlug("/api/slots/hold", slug);
+    let cancelled = false;
+    const take = () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ staffId, serviceId, date, time, token }) })
+      .then(r => { if (!cancelled && r.status === 409) setError("השעה הזו נתפסה הרגע על ידי לקוח אחר. חזור אחורה ובחר שעה אחרת."); })
+      .catch(() => {});
+    take();
+    const renew = setInterval(() => { if (document.visibilityState === "visible") take(); }, 2 * 60_000);
+    const release = () => {
+      try { navigator.sendBeacon(url, new Blob([JSON.stringify({ action: "release", token })], { type: "application/json" })); } catch { /* ignore */ }
+    };
+    window.addEventListener("pagehide", release);
+    return () => { cancelled = true; clearInterval(renew); window.removeEventListener("pagehide", release); release(); };
+  }, [staffId, serviceId, date, time, slug, searchParams]);
+
   // When the customer already has an upcoming appointment, the server stops and
   // returns its details so we can ask: add another, or cancel-and-rebook?
   const [existingAppts, setExistingAppts] = useState<
@@ -564,6 +592,7 @@ function ConfirmPageContent() {
           referrerId:    (!!friendSource && referralSource === friendSource && referrerId)    ? referrerId    : undefined,
           referrerPhone: (!!friendSource && referralSource === friendSource && !referrerId && referrerPhone) ? referrerPhone : undefined,
           note: combinedNote || undefined,
+          holdToken: holdToken.current || undefined,
           otpToken,
           existingDecision,
           replaceAppointmentIds: existingDecision === "cancel" ? (replaceIds.length ? replaceIds : (existingAppts?.length === 1 ? [existingAppts[0].id] : [])) : undefined,

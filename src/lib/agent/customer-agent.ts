@@ -16,6 +16,7 @@
 import { dayDistance } from "@/lib/day-distance";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
+import { holderKeyForPhone, releaseHolds } from "@/lib/slot-holds";
 import { computeCustomerInsights } from "@/lib/customer-insights";
 import { recentNudgeContext } from "@/lib/automations/rhythm-nudge";
 import { recentCallContext } from "@/lib/automations/call-events";
@@ -60,7 +61,7 @@ async function computeDayAvailabilityRetrying(
   serviceId?: string,
   callerPhone?: string,
 ): Promise<ReturnType<typeof computeDayAvailability>> {
-  const opts = { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) };
+  const opts = { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone), exemptHoldsHolderKey: callerPhone ? holderKeyForPhone(callerPhone) : null };
   const blocked = await callerBlockedStaffIds(bizId, callerPhone);
   let result = await computeDayAvailability(bizId, date, staffId, serviceId, opts);
   for (let attempt = 0; !result.length && attempt < 2; attempt++) {
@@ -735,7 +736,7 @@ export async function execTool(
           const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
           const ds = dObj.toISOString().slice(0, 10);
           const blockedForCaller = await callerBlockedStaffIds(bizId, callerPhone);
-          const byStaff = (await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone) }))
+          const byStaff = (await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone), exemptHoldsHolderKey: callerPhone ? holderKeyForPhone(callerPhone) : null }))
             .map(r => blockedForCaller.has(r.staffId) ? { ...r, slots: [] } : r);
           if (byStaff.length) {
             // Return the FULL day per barber (morning through evening), not just
@@ -1000,7 +1001,7 @@ export async function execTool(
           const question = await createConfirmProposal({
             businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
             date, startTime, customerName: null, note: note || null, mentionStaff, originalRequest: originalRequest || null,
-            awaitingName: true, partialName: words(customerName) === 1 ? String(customerName).trim() : null,
+            awaitingName: true, partialName: words(customerName) === 1 ? String(customerName).trim() : null, hold: !sandbox,
           });
           return "PROPOSED\n" + question;
         }
@@ -1015,6 +1016,7 @@ export async function execTool(
             const result = await execTool("book_appointment", { staffId: staff.id, serviceId: service.id, date, startTime, customerName: registeredName ? customer!.name : customerName, ...(noteOut ? { note: noteOut } : {}) }, bizId, conversationId, callerPhone, sandbox);
             const ok = !!sandbox || result.startsWith("✅");
             await prisma.bookingProposal.update({ where: { id: pending!.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
+            await releaseHolds({ proposalId: pending!.id });
             if (ok) return "BOOKED\n" + bookedMessage({ staffName: staff.name, date, startTime, originalRequest: meta.originalRequest });
             return `שגיאה: הקביעה נכשלה — ${result.slice(0, 200)}`;
           }
@@ -1022,7 +1024,7 @@ export async function execTool(
         const question = await createConfirmProposal({
           businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
           date, startTime, customerName: registeredName ? customer!.name : customerName, note: note || null, mentionStaff,
-          originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName),
+          originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName), hold: !sandbox,
         });
         return "PROPOSED\n" + question;
       }
@@ -2310,7 +2312,7 @@ export async function runCustomerAgent(opts: {
           serviceId = byName?.id ?? (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
         }
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, vocab: vocabOf(biz) });
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz) });
         customerContext += `\n${snap}`;
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }

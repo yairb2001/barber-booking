@@ -397,7 +397,7 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
 //    for everyone else (booking pages, agent) until it expires; shown here so
 //    the barber knows why it looks free but customers can't take it. Taps pass
 //    through: the barber can still book over it by hand. ──
-type SlotHoldBlock = { id: string; staffId: string; date: string; startTime: string; endTime: string; expiresAt: string; customerName: string | null };
+type SlotHoldBlock = { id: string; staffId: string; date: string; startTime: string; endTime: string; expiresAt: string; customerName: string | null; source?: "closure" | "whatsapp" | "web" };
 function HoldBlocks({ holds, staffId, date, hourHeight, calStart }: { holds: SlotHoldBlock[]; staffId: string; date: string; hourHeight: number; calStart: number }) {
   const now = Date.now();
   const mine = holds.filter(h => h.staffId === staffId && h.date === date && new Date(h.expiresAt).getTime() > now);
@@ -409,11 +409,15 @@ function HoldBlocks({ holds, staffId, date, hourHeight, calStart }: { holds: Slo
         const height = ((toMin(h.endTime) - toMin(h.startTime)) / 60) * hourHeight;
         const until = new Date(h.expiresAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
         const who = h.customerName ? h.customerName.split(" ")[0] : "לקוח";
+        // Short holds (agent proposal / confirm screen) read "בקביעה"; the closure wizard's "שמור ל…".
+        const short = h.source === "web" || h.source === "whatsapp";
+        const label = short ? (h.customerName ? `בקביעה: ${who}` : "בקביעה") : `שמור ל${who}`;
+        const why = h.source === "web" ? "לקוח במסך האישור באתר" : h.source === "whatsapp" ? "הסוכן הציע את השעה בוואטסאפ" : "הוצע בסגירת יומן";
         return (
-          <div key={h.id} title={`שמור ל${h.customerName ?? "לקוח"} (הוצע בסגירת יומן) עד ${until}`}
+          <div key={h.id} title={`${label} (${why}) עד ${until}`}
             className="absolute left-0.5 right-0.5 rounded-lg border border-dashed border-violet-400 bg-violet-50/90 text-violet-700 pointer-events-none z-[5] flex flex-col items-center justify-center overflow-hidden"
             style={{ top, height }}>
-            {height >= 14 && <span className="text-[9px] font-semibold leading-none px-1 truncate max-w-full">🔒 שמור ל{who}</span>}
+            {height >= 14 && <span className="text-[9px] font-semibold leading-none px-1 truncate max-w-full">🔒 {label}</span>}
             {height >= 30 && <span className="text-violet-500 text-[8px] leading-none mt-0.5">עד {until}</span>}
           </div>
         );

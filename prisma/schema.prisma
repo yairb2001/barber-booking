@@ -924,11 +924,14 @@ model SlotHold {
   endTime     String   @map("end_time")
   customerId  String?  @map("customer_id")
   proposalId  String?  @map("proposal_id")
+  // who is holding: "phone:972…" (agent proposal) | "web:<token>" (confirm screen)
+  holderKey   String?  @map("holder_key")
   expiresAt   DateTime @map("expires_at")
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([staffId, date])
   @@index([proposalId])
+  @@index([holderKey])
   @@map("slot_holds")
 }
 
