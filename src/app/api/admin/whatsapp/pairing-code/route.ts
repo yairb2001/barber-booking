@@ -14,9 +14,12 @@ export async function POST(req: NextRequest) {
   const biz = await getSessionBusiness(req, { id: true, phone: true, whatsappNumber: true, messagingProvider: true, evolutionInstance: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
   if (biz.messagingProvider !== "evolution" || !biz.evolutionInstance) return NextResponse.json({ error: "העסק לא מחובר לשרת של Chator" }, { status: 400 });
-  const raw = biz.whatsappNumber || biz.phone;
+  const body = await req.json().catch(() => ({}));
+  const typed = typeof body?.phone === "string" ? body.phone.trim() : "";
+  const raw = typed || biz.whatsappNumber || biz.phone;
   if (!raw) return NextResponse.json({ error: "אין מספר וואטסאפ לעסק — הגדר אותו בפרטי העסק" }, { status: 400 });
   const number = normalizeIsraeliPhone(raw);
+  if (!/^\d{11,15}$/.test(number)) return NextResponse.json({ error: "מספר לא תקין" }, { status: 400 });
   const r = await pairingCodeForNumber(biz.evolutionInstance, number);
   if (!r.ok) return NextResponse.json({ error: r.error || "failed" }, { status: 502 });
   return NextResponse.json({ ok: true, code: r.code, number });

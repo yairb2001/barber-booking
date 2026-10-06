@@ -7,7 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useNativeShell } from "@/lib/native/useNativeShell";
-import { useWhatsAppQr, WhatsAppQrBody } from "@/components/WhatsAppQrPanel";
+import { ConnectBox } from "@/components/WhatsAppQrPanel";
 
 type NavItem = {
   href: string;
@@ -404,8 +404,6 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
 // rendering with the inline reconnect card in /admin/settings — see
 // WhatsAppQrPanel.
 function WhatsAppReconnectModal({ onClose }: { onClose: () => void }) {
-  const { data, loading } = useWhatsAppQr(true);
-
   return (
     <div
       className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4"
@@ -423,7 +421,7 @@ function WhatsAppReconnectModal({ onClose }: { onClose: () => void }) {
           </div>
           <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600 text-xl leading-none">✕</button>
         </div>
-        <WhatsAppQrBody data={data} loading={loading} errorHint="נסו שוב בעוד רגע או פנו למנהל." />
+        <ConnectBox onLinked={onClose} />
       </div>
     </div>
   );

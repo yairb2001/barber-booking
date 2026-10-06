@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
 import { setupFieldsFor, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
-import { useWhatsAppQr, WhatsAppQrBody, PairingCodeFallback } from "@/components/WhatsAppQrPanel";
+import { ConnectBox, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
 /**
  * Setup wizard — stage 1 (docs/PLAN-MASTER.md, spec "אפיון שלב 1" §3).
@@ -64,7 +64,8 @@ export default function OnboardingPage() {
   // whatsapp
   const [waStatus, setWaStatus] = useState("not_requested");
   const [waTestSent, setWaTestSent] = useState(false);
-  const qr = useWhatsAppQr(step === 5 && waStatus !== "not_requested");
+  const [waBox, setWaBox] = useState(false);       // the linking box is open (device opened on our server)
+  const [waLinked, setWaLinked] = useState(false);  // the phone linked during this visit
 
   const fields: SetupField[] = useMemo(() => setupFieldsFor(bizType), [bizType]);
 
@@ -228,22 +229,28 @@ export default function OnboardingPage() {
     setPreviewing(false);
   };
 
-  const requestWhatsApp = async () => {
+  // One click: the number is opened on Chator's own WhatsApp server and the
+  // scan box appears — no request, no waiting (Yair, 6.10: "סריקה קלילה וחיבור מהיר").
+  const connectWhatsApp = async () => {
     setBusy(true); setError("");
-    try {
-      const r = await fetch("/api/admin/request-whatsapp", { method: "POST" });
-      const j = await r.json().catch(() => ({}));
-      if (j?.whatsappStatus) setWaStatus(j.whatsappStatus); else setWaStatus("requested");
-    } catch { setError("שגיאת רשת"); }
+    const r = await startOurServerConnection();
+    if (!r.ok) setError(r.error || "לא הצלחנו לפתוח את החיבור");
+    else if (r.connected) setWaLinked(true);
+    else { setWaStatus("requested"); setWaBox(true); }
     setBusy(false);
   };
-
-  // Connected (QR poll says so) → one test message from the business's own number, once.
+  // Came back to this step with a device already opened earlier → straight to the box.
   useEffect(() => {
-    if (step !== 5 || !qr.data?.connected || waTestSent) return;
+    if (step === 5 && waStatus === "requested" && !waBox && !waLinked) void connectWhatsApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, waStatus]);
+
+  // Linked → one test message from the business's own number, once.
+  useEffect(() => {
+    if (!waLinked || waTestSent) return;
     setWaTestSent(true);
     fetch("/api/admin/whatsapp/test-self", { method: "POST" }).then(r => { if (r.ok) setWaStatus("connected"); }).catch(() => {});
-  }, [step, qr.data?.connected, waTestSent]);
+  }, [waLinked, waTestSent]);
 
   const activate = async () => {
     setBusy(true); setError("");
@@ -389,29 +396,22 @@ export default function OnboardingPage() {
 
       {step === 5 && (
         <Card title="הוואטסאפ של העסק" sub="הסוכן עונה מהמספר של העסק — הלקוחות ממשיכים לכתוב לאותו מספר שהם מכירים.">
-          {waStatus === "not_requested" ? (
-            <>
-              <p className="text-sm text-slate-600 mb-4">לוחצים פעם אחת. Chator מכין את החיבור (בדרך כלל תוך שעה בשעות העבודה), ואז מופיע כאן קוד לסריקה מאפליקציית הוואטסאפ במכשיר של העסק.</p>
-              <Primary onClick={requestWhatsApp} busy={busy}>חבר לי את המספר</Primary>
-            </>
+          {waStatus === "connected" || waLinked ? (
+            <div className="rounded-2xl px-4 py-5 text-center" style={{ background: C.mist }}>
+              <div className="w-12 h-12 mx-auto rounded-full inline-flex items-center justify-center text-2xl mb-1" style={{ background: C.turquoise, color: C.ink }}>✓</div>
+              <p className="text-sm font-semibold" style={{ color: C.petrol }}>הוואטסאפ של העסק מחובר</p>
+              <p className="text-xs text-slate-500 mt-1">{waTestSent ? "שלחנו לך הודעת בדיקה מהמספר של העסק." : "הסוכן, התזכורות והאישורים יוצאים מהמספר של העסק."}</p>
+            </div>
+          ) : waBox ? (
+            <ConnectBox onLinked={() => setWaLinked(true)} />
           ) : (
             <>
-              {qr.data?.error && !qr.data?.qr && !qr.data?.connected ? (
-                <div className="rounded-2xl px-4 py-5 text-center" style={{ background: C.mist }}>
-                  <div className="text-2xl mb-1">⏳</div>
-                  <p className="text-sm font-semibold" style={{ color: C.petrol }}>הבקשה התקבלה — Chator מכין את החיבור</p>
-                  <p className="text-xs text-slate-500 mt-1">בדרך כלל תוך שעה בשעות העבודה. כשיהיה מוכן יופיע כאן קוד לסריקה, וגם נעדכן אותך בוואטסאפ. אפשר להמשיך בינתיים.</p>
-                </div>
-              ) : (
-                <WhatsAppQrBody data={qr.data} loading={qr.loading} errorHint="נסה שוב בעוד רגע." />
-              )}
-              {qr.data?.qr && <p className="text-xs text-slate-500 mt-2">במכשיר של העסק: וואטסאפ ← הגדרות ← מכשירים מקושרים ← קישור מכשיר ← סרוק.</p>}
-              {qr.data?.qr && <PairingCodeFallback />}
-              {qr.data?.connected && <p className="text-sm text-emerald-700 mt-2">{waTestSent ? "שלחנו לך הודעת בדיקה מהמספר של העסק." : ""}</p>}
+              <p className="text-sm text-slate-600 mb-4">לוחצים פעם אחת, ומופיע כאן קוד לסריקה מאפליקציית הוואטסאפ בטלפון של העסק. פחות מדקה, בלי שום פרטים או טוקנים.</p>
+              <Primary onClick={connectWhatsApp} busy={busy}>חבר את הטלפון</Primary>
             </>
           )}
           <div className="flex items-center justify-between mt-5">
-            <button type="button" onClick={() => goTo(6, waStatus === "connected" ? "whatsapp" : undefined)} className="text-sm text-slate-500">{waStatus === "connected" || qr.data?.connected ? "המשך" : "אמשיך בלי לחבר עכשיו"}</button>
+            <button type="button" onClick={() => goTo(6, waStatus === "connected" || waLinked ? "whatsapp" : undefined)} className="text-sm text-slate-500">{waStatus === "connected" || waLinked ? "המשך" : "אמשיך בלי לחבר עכשיו"}</button>
           </div>
         </Card>
       )}
@@ -424,12 +424,12 @@ export default function OnboardingPage() {
               [`${vocab.staffPluralDef}: ${members.filter(m => m.id).length}`, members.some(m => m.id)],
               [`שירותים: ${services.filter(s => s.id).length}`, services.some(s => s.id)],
               ["הגדרות הסוכן", done.includes("agent")],
-              ["וואטסאפ מחובר", waStatus === "connected" || !!qr.data?.connected],
+              ["וואטסאפ מחובר", waStatus === "connected" || waLinked],
             ].map(([label, ok]) => (
               <li key={String(label)} className="flex items-center gap-2"><span className={`w-5 h-5 rounded-full text-[11px] flex items-center justify-center text-white ${ok ? "" : "bg-slate-300"}`} style={ok ? { background: C.turquoise, color: C.ink } : {}}>{ok ? "✓" : "·"}</span><span className={ok ? "text-slate-800" : "text-slate-500"}>{label as string}</span></li>
             ))}
           </ul>
-          {!(waStatus === "connected" || qr.data?.connected) && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4">בלי וואטסאפ מחובר הסוכן לא יכול לענות ללקוחות. אפשר להפעיל עכשיו ולחבר אחר כך מההגדרות.</p>}
+          {!(waStatus === "connected" || waLinked) && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4">בלי וואטסאפ מחובר הסוכן לא יכול לענות ללקוחות. אפשר להפעיל עכשיו ולחבר אחר כך מההגדרות.</p>}
           {agentEnabled && <p className="text-xs text-emerald-700 mt-3">הסוכן כבר פעיל.</p>}
           <Primary onClick={activate} busy={busy}>{agentEnabled ? "סיים והיכנס למערכת" : "הפעל את הסוכן"}</Primary>
           <p className="text-xs text-slate-500 text-center mt-3">אחרי ההפעלה: שלח לעצמך בוואטסאפ של העסק "יש תור מחר?" ותראה אותו עונה.</p>

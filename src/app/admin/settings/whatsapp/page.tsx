@@ -3,80 +3,30 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { tierHas } from "@/lib/tier";
-import { useWhatsAppQr, WhatsAppQrBody, PairingCodeFallback } from "@/components/WhatsAppQrPanel";
+import { ConnectBox, ConnectModal, WhatsAppConnectCard } from "@/components/WhatsAppQrPanel";
 
-// ── QR re-connect ────────────────────────────────────────────────────────────
-// Live GreenAPI linking: polls the instance state and, when the WhatsApp number
-// is disconnected, shows a fresh QR (rotates ~20s) so the owner can re-scan from
-// inside the app instead of opening the GreenAPI console. Shares its polling +
-// rendering with the global reconnect banner modal — see WhatsAppQrPanel.
+// ── Legacy Green re-connect ────────────────────────────────────────────────
+// Businesses still on their own Green instance (DOMINANT): the same scan box,
+// polling Green instead of our server.
 function QrConnect() {
   const [open, setOpen] = useState(false);
-  const { data, loading } = useWhatsAppQr(open);
-
-  if (!open) {
-    return (
-      <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <span className="text-2xl">🔗</span>
-          <h2 className="font-semibold text-neutral-800">חיבור מהיר / חיבור מחדש</h2>
-        </div>
-        <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
-          אם ה-WhatsApp התנתק — לחצו כאן, סרקו את ה-QR מתוך אפליקציית ה-WhatsApp במכשיר העסק,
-          והחיבור יחזור מיד. אין צורך להיכנס לאתר של GreenAPI.
-        </p>
-        <button onClick={() => setOpen(true)}
-          className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition">
-          בדיקת חיבור / הצגת QR
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🔗</span>
-          <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
-        </div>
-        <button onClick={() => setOpen(false)}
-          className="text-xs text-neutral-400 hover:text-neutral-600">סגור</button>
+      <div className="flex items-center gap-3 mb-2">
+        <span className="text-2xl">🔗</span>
+        <h2 className="font-semibold text-neutral-800">חיבור מהיר / חיבור מחדש</h2>
       </div>
-      <WhatsAppQrBody data={data} loading={loading} errorHint="ודאו ש-Instance ID ו-API Token נכונים ושמורים." />
-    </div>
-  );
-}
-
-// ── Our own WhatsApp server (stage 1 / channels §2) ─────────────────────────
-// The business's number is linked to Chator's server: no provider fields, no
-// tokens — just the live state and, when unlinked, a QR that refreshes itself.
-function OurServerConnection() {
-  const { data, loading } = useWhatsAppQr(true);
-  const connected = !!data?.connected;
-  return (
-    <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">📲</span>
-          <h2 className="font-semibold text-neutral-800">הוואטסאפ של העסק</h2>
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full ${connected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-          {connected ? "✓ מחובר" : loading && !data ? "בודק…" : "לא מחובר"}
-        </span>
-      </div>
-      {connected ? (
-        <p className="text-xs text-neutral-500 leading-relaxed">
-          המספר מקושר ל‑Chator. הסוכן, התזכורות והאישורים יוצאים מהמספר של העסק. אם החיבור יתנתק (למשל אחרי החלפת טלפון) יופיע כאן קוד חדש לסריקה, וגם נודיע לך.
-        </p>
-      ) : (
-        <>
-          <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
-            סרקו את הקוד מתוך אפליקציית הוואטסאפ במכשיר של העסק: <b>הגדרות ← מכשירים מקושרים ← קישור מכשיר</b>. הקוד מתחדש לבד עד שהסריקה עוברת. אין צורך בשום פרטים או טוקנים.
-          </p>
-          <WhatsAppQrBody data={data} loading={loading} errorHint="Chator עוד מכין את החיבור — המסך יתעדכן לבד." />
-          {!!data?.qr && <PairingCodeFallback />}
-        </>
+      <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
+        אם ה-WhatsApp התנתק, לחצו כאן, סרקו את ה-QR מתוך אפליקציית ה-WhatsApp במכשיר העסק, והחיבור יחזור מיד.
+      </p>
+      <button onClick={() => setOpen(true)}
+        className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition">
+        בדיקת חיבור / הצגת QR
+      </button>
+      {open && (
+        <ConnectModal onClose={() => setOpen(false)}>
+          <ConnectBox onLinked={() => setOpen(false)} />
+        </ConnectModal>
       )}
     </div>
   );
@@ -85,8 +35,6 @@ function OurServerConnection() {
 export default function WhatsAppSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [tier, setTier] = useState("basic");
-  const [whatsappStatus, setWhatsappStatus] = useState("not_requested");
-  const [requesting, setRequesting] = useState(false);
 
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [messagingProvider, setMessagingProvider] = useState("green_api");
@@ -119,19 +67,8 @@ export default function WhatsAppSettingsPage() {
     });
     fetch("/api/admin/me").then(r => r.json()).then(me => {
       if (me?.tier) setTier(me.tier);
-      if (me?.whatsappStatus) setWhatsappStatus(me.whatsappStatus);
     }).catch(() => {});
   }, []);
-
-  async function requestWhatsapp() {
-    setRequesting(true);
-    try {
-      const res = await fetch("/api/admin/request-whatsapp", { method: "POST" });
-      const data = await res.json();
-      if (data?.whatsappStatus) setWhatsappStatus(data.whatsappStatus);
-    } catch { /* ignore — best effort */ }
-    setRequesting(false);
-  }
 
   async function runTest() {
     setTesting(true);
@@ -166,7 +103,8 @@ export default function WhatsAppSettingsPage() {
 
   const canOwnWhatsapp = tierHas(tier, "ownWhatsapp");
   const onOurServer = messagingProvider === "evolution" && !!evolutionInstance;
-  const configured = onOurServer || !!(greenApiInstanceId && greenApiToken);
+  const legacyGreen = !onOurServer && !!(greenApiInstanceId && greenApiToken);
+  const configured = onOurServer || legacyGreen;
 
   return (
     <div className="p-8 overflow-auto h-full">
@@ -178,32 +116,13 @@ export default function WhatsAppSettingsPage() {
 
       {loading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
         <div className="space-y-5 max-w-xl">
-          {onOurServer ? (
-            <OurServerConnection />
-          ) : whatsappStatus !== "connected" && (
-            <div className="bg-white rounded-2xl border border-neutral-200 p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-2xl">📲</span>
-                <h2 className="font-semibold text-neutral-800">חיבור WhatsApp למספר העסק</h2>
-              </div>
-              <p className="text-xs text-neutral-500 mb-4 leading-relaxed">
-                שליחת תזכורות ואישורים אוטומטיים מהמספר של העסק היא חלק ממסלול הפרימיום.
-                לאחר אישור הבקשה נחבר עבורך את המספר — עד אז המערכת ממשיכה לקבל תורים כרגיל.
-              </p>
-              {whatsappStatus === "requested" ? (
-                <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 font-medium">
-                  ⏳ בקשתך נשלחה — נחבר את ה-WhatsApp בקרוב.
-                </div>
-              ) : (
-                <button onClick={requestWhatsapp} disabled={requesting}
-                  className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition disabled:opacity-50">
-                  {requesting ? "שולח..." : "חבר/י WhatsApp"}
-                </button>
-              )}
-            </div>
+          {!legacyGreen && (
+            <WhatsAppConnectCard provisioned={onOurServer} onChanged={() => {
+              fetch("/api/admin/business").then(r => r.json()).then(d => { if (d) { setMessagingProvider(d.messagingProvider || "green_api"); setEvolutionInstance(d.evolutionInstance || null); } }).catch(() => {});
+            }} />
           )}
 
-          {canOwnWhatsapp && !onOurServer && (
+          {canOwnWhatsapp && legacyGreen && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-neutral-800">חיבור WhatsApp</h2>
@@ -246,7 +165,7 @@ export default function WhatsAppSettingsPage() {
             </div>
           )}
 
-          {canOwnWhatsapp && configured && !onOurServer && <QrConnect />}
+          {canOwnWhatsapp && legacyGreen && <QrConnect />}
 
           <div className="bg-white border border-neutral-200 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-1">

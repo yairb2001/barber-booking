@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
 
   const business = await getSessionBusiness(req, {
     id: true,
+    phone: true,
     whatsappNumber: true,
     messagingProvider: true,
     greenApiInstanceId: true,
@@ -35,6 +36,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "not_configured" }, { status: 400 });
   }
 
+  const ours = provider instanceof EvolutionProvider;
+  const meta = { provider: ours ? "ours" : "green", phone: business.whatsappNumber || business.phone || null };
+
   const stateRes = await provider.getState();
   if (!stateRes.ok) {
     return NextResponse.json({ error: stateRes.error || "state_failed" }, { status: 502 });
@@ -48,27 +52,27 @@ export async function GET(req: NextRequest) {
       if (business.evolutionInstance) await applyEvolutionWebhook(business.evolutionInstance).catch(() => null);
       await prisma.business.update({ where: { id: business.id }, data: { waLiveState: "authorized", waCheckedAt: new Date(), waDownSince: null, whatsappStatus: "connected" } }).catch(() => null);
     }
-    return NextResponse.json({ state: stateRes.state, connected: true });
+    return NextResponse.json({ ...meta, state: stateRes.state, connected: true });
   }
 
   // Our own server: every QR request opens a new linking session and kills the one
   // being scanned. While the client still holds a fresh QR (or a pairing code is
   // pending) it sends ?hold=1 and we only report the state.
-  const ours = provider instanceof EvolutionProvider;
   if (ours && new URL(req.url).searchParams.get("hold") === "1") {
-    return NextResponse.json({ state: stateRes.state, connected: false, keep: true, pollMs: 4000 });
+    return NextResponse.json({ ...meta, state: stateRes.state, connected: false, keep: true, pollMs: 4000 });
   }
 
   // Not authorized — fetch a fresh QR to display.
   const qrRes = await provider.getQr();
   if (!qrRes.ok) {
     return NextResponse.json(
-      { state: stateRes.state, connected: false, error: qrRes.error || "qr_failed" },
+      { ...meta, state: stateRes.state, connected: false, error: qrRes.error || "qr_failed" },
       { status: 502 },
     );
   }
 
   return NextResponse.json({
+    ...meta,
     state: stateRes.state,
     connected: qrRes.type === "alreadyLogged",
     type: qrRes.type,
