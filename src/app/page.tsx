@@ -9,6 +9,7 @@ import { type Theme, darkSurfaceCss } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 import { captureAttribution } from "@/lib/attribution";
+import MetaPixel from "@/components/MetaPixel";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -499,6 +500,8 @@ export default function HomePage() {
   return (
     <div className={`min-h-screen flex flex-col text-slate-900 ${T.isDark ? "theme-dark" : ""}`} dir="rtl" style={{ background: "var(--bg-page)" }}>
       <style>{cssVars}</style>
+      {/* Meta Pixel on the home page too: ads may land here (quick slots jump straight to /book/confirm). */}
+      <MetaPixel pixelId={(business as { facebookPixel?: string | null } | null)?.facebookPixel} />
 
       {/* ══ STICKY HEADER (appears on scroll) ══════════════════════════════════ */}
       <header className="fixed top-0 inset-x-0 z-50 transition-all duration-300"
