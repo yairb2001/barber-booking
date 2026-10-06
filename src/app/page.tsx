@@ -383,7 +383,7 @@ export default function HomePage() {
     const t = setTimeout(() => {
       if (touched || window.scrollY > 10) return;
       // Lift far enough that the gallery's title and the top of its photos show.
-      root.style.setProperty("--nudge", `-${Math.round(Math.min(window.innerHeight * 0.42, 360))}px`);
+      root.style.setProperty("--nudge", `-${Math.round(Math.min(window.innerHeight * 0.34, 290))}px`);
       const first = root.querySelector(":scope > section ~ section");
       first?.classList.add("fx-in");
       first?.querySelectorAll(".fx-reveal").forEach(el => el.classList.add("fx-in"));
@@ -515,6 +515,25 @@ export default function HomePage() {
   const portfolioWorks: PortfolioWork[] = staff
     .filter(s => s.portfolio.length > 0)
     .flatMap(s => s.portfolio.map(p => ({ imageUrl: p.imageUrl, staffName: s.name, staffAvatar: s.avatarUrl, staffId: s.id })));
+
+  // Gallery order (owner, 7.10.2026): one photo per barber in turn — in the
+  // barbers' order (Yair, Yosef, Israel, …) — then the next round, and repeat.
+  // Before, stories came grouped, so one barber filled the first several cards.
+  const galleryStories: Story[] = (() => {
+    const rank = new Map(staff.map((m, i) => [m.id, i]));
+    const groups = new Map<string, Story[]>();
+    for (const st of stories) {
+      const k = st.staff?.id ?? "_none";
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(st);
+    }
+    const lists = Array.from(groups.entries())
+      .sort((a, b) => (rank.get(a[0]) ?? 999) - (rank.get(b[0]) ?? 999))
+      .map(([, l]) => l);
+    const out: Story[] = [];
+    for (let i = 0; lists.some(l => i < l.length); i++) for (const l of lists) if (i < l.length) out.push(l[i]);
+    return out;
+  })();
 
   // Global CSS — brand + surface tints come from the theme so the whole page
   // background shifts per preset (not just the buttons). Tints are light, so
@@ -709,18 +728,24 @@ export default function HomePage() {
         {/* ── Center content ── */}
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-4 pb-4">
           {fx && (
-            // Preview: greeting + "my appointments" as ONE small pill above the
-            // logo, so the hero stays clean (owner, 7.10.2026).
+            // Preview: greeting and "my appointments" as two small pills above
+            // the logo, so the hero stays clean (owner, 7.10.2026).
+            <div className="mb-4 flex items-center justify-center gap-2">
+            {welcomeName && (
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-white/85 text-[11px] font-medium"
+                style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.16)" }}>
+                👋 היי {welcomeName}
+              </span>
+            )}
             <Link href={publicHref(slug, "/book/my-appointments")}
-              className="mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full active:scale-95 transition-transform"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full active:scale-95 transition-transform"
               style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.16)" }}>
-              {welcomeName && <span className="text-white/85 text-[11px] font-medium">היי {welcomeName}</span>}
-              {welcomeName && <span className="text-white/35 text-[11px]">·</span>}
               <svg className="w-3 h-3 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               <span className="text-white/85 text-[11px] font-semibold">התורים שלי</span>
             </Link>
+            </div>
           )}
           {business?.logoUrl && (
             <div className="mb-5 rounded-full overflow-hidden border-2 border-white/20"
@@ -861,7 +886,7 @@ export default function HomePage() {
             action={<Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
           />
           <PortfolioCarousel
-            works={stories.map(s => ({
+            works={galleryStories.map(s => ({
               imageUrl: s.mediaUrl,
               staffName: s.staff?.name || s.caption || "",
               staffAvatar: s.staff?.avatarUrl || null,
