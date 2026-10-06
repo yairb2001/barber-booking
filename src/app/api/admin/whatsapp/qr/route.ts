@@ -4,6 +4,7 @@ import { providerForBusiness } from "@/lib/messaging";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
 import { EvolutionProvider, applyEvolutionWebhook } from "@/lib/messaging/evolution";
 import { prisma } from "@/lib/prisma";
+import { alertLinkingStuck } from "@/lib/wa-alerts";
 
 // GET /api/admin/whatsapp/qr
 // Any authenticated admin (owner OR barber). Returns the GreenAPI instance
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     whatsappNumber: true,
     messagingProvider: true,
     greenApiInstanceId: true,
-    greenApiToken: true, evolutionInstance: true,
+    greenApiToken: true, evolutionInstance: true, waDownSince: true,
   });
   if (!business) return NextResponse.json({ error: "business not found" }, { status: 404 });
 
@@ -37,7 +38,9 @@ export async function GET(req: NextRequest) {
   }
 
   const ours = provider instanceof EvolutionProvider;
-  const meta = { provider: ours ? "ours" : "green", phone: business.whatsappNumber || business.phone || null };
+  const meta = { provider: ours ? "ours" : "green", phone: business.whatsappNumber || business.phone || null, downSince: business.waDownSince?.toISOString() ?? null };
+  // The owner has been on the linking screen for minutes (the client says so once) → Chator gets a heads-up.
+  const stuck = new URL(req.url).searchParams.get("stuck") === "1";
 
   const stateRes = await provider.getState();
   if (!stateRes.ok) {
@@ -54,6 +57,8 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ ...meta, state: stateRes.state, connected: true });
   }
+
+  if (stuck) alertLinkingStuck(business.id).catch(() => {});
 
   // Our own server: every QR request opens a new linking session and kills the one
   // being scanned. While the client still holds a fresh QR (or a pairing code is

@@ -8,6 +8,7 @@ import { providerForBusiness } from "@/lib/messaging";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -73,6 +74,8 @@ export async function GET(req: NextRequest) {
           if (res.ok && res.state) {
             waState = res.state;
             const isDown = WA_DOWN_STATES.has(res.state);
+            if (isDown && !business!.waDownSince) alertWhatsAppDown(session.businessId).catch(() => {});
+            else if (res.state === "authorized" && business!.waDownSince) alertWhatsAppRecovered(session.businessId, business!.waDownSince).catch(() => {});
             await prisma.business.update({
               where: { id: session.businessId },
               data: {

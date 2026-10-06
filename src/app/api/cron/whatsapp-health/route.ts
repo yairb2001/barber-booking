@@ -16,6 +16,7 @@ import { GreenApiProvider } from "@/lib/messaging/green-api";
 import { EvolutionProvider, evolutionConfigured, evolutionServerOk, applyEvolutionWebhook } from "@/lib/messaging/evolution";
 import { providerForBusiness } from "@/lib/messaging";
 import { notifyPlatformOwner } from "@/lib/super-admin";
+import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -90,8 +91,8 @@ export async function GET(req: NextRequest) {
 
     // Track downSince: set on first transition to a down state, clear on recovery.
     let waDownSince = biz.waDownSince;
-    if (isDown && !waDownSince) { waDownSince = now; down++; }
-    else if (isHealthy && waDownSince) { waDownSince = null; recovered++; }
+    if (isDown && !waDownSince) { waDownSince = now; down++; alertWhatsAppDown(biz.id).catch(() => {}); }
+    else if (isHealthy && waDownSince) { alertWhatsAppRecovered(biz.id, waDownSince).catch(() => {}); waDownSince = null; recovered++; }
 
     await prisma.business.update({
       where: { id: biz.id },

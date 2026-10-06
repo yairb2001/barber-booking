@@ -29,11 +29,12 @@ import { createPortal } from "react-dom";
  */
 export type QrState = {
   state?: string; connected?: boolean; qr?: string; type?: string; error?: string;
-  paused?: boolean; provider?: "ours" | "green"; phone?: string | null;
+  paused?: boolean; provider?: "ours" | "green"; phone?: string | null; downSince?: string | null;
 };
 
 const QR_HOLD_MS = 35_000;
 const QR_IDLE_MS = 8 * 60_000;
+const STUCK_AFTER_MS = 4 * 60_000;   // still unlinked after this → tell Chator once (he can call before the owner gives up)
 const PAIR_LOCK_S = 60;              // a second code kills the first — the button waits this long
 const RESUME_EVENT = "wa-qr-resume";
 const shared: { qr?: string; type?: string; at: number; pairingUntil: number } = { at: 0, pairingUntil: 0 };
@@ -47,6 +48,7 @@ export function useWhatsAppQr(active: boolean) {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
     let since = Date.now();
+    let stuckReported = false;
     const resume = () => { since = Date.now(); shared.at = 0; clearTimeout(timer); tick(); };
     window.addEventListener(RESUME_EVENT, resume);
     async function tick() {
@@ -56,10 +58,13 @@ export function useWhatsAppQr(active: boolean) {
         const now = Date.now();
         const idle = now - since > QR_IDLE_MS && now >= shared.pairingUntil;
         const hold = idle || now < shared.pairingUntil || (!!shared.qr && now - shared.at < QR_HOLD_MS);
-        const res = await fetch(`/api/admin/whatsapp/qr${hold ? "?hold=1" : ""}`, { cache: "no-store" });
+        const stuck = !stuckReported && now - since > STUCK_AFTER_MS;
+        if (stuck) stuckReported = true;
+        const qs = [hold ? "hold=1" : "", stuck ? "stuck=1" : ""].filter(Boolean).join("&");
+        const res = await fetch(`/api/admin/whatsapp/qr${qs ? "?" + qs : ""}`, { cache: "no-store" });
         const d: QrState & { keep?: boolean; pollMs?: number } = await res.json();
         if (cancelled) return;
-        const meta = { provider: d.provider, phone: d.phone, state: d.state };
+        const meta = { provider: d.provider, phone: d.phone, state: d.state, downSince: d.downSince };
         if (d.keep && idle) setData({ ...meta, connected: false, paused: true });
         else if (d.keep) setData({ ...meta, connected: false, qr: shared.qr, type: shared.type });
         else {
@@ -264,7 +269,7 @@ function StatusDot({ tone }: { tone: "ok" | "warn" | "bad" | "idle" }) {
  * Green instance); otherwise the button first opens one, then shows the box.
  */
 export function WhatsAppConnectCard({ provisioned, onChanged }: { provisioned: boolean; onChanged?: () => void }) {
-  const [status, setStatus] = useState<{ state: "loading" | "authorized" | "notAuthorized" | "error"; error?: string }>({ state: "loading" });
+  const [status, setStatus] = useState<{ state: "loading" | "authorized" | "notAuthorized" | "error"; error?: string; downSince?: string | null }>({ state: "loading" });
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -278,7 +283,7 @@ export function WhatsAppConnectCard({ provisioned, onChanged }: { provisioned: b
       const r = await fetch("/api/admin/whatsapp/qr?hold=1", { cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) setStatus({ state: "error", error: j.error });
-      else setStatus({ state: j.connected ? "authorized" : "notAuthorized" });
+      else setStatus({ state: j.connected ? "authorized" : "notAuthorized", downSince: j.downSince ?? null });
     } catch { setStatus({ state: "error", error: "network" }); }
   }, [hasDevice]);
   useEffect(() => { void check(); }, [check]);
@@ -346,6 +351,12 @@ export function WhatsAppConnectCard({ provisioned, onChanged }: { provisioned: b
           {busy ? "רגע…" : "חבר את הטלפון"}
         </button>
       )}
+      {hasDevice && !linked && status.state === "notAuthorized" && status.downSince && (
+        <p className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+          מנותק מאז {new Date(status.downSince).toLocaleString("he-IL", { weekday: "short", day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}. הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.
+        </p>
+      )}
+      <p className="text-[11px] text-slate-400">כשהחיבור נופל, תקבל התראה בפוש ובהודעת וואטסאפ מהמספר של Chator, וגם אנחנו נדע.</p>
       {note && <p className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2">{note}</p>}
       {open && (
         <ConnectModal onClose={() => { setOpen(false); void check(); }}>
