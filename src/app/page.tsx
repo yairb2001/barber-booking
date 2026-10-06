@@ -382,8 +382,13 @@ export default function HomePage() {
     window.addEventListener("wheel", mark, { passive: true, once: true });
     const t = setTimeout(() => {
       if (touched || window.scrollY > 10) return;
+      // Lift far enough that the gallery's title and the top of its photos show.
+      root.style.setProperty("--nudge", `-${Math.round(Math.min(window.innerHeight * 0.42, 360))}px`);
+      const first = root.querySelector(":scope > section ~ section");
+      first?.classList.add("fx-in");
+      first?.querySelectorAll(".fx-reveal").forEach(el => el.classList.add("fx-in"));
       root.classList.add("fx-nudge");
-      setTimeout(() => root.classList.remove("fx-nudge"), 1500);
+      setTimeout(() => root.classList.remove("fx-nudge"), 2500);
     }, 2500);
     // Parallax: one CSS var, updated once per frame.
     let raf = 0;
@@ -550,8 +555,8 @@ export default function HomePage() {
     .fx-chevs svg { animation: fx-chev 1.5s ease-in-out infinite; }
     .fx-chevs svg:nth-child(2) { animation-delay: .18s; }
     .fx-chevs svg:nth-child(3) { animation-delay: .36s; }
-    @keyframes fx-nudge { 0% { transform: translateY(0); } 35% { transform: translateY(-84px); } 55% { transform: translateY(-84px); } 100% { transform: translateY(0); } }
-    .fx-nudge { animation: fx-nudge 1.4s cubic-bezier(.45,0,.2,1) 1; }
+    @keyframes fx-nudge { 0% { transform: translateY(0); } 30% { transform: translateY(var(--nudge, -280px)); } 68% { transform: translateY(var(--nudge, -280px)); } 100% { transform: translateY(0); } }
+    .fx-nudge { animation: fx-nudge 2.4s cubic-bezier(.45,0,.2,1) 1; }
     .fx .fx-par { transform: translateY(calc(var(--sy, 0) * .38px)) scale(1.06); will-change: transform; }
     .fx-reveal { opacity: 0; transform: translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
     .fx-reveal.fx-in { opacity: 1; transform: none; }
@@ -703,6 +708,20 @@ export default function HomePage() {
 
         {/* ── Center content ── */}
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-4 pb-4">
+          {fx && (
+            // Preview: greeting + "my appointments" as ONE small pill above the
+            // logo, so the hero stays clean (owner, 7.10.2026).
+            <Link href={publicHref(slug, "/book/my-appointments")}
+              className="mb-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full active:scale-95 transition-transform"
+              style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.16)" }}>
+              {welcomeName && <span className="text-white/85 text-[11px] font-medium">היי {welcomeName}</span>}
+              {welcomeName && <span className="text-white/35 text-[11px]">·</span>}
+              <svg className="w-3 h-3 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-white/85 text-[11px] font-semibold">התורים שלי</span>
+            </Link>
+          )}
           {business?.logoUrl && (
             <div className="mb-5 rounded-full overflow-hidden border-2 border-white/20"
               style={{
@@ -713,7 +732,7 @@ export default function HomePage() {
             </div>
           )}
 
-          <div className="mb-3 flex flex-col items-center gap-2">
+          {!fx && <div className="mb-3 flex flex-col items-center gap-2">
             {welcomeName && (
               <div className="px-5 py-2 rounded-full"
                 style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
@@ -733,7 +752,7 @@ export default function HomePage() {
               </svg>
               <span className="text-white/90 text-[12px] font-semibold">התורים שלי</span>
             </Link>
-          </div>
+          </div>}
 
           <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"
             style={{ fontSize: "clamp(2rem,10vw,4.5rem)", textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
