@@ -180,6 +180,8 @@ model MessageLog {
   sentAt        DateTime? @map("sent_at")
   deliveredAt   DateTime? @map("delivered_at")
   readAt        DateTime? @map("read_at")
+  // JSON side-data for the drip queue, e.g. {"wl":{…}} for a waitlist cascade step
+  meta          String?
 
   business      Business @relation(fields: [businessId], references: [id])
 

@@ -34,6 +34,8 @@ export default function CalendarBookingPage() {
   // Feature toggles stored in Business.settings — saved immediately on tap.
   const [apptConfirmations, setApptConfirmations] = useState(false);
   const [waitlistMode, setWaitlistMode] = useState<"notify" | "auto">("notify");
+  const [waitlistCascade, setWaitlistCascade] = useState(false);
+  const [waitlistCascadeMinutes, setWaitlistCascadeMinutes] = useState(5);
   const [toggleSaving, setToggleSaving] = useState<string | null>(null);
 
   async function patchSettings(patch: Record<string, unknown>, key: string) {
@@ -66,6 +68,8 @@ export default function CalendarBookingPage() {
         if (typeof s.calendarEndHour === "number") setCalEndHour(s.calendarEndHour);
         setApptConfirmations(s.apptConfirmations === true);
         setWaitlistMode(s.waitlistMode === "auto" ? "auto" : "notify");
+        setWaitlistCascade(s.waitlistCascade === true);
+        if (typeof s.waitlistCascadeMinutes === "number") setWaitlistCascadeMinutes(s.waitlistCascadeMinutes);
       }
       setLoading(false);
     });
@@ -252,6 +256,30 @@ export default function CalendarBookingPage() {
                 </button>
               ))}
             </div>
+            {waitlistMode === "notify" && (
+              <div className="mt-4 pt-4 border-t border-neutral-100">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" className="mt-1 accent-teal-600" checked={waitlistCascade}
+                    onChange={e => { setWaitlistCascade(e.target.checked); patchSettings({ waitlistCascade: e.target.checked }, "wl"); }} />
+                  <span>
+                    <span className="text-sm font-semibold text-neutral-800 block">להודיע בתורות, לפי סדר ההרשמה</span>
+                    <span className="text-[11px] text-neutral-500 leading-relaxed block mt-0.5">
+                      במקום הודעה לכולם בבת אחת: הראשון שנרשם מקבל הודעה עם קישור ישיר לתור, והתור שמור לו. אם לא קבע, אחרי כמה דקות ההודעה עוברת לבא ברשימה, וכן הלאה. ברגע שמישהו קובע, השאר לא מקבלים הודעה.
+                    </span>
+                  </span>
+                </label>
+                {waitlistCascade && (
+                  <div className="flex items-center gap-2 mt-3 mr-7 text-sm text-neutral-700">
+                    <span>כל אחד מקבל</span>
+                    <input type="number" min={1} max={60} value={waitlistCascadeMinutes}
+                      onChange={e => setWaitlistCascadeMinutes(Number(e.target.value))}
+                      onBlur={() => patchSettings({ waitlistCascadeMinutes: Math.min(60, Math.max(1, Math.round(waitlistCascadeMinutes || 5))) }, "wl")}
+                      className="w-14 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
+                    <span>דקות לפני שעוברים לבא</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Cancellation policy */}

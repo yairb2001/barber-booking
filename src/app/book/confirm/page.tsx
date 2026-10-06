@@ -315,6 +315,12 @@ function ConfirmPageContent() {
   const holdToken = useRef<string>("");
   useEffect(() => {
     if (!staffId || !serviceId || !date || !time || searchParams.get("success") === "true") return;
+    // A waitlist "your turn" link carries the token of the hold made for him.
+    const urlHold = searchParams.get("hold");
+    if (urlHold && /^[\w-]{8,64}$/.test(urlHold) && holdToken.current !== urlHold) {
+      holdToken.current = urlHold;
+      try { sessionStorage.setItem("book:holdToken", urlHold); } catch { /* ignore */ }
+    }
     if (!holdToken.current) {
       let t = "";
       try { t = sessionStorage.getItem("book:holdToken") || ""; } catch { /* private mode */ }

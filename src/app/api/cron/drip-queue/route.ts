@@ -39,6 +39,8 @@ import { remindStaleLeads } from "@/lib/agent/sales-agent";
 import { runClosureSweep } from "@/lib/closures/status";
 import { keepAgentCachesWarm } from "@/lib/agent/cache-warm";
 import { sweepReminders } from "@/lib/reminders-sweep";
+import { parseCascadeMeta, startCascadeTurn } from "@/lib/waitlist-cascade";
+import { logToConversationHistory } from "@/lib/waitlist-notify";
 import { runPostVisitAutomations } from "@/lib/automations/post-visit";
 import { runRhythmNudge } from "@/lib/automations/rhythm-nudge";
 import { getDayOfWeekISO } from "@/lib/utils";
@@ -280,6 +282,7 @@ export async function GET(req: NextRequest) {
       appointmentId: true,
       scheduledFor: true,
       createdAt: true,
+      meta: true,
     },
   });
 
@@ -324,6 +327,18 @@ export async function GET(req: NextRequest) {
         skipped++;
         continue;
       }
+    }
+    // Waitlist in turns: this person's turn only starts if the slot is still
+    // free — then the hold moves to him; otherwise nobody else is messaged.
+    const step = row.kind === "waitlist_notify" ? parseCascadeMeta(row.meta) : null;
+    if (step) {
+      const ok = await startCascadeTurn(step).catch(() => false);
+      if (!ok) {
+        await prisma.messageLog.update({ where: { id: row.id }, data: { status: "skipped", error: "slot_taken" } });
+        skipped++;
+        continue;
+      }
+      await logToConversationHistory(row.businessId, row.customerPhone, row.body).catch(() => {});
     }
     toDeliver.push(row);
   }

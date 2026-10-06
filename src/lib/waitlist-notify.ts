@@ -6,6 +6,7 @@ import { computeDayAvailability } from "@/lib/agent/availability";
 import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { timeToMinutes, minutesToTime } from "@/lib/utils";
+import { cascadeSettings, newHoldToken, cascadeSlotLink, startCascadeTurn, type CascadeStep } from "@/lib/waitlist-cascade";
 
 // How long after pinging an implicit-waitlist customer ("a slot opened up,
 // interested?") a plain כן/לא reply is still treated as answering THAT
@@ -27,7 +28,7 @@ const RENOTIFY_THROTTLE_MS = 20 * 60 * 1000; // 20 minutes
  *  nowhere. Same find-or-create + log pattern as notifyRequester in
  *  appointment-swap.ts. Best-effort: never let a logging failure block the
  *  actual WhatsApp send. */
-async function logToConversationHistory(businessId: string, phone: string, body: string): Promise<void> {
+export async function logToConversationHistory(businessId: string, phone: string, body: string): Promise<void> {
   try {
     let conversation = await prisma.conversation.findFirst({
       where: { businessId, phone, agentType: { not: "owner" } },
@@ -218,6 +219,12 @@ async function triggerWaitlist(opts: {
     return (await pending).has(startTime!);
   };
 
+  // "In turns" (settings.waitlistCascade): one person at a time in sign-up
+  // order, N minutes apart, each with a link to this exact slot held for him.
+  const cascade = cascadeSettings(business.settings);
+  const useCascade = cascade.enabled && triggerType === "cancellation" && !!startTime;
+  const turns: { entry: (typeof entries)[number]; existingAppointment?: string }[] = [];
+
   for (const entry of entries) {
     const pref = entry.preferredTimeOfDay || "any";
 
@@ -239,6 +246,8 @@ async function triggerWaitlist(opts: {
       if (upcoming) existingAppointment = `${upcoming.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric" })} ב-${upcoming.startTime}`;
     }
 
+    if (useCascade) { turns.push({ entry, existingAppointment }); continue; }
+
     tasks.push(
       sendWaitlistEntryNotification(
         business.name,
@@ -249,6 +258,35 @@ async function triggerWaitlist(opts: {
         { freedTime: triggerType === "cancellation" ? startTime : undefined, immediate, existingAppointment },
       ),
     );
+  }
+
+  if (useCascade && turns.length) {
+    turns.sort((a, b) => a.entry.createdAt.getTime() - b.entry.createdAt.getTime());
+    const cascadeId = newHoldToken();
+    const now = Date.now();
+    for (let i = 0; i < turns.length; i++) {
+      const { entry, existingAppointment } = turns[i];
+      const step: CascadeStep = {
+        cascadeId, entryId: entry.id, businessId, staffId, date: dateIso, startTime: startTime!,
+        serviceId: entry.service.id, customerId: (entry as { customerId?: string }).customerId ?? null,
+        holdToken: newHoldToken(), minutes: cascade.minutes,
+      };
+      const common = {
+        freedTime: startTime, existingAppointment,
+        slotLink: cascadeSlotLink(business.slug, step), holdMinutes: cascade.minutes,
+      };
+      if (i === 0) {
+        // First in line: his turn starts now (hold + immediate send).
+        if (!(await startCascadeTurn(step).catch(() => false))) break;
+        tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, { ...common, immediate: true }));
+      } else {
+        // Later turns wait in the drip queue; the queue re-checks the slot and
+        // moves the hold to this person right before sending (see drip-queue).
+        tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, {
+          ...common, immediate: false, scheduledFor: new Date(now + i * cascade.minutes * 60_000), meta: { wl: step },
+        }));
+      }
+    }
   }
 
   // Await so immediate sends actually complete before the (serverless) caller
@@ -353,6 +391,12 @@ export function sendWaitlistEntryNotification(
     immediate?: boolean;
     /** "מחר ב-14:00" — he already has one, so offer a swap instead of a second booking. */
     existingAppointment?: string;
+    /** Waitlist in turns: link straight to the slot, and how long it's held for him. */
+    slotLink?: string;
+    holdMinutes?: number;
+    /** Queued turn: when to send, and the step the drip queue acts on. */
+    scheduledFor?: Date;
+    meta?: Record<string, unknown>;
   },
 ) {
   const { freedTime, immediate } = opts ?? {};
@@ -368,7 +412,7 @@ export function sendWaitlistEntryNotification(
   // Direct booking link for this business so the customer can grab the slot in
   // one tap (the message previously said "hurry to book" with no link).
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
-  const bookingLink = `${baseUrl}${slug ? `/${slug}` : ""}/book`;
+  const bookingLink = opts?.slotLink || `${baseUrl}${slug ? `/${slug}` : ""}/book`;
 
   // The opening phrase. For a cancellation we now know the EXACT freed time, so
   // say it ("תור פנוי בשעה 14:30") instead of the vague window ("תור פנוי בבוקר").
@@ -412,6 +456,9 @@ export function sendWaitlistEntryNotification(
   if (bookingLink && !body.includes(bookingLink)) {
     body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
   }
+  if (opts?.holdMinutes) {
+    body = `${body.trimEnd()}\n\n⏳ התור שמור לך ${opts.holdMinutes} דקות, אחר כך הוא עובר לבא ברשימה.`;
+  }
 
   // Stamp notifiedAt (used to throttle repeat pings) but KEEP the entry
   // "waiting": the freed slot may not have suited them, so they stay on the
@@ -422,7 +469,9 @@ export function sendWaitlistEntryNotification(
       data: { notifiedAt: new Date() },
     }).catch(console.error);
 
-  void logToConversationHistory(entry.businessId, entry.customer.phone, body);
+  // A queued turn may never go out (slot taken first) — the drip queue writes
+  // it into the chat history at the moment it's actually sent.
+  if (!opts?.meta) void logToConversationHistory(entry.businessId, entry.customer.phone, body);
 
   if (immediate) {
     // Time-sensitive freed slot → send now (awaited by the caller).
@@ -441,7 +490,8 @@ export function sendWaitlistEntryNotification(
     customerPhone: entry.customer.phone,
     kind: "waitlist_notify",
     body,
-    scheduledFor: new Date(), // due now → drip cron sends it ahead of staggered broadcasts
+    scheduledFor: opts?.scheduledFor ?? new Date(), // due now → drip cron sends it ahead of staggered broadcasts
+    meta: opts?.meta ?? null,
   })
     .then(markNotified)
     .catch(console.error);

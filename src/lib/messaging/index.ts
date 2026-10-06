@@ -424,6 +424,8 @@ export async function enqueueMessage(opts: {
   kind: MessageKind;
   body: string;
   scheduledFor: Date;
+  /** JSON side-data the drip queue acts on before sending (waitlist cascade). */
+  meta?: Record<string, unknown> | null;
 }): Promise<void> {
   await prisma.messageLog.create({
     data: {
@@ -434,6 +436,7 @@ export async function enqueueMessage(opts: {
       body: opts.body,
       status: "scheduled",
       scheduledFor: opts.scheduledFor,
+      meta: opts.meta ? JSON.stringify(opts.meta) : null,
     },
   });
 }
