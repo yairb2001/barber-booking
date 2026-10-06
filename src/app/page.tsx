@@ -356,6 +356,58 @@ export default function HomePage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // ── Scroll-motion preview (owner reviewing, 7.10.2026) ─────────────────────
+  // ?fx=1 turns it on for this browser tab, ?fx=0 off; customers never see it
+  // until it's promoted. Three pieces: running chevrons in the scroll cue, a
+  // one-time "the page lifts and settles" nudge if nobody scrolled within 2.5s,
+  // and on-scroll motion (hero parallax + sections rising into view).
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [fx, setFx] = useState(false);
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get("fx");
+      if (q === "1") sessionStorage.setItem("home:fx", "1");
+      if (q === "0") sessionStorage.removeItem("home:fx");
+      setFx(sessionStorage.getItem("home:fx") === "1");
+    } catch { /* private mode */ }
+  }, []);
+  useEffect(() => {
+    if (!fx || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const root = rootRef.current;
+    if (!root) return;
+    // Nudge once, only if the visitor hasn't touched / scrolled yet.
+    let touched = false;
+    const mark = () => { touched = true; root.classList.remove("fx-nudge"); };
+    window.addEventListener("touchstart", mark, { passive: true, once: true });
+    window.addEventListener("wheel", mark, { passive: true, once: true });
+    const t = setTimeout(() => {
+      if (touched || window.scrollY > 10) return;
+      root.classList.add("fx-nudge");
+      setTimeout(() => root.classList.remove("fx-nudge"), 1500);
+    }, 2500);
+    // Parallax: one CSS var, updated once per frame.
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; root.style.setProperty("--sy", String(Math.min(window.scrollY, 1200))); });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { clearTimeout(t); window.removeEventListener("scroll", onScroll); window.removeEventListener("touchstart", mark); window.removeEventListener("wheel", mark); if (raf) cancelAnimationFrame(raf); };
+  }, [fx]);
+
+  useEffect(() => {
+    if (!fx || loading || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const targets = Array.from(root.querySelectorAll<HTMLElement>(":scope > section ~ section, :scope > section ~ section .snap-start"));
+    targets.forEach(el => el.classList.add("fx-reveal"));
+    const io = new IntersectionObserver(entries => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("fx-in"); io.unobserve(e.target); }
+    }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+    targets.filter(el => !el.classList.contains("fx-in")).forEach(el => io.observe(el));
+    return () => io.disconnect();
+  }, [fx, loading, business, staff.length]);
+
   // Returning customer — greet by name (saved after first booking)
   useEffect(() => {
     try {
@@ -494,11 +546,23 @@ export default function HomePage() {
     @media (prefers-reduced-motion: reduce) {
       .available-now-blink, .scroll-cue-arrow { animation: none !important; }
     }
+    @keyframes fx-chev { 0%, 100% { opacity: .15; transform: translateY(-2px); } 40% { opacity: 1; transform: translateY(2px); } }
+    .fx-chevs svg { animation: fx-chev 1.5s ease-in-out infinite; }
+    .fx-chevs svg:nth-child(2) { animation-delay: .18s; }
+    .fx-chevs svg:nth-child(3) { animation-delay: .36s; }
+    @keyframes fx-nudge { 0% { transform: translateY(0); } 35% { transform: translateY(-84px); } 55% { transform: translateY(-84px); } 100% { transform: translateY(0); } }
+    .fx-nudge { animation: fx-nudge 1.4s cubic-bezier(.45,0,.2,1) 1; }
+    .fx .fx-par { transform: translateY(calc(var(--sy, 0) * .38px)) scale(1.06); will-change: transform; }
+    .fx-reveal { opacity: 0; transform: translateY(34px); transition: opacity .7s ease, transform .7s cubic-bezier(.2,.7,.2,1); }
+    .fx-reveal.fx-in { opacity: 1; transform: none; }
+    .snap-start.fx-reveal { transform: translateY(18px) scale(.97); }
+    .snap-start.fx-reveal:nth-child(2) { transition-delay: .08s; } .snap-start.fx-reveal:nth-child(3) { transition-delay: .16s; } .snap-start.fx-reveal:nth-child(n+4) { transition-delay: .24s; }
+    @media (prefers-reduced-motion: reduce) { .fx-nudge { animation: none; } .fx .fx-par { transform: none; } .fx-reveal { opacity: 1; transform: none; } }
     ${T.isDark ? darkSurfaceCss(".theme-dark > section ~ section", ".theme-dark > div") + ".theme-dark > .footer-cta { background: var(--surface-alt-solid) !important; }" : ""}
   `;
 
   return (
-    <div className={`min-h-screen flex flex-col text-slate-900 ${T.isDark ? "theme-dark" : ""}`} dir="rtl" style={{ background: "var(--bg-page)" }}>
+    <div ref={rootRef} className={`min-h-screen flex flex-col text-slate-900 ${T.isDark ? "theme-dark" : ""} ${fx ? "fx" : ""}`} dir="rtl" style={{ background: "var(--bg-page)" }}>
       <style>{cssVars}</style>
       {/* Meta Pixel on the home page too: ads may land here (quick slots jump straight to /book/confirm). */}
       <MetaPixel pixelId={(business as { facebookPixel?: string | null } | null)?.facebookPixel} />
@@ -532,15 +596,15 @@ export default function HomePage() {
       </header>
 
       {/* ══ HERO — full viewport, dark background ═══════════════════════════════ */}
-      <section className="relative flex flex-col" style={{ minHeight: "100svh" }}>
+      <section className={`relative flex flex-col ${fx ? "overflow-hidden" : ""}`} style={{ minHeight: "100svh" }}>
 
         {/* Background: video → image → dark gradient */}
         {business?.heroVideoUrl ? (
           <video src={business.heroVideoUrl} autoPlay muted loop playsInline
-            className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
+            className="fx-par absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
         ) : business?.coverImageUrl ? (
           <img src={business.coverImageUrl} alt=""
-            className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
+            className="fx-par absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 20%" }} />
         ) : (
           <div className="absolute inset-0" style={{ background: "linear-gradient(160deg,#0A0A0A 0%,#1A1510 100%)" }} />
         )}
@@ -744,6 +808,15 @@ export default function HomePage() {
           <span className="text-white/80 text-sm tracking-[0.3em] uppercase font-bold">
             העבודות שלנו
           </span>
+          {fx ? (
+            <span className="fx-chevs flex flex-col items-center" style={{ gap: 0 }}>
+              {[0, 1, 2].map(i => (
+                <svg key={i} className="w-7 h-7 text-white" style={{ marginTop: i ? -14 : 0 }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.6}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              ))}
+            </span>
+          ) : (
           <span className="scroll-cue-arrow flex h-11 w-11 items-center justify-center rounded-full"
             style={{
               background: "rgba(255,255,255,0.14)",
@@ -754,6 +827,7 @@ export default function HomePage() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
           </span>
+          )}
         </button>
       </section>
 
