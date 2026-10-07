@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
         tier: "basic",
         trialEndsAt,
         whatsappStatus: "not_requested",
+        messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
         settings: JSON.stringify({ ownerLoginPhone: phone }),
       },
       select: { id: true, slug: true },

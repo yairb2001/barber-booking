@@ -632,12 +632,6 @@ function ConnectionCard({ b, reload }: { b: Biz; reload: () => void }) {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button disabled={busy} onClick={useOurServer} className="text-white text-xs font-medium px-3 py-1.5 rounded-lg" style={{ background: "#0B3A3C" }}>{b.provider === "evolution" ? "🔄 צור/עדכן מופע בשרת שלנו" : "🔌 חבר דרך השרת שלנו (מומלץ)"}</button>
-        <span className="text-[11px] text-slate-400">או גרין:</span>
-      </div>
-      <div className="mt-2 flex flex-wrap items-end gap-2">
-        <label className="text-xs text-slate-500">Instance ID<input value={instanceId} onChange={e => setInstanceId(e.target.value)} dir="ltr" className="block w-40 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></label>
-        <label className="text-xs text-slate-500">Token<input value={token} onChange={e => setToken(e.target.value)} dir="ltr" className="block w-64 rounded-lg border border-slate-200 px-2 py-1 text-sm" /></label>
-        <button disabled={busy} onClick={save} className="bg-teal-600 text-white text-xs font-medium px-3 py-1.5 rounded-lg">שמור — האשף יציג QR</button>
       </div>
     </div>
   );

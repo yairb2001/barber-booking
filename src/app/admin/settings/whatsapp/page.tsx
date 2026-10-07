@@ -103,7 +103,7 @@ export default function WhatsAppSettingsPage() {
 
   const canOwnWhatsapp = tierHas(tier, "ownWhatsapp");
   const onOurServer = messagingProvider === "evolution" && !!evolutionInstance;
-  const legacyGreen = !onOurServer && !!(greenApiInstanceId && greenApiToken);
+  const legacyGreen = false; // Green API retired 7.10.2026 — every business connects through our server
   const configured = onOurServer || legacyGreen;
 
   return (

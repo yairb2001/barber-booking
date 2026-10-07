@@ -51,6 +51,7 @@ export async function createBusinessFromLead(leadId: string): Promise<{ business
         monthlyPrice: LAUNCH_MONTHLY_PRICE,
         trialEndsAt: new Date(Date.now() + FREE_FIRST_MONTH_DAYS * 86400_000),
         whatsappStatus: "not_requested",
+        messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
         settings: JSON.stringify({ ownerLoginPhone: phone, leadId: lead.id }),
         agentConfig: { create: { isEnabled: false } },
       },

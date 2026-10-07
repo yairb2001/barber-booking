@@ -55,16 +55,13 @@ export function providerForBusiness(business: {
   greenApiToken: string | null;
   evolutionInstance?: string | null;
 }): MessagingProvider | null {
-  const kind = business.messagingProvider || "green_api";
-  if (kind === "evolution") {
+  // Green API was retired on 7.10.2026 (owner's decision, after DOMINANT's
+  // Green subscription lapsed and every message failed for 6 hours): every
+  // business sends through our own WhatsApp server. A leftover "green_api"
+  // value is treated as ours.
+  const kind = business.messagingProvider || "evolution";
+  if (kind === "evolution" || kind === "green_api") {
     return new EvolutionProvider({ whatsappNumber: business.whatsappNumber, evolutionInstance: business.evolutionInstance ?? null });
-  }
-  if (kind === "green_api") {
-    return new GreenApiProvider({
-      whatsappNumber: business.whatsappNumber,
-      greenApiInstanceId: business.greenApiInstanceId,
-      greenApiToken: business.greenApiToken,
-    });
   }
   // future: meta_cloud
   return null;

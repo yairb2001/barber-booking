@@ -21,7 +21,7 @@ import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
 export const dynamic = "force-dynamic";
 
 // States that mean "the bot cannot receive/send" → show the banner.
-const DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
+const DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard", "send_failing"]);
 // Transient states that usually recover on their own → no banner, no reboot.
 const TRANSIENT_STATES = new Set(["starting", "sleepMode"]);
 
@@ -75,7 +75,18 @@ export async function GET(req: NextRequest) {
     const res = await provider.getState();
     // If GreenAPI itself failed to answer, record "error" but don't flip the
     // banner state aggressively — could be a brief network hiccup on our side.
-    const state = res.ok ? (res.state ?? "error") : "error";
+    let state = res.ok ? (res.state ?? "error") : "error";
+    // "Connected" isn't enough: on 7.10.2026 Green reported authorized for six
+    // hours while every message failed (expired account). 3+ failures and no
+    // success in the last 30 minutes = down, so the owner hears about it.
+    if (state === "authorized") {
+      const since = new Date(now.getTime() - 30 * 60_000);
+      const [failed, sent] = await Promise.all([
+        prisma.messageLog.count({ where: { businessId: biz.id, status: "failed", createdAt: { gte: since } } }),
+        prisma.messageLog.count({ where: { businessId: biz.id, sentAt: { gte: since } } }),
+      ]);
+      if (failed >= 3 && sent === 0) state = "send_failing";
+    }
 
     const isDown = DOWN_STATES.has(state);
     const isHealthy = state === "authorized";
