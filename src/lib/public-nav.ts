@@ -11,7 +11,7 @@ import { useCallback } from "react";
  */
 const ROOT_SEGMENTS = new Set([
   "book", "admin", "api", "signup", "login", "for-business",
-  "fonts", "_next", "favicon.ico", "static", "public",
+  "fonts", "_next", "favicon.ico", "static", "public", "look",
 ]);
 
 /**

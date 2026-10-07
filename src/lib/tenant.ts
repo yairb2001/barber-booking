@@ -106,7 +106,7 @@ export async function resolveBusiness<T extends Prisma.BusinessSelect>(
 const RESERVED_SLUGS = new Set([
   "admin", "api", "signup", "login", "for-business", "book",
   "_next", "favicon.ico", "fonts", "static", "public", "www",
-  "dashboard", "settings", "businesses", "shop",
+  "dashboard", "settings", "businesses", "shop", "look",
 ]);
 
 /**
