@@ -375,15 +375,17 @@ export default function HomePage() {
     if (!fx || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const root = rootRef.current;
     if (!root) return;
-    // Nudge once, only if the visitor hasn't touched / scrolled yet.
+    // Nudge once, only if the visitor hasn't scrolled yet. (A touch alone used
+    // to cancel it — just holding the phone did, so the owner never saw it.)
     let touched = false;
-    const mark = () => { touched = true; root.classList.remove("fx-nudge"); };
-    window.addEventListener("touchstart", mark, { passive: true, once: true });
-    window.addEventListener("wheel", mark, { passive: true, once: true });
+    const mark = () => { if (window.scrollY > 10) { touched = true; root.classList.remove("fx-nudge"); } };
+    window.addEventListener("scroll", mark, { passive: true });
     const t = setTimeout(() => {
       if (touched || window.scrollY > 10) return;
       // Lift far enough that the gallery's title and the top of its photos show.
-      root.style.setProperty("--nudge", `-${Math.round(Math.min(window.innerHeight * 0.34, 290))}px`);
+      // innerHeight can read 0 while a mobile browser settles → fall back.
+      const vh = window.innerHeight || document.documentElement.clientHeight || 760;
+      root.style.setProperty("--nudge", `-${Math.round(Math.min(vh * 0.34, 290))}px`);
       const first = root.querySelector(":scope > section ~ section");
       first?.classList.add("fx-in");
       first?.querySelectorAll(".fx-reveal").forEach(el => el.classList.add("fx-in"));
@@ -397,7 +399,7 @@ export default function HomePage() {
       raf = requestAnimationFrame(() => { raf = 0; root.style.setProperty("--sy", String(Math.min(window.scrollY, 1200))); });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { clearTimeout(t); window.removeEventListener("scroll", onScroll); window.removeEventListener("touchstart", mark); window.removeEventListener("wheel", mark); if (raf) cancelAnimationFrame(raf); };
+    return () => { clearTimeout(t); window.removeEventListener("scroll", onScroll); window.removeEventListener("scroll", mark); if (raf) cancelAnimationFrame(raf); };
   }, [fx]);
 
   useEffect(() => {
