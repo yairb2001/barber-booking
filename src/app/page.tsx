@@ -10,6 +10,7 @@ import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 import { captureAttribution } from "@/lib/attribution";
 import MetaPixel from "@/components/MetaPixel";
+import LookHome from "@/components/LookHome";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -329,7 +330,15 @@ function SecLabel({ label, sub, action }: { label: string; sub?: string; action?
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
+// DOMINANT (the root shop, no slug) moved to the new site-style home on
+// 9.10.2026 (owner's choice); every other shop's storefront ([slug]) keeps the
+// classic page below.
 export default function HomePage() {
+  const slug = useSlug();
+  return slug ? <ClassicHome /> : <LookHome />;
+}
+
+function ClassicHome() {
   const slug = useSlug();
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
