@@ -246,7 +246,7 @@ async function customerView(id: string) {
   const agent = await prisma.agentConfig.findUnique({ where: { businessId: id }, select: { isEnabled: true, setupConfig: true, systemPrompt: true, agentName: true, faqs: { select: { id: true, question: true, answer: true } } } });
   let cfg: SetupConfig = {};
   try { cfg = agent?.setupConfig ? JSON.parse(agent.setupConfig) : {}; } catch { cfg = {}; }
-  const fields = setupFieldsFor(biz?.businessType).map(f => ({ key: f.key, group: f.group, question: f.question, type: f.type, options: f.options ?? null, core: f.core, value: cfg[f.key] ?? null, default: f.default ?? null }));
+  const fields = setupFieldsFor(biz?.businessType).map(f => ({ key: f.key, label: f.label, group: f.group, question: f.question, type: f.type, options: f.options ?? null, core: f.core, value: cfg[f.key] ?? null, default: f.default ?? null }));
   const week = new Date(Date.now() - 7 * 86400_000);
   const [convs, escalated, agentAppts, notes, history, lead] = await Promise.all([
     prisma.conversation.count({ where: { businessId: id, lastMessageAt: { gte: week }, NOT: { phone: { startsWith: "972000" } } } }),

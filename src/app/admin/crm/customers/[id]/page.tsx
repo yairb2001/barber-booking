@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useState } from "react";
 import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
 
-type Field = { key: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
+type Field = { key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
 type Data = {
   customer: { id: string; name: string; slug: string; ownerPhone: string | null; stage: string; health: "ok" | "warn" | "bad"; issues: { tone: "bad" | "warn"; text: string }[]; wa: string; apptsWeek: number; pkgPct: number; costIls: number; price: number; trialDaysLeft: number | null; rep: string | null };
   business: { id: string; name: string; slug: string; monthlyPrice: number | null; paidAt: string | null; trialEndsAt: string | null; suspendedAt: string | null; createdAt: string; tier: string; tokenBudgetIls: number };
@@ -97,7 +97,7 @@ export default function CustomerCard() {
                 return (
                   <div key={f.key} className="py-2.5 flex flex-col gap-1" style={{ borderTop: `1px solid ${C.soft}` }}>
                     <div className="flex justify-between gap-2 items-start">
-                      <span className="text-[13px] font-semibold">{f.question.replace(/\s*\(.*?\)\s*$/, "")}{f.core && <span style={{ color: "#B42318" }}> *</span>}</span>
+                      <span className="text-[13px] font-semibold" title={f.question}>{f.label}{f.core && <span style={{ color: "#B42318" }}> *</span>}</span>
                       <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing(f.key); setVal(typeof f.value === "boolean" ? String(f.value) : (f.value as string) ?? (typeof f.default === "string" ? f.default : "")); }}>{has ? "שנה" : "מלא"}</button>
                     </div>
                     {editing === f.key ? (

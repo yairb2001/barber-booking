@@ -6,7 +6,7 @@
  * conversation never shows in the inbox.
  *
  * 1) Scripted scenario (the original owner self-test):
- *    { scenario: "new_price" | "returning_move" | "unknown" | "custom", messages?: string[] }
+ *    { scenario: "new_price" | "book" | "returning_move" | "info" | "unknown", messages?: string[], setupOverride?: {…} }
  *
  * 2) Replay harness (docs/PLAN-COST.md stage B): one customer turn per request so
  *    a real past conversation can be replayed message by message against the
@@ -117,7 +117,9 @@ export async function GET(req: NextRequest) {
 
 const SCENARIOS: Record<string, { label: string; messages: string[] }> = {
   new_price:      { label: "לקוח חדש שואל מחיר",        messages: ["היי כמה עולה תספורת?", "ומתי יש לכם פנוי השבוע?"] },
+  book:           { label: "רוצה תור מחר בערב",          messages: ["אהלן, יש משהו מחר בערב?"] },
   returning_move: { label: "לקוח חוזר רוצה להזיז תור",   messages: ["היי, אני רוצה להזיז את התור שלי לשעה מאוחרת יותר"] },
+  info:           { label: "שואל על ביטול, חניה ותשלום", messages: ["עד מתי אפשר לבטל? ויש חניה? אפשר לשלם בביט?"] },
   unknown:        { label: "שאלה שאין עליה תשובה",       messages: ["אתם עושים גם צביעת שיער לנשים? וכמה זה עולה?"] },
 };
 
@@ -150,6 +152,10 @@ export async function POST(req: NextRequest) {
   if (!business) return NextResponse.json({ error: "no business" }, { status: 400 });
   const body = await req.json().catch(() => ({}));
   const { runCustomerAgent } = await import("@/lib/agent/customer-agent");
+  // Preview: try setup answers before saving them (owner's agent screen, replay of a migration).
+  const setupOverride = body.setupOverride && typeof body.setupOverride === "object" && !Array.isArray(body.setupOverride)
+    ? Object.fromEntries(Object.entries(body.setupOverride as Record<string, unknown>).filter(([, v]) => typeof v === "string" || typeof v === "boolean")) as Record<string, string | boolean>
+    : undefined;
 
   // ── Replay harness ─────────────────────────────────────────────────────────
   if (body.action === "cleanup" || body.action === "turn" || body.action === "demo-turn") {
@@ -184,12 +190,18 @@ export async function POST(req: NextRequest) {
         prisma.business.findUnique({ where: { id: business.id }, select: { id: true, slug: true, name: true, businessType: true, settings: true } }),
         prisma.agentConfig.findUnique({ where: { businessId: business.id }, include: { faqs: { orderBy: { sortOrder: "asc" } } } }),
       ]);
-      if (biz) templateBody = stablePromptParams(biz, cfg ? { ...cfg, systemPrompt: null } : null, "", await buildBookingLink(biz)).defaultBody;
+      // The template with this business's answers in their sections (or the
+      // answers being tried) — what the business would run without its custom prompt.
+      const setupConfig = setupOverride ? JSON.stringify(setupOverride) : cfg?.setupConfig ?? null;
+      if (biz) templateBody = stablePromptParams(biz, cfg ? { ...cfg, systemPrompt: null, setupConfig } : { agentName: null, systemPrompt: null, setupConfig, faqs: [] }, "", await buildBookingLink(biz)).defaultBody;
     }
     const sandbox = {
       replies: [] as string[], toolLog: [] as string[], usageKind: "sandbox", contextPhone, modelOverride,
       enforceBudget: body.enforceBudget === true,
-      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 } : templateBody ? { promptOverride: templateBody, promptVersion: 4 } : {}),
+      ...(variant === "candidate" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 4 } : variant === "focus" ? { promptOverride: DOMINANT_CANDIDATE_PROMPT, promptVersion: 5 }
+        // The answers already sit inside templateBody: an empty override keeps them from being appended a second time.
+        : templateBody ? { promptOverride: templateBody, promptVersion: 4, setupOverride: {} }
+        : setupOverride ? { setupOverride } : {}),
     };
     void AGENT_TOOLS_CANDIDATE; // tool set is chosen by promptVersion (selectTools)
     // Test hook: pretend a rhythm nudge offered these slots to the sandbox phone.
@@ -229,14 +241,16 @@ export async function POST(req: NextRequest) {
     : Array.isArray(body.messages) ? body.messages.filter((m: unknown) => typeof m === "string" && m.trim()).slice(0, 3) : [];
   if (!messages.length) return NextResponse.json({ error: "scenario or messages required" }, { status: 400 });
 
-  // Throw-away phone: never a real number, unique per run.
-  const phone = "97250" + String(Date.now()).slice(-7);
+  // Throw-away phone: never a real number, unique per run (972 000… cannot be
+  // a subscriber; the old 97250… range could hit a real customer, and cleanup
+  // deletes by phone).
+  const phone = "972000" + String(Date.now()).slice(-7);
   const transcript: { role: "user" | "assistant"; text: string }[] = [];
   const toolLog: string[] = [];
   try {
     for (const m of messages) {
       transcript.push({ role: "user", text: m });
-      const sandbox = { replies: [] as string[], toolLog, usageKind: "sandbox" };
+      const sandbox = { replies: [] as string[], toolLog, usageKind: "sandbox", setupOverride };
       await runCustomerAgent({ businessId: business.id, phone, incomingText: m, sandbox });
       for (const r of sandbox.replies) transcript.push({ role: "assistant", text: r });
     }

@@ -205,7 +205,7 @@ export default function OnboardingPage() {
     try {
       const cfg: SetupConfig = { ...setup };
       for (const f of fields) if ((cfg[f.key] === undefined || cfg[f.key] === "") && f.default !== undefined) cfg[f.key] = f.default;
-      const r = await fetch("/api/admin/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentName: agentName.trim() || "הסוכן", setupConfig: cfg }) });
+      const r = await fetch("/api/admin/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentName: agentName.trim() || "הסוכן", setupConfig: cfg, author: "wizard" }) });
       if (!r.ok) { setError("שמירת הגדרות הסוכן נכשלה"); setBusy(false); return false; }
       await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentUnavailableMessage: unavailableMsg.trim() || DEFAULT_UNAVAILABLE_MESSAGE }) });
       setSetup(cfg);
@@ -363,8 +363,8 @@ export default function OnboardingPage() {
                 <div className="flex gap-1.5">
                   {[true, false].map(v => { const on = (setup[f.key] ?? f.default) === v; return <button key={String(v)} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: v }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{v ? "כן" : "לא"}</button>; })}
                 </div>
-              ) : f.key === "styleNotes" ? (
-                <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder="כמה מילים בסגנון שלך" />
+              ) : f.multiline ? (
+                <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : "כמה מילים בסגנון שלך"} />
               ) : (
                 <input value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={typeof f.default === "string" ? f.default : ""} />
               )}

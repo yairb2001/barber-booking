@@ -16,13 +16,14 @@ export async function GET(req: NextRequest) {
   if (cfg?.setupConfig) { try { setup = JSON.parse(cfg.setupConfig) as SetupConfig; } catch { setup = {}; } }
 
   // The compact template (stage 0) as this business would get it — the words of
-  // its type, its default service and address style. Date, customer memory,
-  // setup layer, FAQs and catalog are injected at runtime and not shown here.
+  // its type and its setup answers in their sections. Date, customer memory,
+  // FAQs and catalog are injected at runtime and not shown here.
   const vocab = vocabOf(biz);
   const prompt = compactAgentBody({
     agentName: cfg?.agentName ?? "הסוכן", businessName: biz?.name ?? vocab.placeDef, vocab,
     defaultService: typeof setup.defaultService === "string" ? setup.defaultService : null,
     addressStyle: typeof setup.address === "string" ? setup.address : null,
+    setup,
   });
 
   return NextResponse.json({ prompt });

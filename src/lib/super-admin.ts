@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { getRequestSession } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { verifySession } from "@/lib/auth";
 
 /**
  * The platform owner's own business id. The super-admin dashboard (/admin/super)
@@ -18,6 +19,15 @@ export const SUPER_ADMIN_PHONE = process.env.SUPER_ADMIN_PHONE || "0585859990";
 export function isSuperAdmin(req: NextRequest): boolean {
   const session = getRequestSession(req);
   return !!session && session.isOwner && session.businessId === SUPER_ADMIN_BUSINESS_ID;
+}
+
+/** The platform owner, also while impersonating a tenant (the stashed
+ *  super_origin session). Gates platform-only tools inside a tenant's screens,
+ *  e.g. editing an agent's raw prompt. */
+export async function isPlatformStaff(req: NextRequest): Promise<boolean> {
+  if (isSuperAdmin(req)) return true;
+  const origin = await verifySession(req.cookies.get("super_origin")?.value);
+  return !!origin && origin.businessId === SUPER_ADMIN_BUSINESS_ID;
 }
 
 /**

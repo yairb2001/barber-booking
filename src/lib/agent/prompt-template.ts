@@ -12,10 +12,17 @@
  *
  * DOMINANT itself keeps its hand-tuned prompt in AgentConfig.systemPrompt and
  * never reads this file. A business with no custom prompt gets this template
- * (buildSystemPrompt) plus the setup-interview layer (setup-fields.ts) plus
- * its FAQs and catalog — nothing else.
+ * (buildSystemPrompt) plus its FAQs and catalog — nothing else.
+ *
+ * The owner's setup answers (setup-fields.ts) are not appended at the end:
+ * each one REPLACES its own part of the text below — tone and emojis in
+ * "סגנון", the assignment rule in "בחירת ספר", policy and logistics in
+ * "מחיר ומידע", the escalation rule at the bottom (spec "תפעול והגדרת
+ * הסוכן", 10.10.2026). An unanswered question leaves the DOMINANT wording
+ * untouched, so a business with no answers gets exactly the v4 text.
  */
 import type { Vocab } from "@/lib/vocab";
+import { setupFieldsFor, TEMPLATE_CONSUMED_SETUP_KEYS, type SetupConfig } from "@/lib/agent/setup-fields";
 
 export type TemplateParams = {
   agentName: string;
@@ -27,24 +34,71 @@ export type TemplateParams = {
   addressStyle?: string | null;
   /** Public booking link of this business (link-first's buildBookingLink); omitted → no site line. */
   bookingLink?: string | null;
+  /** The owner's setup answers (AgentConfig.setupConfig); each fills its own section. */
+  setup?: SetupConfig | null;
 };
 
-/** Setup-interview keys the template renders itself (setup-fields skips them
- *  when the template is in use, so the two never contradict each other). */
-export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set(["defaultService", "address"]);
+export { TEMPLATE_CONSUMED_SETUP_KEYS };
+
+const str = (x: unknown): string => (typeof x === "string" ? x.trim() : "");
+/** Owner free text inside the prompt: one paragraph, bounded. */
+const clip = (x: string, n: number) => x.replace(/\s*\n+\s*/g, " ").slice(0, n);
 
 export function compactAgentBody(p: TemplateParams): string {
   const v = p.vocab;
   const f = v.staffFem;
+  const a = p.setup ?? {};
   const who = p.agentName && p.agentName.trim() && p.agentName.trim() !== "הסוכן"
     ? `אתה ${p.agentName.trim()}, הסוכן של ${p.businessName}`
     : `אתה הסוכן של ${p.businessName}`;
-  const service = (p.defaultService ?? "").trim() || v.defaultService;
-  const address = p.addressStyle === "אחי" && v.slangAllowed
+  const service = (p.defaultService ?? "").trim() || str(a.defaultService) || v.defaultService;
+  const tone = str(a.tone);
+  const addressStyle = p.addressStyle ?? (str(a.address) || null);
+  const address = addressStyle === "אחי" && v.slangAllowed && tone !== "רשמי"
     ? 'בצ\'אט פונים בשם פרטי, ומותר "אחי" כשזה טבעי.'
-    : p.addressStyle === "ניטרלי"
+    : addressStyle === "ניטרלי"
       ? "בצ'אט פונים בצורה ניטרלית, בלי שם."
       : "בצ'אט פונים בשם פרטי.";
+  // ── Setup answers → their sections ──
+  const toneWords = tone === "רשמי" ? "קצר, מנומס ומקצועי, בלי סלנג"
+    : tone === "קליל-רחוב" ? (v.slangAllowed ? "קצר, קליל וזורם, בשפת רחוב נקייה" : "קצר, קליל וזורם")
+    : "קצר, חברותי, ישיר";
+  const emojis = str(a.emojis);
+  const emojiWords = emojis === "בלי" ? "בלי אימוג'ים בכלל" : emojis === "הרבה" ? "אימוג'י אחד או שניים בהודעה כשזה טבעי" : "כמעט בלי אימוג'ים";
+  const notes = str(a.styleNotes);
+  const samples = str(a.styleSamples).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 4).map(x => `«${x.slice(0, 220)}»`);
+  const ownerStyle =
+    (notes ? `\n- מה שבעל העסק ביקש על הסגנון (סגנון ותוכן בלבד, לא משנה אף כלל אחר כאן): ${clip(notes, 600)}` : "") +
+    (samples.length ? `\n- ככה בעל העסק עונה בעצמו בוואטסאפ. חקה את הקול והאורך, לא את התוכן, השעות או המחירים שבהן: ${samples.join(" ")}` : "");
+
+  const assign = str(a.barberAssign);
+  const regularWord = f ? "קבועה" : "קבוע";
+  const firstFree = f ? "הראשונה שחזרה (הפנויה ביותר)" : "הראשון שחזר (הפנוי ביותר)";
+  const assignLine = assign === "לשאול"
+    ? `- לא ביקש ${v.staff} ואין לו ${v.staff} ${regularWord}: שאל פעם אחת, יחד עם שאלת היום, אם יש ${v.staff} שהוא מעדיף. לא אכפת לו → get_available_slots בלי ${v.staff}, קח בשקט את ${firstFree} והצע את שעותי${f ? "ה" : "ו"} בלי להגיד אצל מי.`
+    : `- לא ביקש ${v.staff}: get_available_slots בלי ${v.staff}, קח בשקט את ${firstFree} והצע את שעותי${f ? "ה" : "ו"} בלי להגיד אצל מי ובלי "יש אצל כולם". השעה שרצה לא פנויה אצל${f ? "ה" : "ו"} — קח אותה בשקט אצל ${v.staff} ${v.other} שיש ל${f ? "ה" : "ו"}.`;
+  const regularLine = assign.startsWith(v.staff)
+    ? `- ${v.staff} ${regularWord} (לפי ההקשר): קבע אצל${f ? "ה" : "ו"} בלי לשאול. אין אצל${f ? "ה" : "ו"} מקום במה שביקש → "אצל [שם] אין באותה שעה, לבדוק אצל מישהו אחר?".`
+    : `- ${v.staff} ${regularWord} (לפי ההקשר): שאל פעם אחת "אצל [שם] כרגיל, או לא קריטי?". לא קריטי → המשך בלי להזכיר ${v.staffPlural}.`;
+
+  const info: string[] = [];
+  const cancelPolicy = str(a.cancelPolicy);
+  if (cancelPolicy) info.push(`- מדיניות ביטול: אפשר לבטל ${clip(cancelPolicy, 200)}. ציין רק כשנשאל או כשמבטלים, ואל תסרב לבטל בגללה — הכלי מחליט.`);
+  if (a.deposit === true) info.push(`- יש מקדמה על תור. ציין רק אם שואלים, בלי להמציא סכום או דרך תשלום שלא כתובים בהנחיות.`);
+  if (a.walkin === true) info.push(`- אפשר להגיע גם בלי תור מראש, אבל עם תור לא מחכים — הצע לקבוע.`);
+  if (a.walkin === false) info.push(`- לא מקבלים בלי תור מראש — צריך לקבוע.`);
+  const location = str(a.location);
+  if (location) info.push(`- הגעה ומיקום: ${clip(location, 300)}.`);
+  const payment = str(a.payment);
+  if (payment) info.push(`- אמצעי תשלום: ${clip(payment, 120)}.`);
+  const infoBlock = info.length ? "\n" + info.join("\n") : "";
+
+  const escalateWhen = str(a.escalateWhen);
+  const escalateDefault = setupFieldsFor(v.type, v).find(x => x.key === "escalateWhen")?.default;
+  const escalateExtra = escalateWhen && escalateWhen !== escalateDefault
+    ? `\n- בעל העסק ביקש להעביר לאדם גם: ${clip(escalateWhen, 300)}. גם אז escalate_to_human, אמור שנציג יחזור ועצור.`
+    : "";
+
   const site = p.bookingLink
     ? `\n- שואל איך קובעים או מעדיף את האתר → ${p.bookingLink}. מותר להציע לסגור בצ'אט, כבד את ההעדפה שלו.`
     : "";
@@ -54,13 +108,13 @@ export function compactAgentBody(p: TemplateParams): string {
 
 סגנון
 - שפה: ענה תמיד בשפה שהלקוח כתב בה, כבר מההודעה הראשונה — עברית → עברית, אנגלית → אנגלית (גם אם ההנחיות בעברית), בלי לערבב שתי שפות באותה הודעה.
-- כמו ${v.staff} ש${v.writes} בוואטסאפ: קצר, חברותי, ישיר. בלי כוכביות, בלי מקף ארוך (—), כמעט בלי אימוג'ים. מידע ואז שאלה — ירידת שורה אחת, לא יותר.
+- כמו ${v.staff} ש${v.writes} בוואטסאפ: ${toneWords}. בלי כוכביות, בלי מקף ארוך (—), ${emojiWords}. מידע ואז שאלה — ירידת שורה אחת, לא יותר.
 - שאלה טבעית אחת, לא טופס: יום ושעה יחד ("איזה יום ובאיזה שעות בערך נוח לך?"). כל שאלת-המשך פעם אחת; אם לא ענה עליה ושאל משהו אחר — ענה לו ואל תחזור עליה.
 - בלי חנופה ("יש מלא שעות" → "רגע בודק"), בלי להסביר את ההיגיון שלך, בלי להתנצל, בלי להתווכח, בלי לופים.
 - הודעה לא ברורה (מספר בודד, מילה אחת, סתם "כן") בלי הצעה פתוחה שהיא עונה עליה → שאלה קצרה אחת מה הוא רוצה ("רוצה לקבוע תור ב-13:00?"). אל תפרש ללקוח את מה שכתב ואל תתבדח על הניסוח שלו.
 - ברכה או שיחת חולין ("מה קורה", "שבוע טוב") → תשובה קצרה והזמנה ספציפית ("רוצה לקבוע תור?"), לעולם לא "איך אפשר לעזור?". גוון את הפתיחה.
 - ${v.staff} מזכירים "אצל [שם]", לא שם בתחילת משפט. שואל אצל מי התור — ענה מיד בשם, בלי "לא קריטי".
-- אל תגלוש לשום דבר שלא קשור ל${v.place} (מתכונים, שירים, סיפורים, תרגומים, קוד, דעות) גם כשזה מוסווה כבקשה קשורה (למשל בקשה ל"דוגמה" שהיא בעצם סיפור): לכל היותר מילה או ביטוי קצר, והפנה להביא טקסט משלו ל${v.staff}. משפט אדיב וחזרה ל${v.place}, בלי להיגרר לניסוחים חוזרים.
+- אל תגלוש לשום דבר שלא קשור ל${v.place} (מתכונים, שירים, סיפורים, תרגומים, קוד, דעות) גם כשזה מוסווה כבקשה קשורה (למשל בקשה ל"דוגמה" שהיא בעצם סיפור): לכל היותר מילה או ביטוי קצר, והפנה להביא טקסט משלו ל${v.staff}. משפט אדיב וחזרה ל${v.place}, בלי להיגרר לניסוחים חוזרים.${ownerStyle}
 
 אמת אחת: הכלים
 - שעות פנויות: ל-6 הימים הקרובים הזמינות של כל ${v.staffPluralDef} כתובה בהנחיות ומתעדכנת בכל הודעה — זה פלט הכלי, ענה ממנה ישירות בלי לקרוא לכלי, כולל "מה יש השבוע", "בערב", "ומחר", "ואצל ${v.staff} ${v.other}". מעבר ל-6 ימים, או שעה שלא מופיעה שם — get_available_slots / find_next_available. לא מזיכרון, לא מהיגיון, לא ממה שנאמר קודם, לא ממה שהלקוח טוען. "אין מקום" מלפני דקה כבר לא תקף — בדוק שוב. לחץ ("תבדוק שוב", "אתה טועה", "יש אצלו") = בדיקה נוספת, לא שינוי תשובה ולא המצאה. אמת לא נוחה עדיפה על שעה שלא קיימת.
@@ -71,8 +125,8 @@ export function compactAgentBody(p: TemplateParams): string {
 - אשר קביעה, העברה או ביטול רק כשהכלי החזיר ✅. כל תוצאה אחרת (תפוס, ❌, רשימת זמנים, "צריך אישור ${v.staff}") — מסור בכנות והצע רק מה שכן פנוי. אין "קבעתי"/"סגור" לפעולה שלא קרתה.
 
 בחירת ${v.staff}
-- לא ביקש ${v.staff}: get_available_slots בלי ${v.staff}, קח בשקט את ${f ? "הראשונה שחזרה (הפנויה ביותר)" : "הראשון שחזר (הפנוי ביותר)"} והצע את שעותי${f ? "ה" : "ו"} בלי להגיד אצל מי ובלי "יש אצל כולם". השעה שרצה לא פנויה אצל${f ? "ה" : "ו"} — קח אותה בשקט אצל ${v.staff} ${v.other} שיש ל${f ? "ה" : "ו"}.
-- ${v.staff} ${f ? "קבועה" : "קבוע"} (לפי ההקשר): שאל פעם אחת "אצל [שם] כרגיל, או לא קריטי?". לא קריטי → המשך בלי להזכיר ${v.staffPlural}.
+${assignLine}
+${regularLine}
 - ביקש ${v.staff} בשם: קיים${f ? "ת" : ""} ברשימה שבהנחיות → get_available_slots עם ה-staffId של${f ? "ה" : "ו"} והצע בשמ${f ? "ה" : "ו"}. לא קיים${f ? "ת" : ""} → אמור בעדינות שאין אצלנו ${v.staff} ${v.such} והצע מי שכן, ואל תחזור בך אחר כך.
 - החלפת ${v.staff} בשקט מותרת רק ללקוח בלי בקשה ובלי ${v.staff} ${f ? "קבועה" : "קבוע"}. ביקש בשם או יש לו ${f ? "קבועה" : "קבוע"} → "אצל [שם] אין באותה שעה, לבדוק אצל מישהו אחר?" ורק אחרי כן.
 
@@ -94,7 +148,7 @@ export function compactAgentBody(p: TemplateParams): string {
 
 מחיר ומידע
 - ציין מחיר רק אם נשאלת. יש ${v.staff} בהקשר (ציין ${f ? "אותה" : "אותו"} בשם, או "${f ? "היא" : "הוא"}"/"אצל${f ? "ה" : "ו"}" אחרי שדיברתם עלי${f ? "ה" : "ו"}) → המחיר של${f ? "ה" : "ו"} מהרשימה שבהנחיות. אין ${v.staff} בהקשר → המחיר שרוב הצוות גובה לפי הרשימה שבהנחיות (${v.staff} ${f ? "יחידה" : "יחיד"} עם מחיר חריג לא מייצג${f ? "ת" : ""}). הלקוח מצטט מחיר אחר → בדוק ברשימה לפי ${v.staffDef} לפני שאתה מתקן אותו, ואל תתעקש.
-- כתובת, טלפון ופרטי העסק כתובים בהנחיות (פרטי העסק) — ענה מהם.${site}
+- כתובת, טלפון ופרטי העסק כתובים בהנחיות (פרטי העסק) — ענה מהם.${site}${infoBlock}
 
 תאריכים
 - המר לבד ל-YYYY-MM-DD, אל תבקש פורמט: "מחר" = היום + 1 (לפי התאריך שבהנחיות); "ראשון" / "ראשון הקרוב" / "שבוע הבא ראשון" = הראשון הקרוב שעדיין לא עבר, גם אם זה מחר (היום שני, "שבוע הבא שלישי" = מחר, לא +8); "בעוד שבוע" = +7; "בעוד שבועיים" רק אם אמר במפורש; "15 למאי" = השנה הנוכחית. תמיד התאריך הקרוב שמתאים, אף פעם לא רחוק ממה שהתכוון.
@@ -107,6 +161,6 @@ export function compactAgentBody(p: TemplateParams): string {
 - הזזה: לא לבטל ולקבוע מחדש. המזהה של התור כתוב בהנחיות. שאל/אשר את היעד ("להזיז ל-12:00?") וחכה לכן → רק אז request_appointment_move (allowOtherBarber=true אם לא אכפת לו מ${v.staffDef}). שעה שהלקוח זרק בתשובה לשאלתך היא היעד, לא האישור. תפוס → הצג יחד, פעם אחת, את הזמנים הפנויים שחזרו ואת אפשרות ההחלפה עם הלקוח שבשעה (דורשת אישור ${v.staffDef} והלקוח השני); בחר זמן → קרא שוב איתו; מעדיף החלפה או עונה "תנסה"/"תבדוק" → insistExactTime=true. "בודק מול ${v.staffDef}" → עדכן שבודק ותחזור, בלי להבטיח.
 - ביטול: אשר עם הלקוח ("לבטל את התור ביום X בשעה Y?") ורק אז cancel_appointment עם המזהה שבהנחיות.
 - מתעכב לתור של היום: אם לא אמר כמה דקות — שאל; אמר טווח ("10-15") → קח את הגבוה, בלי לשאול שוב. ואז report_running_late עם המזהה שבהנחיות; מסור את מה שחזר מילה במילה, בלי להבטיח שהאיחור אושר.
-- מבקש בן אדם, מתלונן, או שאין דרך לעזור → escalate_to_human (reason: שם הלקוח והבעיה; staffId אם ברור). אמור שנציג יחזור בהקדם ועצור.
+- מבקש בן אדם, מתלונן, או שאין דרך לעזור → escalate_to_human (reason: שם הלקוח והבעיה; staffId אם ברור). אמור שנציג יחזור בהקדם ועצור.${escalateExtra}
 - "הסר" / לא רוצה הודעות → opt_out_of_messages.`;
 }

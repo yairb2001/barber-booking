@@ -1,24 +1,47 @@
 /**
- * GET  /api/admin/agent  — load agent config
+ * GET  /api/admin/agent  — load agent config (+ the setup questions, the last
+ *                          answer versions, and whether the raw prompt is editable)
  * PATCH /api/admin/agent — save agent config
+ *
+ * The raw prompt (systemPrompt) is platform-only (spec 10.10.2026): a shop
+ * shapes its agent through the setup answers, each of which fills its own
+ * section of the base prompt. Only the platform owner, also while
+ * impersonating, sees or edits the raw text.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionBusiness, requireOwner } from "@/lib/session";
+import { isPlatformStaff } from "@/lib/super-admin";
+import { setupFieldsFor } from "@/lib/agent/setup-fields";
+import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
 
 export const dynamic = "force-dynamic";
+
+const AUTHOR_LABEL: Record<string, string> = { owner: "בעל העסק", wizard: "אשף ההקמה", owner_agent: "הסוכן האישי", crm: "צוות צ'אטור" };
+
+async function setupMeta(businessId: string, businessType: string | null) {
+  const history = await prisma.agentSetupHistory.findMany({ where: { businessId }, orderBy: { createdAt: "desc" }, take: 10, select: { id: true, author: true, createdAt: true } });
+  return {
+    fields: setupFieldsFor(businessType).map(f => ({ key: f.key, label: f.label, group: f.group, question: f.question, type: f.type, options: f.options ?? null, default: f.default ?? null, core: f.core, multiline: !!f.multiline })),
+    history: history.map(h => ({ id: h.id, author: AUTHOR_LABEL[h.author] ?? h.author, createdAt: h.createdAt })),
+  };
+}
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true });
+  const biz = await getSessionBusiness(req, { id: true, businessType: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
-  const config = await prisma.agentConfig.findUnique({
-    where: { businessId: biz.id },
-    include: { faqs: { orderBy: { sortOrder: "asc" } } },
-  });
+  const [config, meta, canEditPrompt] = await Promise.all([
+    prisma.agentConfig.findUnique({
+      where: { businessId: biz.id },
+      include: { faqs: { orderBy: { sortOrder: "asc" } } },
+    }),
+    setupMeta(biz.id, biz.businessType),
+    isPlatformStaff(req),
+  ]);
 
   // Return defaults if not yet created
   if (!config) {
@@ -26,6 +49,8 @@ export async function GET(req: NextRequest) {
       isEnabled:     false,
       agentName:     "הסוכן",
       systemPrompt:  null,
+      hasCustomPrompt: false,
+      setupConfig:   null,
       greetingMsg:   null,
       escalatePhone: null,
       maxIdleMinutes: 30,
@@ -39,37 +64,42 @@ export async function GET(req: NextRequest) {
       lateArrivalOfferSwapWithNext: false,
       lateArrivalNoShowMessage: null,
       faqs:          [],
+      ...meta, canEditPrompt,
     });
   }
 
-  return NextResponse.json(config);
+  return NextResponse.json({
+    ...config,
+    systemPrompt: canEditPrompt ? config.systemPrompt : null,
+    hasCustomPrompt: !!config.systemPrompt?.trim(),
+    ...meta, canEditPrompt,
+  });
 }
 
 export async function PATCH(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true });
+  const biz = await getSessionBusiness(req, { id: true, businessType: true });
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
 
   const body = await req.json();
   const {
-    isEnabled, agentName, systemPrompt, greetingMsg, escalatePhone, maxIdleMinutes,
+    isEnabled, agentName, greetingMsg, escalatePhone, maxIdleMinutes,
     requireSwapApproval, allowSwapOffers, escalateAfterMessages,
     offerOtherBarberAtRequestedTime,
     lateArrivalEnabled, lateArrivalGraceMinutes, lateArrivalSwapLeadMinutes, lateArrivalOfferSwapWithNext,
     lateArrivalNoShowMessage,
-    setupConfig,
+    setupConfig, restoreSetupId,
   } = body;
+  // A shop never writes the raw prompt; a stray field from an old client is ignored.
+  const systemPrompt = (await isPlatformStaff(req)) ? body.systemPrompt : undefined;
 
-  // Setup-interview answers (stage 1 wizard): merge object into the stored JSON.
-  let mergedSetup: string | undefined;
+  // Setup answers: merged, saved and versioned in one place (setup-save.ts).
   if (setupConfig && typeof setupConfig === "object") {
-    const cur = await prisma.agentConfig.findUnique({ where: { businessId: biz.id }, select: { setupConfig: true } });
-    let existing: Record<string, unknown> = {};
-    try { existing = cur?.setupConfig ? JSON.parse(cur.setupConfig) : {}; } catch { existing = {}; }
-    const clean: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(setupConfig as Record<string, unknown>)) if (typeof v === "string" || typeof v === "boolean") clean[k] = v;
-    mergedSetup = JSON.stringify({ ...existing, ...clean });
+    await saveSetupAnswers(biz.id, setupConfig as Record<string, unknown>, body.author === "wizard" ? "wizard" : "owner");
+  }
+  if (typeof restoreSetupId === "string") {
+    if (!(await restoreSetupVersion(biz.id, restoreSetupId, "owner"))) return NextResponse.json({ error: "version not found" }, { status: 404 });
   }
 
   const config = await prisma.agentConfig.upsert({
@@ -91,10 +121,8 @@ export async function PATCH(req: NextRequest) {
       lateArrivalSwapLeadMinutes: lateArrivalSwapLeadMinutes ?? 40,
       lateArrivalOfferSwapWithNext: lateArrivalOfferSwapWithNext ?? false,
       lateArrivalNoShowMessage: lateArrivalNoShowMessage || null,
-      ...(mergedSetup !== undefined && { setupConfig: mergedSetup }),
     },
     update: {
-      ...(mergedSetup !== undefined && { setupConfig: mergedSetup }),
       ...(isEnabled      !== undefined && { isEnabled }),
       ...(agentName      !== undefined && { agentName }),
       ...(systemPrompt   !== undefined && { systemPrompt:   systemPrompt   || null }),
@@ -114,5 +142,11 @@ export async function PATCH(req: NextRequest) {
     include: { faqs: { orderBy: { sortOrder: "asc" } } },
   });
 
-  return NextResponse.json(config);
+  const canEditPrompt = systemPrompt !== undefined || (await isPlatformStaff(req));
+  return NextResponse.json({
+    ...config,
+    systemPrompt: canEditPrompt ? config.systemPrompt : null,
+    hasCustomPrompt: !!config.systemPrompt?.trim(),
+    ...(await setupMeta(biz.id, biz.businessType)), canEditPrompt,
+  });
 }

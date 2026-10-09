@@ -1625,14 +1625,16 @@ export function stablePromptParams(
   }
   const custom = agentConfig?.systemPrompt?.trim() || "";
   // Compact template (stage 0): the default body for every business without a
-  // hand-tuned prompt. The setup layer then skips the keys the template already
-  // rendered (default service, address style) so the two never contradict.
+  // hand-tuned prompt. Every setup answer fills its own section of it, so the
+  // appended setup block stays empty for these businesses; a hand-tuned prompt
+  // (DOMINANT) still gets the answers as the appended block.
   const agentName = agentConfig?.agentName ?? "הסוכן";
   const defaultBody = custom ? "" : compactAgentBody({
     agentName, businessName: biz.name, vocab,
     defaultService: typeof setup?.defaultService === "string" ? setup.defaultService : null,
     addressStyle: typeof setup?.address === "string" ? setup.address : null,
     bookingLink: bookingLink ?? null,
+    setup,
   });
   const setupBlock = setup ? compileSetupConfig(setup, vocab, custom ? undefined : { skipTemplateKeys: true }) : "";
   return {
@@ -2082,6 +2084,8 @@ export type SandboxOptions = {
   modelOverride?: string;
   /** Tests: apply the token-package gate (token-budget.ts) even in a sandbox run; the fixed message lands in `replies`. */
   enforceBudget?: boolean;
+  /** Preview: unsaved setup answers used for this run only (the owner tries them before saving). */
+  setupOverride?: Record<string, string | boolean>;
 };
 
 export async function runCustomerAgent(opts: {
@@ -2325,9 +2329,12 @@ export async function runCustomerAgent(opts: {
   // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
   // so both build the identical prefix (setup-interview block, FAQs, catalog).
   const [catalogBlock, bookingLink] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz)]);
+  const setupForPrompt = sandbox?.setupOverride ? JSON.stringify(sandbox.setupOverride) : agentConfig?.setupConfig ?? null;
   const configForPrompt = sandbox?.promptOverride
-    ? { agentName: agentConfig?.agentName ?? null, systemPrompt: sandbox.promptOverride, setupConfig: agentConfig?.setupConfig ?? null, faqs: agentConfig?.faqs ?? [] }
-    : agentConfig;
+    ? { agentName: agentConfig?.agentName ?? null, systemPrompt: sandbox.promptOverride, setupConfig: setupForPrompt, faqs: agentConfig?.faqs ?? [] }
+    : sandbox?.setupOverride
+      ? { agentName: agentConfig?.agentName ?? null, systemPrompt: agentConfig?.systemPrompt ?? null, setupConfig: setupForPrompt, faqs: agentConfig?.faqs ?? [] }
+      : agentConfig;
   const systemPrompt = buildSystemPrompt({
     ...stablePromptParams(biz, configForPrompt, catalogBlock, bookingLink),
     now: nowLabel(),

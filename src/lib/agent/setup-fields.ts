@@ -18,15 +18,27 @@
  */
 
 import { vocabFor, type BusinessType, type Vocab } from "@/lib/vocab";
-import { TEMPLATE_CONSUMED_SETUP_KEYS } from "@/lib/agent/prompt-template";
 
 export type SetupFieldType = "choice" | "text" | "bool";
+
+/** Keys the compact template (prompt-template.ts) renders into its own
+ *  sections — each answer REPLACES a part of the base prompt instead of being
+ *  appended as an extra line (spec "תפעול והגדרת הסוכן", 10.10.2026). For a
+ *  business on the template, compileSetupConfig skips them; only a business
+ *  with a hand-written prompt still gets them as the appended block. */
+export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set([
+  "tone", "emojis", "address", "defaultService", "barberAssign",
+  "cancelPolicy", "deposit", "walkin", "location", "payment",
+  "styleNotes", "styleSamples", "escalateWhen",
+]);
 
 /** One interview field, already resolved for a business type (words, options,
  *  defaults) — what the owner agent and the compiler work with. */
 export type SetupField = {
   /** Stored key inside AgentConfig.setupConfig (JSON). */
   key: string;
+  /** Short title for screens ("טון", "מדיניות ביטול"). */
+  label: string;
   /** Grouping label (for the interview UI / ordering only). */
   group: string;
   /** The verbatim question the agent asks the owner. */
@@ -38,6 +50,8 @@ export type SetupField = {
   default?: string | boolean;
   /** Must be answered before the agent may go live. */
   core: boolean;
+  /** Free text that deserves a big box (style notes, sample messages). */
+  multiline?: boolean;
   /**
    * Renders this field's stored value into one prompt line. Return "" to omit
    * (e.g. a bool that's false and needs no mention). `v` is the stored value.
@@ -50,9 +64,11 @@ export type SetupField = {
  *  (`verticals`) or phrase its question / options differently per type. */
 type SetupFieldSpec = {
   key: string;
+  label: string;
   group: string;
   type: SetupFieldType;
   core: boolean;
+  multiline?: boolean;
   /** Omitted = every business type. */
   verticals?: BusinessType[];
   question: (v: Vocab) => string;
@@ -70,20 +86,20 @@ type SetupFieldSpec = {
 const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
   // ── A. Identity & tone ──
   {
-    key: "tone", group: "זהות וטון", core: false, type: "choice",
+    key: "tone", label: "טון", group: "זהות וטון", core: false, type: "choice",
     options: () => ["רשמי", "חברי", "קליל-רחוב"], default: () => "חברי",
     question: () => "איזה טון מתאים לך מול לקוחות? רשמי / חברי / קליל-רחוב",
     compile: v => `דבר בטון ${v}.`,
   },
   {
-    key: "emojis", group: "זהות וטון", core: false, type: "choice",
+    key: "emojis", label: "אימוג'ים", group: "זהות וטון", core: false, type: "choice",
     options: () => ["בלי", "מעט", "הרבה"], default: () => "מעט",
     question: () => "כמה אימוג'ים להשתמש בשיחות? בלי / מעט / הרבה",
     compile: v => v === "בלי" ? "אל תשתמש באימוג'ים." : v === "הרבה" ? "אפשר להשתמש באימוג'ים בחופשיות." : "השתמש במעט אימוג'ים, במידה.",
   },
   {
     // Decision #9 (docs/PLAN-MASTER.md): street slang only where it belongs — barber_men.
-    key: "address", group: "זהות וטון", core: false, type: "choice",
+    key: "address", label: "פנייה ללקוח", group: "זהות וטון", core: false, type: "choice",
     options: v => v.slangAllowed ? ["בשם פרטי", "אחי", "ניטרלי"] : ["בשם פרטי", "ניטרלי"], default: () => "בשם פרטי",
     question: v => v.slangAllowed ? "איך לפנות ללקוח? בשם פרטי / 'אחי' / ניטרלי" : `איך לפנות ל${v.customer}? בשם פרטי / ניטרלי`,
     compile: (v, voc) => v === "אחי" && voc.slangAllowed ? "פנה ללקוח ב'אחי'." : v === "ניטרלי" ? `פנה ל${voc.customer} בצורה ניטרלית, בלי שם.` : `פנה ל${voc.customer} בשם${voc.customerFem ? "ה" : "ו"} הפרטי.`,
@@ -91,51 +107,51 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
 
   // ── B. Booking defaults ──
   {
-    key: "defaultService", group: "ברירות מחדל", core: true, type: "text",
+    key: "defaultService", label: "שירות ברירת מחדל", group: "ברירות מחדל", core: true, type: "text",
     default: v => v.defaultService,
     question: v => `כש${v.customer} ${v.customerFem ? "כותבת" : "כותב"} 'רוצה תור' בלי לפרט — לאיזה שירות לקבוע כברירת מחדל? (למשל: ${v.serviceExamples})`,
     questionByType: { barber_men: "כשלקוח כותב 'רוצה תור' בלי לפרט — לאיזה שירות לקבוע כברירת מחדל? (רוב המספרות: תספורת + זקן)" },
     compile: (v, voc) => `כש${voc.customer} לא ${voc.customerFem ? "מציינת" : "מציין"} שירות, הנח ש${voc.customerFem ? "היא רוצה" : "הוא רוצה"}: ${v}.`,
   },
   {
-    key: "barberAssign", group: "ברירות מחדל", core: true, type: "choice",
-    options: v => ["הכי פנוי", "לשאול", `${v.staff} ${v.staffFem ? "קבועה" : "קבוע"}`],
-    question: v => `כש${v.customer} לא ${v.customerFem ? "מבקשת" : "מבקש"} ${v.staff} ${v.staffFem ? "מסוימת" : "מסוים"} — איך לשבץ? הכי-${v.free} / לשאול ${v.customerFem ? "אותה" : "אותו"} / ${v.staff} ${v.staffFem ? "קבועה" : "קבוע"}`,
+    key: "barberAssign", label: "שיבוץ כשלא ביקשו מישהו", group: "ברירות מחדל", core: true, type: "choice",
+    options: v => ["הכי פנוי", "לשאול", `${v.staff} ${v.staffFem ? "קבועה" : "קבוע"}`], default: () => "הכי פנוי",
+    question: v => `כש${v.customer} לא ${v.customerFem ? "מבקשת" : "מבקש"} ${v.staff} ${v.staffFem ? "מסוימת" : "מסוים"} — איך לשבץ? (הכי ${v.free}: בשקט אצל מי שפנוי. לשאול: שואלים אצל מי נוח. ${v.staff} ${v.staffFem ? "קבועה" : "קבוע"}: אצל מי שעשה לו בפעם הקודמת, בלי לשאול)`,
     compile: (v, voc) => {
       const c = voc.customer, him = voc.customerFem ? "אותה" : "אותו", his = voc.customerFem ? "היא מעדיפה" : "הוא מעדיף";
       const notAsking = `כש${c} לא ${voc.customerFem ? "מבקשת" : "מבקש"} ${voc.staff}`;
       if (v === "לשאול") return `${notAsking}, שאל ${him} אצל מי ${his}.`;
-      if (typeof v === "string" && v.startsWith(voc.staff)) return `${notAsking}, שבץ ${him} אצל ${voc.staffDef} ${voc.main}.`;
+      if (typeof v === "string" && v.startsWith(voc.staff)) return `${notAsking}, שבץ ${him} אצל ${voc.staffDef} ${voc.regular} של${voc.customerFem ? "ה" : "ו"} לפי ההיסטוריה, בלי לשאול; אין — אצל ${voc.staffDef} ${voc.staffFem ? "הפנויה" : "הפנוי"} ביותר.`;
       return `${notAsking}, שבץ ${him} בשקט אצל ${voc.staffDef} ${voc.staffFem ? "הפנויה" : "הפנוי"} ביותר.`;
     },
   },
 
   // ── C. Policy ──
   {
-    key: "cancelPolicy", group: "מדיניות", core: false, type: "text",
+    key: "cancelPolicy", label: "מדיניות ביטול", group: "מדיניות", core: false, type: "text",
     default: () => "עד שעתיים לפני התור",
     question: () => "עד כמה זמן לפני התור מותר לבטל בלי בעיה? (ברירת מחדל: עד שעתיים לפני)",
     compile: v => `מדיניות ביטול: אפשר לבטל ${v}.`,
   },
   {
-    key: "deposit", group: "מדיניות", core: false, type: "bool", default: () => false,
+    key: "deposit", label: "מקדמה", group: "מדיניות", core: false, type: "bool", default: () => false,
     question: () => "גובים מקדמה על תור? כן / לא",
     compile: (v, voc) => v === true ? `יש לגבות מקדמה על תור — אם ${voc.customer} ${voc.customerFem ? "שואלת" : "שואל"}, ציין זאת.` : "",
   },
   {
-    key: "walkin", group: "מדיניות", core: false, type: "bool", default: () => true,
+    key: "walkin", label: "הגעה בלי תור", group: "מדיניות", core: false, type: "bool", default: () => true,
     question: v => `מקבלים ${v.customer} בלי תור מראש (walk-in)? כן / לא`,
     compile: v => v === false ? "לא מקבלים לקוחות ללא תור מראש — צריך לקבוע." : "אפשר להגיע גם בלי תור מראש.",
   },
 
   // ── D. Logistics & FAQ ──
   {
-    key: "location", group: "לוגיסטיקה", core: false, type: "text",
+    key: "location", label: "הגעה ומיקום", group: "לוגיסטיקה", core: false, type: "text",
     question: v => `איפה בדיוק ${v.placeDef}? קומה, כניסה, חניה — מה כדאי שאגיד ללקוחות?`,
     compile: v => `מיקום והגעה: ${v}.`,
   },
   {
-    key: "payment", group: "לוגיסטיקה", core: false, type: "text",
+    key: "payment", label: "אמצעי תשלום", group: "לוגיסטיקה", core: false, type: "text",
     default: () => "מזומן, אשראי וביט",
     question: () => "אמצעי תשלום? מזומן / אשראי / ביט / הכל",
     compile: v => `אמצעי תשלום מקובלים: ${v}.`,
@@ -143,14 +159,20 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
 
   // ── D2. Style, in the owner's own words (the wizard's "short talk" field) ──
   {
-    key: "styleNotes", group: "זהות וטון", core: false, type: "text",
+    key: "styleNotes", label: "הסגנון שלך במילים", group: "זהות וטון", core: false, type: "text", multiline: true,
     question: v => `ספר בכמה מילים על הסגנון של ${v.placeDef} ומה חשוב לך שהסוכן ידע (למשל: "אנחנו משפחתיים, מדברים בגובה העיניים, לא מזכירים מבצעים")`,
     compile: v => `סגנון העסק במילים של בעל העסק: ${v}`,
+  },
+  {
+    // Real messages the owner sends — the agent copies the voice, never the content.
+    key: "styleSamples", label: "הודעות לדוגמה", group: "זהות וטון", core: false, type: "text", multiline: true,
+    question: () => "הדבק 2–3 הודעות אמיתיות ששלחת ללקוחות בוואטסאפ, כל אחת בשורה נפרדת (כדי שהסוכן ידבר כמוך)",
+    compile: v => `ככה בעל העסק כותב ללקוחות (חקה את הקול והאורך, לא את התוכן): ${String(v).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 4).map(x => `«${x.slice(0, 220)}»`).join(" ")}`,
   },
 
   // ── E. Escalation (text part; the phone number is a system toggle elsewhere) ──
   {
-    key: "escalateWhen", group: "הסלמה", core: true, type: "text",
+    key: "escalateWhen", label: "מתי להעביר לאדם", group: "הסלמה", core: true, type: "text",
     default: v => `כש${v.customer} ${v.customerFem ? "מבקשת" : "מבקש"} לדבר עם אדם, או כשאתה תקוע ולא מצליח לעזור`,
     question: v => `מתי להעביר את השיחה לאדם אמיתי? (ברירת מחדל: כש${v.customer} ${v.customerFem ? "מבקשת" : "מבקש"}, או כשאתה תקוע)`,
     compile: v => `מתי להעביר לטיפול אנושי: ${v}.`,
@@ -164,9 +186,10 @@ export function setupFieldsFor(type: BusinessType | string | null | undefined, v
   return SETUP_FIELD_SPECS
     .filter(f => !f.verticals || f.verticals.includes(v.type))
     .map(f => ({
-      key: f.key, group: f.group, type: f.type, core: f.core,
+      key: f.key, label: f.label, group: f.group, type: f.type, core: f.core,
       question: f.questionByType?.[v.type] ?? f.question(v),
       options: f.options?.(v),
+      multiline: f.multiline,
       default: f.default?.(v),
       compile: (value: string | boolean) => f.compile(value, v),
     }));

@@ -1119,15 +1119,8 @@ export async function execOwnerTool(
         if (!match) return `שגיאה: לשדה ${key} בחר אחת מ: ${field.options.join(" / ")} (התקבל: ${rawVal}).`;
         value = match;
       }
-      const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
-      let setup: SetupConfig = {};
-      if (cfg?.setupConfig) { try { setup = JSON.parse(cfg.setupConfig) as SetupConfig; } catch { setup = {}; } }
-      setup[key] = value;
-      await prisma.agentConfig.upsert({
-        where: { businessId },
-        create: { businessId, setupConfig: JSON.stringify(setup) },
-        update: { setupConfig: JSON.stringify(setup) },
-      });
+      const { saveSetupAnswers } = await import("@/lib/agent/setup-save");
+      const setup: SetupConfig = await saveSetupAnswers(businessId, { [key]: value }, "owner_agent");
       const missing = missingCoreFields(setup, bizType);
       const pending = unansweredFields(setup, bizType);
       const progress = missing.length

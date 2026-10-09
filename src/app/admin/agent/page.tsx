@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AgentBehaviorSettings from "./AgentBehaviorSettings";
+import AgentSetupCard, { type Answers, type SetupFieldDTO, type SetupHistoryDTO } from "./AgentSetupCard";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
 type Config = {
@@ -22,7 +23,17 @@ type Config = {
   lateArrivalOfferSwapWithNext: boolean;
   lateArrivalNoShowMessage: string | null;
   faqs: FAQ[];
+  setupConfig: string | null;
+  fields: SetupFieldDTO[];
+  history: SetupHistoryDTO[];
+  /** Platform owner (also impersonating): the raw prompt is visible and editable. */
+  canEditPrompt: boolean;
+  hasCustomPrompt: boolean;
 };
+
+const parseAnswers = (raw: string | null | undefined): Answers => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
+/** Answers as the agent would use them right now (for a preview before saving). */
+const liveAnswers = (a: Answers) => Object.fromEntries(Object.entries(a).filter(([, v]) => v !== null && v !== ""));
 
 type ConvMessage = {
   id: string;
@@ -51,6 +62,8 @@ export default function AdminAgentPage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loadingDefault, setLoadingDefault] = useState(false);
+  const [answers, setAnswers] = useState<Answers>({});
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   // FAQ editing
   const [faqs, setFaqs] = useState<FAQ[]>([]);
@@ -72,7 +85,7 @@ export default function AdminAgentPage() {
   async function runScenario(scenario: string) {
     setTestRunning(scenario); setTestResult(null);
     try {
-      const r = await fetch("/api/admin/agent/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario }) });
+      const r = await fetch("/api/admin/agent/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario, setupOverride: liveAnswers(answers) }) });
       const d = await r.json();
       setTestResult(r.ok ? d : { label: "שגיאה", transcript: d.transcript || [], toolLog: d.toolLog || [], error: d.error || "נכשל" });
     } catch { setTestResult({ label: "שגיאה", transcript: [], toolLog: [], error: "שגיאת חיבור" }); }
@@ -85,6 +98,7 @@ export default function AdminAgentPage() {
       .then((d: Config) => {
         setConfig(d);
         setFaqs(d.faqs ?? []);
+        setAnswers(parseAnswers(d.setupConfig));
       });
   }, []);
 
@@ -102,11 +116,16 @@ export default function AdminAgentPage() {
   async function saveConfig() {
     if (!config) return;
     setSaving(true);
-    await fetch("/api/admin/agent", {
+    const r = await fetch("/api/admin/agent", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(config),
+      body: JSON.stringify({ ...config, setupConfig: answers }),
     });
+    if (r.ok) {
+      const d: Config = await r.json();
+      setConfig(c => c ? { ...c, setupConfig: d.setupConfig, history: d.history } : c);
+      setAnswers(parseAnswers(d.setupConfig));
+    }
     await fetch("/api/admin/agent/faqs", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -115,6 +134,18 @@ export default function AdminAgentPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  }
+
+  async function restoreSetup(id: string) {
+    if (!confirm("להחזיר את התשובות לגרסה הזו? התשובות הנוכחיות יישמרו כגרסה קודמת.")) return;
+    setRestoring(id);
+    const r = await fetch("/api/admin/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restoreSetupId: id }) });
+    if (r.ok) {
+      const d: Config = await r.json();
+      setConfig(c => c ? { ...c, setupConfig: d.setupConfig, history: d.history } : c);
+      setAnswers(parseAnswers(d.setupConfig));
+    }
+    setRestoring(null);
   }
 
   async function loadDefaultPrompt() {
@@ -481,13 +512,25 @@ export default function AdminAgentPage() {
             )}
           </div>
 
-          {/* System prompt */}
-          <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
+          {/* Setup answers — how a shop shapes its agent */}
+          <AgentSetupCard
+            fields={config.fields ?? []}
+            answers={answers}
+            onChange={(key, value) => setAnswers(a => ({ ...a, [key]: value }))}
+            history={config.history ?? []}
+            onRestore={restoreSetup}
+            restoring={restoring}
+            hasCustomPrompt={config.hasCustomPrompt && !config.canEditPrompt}
+          />
+
+          {/* Raw prompt — platform owner only (also while impersonating) */}
+          {config.canEditPrompt && (
+          <div className="bg-white rounded-2xl border border-amber-200 p-5 space-y-3">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="font-semibold text-neutral-800">הוראות התנהגות לסוכן</h2>
+                <h2 className="font-semibold text-neutral-800">פרומפט ידני <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5 mr-1">מנהל מערכת בלבד</span></h2>
                 <p className="text-xs text-neutral-400 mt-0.5">
-                  כאן קובעים איך הסוכן מדבר, מה הוא יודע, ואיך הוא מתנהג. ריק = ברירת מחדל.
+                  בעל העסק לא רואה את זה. ריק = הבסיס + התשובות שלמעלה (כל תשובה מחליפה את החלק שלה). מלא = הטקסט הזה במקום הבסיס, והתשובות מתווספות בסוף.
                 </p>
               </div>
               <button
@@ -527,15 +570,16 @@ export default function AdminAgentPage() {
               </button>
             )}
           </div>
+          )}
 
           {/* Sandbox test — see the agent answer 3 typical situations in seconds */}
           <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-3">
             <div>
               <h2 className="font-semibold text-neutral-800">🧪 בדיקה מהירה</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">מריץ את הסוכן האמיתי על תרחיש מוכן. שום הודעה לא נשלחת ושום תור לא נקבע — רק רואים איך הוא עונה אחרי שינוי בהנחיות.</p>
+              <p className="text-xs text-neutral-400 mt-0.5">מריץ את הסוכן האמיתי עם התשובות שעל המסך, גם לפני ששמרת. שום הודעה לא נשלחת ושום תור לא נקבע.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {([["new_price", "לקוח חדש שואל מחיר"], ["returning_move", "לקוח חוזר רוצה להזיז תור"], ["unknown", "שאלה שאין עליה תשובה"]] as const).map(([key, label]) => (
+              {([["new_price", "לקוח חדש שואל מחיר"], ["book", "רוצה תור מחר בערב"], ["returning_move", "לקוח חוזר רוצה להזיז תור"], ["info", "שואל על ביטול, חניה ותשלום"], ["unknown", "שאלה שאין עליה תשובה"]] as const).map(([key, label]) => (
                 <button key={key} onClick={() => runScenario(key)} disabled={!!testRunning}
                   className="text-right rounded-xl border border-neutral-200 px-3 py-2.5 text-sm font-medium text-neutral-800 hover:bg-neutral-50 disabled:opacity-50">
                   {testRunning === key ? "מריץ… (עד 30 שנ׳)" : label}
