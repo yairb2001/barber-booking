@@ -1602,7 +1602,13 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     const pool = hasPool && !s.inQuickPool ? (v.staffFem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
     return `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
-  const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (info ? `\nפרטי העסק: ${info}` : "");
+  // Two staff with the same first name ("יאיר בוחבוט" / "יאיר הרוש"): name them
+  // explicitly, so "אצל יאיר" is never resolved by guess.
+  const byFirst = new Map<string, string[]>();
+  for (const s of staff) { const f0 = s.name.trim().split(/\s+/)[0]; if (f0) byFirst.set(f0, [...(byFirst.get(f0) ?? []), s.name.trim()]); }
+  const twins = Array.from(byFirst.entries()).filter(([, names]) => names.length > 1)
+    .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
+  const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
   return block.length > 4500 ? (info ? `פרטי העסק: ${info}` : "") : block;
 }
 

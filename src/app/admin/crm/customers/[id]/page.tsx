@@ -10,7 +10,7 @@ type Data = {
   customer: { id: string; name: string; slug: string; ownerPhone: string | null; stage: string; health: "ok" | "warn" | "bad"; issues: { tone: "bad" | "warn"; text: string }[]; wa: string; apptsWeek: number; pkgPct: number; costIls: number; price: number; trialDaysLeft: number | null; rep: string | null };
   business: { id: string; name: string; slug: string; monthlyPrice: number | null; paidAt: string | null; trialEndsAt: string | null; suspendedAt: string | null; createdAt: string; tier: string; tokenBudgetIls: number };
   setup: { steps: { key: string; label: string; done: boolean; at: string | null }[]; doneCount: number; current: { label: string } | null; stuckHours: number; isLive: boolean; missingAgentFields: string[] };
-  agent: { enabled: boolean; customPrompt: boolean; name: string | null; fields: Field[]; faqs: { id: string; question: string; answer: string }[]; history: { id: string; author: string; createdAt: string }[] };
+  agent: { enabled: boolean; customPrompt: boolean; platformNotes: string; name: string | null; fields: Field[]; faqs: { id: string; question: string; answer: string }[]; history: { id: string; author: string; createdAt: string }[] };
   quality: { conversationsWeek: number; escalatedWeek: number; agentBookingsWeek: number };
   notes: { id: string; author: string; body: string; createdAt: string }[];
   lead: { id: string; name: string | null; phone: string; createdAt: string } | null;
@@ -118,6 +118,23 @@ export default function CustomerCard() {
                   </div>
                 );
               })}
+            </div>
+            <div className="py-2.5 flex flex-col gap-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
+              <div className="flex justify-between gap-2 items-start">
+                <span className="text-[13px] font-semibold">דברים אישיים של העסק <span className="text-[11px] font-normal" style={{ color: C.muted }}>רק צוות צ&apos;אטור, בעל העסק לא רואה</span></span>
+                {editing !== "platformNotes" && <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing("platformNotes"); setVal(ag.platformNotes); }}>{ag.platformNotes ? "שנה" : "הוסף"}</button>}
+              </div>
+              {editing === "platformNotes" ? (
+                <div className="flex flex-col gap-2">
+                  <textarea value={val} onChange={e => setVal(e.target.value)} rows={4} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} placeholder="שורה לכל דבר. מה שאין לו שאלה משלו, למשל: יש ספרים שמתחילים ב-10:00" />
+                  <div className="flex gap-2">
+                    <Btn kind="dark" disabled={busy === "setup"} onClick={async () => { const r = await act("setup", { action: "customer.setup", id, key: "platformNotes", value: val }, "נשמר בסוכן שלו"); if (r.ok) setEditing(null); }}>שמור</Btn>
+                    <Btn kind="ghost" onClick={() => setEditing(null)}>ביטול</Btn>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-[13px] whitespace-pre-line" style={{ color: ag.platformNotes ? "#3E5A5B" : C.muted }}>{ag.platformNotes || "אין"}</span>
+              )}
             </div>
             {ag.faqs.length > 0 && <p className="m-0 mt-2 text-xs" style={{ color: C.muted }}>{ag.faqs.length} שאלות ותשובות נפוצות שמורות.</p>}
             {ag.history.length > 0 && (

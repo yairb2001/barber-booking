@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionBusiness, requireOwner } from "@/lib/session";
 import { isPlatformStaff } from "@/lib/super-admin";
-import { setupFieldsFor } from "@/lib/agent/setup-fields";
+import { setupFieldsFor, PLATFORM_ONLY_SETUP_KEYS } from "@/lib/agent/setup-fields";
 import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
 
 export const dynamic = "force-dynamic";
@@ -91,12 +91,14 @@ export async function PATCH(req: NextRequest) {
     lateArrivalNoShowMessage,
     setupConfig, restoreSetupId,
   } = body;
-  // A shop never writes the raw prompt; a stray field from an old client is ignored.
-  const systemPrompt = (await isPlatformStaff(req)) ? body.systemPrompt : undefined;
+  // A shop never writes the raw prompt or the platform's notes; stray fields are ignored.
+  const staff = await isPlatformStaff(req);
+  const systemPrompt = staff ? body.systemPrompt : undefined;
 
   // Setup answers: merged, saved and versioned in one place (setup-save.ts).
   if (setupConfig && typeof setupConfig === "object") {
-    await saveSetupAnswers(biz.id, setupConfig as Record<string, unknown>, body.author === "wizard" ? "wizard" : "owner");
+    const patch = Object.fromEntries(Object.entries(setupConfig as Record<string, unknown>).filter(([k]) => staff || !PLATFORM_ONLY_SETUP_KEYS.has(k)));
+    await saveSetupAnswers(biz.id, patch, body.author === "wizard" ? "wizard" : "owner");
   }
   if (typeof restoreSetupId === "string") {
     if (!(await restoreSetupVersion(biz.id, restoreSetupId, "owner"))) return NextResponse.json({ error: "version not found" }, { status: 404 });

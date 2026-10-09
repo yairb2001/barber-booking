@@ -29,8 +29,14 @@ export type SetupFieldType = "choice" | "text" | "bool";
 export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set([
   "tone", "emojis", "address", "defaultService", "barberAssign",
   "priceNote", "cancelPolicy", "deposit", "walkin", "location", "payment",
-  "styleNotes", "styleSamples", "escalateWhen",
+  "styleNotes", "styleSamples", "escalateWhen", "platformNotes",
 ]);
+
+/** Written only by the platform (CRM card / promote script), never asked in the
+ *  interview: what is unique to one business and has no question of its own
+ *  (DOMINANT: the "טקסט לחריטה" example, barbers who start at 10–11). The
+ *  template renders it as the business's own block; an owner cannot write it. */
+export const PLATFORM_ONLY_SETUP_KEYS = new Set(["platformNotes"]);
 
 /** One interview field, already resolved for a business type (words, options,
  *  defaults) — what the owner agent and the compiler work with. */

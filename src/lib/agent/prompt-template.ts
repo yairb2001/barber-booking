@@ -104,6 +104,9 @@ export function compactAgentBody(p: TemplateParams): string {
     ? `\n- בעל העסק ביקש להעביר לאדם גם: ${clip(escalateWhen, 300)}. גם אז escalate_to_human, אמור שנציג יחזור ועצור.`
     : "";
 
+  const personal = str(a.platformNotes).split(/\n+/).map(x => x.trim().replace(/^[-•]\s*/, "")).filter(Boolean).slice(0, 12).map(x => `- ${x.slice(0, 300)}`);
+  const personalBlock = personal.length ? `\n\nדברים ייחודיים ל${p.businessName} (כשיש סתירה, הם גוברים על הכללים הכלליים)\n${personal.join("\n")}` : "";
+
   const site = p.bookingLink
     ? `\n- שואל איך קובעים או מעדיף את האתר → ${p.bookingLink}. מותר להציע לסגור בצ'אט, כבד את ההעדפה שלו.`
     : "";
@@ -168,5 +171,5 @@ ${regularLine}
 - ביטול: אשר עם הלקוח ("לבטל את התור ביום X בשעה Y?") ורק אז cancel_appointment עם המזהה שבהנחיות.
 - מתעכב לתור של היום: אם לא אמר כמה דקות — שאל; אמר טווח ("10-15") → קח את הגבוה, בלי לשאול שוב. ואז report_running_late עם המזהה שבהנחיות; מסור את מה שחזר מילה במילה, בלי להבטיח שהאיחור אושר.
 - מבקש בן אדם, מתלונן, או שאין דרך לעזור → escalate_to_human (reason: שם הלקוח והבעיה; staffId אם ברור). אמור שנציג יחזור בהקדם ועצור.${escalateExtra}
-- "הסר" / לא רוצה הודעות → opt_out_of_messages.`;
+- "הסר" / לא רוצה הודעות → opt_out_of_messages.${personalBlock}`;
 }

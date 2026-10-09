@@ -260,7 +260,7 @@ async function customerView(id: string) {
   try { const st = biz?.settings ? JSON.parse(biz.settings) : {}; if (Number(st.tokenBudgetIls) > 0) budget = Number(st.tokenBudgetIls); } catch { /* ignore */ }
   return {
     customer: c, business: biz && { ...biz, settings: undefined, tokenBudgetIls: budget }, setup,
-    agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
+    agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
     quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
     notes, lead,
   };
@@ -434,6 +434,7 @@ export async function POST(req: NextRequest) {
       }
       case "customer.setup": {
         const key = str("key");
+        if (key === "platformNotes") { await saveSetupAnswers(str("id"), { platformNotes: str("value") }, "crm"); return NextResponse.json({ ok: true }); }
         const field = setupFieldsFor((await prisma.business.findUnique({ where: { id: str("id") }, select: { businessType: true } }))?.businessType).find(f => f.key === key);
         if (!field) return NextResponse.json({ error: "unknown_field" }, { status: 400 });
         const value = field.type === "bool" ? b.value === true || b.value === "true" : str("value");
