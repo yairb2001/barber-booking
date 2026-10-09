@@ -8,11 +8,11 @@
 
 /** The launch offer — fixed wording, sent by code (0 tokens), never paraphrased. */
 export const OFFER_TEXT =
-  "ההצעה להשקה: חודש ראשון חינם, וההקמה (997 ₪) חינם ל‑20 המספרות הראשונות. יאיר, שמאחורי המערכת, יחזור אליך היום.";
+  "ההצעה להשקה: חודש ראשון חינם, וההקמה (997 ₪) חינם ל‑20 המספרות הראשונות.";
 
 /** The only price the agent may state (decision 29.9: said in the sales chat, not on the site). */
 export const PRICE_TEXT =
-  "287 ₪ לחודש — מחיר השקה ל‑20 המספרות הראשונות, נעול לשנה. חודש ראשון חינם ובלי דמי הקמה.";
+  "287 ₪ לחודש, מחיר השקה ל‑20 המספרות הראשונות, נעול לשנה. חודש ראשון חינם ובלי דמי הקמה.";
 
 export const SALES_KNOWLEDGE = `מה Chator עושה (רק מה שכתוב כאן קיים):
 

@@ -15,6 +15,7 @@
 
 import { dayDistance } from "@/lib/day-distance";
 import Anthropic from "@anthropic-ai/sdk";
+import { anthropicFor } from "@/lib/anthropic-clients";
 import { prisma } from "@/lib/prisma";
 import { holderKeyForPhone, releaseHolds } from "@/lib/slot-holds";
 import { computeCustomerInsights } from "@/lib/customer-insights";
@@ -2391,7 +2392,7 @@ export async function runCustomerAgent(opts: {
   const MAX_ITERATIONS = 8;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
-    const response = await anthropic.messages.create({
+    const response = await anthropicFor(sandbox ? "test" : "prod").messages.create({
       model,
       max_tokens: 1024,
       system:     systemPrompt,
@@ -2480,7 +2481,7 @@ export async function runCustomerAgent(opts: {
   // composing a reply (e.g. a reschedule that ran check+cancel+book), the action
   // already happened — so force one final text-only turn instead of going silent.
   if (!assistantText.trim()) {
-    const closing = await anthropic.messages.create({
+    const closing = await anthropicFor(sandbox ? "test" : "prod").messages.create({
       model:    MODEL_SMART,
       max_tokens: 1024,
       system:   systemPrompt,

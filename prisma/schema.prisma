@@ -961,6 +961,15 @@ model Lead {
   phone     String
   source    String   @default("landing")  // landing | manual | whatsapp_demo (stage 1 sales agent)
   status    String   @default("new")       // new | contacted | demo | won | lost
+  // ── CRM (docs: "CRM ומכירות" tab, 9.10.2026). The pipeline stage the CRM shows; the
+  //    legacy `status` above stays for the old super-admin leads tab.
+  stage         String    @default("new") @map("crm_stage")      // new | chatting | call_booked | trial | paying | not_relevant
+  repId         String?   @map("rep_id")                          // owning sales rep
+  lostReason    String?   @map("lost_reason")
+  followUpAt    DateTime? @map("follow_up_at")                    // "לחזור אליו" date
+  optedOut      Boolean   @default(false) @map("opted_out")       // wrote "הסר" — no more automations
+  lastInboundAt DateTime? @map("last_inbound_at")                 // last WhatsApp message FROM the lead
+  shopSize      String?   @map("shop_size")
   note      String?
   // ── Stage 1 (docs/PLAN-MASTER.md): captured by the sales agent in the demo shop's WhatsApp ──
   businessName   String?   @map("business_name")   // the prospect's shop, as he wrote it
@@ -999,3 +1008,110 @@ model BookingProposal {
   @@index([businessId, phone, status])
   @@map("booking_proposals")
 }
+
+// ── CRM: sales reps, their call windows and the 10-minute sales calls ───────────
+model SalesRep {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?                       // gets the push/WhatsApp alerts
+  active    Boolean  @default(true)
+  isOwner   Boolean  @default(false) @map("is_owner") // the platform owner (Yair)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("sales_reps")
+}
+
+/// Weekly window a rep opens for calls ("ראשון 12:00–13:00"). dayOfWeek 0 = Sunday.
+model RepWindow {
+  id        String @id @default(uuid())
+  repId     String @map("rep_id")
+  dayOfWeek Int    @map("day_of_week")
+  startTime String @map("start_time") // "HH:MM" Israel time
+  endTime   String @map("end_time")
+
+  @@index([repId])
+  @@map("rep_windows")
+}
+
+/// A specific date a rep closed ("סגור יום ספציפי").
+model RepDayOff {
+  id    String   @id @default(uuid())
+  repId String   @map("rep_id")
+  date  DateTime @db.Date
+  note  String?
+
+  @@unique([repId, date])
+  @@map("rep_days_off")
+}
+
+model SalesCall {
+  id            String    @id @default(uuid())
+  leadId        String    @map("lead_id")
+  repId         String    @map("rep_id")
+  startsAt      DateTime  @map("starts_at")
+  durationMin   Int       @default(10) @map("duration_min")
+  status        String    @default("booked")   // booked | done | cancelled
+  outcome       String?                         // won | later | no_answer | not_relevant
+  bookedBy      String    @default("agent") @map("booked_by") // agent | rep
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([repId, startsAt])
+  @@index([leadId])
+  @@map("sales_calls")
+}
+
+model LeadNote {
+  id        String   @id @default(uuid())
+  leadId    String   @map("lead_id")
+  author    String
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([leadId])
+  @@map("lead_notes")
+}
+
+/// An editable CRM automation: trigger + steps (JSON) + when it stops.
+model CrmAutomation {
+  id        String   @id @default(uuid())
+  key       String   @unique                 // stable id the code triggers by (e.g. "lead_new")
+  name      String
+  trigger   String                           // human label of the trigger
+  enabled   Boolean  @default(false)
+  steps     String                           // JSON: [{ delayMinutes, text }]
+  stopOn    String   @default("[]") @map("stop_on") // JSON: ["replied","call_booked","opted_out","not_relevant"]
+  audience  String   @default("lead")        // lead | rep (rep = internal alert, never to the lead)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("crm_automations")
+}
+
+model CrmAutomationRun {
+  id           String    @id @default(uuid())
+  automationId String    @map("automation_id")
+  leadId       String?   @map("lead_id")
+  businessId   String?   @map("business_id")
+  stepIndex    Int       @default(0) @map("step_index")
+  nextAt       DateTime? @map("next_at")
+  status       String    @default("active")   // active | done | stopped
+  stopReason   String?   @map("stop_reason")
+  context      String?                         // JSON (callId, …)
+  startedAt    DateTime  @default(now()) @map("started_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([status, nextAt])
+  @@index([leadId])
+  @@map("crm_automation_runs")
+}
+
+/// CRM key/value settings (call length, break, horizon, infra cost…).
+model CrmSetting {
+  key   String @id
+  value String
+
+  @@map("crm_settings")
+}
+

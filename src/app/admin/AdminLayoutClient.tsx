@@ -52,6 +52,7 @@ const navItems: NavItem[] = [
   { href: "/admin/settings",          label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
   { href: "/admin/preview",      label: "תצוגת לקוח",     icon: "👁️" },
   { href: "/admin/super",        label: "פלטפורמה",       icon: "🛰️", superOnly: true },
+  { href: "/admin/crm",          label: "CRM צ'אטור",     icon: "📈", superOnly: true },
 ];
 
 // Bottom nav (mobile)
@@ -102,7 +103,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const isNative = platform === "ios" || platform === "android";
 
   useEffect(() => {
-    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
+    if (pathname === "/admin/login" || (pathname.startsWith("/admin/onboarding") || pathname.startsWith("/admin/crm"))) return;
     fetch("/api/admin/me")
       .then(r => r.ok ? r.json() : null)
       .then(setMe)
@@ -113,7 +114,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   // "WhatsApp disconnected" banner surfaces on its own — no manual refresh. Paired
   // with the live send-failure reconciliation, the alert appears within ~a minute.
   useEffect(() => {
-    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
+    if (pathname === "/admin/login" || (pathname.startsWith("/admin/onboarding") || pathname.startsWith("/admin/crm"))) return;
     let cancelled = false;
     const tick = () => {
       if (cancelled || document.visibilityState !== "visible") return;
@@ -132,7 +133,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   // and the login page are excluded to avoid a redirect loop.
   useEffect(() => {
     if (!me) return;
-    if (pathname === "/admin/login" || pathname.startsWith("/admin/onboarding")) return;
+    if (pathname === "/admin/login" || (pathname.startsWith("/admin/onboarding") || pathname.startsWith("/admin/crm"))) return;
     if (me.isOwner && !me.onboardingCompletedAt) {
       router.replace("/admin/onboarding");
     }
@@ -194,7 +195,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   }
 
   // Onboarding wizard renders full-screen without the admin chrome.
-  if (pathname.startsWith("/admin/onboarding")) {
+  if ((pathname.startsWith("/admin/onboarding") || pathname.startsWith("/admin/crm"))) {
     return <>{children}</>;
   }
 

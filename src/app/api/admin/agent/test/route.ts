@@ -26,7 +26,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import Anthropic from "@anthropic-ai/sdk";
+import { anthropicFor, hasTestKey } from "@/lib/anthropic-clients";
 import { requireOwner, getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -39,9 +39,8 @@ export async function GET(req: NextRequest) {
   const results: Record<string, string> = {};
 
   // 1. Check API key
-  results.api_key = process.env.ANTHROPIC_API_KEY
-    ? `set (${process.env.ANTHROPIC_API_KEY.slice(0, 20)}...)`
-    : "MISSING";
+  results.api_key = process.env.ANTHROPIC_API_KEY ? "set" : "MISSING";
+  results.test_api_key = hasTestKey() ? "set (sandbox runs bill the test key)" : "not set (sandbox runs fall back to the production key)";
 
   // 2. Check DB models
   try {
@@ -62,8 +61,7 @@ export async function GET(req: NextRequest) {
 
   // 3. Test Anthropic API
   try {
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
-    const msg = await client.messages.create({
+    const msg = await anthropicFor("test").messages.create({
       model: "claude-haiku-4-5",
       max_tokens: 20,
       messages: [{ role: "user", content: "say hi" }],
@@ -164,7 +162,7 @@ export async function POST(req: NextRequest) {
       const { runDemoTurn } = await import("@/lib/agent/sales-agent");
       const t = String(body.text ?? "").trim();
       if (!t) return NextResponse.json({ error: "text required" }, { status: 400 });
-      const sandbox = { replies: [] as string[], toolLog: [] as string[] };
+      const sandbox = { replies: [] as string[], toolLog: [] as string[], asLead: body.asLead === true };
       const startedAt = new Date();
       const r = await runDemoTurn({ phone, text: t, senderName: typeof body.senderName === "string" ? body.senderName : null, sandbox });
       const conv = await prisma.conversation.findFirst({ where: { businessId: business.id, phone }, orderBy: { createdAt: "desc" }, select: { id: true, salesState: true } });

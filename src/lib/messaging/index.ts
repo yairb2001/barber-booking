@@ -367,7 +367,7 @@ export async function deliverMessageLog(
   // "reengage" included (2026-08-28): the reengage cron used to log this
   // itself at enqueue time regardless of whether the send actually succeeded;
   // doing it here means it only lands once the message truly went out.
-  if (result.ok && (log.kind === "agent_broadcast" || log.kind === "reengage")) {
+  if (result.ok && (log.kind === "agent_broadcast" || log.kind === "reengage" || log.kind === "crm_message")) {
     await mirrorAgentMessageToConversation(business.id, log.customerPhone, log.body);
   }
 

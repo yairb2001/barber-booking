@@ -16,6 +16,8 @@ export type MessageKind =
   | "wa_down_alert"    // the business's WhatsApp went down — owner (push + Chator's number) and Yair (wa-alerts.ts)
   | "wa_up_alert"      // …and it is linked again
   | "wa_link_stuck"    // owner stuck on the linking screen for minutes — Yair only
+  | "crm_message"      // CRM automation / rep message to a lead, from Chator's number (src/lib/crm/automations.ts)
+  | "crm_rep_alert"    // CRM internal alert to a sales rep
   | "agent_unavailable" // stage 1: the fixed message a customer gets while the package is used up (once a day per phone)
   | "agent_followup"   // nudge sent when a chat went quiet without a booking
   | "agent_question_followup" // fast nudge (~1h) when the agent asked a question and got no reply
