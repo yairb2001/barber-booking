@@ -361,7 +361,7 @@ export default function HomePage() {
   // ── Scroll-motion preview (owner reviewing, 7.10.2026) ─────────────────────
   // ?fx=1 turns it on for this browser tab, ?fx=0 off; customers never see it
   // until it's promoted. Three pieces: running chevrons in the scroll cue, a
-  // one-time "the page lifts and settles" nudge if nobody scrolled within 2.5s,
+  // one-time "the page lifts and settles" nudge if nobody scrolled within 1.5s,
   // and on-scroll motion (hero parallax + sections rising into view).
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [fx, setFx] = useState(false);
@@ -407,7 +407,7 @@ export default function HomePage() {
         root.classList.add("fx-nudge");
         setTimeout(() => root.classList.remove("fx-nudge"), 2500);
       }
-    }, 2500);
+    }, 1500); // owner, 9.10.2026: 1.5s (was 2.5s)
     // Parallax (preview only): one CSS var, updated once per frame.
     let raf = 0;
     const onScroll = () => {
