@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { C, NUM, TONE, Card, Tag, PageHead, useCrm, crmAction, ils, ago, SOURCE_LABEL, type Tone } from "./ui";
+import { CrmPushBanner } from "./CrmPush";
 
 /**
  * CRM home (10.10.2026, Yair: "התראות בנפרד, משימות בנפרד"): three tabs.
@@ -89,6 +90,8 @@ function CrmHomeInner() {
           מפתח הבדיקות עוד לא מחובר, אז בדיקות וארגז החול עדיין על המפתח של הפרודקשן. ראה הגדרות.
         </p>
       )}
+
+      <CrmPushBanner />
 
       <div role="tablist" aria-label="מסך הבית" className="grid grid-cols-3 gap-1 p-1 rounded-2xl" style={{ background: C.soft }}>
         {TABS.map(([k, l]) => {

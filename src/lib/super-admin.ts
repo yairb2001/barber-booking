@@ -3,7 +3,7 @@ import { getRequestSession } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { verifySession } from "@/lib/auth";
-import { recordCrmNotification, type NotifyMeta } from "@/lib/crm/notify";
+import { recordCrmNotification, crmPushEnabled, type NotifyMeta } from "@/lib/crm/notify";
 
 /**
  * The platform owner's own business id. The super-admin dashboard (/admin/super)
@@ -37,8 +37,12 @@ export async function isPlatformStaff(req: NextRequest): Promise<boolean> {
  * the flow that triggered them (a signup or a lead capture).
  */
 export async function notifyPlatformOwner(body: string, meta?: NotifyMeta): Promise<void> {
-  // Also into the CRM's notifications feed (kind + link when the caller knows them).
+  // Into the CRM's feed; the few that need Yair now also push to the CRM app.
   await recordCrmNotification(body, meta);
+  // 10.10.2026, Yair: "שלא יהיה הרבה הודעות" — WhatsApp only for a platform
+  // outage, or for a push-worthy alert while no phone has the CRM's pushes on
+  // yet. Feed-only alerts never WhatsApp. (No meta = an old caller: as before.)
+  if (meta && meta.kind !== "system" && (!meta.push || (await crmPushEnabled()))) return;
   try {
     await sendMessage({
       businessId: SUPER_ADMIN_BUSINESS_ID,

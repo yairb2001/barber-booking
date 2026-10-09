@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { C, TONE, Btn, Card, PageHead, useCrm, crmAction } from "../ui";
+import { CrmPushSettings } from "../CrmPush";
 
 type S = { callMinutes: number; breakMinutes: number; horizonDays: number; minNoticeMinutes: number; infraCostIls: number };
-type Data = { settings: S; testKey: boolean; reps: { id: string; name: string; phone: string | null; active: boolean; isOwner: boolean }[] };
+type Data = { settings: S; testKey: boolean; pushDevices: number; reps: { id: string; name: string; phone: string | null; active: boolean; isOwner: boolean }[] };
 
 const FIELDS: [keyof S, string, string][] = [
   ["callMinutes", "אורך שיחה", "דקות"],
@@ -35,6 +36,9 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-4 max-w-3xl">
       <PageHead title="הגדרות CRM" />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
+      <Card title="התראות לטלפון">
+        <CrmPushSettings devices={data.pushDevices} />
+      </Card>
       <Card title="שיחות מכירה">
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           {FIELDS.map(([k, label, unit]) => (

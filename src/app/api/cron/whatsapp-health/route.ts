@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
     serverOk = h.ok;
     if (!h.ok) {
       const recent = await prisma.messageLog.findFirst({ where: { kind: "manual", body: { startsWith: "🔴 שרת הוואטסאפ" }, createdAt: { gte: new Date(now.getTime() - 3600_000) } }, select: { id: true } });
-      if (!recent) notifyPlatformOwner(`🔴 שרת הוואטסאפ שלנו לא עונה: ${h.error ?? "unknown"}. ssh manceo → cd /opt/chator-wa && docker compose ps`).catch(() => {});
+      if (!recent) notifyPlatformOwner(`🔴 שרת הוואטסאפ שלנו לא עונה: ${h.error ?? "unknown"}. ssh manceo → cd /opt/chator-wa && docker compose ps`, { kind: "system", push: true }).catch(() => {});
     }
   }
 

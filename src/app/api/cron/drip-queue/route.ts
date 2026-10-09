@@ -44,6 +44,7 @@ import { logToConversationHistory } from "@/lib/waitlist-notify";
 import { runPostVisitAutomations } from "@/lib/automations/post-visit";
 import { runRhythmNudge } from "@/lib/automations/rhythm-nudge";
 import { tickAutomations, scanTimeTriggers } from "@/lib/crm/automations";
+import { remindUpcomingCalls } from "@/lib/crm/notify";
 import { getDayOfWeekISO } from "@/lib/utils";
 
 // "הגיע הזמן לתור" — once a day inside the 10:00–10:59 window (Israel), never
@@ -448,6 +449,8 @@ async function runPiggybackTasks(now: Date): Promise<void> {
   const nowMs = now.getTime();
 
   try { await tickAutomations(now); } catch (err) { console.error("[drip-queue] crm automations failed:", err); }
+  // CRM: one small push 10 minutes before each sales call.
+  try { await remindUpcomingCalls(now); } catch (err) { console.error("[drip-queue] call reminders failed:", err); }
   if (nowMs - lastCrmTriggerScan >= CRM_TRIGGER_SCAN_EVERY_MS) {
     lastCrmTriggerScan = nowMs;
     try { await scanTimeTriggers(now); } catch (err) { console.error("[drip-queue] crm trigger scan failed:", err); }

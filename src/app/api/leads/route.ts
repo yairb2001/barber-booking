@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
 
   await notifyPlatformOwner(
     `🔥 ליד חדש מהאתר\nשם: ${name || "—"}\nטלפון: ${phone}\nב-CRM: /admin/crm`,
-    { kind: "lead", leadId: lead.id },
+    { kind: "lead", leadId: lead.id, push: true },
   );
 
   return NextResponse.json({ ok: true, id: lead.id });

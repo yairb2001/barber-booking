@@ -7,8 +7,6 @@ import { prisma } from "@/lib/prisma";
 import { enqueueMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyPlatformOwner } from "@/lib/super-admin";
-import { pushToOwner } from "@/lib/native/push";
-import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { createBusinessFromLead } from "@/lib/leads";
 import { freeCallSlots, getCrmSettings, legacyStatusFor, slotLabel, type Stage } from "@/lib/crm/core";
@@ -23,8 +21,8 @@ export async function setLeadStage(leadId: string, stage: Stage, extra: { lostRe
 export async function alertRep(repId: string | null, body: string, meta: NotifyMeta = {}): Promise<void> {
   const rep = repId ? await prisma.salesRep.findUnique({ where: { id: repId } }) : null;
   if (!rep || rep.isOwner) {
+    // The CRM app's push (when meta.push) replaces the barbershop app's push.
     notifyPlatformOwner(body, { ...meta, repId: rep?.id ?? null }).catch(() => {});
-    pushToOwner(SUPER_ADMIN_BUSINESS_ID, { title: "Chator CRM", body: body.split("\n")[0], data: { type: "crm" } }).catch(() => {});
     return;
   }
   await recordCrmNotification(body, { ...meta, repId: rep.id });
@@ -50,7 +48,7 @@ export async function bookCall(p: { leadId: string; startsAt: Date; repId?: stri
   await stopLeadAutomations(lead.id, "call_booked");
   await startAutomation("call_booked", { leadId: lead.id, context: { callId: call.id } });
   const label = slotLabel(slot.startsAt);
-  await alertRep(slot.repId, `📞 נקבעה שיחה ${label}\n${lead.name || "ליד"}${lead.businessName ? ` · ${lead.businessName}` : ""} · ${lead.phone}${lead.summary ? `\n${lead.summary}` : ""}`, { kind: "call", leadId: lead.id });
+  await alertRep(slot.repId, `📞 נקבעה שיחה ${label}\n${lead.name || "ליד"}${lead.businessName ? ` · ${lead.businessName}` : ""} · ${lead.phone}${lead.summary ? `\n${lead.summary}` : ""}`, { kind: "call", leadId: lead.id, push: false }); // the 10-minute reminder is the push
   return { ok: true, callId: call.id, startsAt: slot.startsAt, repName: slot.repName, label };
 }
 
@@ -61,7 +59,7 @@ export async function cancelCall(callId: string, by: "lead" | "rep"): Promise<bo
   await setLeadStage(call.leadId, "chatting");
   if (by === "lead") {
     const lead = await prisma.lead.findUnique({ where: { id: call.leadId }, select: { name: true, phone: true } });
-    await alertRep(call.repId, `השיחה ${slotLabel(call.startsAt)} עם ${lead?.name || lead?.phone} בוטלה על ידי הליד.`, { kind: "call", leadId: call.leadId });
+    await alertRep(call.repId, `השיחה ${slotLabel(call.startsAt)} עם ${lead?.name || lead?.phone} בוטלה על ידי הליד.`, { kind: "call", leadId: call.leadId, push: false });
   }
   return true;
 }

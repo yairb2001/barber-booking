@@ -24,7 +24,6 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { notifyPlatformOwner, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
-import { pushToOwner } from "@/lib/native/push";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { runCustomerAgent, MODEL_SMART } from "@/lib/agent/customer-agent";
@@ -175,7 +174,7 @@ export async function runDemoTurn(p: {
   // ── A Chator customer: not a sales conversation ──
   if (!lead && !state && !p.sandbox && await isChatorCustomer(phone)) {
     conv = conv ?? await createConv(phone);
-    await alertRep(null, `לקוח של Chator כתב למספר של צ'אטור (${phone.replace(/^972/, "0")}): ${text.slice(0, 200)}`, { kind: "customer" });
+    await alertRep(null, `לקוח של Chator כתב למספר של צ'אטור (${phone.replace(/^972/, "0")}): ${text.slice(0, 200)}`, { kind: "customer", push: true });
     await reply(conv.id, phone, [OWNER_REPLY], p.sandbox);
     return { handled: true, replies: [OWNER_REPLY] };
   }
@@ -444,7 +443,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   } else if (tool?.name === "handoff_to_rep") {
     const summary = String((tool.input as { summary?: string }).summary ?? "").slice(0, 300);
     p.sandbox?.toolLog.push(`handoff_to_rep(${summary})`);
-    if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || p.phone.replace(/^972/, "0")} מבקש נציג: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null });
+    if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || p.phone.replace(/^972/, "0")} מבקש נציג: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null, push: true });
     replies.length = 0;
     replies.push(`מעביר ל${rep}, הוא יחזור אליך בהקדם.`);
   } else if (tool?.name === "not_interested") {
@@ -499,8 +498,7 @@ async function createLead(p: { phone: string; conversationId: string; fullName: 
     : await prisma.lead.create({ data: { ...data, repId: rep?.id ?? null }, select: { id: true } });
 
   const body = `🎯 ליד חדש מוואטסאפ הדמו\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\nמה ניסה: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
-  notifyPlatformOwner(body, { kind: "lead", leadId: lead.id }).catch(() => {});
-  pushToOwner(SUPER_ADMIN_BUSINESS_ID, { title: `🎯 ליד חדש: ${p.fullName || localPhone}`, body: `${p.businessName || "מספרה"} · ${localPhone}`, data: { type: "lead", leadId: lead.id } }).catch(() => {});
+  notifyPlatformOwner(body, { kind: "lead", leadId: lead.id, push: true }).catch(() => {});
   return lead.id;
 }
 
@@ -512,7 +510,7 @@ export async function remindStaleLeads(now: Date = new Date()): Promise<number> 
   });
   for (const l of stale) {
     await prisma.lead.update({ where: { id: l.id }, data: { remindedAt: now } });
-    notifyPlatformOwner(`⏰ ליד מחכה כבר יום: ${l.name || "—"} (${l.businessName || "מספרה"}) · ${l.phone}\nCRM: /admin/crm`, { kind: "lead", leadId: l.id }).catch(() => {});
+    notifyPlatformOwner(`⏰ ליד מחכה כבר יום: ${l.name || "—"} (${l.businessName || "מספרה"}) · ${l.phone}\nCRM: /admin/crm`, { kind: "lead", leadId: l.id, push: false }).catch(() => {});
   }
   return stale.length;
 }

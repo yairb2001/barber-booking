@@ -80,7 +80,8 @@ export async function checkAndRecordLlmHealth(now: Date = new Date()): Promise<L
       // Platform owner ONLY — the businesses never see this.
       await notifyPlatformOwner(
         `🔴 תקלת פלטפורמה: הסוכן לא מצליח להגיע ל-Claude.\n${error}\n` +
-        `כל הסוכנים של כל העסקים מושבתים עד שתטפל. בדוק קרדיט/מפתח ב-console.anthropic.com.`
+        `כל הסוכנים של כל העסקים מושבתים עד שתטפל. בדוק קרדיט/מפתח ב-console.anthropic.com.`,
+        { kind: "system", push: true },
       );
     }
   }

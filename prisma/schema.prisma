@@ -1101,6 +1101,7 @@ model SalesCall {
   status        String    @default("booked")   // booked | done | cancelled
   outcome       String?                         // won | later | no_answer | not_relevant
   bookedBy      String    @default("agent") @map("booked_by") // agent | rep
+  remindedAt    DateTime? @map("reminded_at") // the rep got the 10-minute push
   notes         String?
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")

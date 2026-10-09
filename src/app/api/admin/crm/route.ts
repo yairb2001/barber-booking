@@ -325,7 +325,10 @@ export async function GET(req: NextRequest) {
       }) });
     }
     if (view === "customer") { const v = await customerView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
-    if (view === "settings") return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
+    if (view === "settings") {
+      const { crmPushDevices } = await import("@/lib/crm/notify");
+      return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), pushDevices: await crmPushDevices(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
+    }
     return NextResponse.json({ error: "unknown_view" }, { status: 400 });
   } catch (e) {
     console.error("[crm GET]", view, e);
@@ -416,6 +419,27 @@ export async function POST(req: NextRequest) {
         await prisma.repWindow.deleteMany({ where: { repId } });
         if (valid.length) await prisma.repWindow.createMany({ data: valid.map(w => ({ repId, dayOfWeek: w.dayOfWeek, startTime: w.startTime, endTime: w.endTime })) });
         return NextResponse.json({ ok: true });
+      }
+      case "push.subscribe": {
+        const sub = b.subscription as { endpoint?: string; keys?: { p256dh?: string; auth?: string } } | undefined;
+        if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return NextResponse.json({ error: "invalid subscription" }, { status: 400 });
+        const { addCrmPushSub } = await import("@/lib/crm/notify");
+        await addCrmPushSub({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
+        return NextResponse.json({ ok: true });
+      }
+      case "push.status": {
+        const { crmPushHas } = await import("@/lib/crm/notify");
+        return NextResponse.json({ ok: true, registered: str("endpoint") ? await crmPushHas(str("endpoint")) : false });
+      }
+      case "push.unsubscribe": {
+        const { removeCrmPushSub } = await import("@/lib/crm/notify");
+        if (str("endpoint")) await removeCrmPushSub(str("endpoint"));
+        return NextResponse.json({ ok: true });
+      }
+      case "push.test": {
+        const { sendCrmPush } = await import("@/lib/crm/notify");
+        const sent = await sendCrmPush({ title: "✅ ההתראות של ה-CRM עובדות", body: "ככה ייראו: קצר, רק מה שצריך אותך.", url: "/admin/crm?tab=alerts", tag: "crm-test" });
+        return NextResponse.json({ ok: sent > 0, sent, error: sent ? undefined : "אין טלפון עם התראות פעילות" });
       }
       case "notif.read": {
         await prisma.crmNotification.updateMany({ where: { id: str("id"), readAt: null }, data: { readAt: new Date() } });
