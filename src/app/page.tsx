@@ -10,7 +10,6 @@ import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 import { captureAttribution } from "@/lib/attribution";
 import MetaPixel from "@/components/MetaPixel";
-import LookHome from "@/components/LookHome";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Story = {
@@ -330,15 +329,9 @@ function SecLabel({ label, sub, action }: { label: string; sub?: string; action?
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
-// DOMINANT (the root shop, no slug) moved to the new site-style home on
-// 9.10.2026 (owner's choice); every other shop's storefront ([slug]) keeps the
-// classic page below.
+// The site-style redesign (src/components/LookHome.tsx) lives on /look?v=1..4
+// for comparison; the owner kept this classic page (9.10.2026).
 export default function HomePage() {
-  const slug = useSlug();
-  return slug ? <ClassicHome /> : <LookHome />;
-}
-
-function ClassicHome() {
   const slug = useSlug();
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -381,9 +374,11 @@ function ClassicHome() {
     } catch { /* private mode */ }
   }, []);
   useEffect(() => {
-    if (!fx || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const root = rootRef.current;
     if (!root) return;
+    // Nudge — LIVE for everyone since 9.10.2026 (the owner: "just the jump");
+    // the rest of the motion below stays behind ?fx=1.
     // Nudge once, only if the visitor hasn't scrolled yet. (A touch alone used
     // to cancel it — just holding the phone did, so the owner never saw it.)
     let touched = false;
@@ -401,13 +396,13 @@ function ClassicHome() {
       root.classList.add("fx-nudge");
       setTimeout(() => root.classList.remove("fx-nudge"), 2500);
     }, 2500);
-    // Parallax: one CSS var, updated once per frame.
+    // Parallax (preview only): one CSS var, updated once per frame.
     let raf = 0;
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(() => { raf = 0; root.style.setProperty("--sy", String(Math.min(window.scrollY, 1200))); });
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
+    if (fx) window.addEventListener("scroll", onScroll, { passive: true });
     return () => { clearTimeout(t); window.removeEventListener("scroll", onScroll); window.removeEventListener("scroll", mark); if (raf) cancelAnimationFrame(raf); };
   }, [fx]);
 
