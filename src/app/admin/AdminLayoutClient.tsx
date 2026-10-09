@@ -79,22 +79,28 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const bizTitle = me?.businessName?.trim() || "Chator";
   const [unreadChats, setUnreadChats] = useState(0);
   const [linkCopied, setLinkCopied] = useState(false);
-  // "A newer build is live" — polled every 5 min + on tab focus. The native
-  // shell keeps stale JS after a deploy; this is how the barber finds out.
-  const [updateAvailable, setUpdateAvailable] = useState(false);
+  // A newer build is live → update SILENTLY (owner, 9.10.2026: no more "new
+  // version, tap to refresh" banner). The native shell keeps stale JS after a
+  // deploy, so we still poll every 5 min + on focus; when a new build is found
+  // we reload the next time the app comes back to the foreground (the user just
+  // opened it — nothing is mid-edit), never while it's in use.
   useEffect(() => {
     if (BUILD_ID === "dev") return;
-    let cancelled = false;
+    let cancelled = false, stale = false;
     const check = () => {
       if (document.visibilityState !== "visible") return;
       fetch("/api/version", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(d => {
-        if (!cancelled && d?.build && d.build !== BUILD_ID) setUpdateAvailable(true);
+        if (!cancelled && d?.build && d.build !== BUILD_ID) stale = true;
       }).catch(() => {});
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && stale) { window.location.reload(); return; }
+      check();
     };
     check();
     const id = setInterval(check, 5 * 60_000);
-    document.addEventListener("visibilitychange", check);
-    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", check); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
   const [qrOpen, setQrOpen] = useState(false);
   // Initialise the native shell — registers push, sets status bar.
@@ -341,12 +347,6 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             <span className="font-bold leading-tight flex items-center gap-2"><span>👁️</span>מחובר כמנהל של עסק אחר (מצב צפייה)</span>
             <button onClick={stopImpersonating} className="shrink-0 bg-white text-blue-700 font-bold rounded-lg px-3 py-1.5 hover:bg-blue-50 transition whitespace-nowrap">חזרה לפלטפורמה ←</button>
           </div>
-        )}
-        {updateAvailable && (
-          <button onClick={() => window.location.reload()}
-            className="shrink-0 bg-teal-600 text-white px-4 py-2 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-teal-700">
-            ⬆️ יש גרסה חדשה של המערכת — לחץ לרענון
-          </button>
         )}
         {me?.whatsappDown && (
           <div className="shrink-0 animate-alert-blink text-white px-4 py-2.5 flex items-center justify-between gap-3 text-sm shadow-md">
