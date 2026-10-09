@@ -28,9 +28,11 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(me => {
-      if (!me) { router.replace("/admin/login"); return; }
+      if (!me) { router.replace(`/admin/login?next=${encodeURIComponent(pathname)}`); return; }
       setAllowed(!!me.isSuperAdmin);
     }).catch(() => setAllowed(false));
+    // Checked once on entry; later navigation inside the CRM keeps the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
 

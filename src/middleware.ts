@@ -50,6 +50,10 @@ export async function middleware(req: NextRequest) {
     }
     const url = req.nextUrl.clone();
     url.pathname = "/admin/login";
+    // Back to where they were going after login — e.g. the CRM's home-screen
+    // shortcut opens logged out (iOS gives each home-screen app its own cookies).
+    url.search = "";
+    if (pathname !== "/admin") url.searchParams.set("next", pathname + req.nextUrl.search);
     return NextResponse.redirect(url);
   }
 

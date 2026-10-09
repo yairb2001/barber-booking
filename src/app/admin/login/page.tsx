@@ -62,7 +62,9 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.push("/admin");
+      // Only an /admin path from our own redirect (?next=…), never another site.
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next && /^\/admin(\/|\?|$)/.test(next) ? next : "/admin");
       router.refresh();
     } catch {
       setError("שגיאה בחיבור לשרת");
