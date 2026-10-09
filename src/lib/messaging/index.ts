@@ -26,7 +26,9 @@ export function firstName(fullName: string): string {
  */
 export function formatBusinessName(name: string): string {
   const n = (name || "").trim();
-  if (n && /[A-Za-z]/.test(n) && !/[\u0590-\u05FF]/.test(n)) return n.toUpperCase();
+  // An all-lowercase English name ("dominant") reads as a brand in capitals;
+  // a name the owner already cased ("DOMINANT Barbershop") is kept as typed.
+  if (n && /[a-z]/.test(n) && !/[A-Z]/.test(n) && !/[\u0590-\u05FF]/.test(n)) return n.toUpperCase();
   return n;
 }
 
