@@ -105,8 +105,10 @@ export async function freeCallSlots(opts: { repId?: string; limit?: number; from
   const from = opts.fromISO ?? today;
   const days = opts.days ?? s.horizonDays;
   const until = addDaysISO(from, days);
+  // Availability is per specific date (10.10.2026: "כל שבוע הלו״ז משתנה") —
+  // only what the rep opened for that date counts, never a weekly default.
   const [windows, offs, calls] = await Promise.all([
-    prisma.repWindow.findMany({ where: { repId: { in: repIds } } }),
+    prisma.repDateWindow.findMany({ where: { repId: { in: repIds }, date: { gte: new Date(from + "T00:00:00Z"), lt: new Date(until + "T00:00:00Z") } } }),
     prisma.repDayOff.findMany({ where: { repId: { in: repIds }, date: { gte: new Date(from + "T00:00:00Z"), lt: new Date(until + "T00:00:00Z") } } }),
     prisma.salesCall.findMany({ where: { repId: { in: repIds }, status: "booked", startsAt: { gte: appointmentInstant(new Date(from + "T00:00:00Z"), "00:00"), lt: appointmentInstant(new Date(until + "T00:00:00Z"), "00:00") } }, select: { repId: true, startsAt: true, durationMin: true } }),
   ]);
@@ -115,12 +117,11 @@ export async function freeCallSlots(opts: { repId?: string; limit?: number; from
   const out: (CallSlot & { load: number })[] = [];
   for (let i = 0; i < days; i++) {
     const dateISO = addDaysISO(from, i);
-    const dow = new Date(dateISO + "T12:00:00Z").getUTCDay();
     const dayDate = new Date(dateISO + "T00:00:00Z");
     for (const rep of reps) {
       if (off.has(`${rep.id}|${dateISO}`)) continue;
-      const dayCalls = calls.filter(c => c.repId === rep.id && c.startsAt.toISOString().slice(0, 10) === dateISO);
-      for (const w of windows.filter(x => x.repId === rep.id && x.dayOfWeek === dow)) {
+      const dayCalls = calls.filter(c => c.repId === rep.id && israelDate(c.startsAt) === dateISO);
+      for (const w of windows.filter(x => x.repId === rep.id && x.date.toISOString().slice(0, 10) === dateISO)) {
         for (let m = toMin(w.startTime); m + s.callMinutes <= toMin(w.endTime); m += step) {
           const startsAt = appointmentInstant(dayDate, toHHMM(m));
           if (startsAt.getTime() < earliest) continue;
@@ -137,6 +138,10 @@ export async function freeCallSlots(opts: { repId?: string; limit?: number; from
   const seen = new Set<number>();
   const unique = out.filter(x => (seen.has(x.startsAt.getTime()) ? false : (seen.add(x.startsAt.getTime()), true)));
   return unique.slice(0, opts.limit ?? 50).map(x => ({ repId: x.repId, repName: x.repName, startsAt: x.startsAt, dateISO: x.dateISO, time: x.time }));
+}
+
+function israelDate(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 }
 
 const DAY_NAMES = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];

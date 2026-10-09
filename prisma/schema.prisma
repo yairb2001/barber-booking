@@ -1034,6 +1034,54 @@ model RepWindow {
 }
 
 /// A specific date a rep closed ("סגור יום ספציפי").
+/// Call availability for one specific date (10.10.2026: the week changes every
+/// week, so the agent books only in what the rep opened for that date; the
+/// weekly RepWindow rows are just the template a week can be filled from).
+model RepDateWindow {
+  id        String   @id @default(uuid())
+  repId     String   @map("rep_id")
+  date      DateTime @db.Date
+  startTime String   @map("start_time") // "HH:MM" Israel time
+  endTime   String   @map("end_time")
+
+  @@index([repId, date])
+  @@map("rep_date_windows")
+}
+
+/// The CRM's notifications feed: every platform alert (new lead, call booked,
+/// WhatsApp down, stuck setup…) also lands here, read/unread.
+model CrmNotification {
+  id         String    @id @default(uuid())
+  kind       String    // lead | call | customer | whatsapp | system
+  title      String
+  body       String?
+  href       String?
+  leadId     String?   @map("lead_id")
+  businessId String?   @map("business_id")
+  repId      String?   @map("rep_id")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  readAt     DateTime? @map("read_at")
+
+  @@index([createdAt])
+  @@map("crm_notifications")
+}
+
+/// A task the rep wrote himself ("להתקשר לדני ביום ג'"); the CRM also derives
+/// tasks from the data (calls today, outcomes to mark, stuck setups).
+model CrmTask {
+  id         String    @id @default(uuid())
+  title      String
+  dueAt      DateTime? @map("due_at")
+  leadId     String?   @map("lead_id")
+  businessId String?   @map("business_id")
+  repId      String?   @map("rep_id")
+  doneAt     DateTime? @map("done_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([doneAt, dueAt])
+  @@map("crm_tasks")
+}
+
 model RepDayOff {
   id    String   @id @default(uuid())
   repId String   @map("rep_id")

@@ -13,19 +13,21 @@ import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { createBusinessFromLead } from "@/lib/leads";
 import { freeCallSlots, getCrmSettings, legacyStatusFor, slotLabel, type Stage } from "@/lib/crm/core";
 import { startAutomation, stopLeadAutomations } from "@/lib/crm/automations";
+import { recordCrmNotification, type NotifyMeta } from "@/lib/crm/notify";
 
 export async function setLeadStage(leadId: string, stage: Stage, extra: { lostReason?: string | null } = {}): Promise<void> {
   await prisma.lead.update({ where: { id: leadId }, data: { stage, status: legacyStatusFor(stage), ...(extra.lostReason !== undefined ? { lostReason: extra.lostReason } : {}) } });
 }
 
 /** Tell the call's rep (Yair: from DOMINANT's line + app push; another rep: from Chator's number). */
-export async function alertRep(repId: string | null, body: string): Promise<void> {
+export async function alertRep(repId: string | null, body: string, meta: NotifyMeta = {}): Promise<void> {
   const rep = repId ? await prisma.salesRep.findUnique({ where: { id: repId } }) : null;
   if (!rep || rep.isOwner) {
-    notifyPlatformOwner(body).catch(() => {});
+    notifyPlatformOwner(body, { ...meta, repId: rep?.id ?? null }).catch(() => {});
     pushToOwner(SUPER_ADMIN_BUSINESS_ID, { title: "Chator CRM", body: body.split("\n")[0], data: { type: "crm" } }).catch(() => {});
     return;
   }
+  await recordCrmNotification(body, { ...meta, repId: rep.id });
   if (rep.phone) await enqueueMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: normalizeIsraeliPhone(rep.phone), kind: "crm_rep_alert", body, scheduledFor: new Date() }).catch(() => {});
 }
 
@@ -48,7 +50,7 @@ export async function bookCall(p: { leadId: string; startsAt: Date; repId?: stri
   await stopLeadAutomations(lead.id, "call_booked");
   await startAutomation("call_booked", { leadId: lead.id, context: { callId: call.id } });
   const label = slotLabel(slot.startsAt);
-  await alertRep(slot.repId, `📞 נקבעה שיחה ${label}\n${lead.name || "ליד"}${lead.businessName ? ` · ${lead.businessName}` : ""} · ${lead.phone}${lead.summary ? `\n${lead.summary}` : ""}`);
+  await alertRep(slot.repId, `📞 נקבעה שיחה ${label}\n${lead.name || "ליד"}${lead.businessName ? ` · ${lead.businessName}` : ""} · ${lead.phone}${lead.summary ? `\n${lead.summary}` : ""}`, { kind: "call", leadId: lead.id });
   return { ok: true, callId: call.id, startsAt: slot.startsAt, repName: slot.repName, label };
 }
 
@@ -59,7 +61,7 @@ export async function cancelCall(callId: string, by: "lead" | "rep"): Promise<bo
   await setLeadStage(call.leadId, "chatting");
   if (by === "lead") {
     const lead = await prisma.lead.findUnique({ where: { id: call.leadId }, select: { name: true, phone: true } });
-    await alertRep(call.repId, `השיחה ${slotLabel(call.startsAt)} עם ${lead?.name || lead?.phone} בוטלה על ידי הליד.`);
+    await alertRep(call.repId, `השיחה ${slotLabel(call.startsAt)} עם ${lead?.name || lead?.phone} בוטלה על ידי הליד.`, { kind: "call", leadId: call.leadId });
   }
   return true;
 }

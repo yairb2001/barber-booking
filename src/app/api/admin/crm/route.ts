@@ -117,16 +117,44 @@ async function home() {
 
   const setup = await computeSetup({ persist: true });
   const stuck = setup.filter(x => !x.isLive && x.current && x.stuckHours >= 48);
-  const todo = [
-    ...stuck.map(x => { const c = cust.find(y => y.id === x.businessId); return { tone: "warn" as const, tag: `הקמה תקועה ${Math.floor(x.stuckHours / 24)} ימים`, title: c?.name ?? "עסק", detail: `עצר ב: ${x.current!.label}`, href: `/admin/crm/customers/${x.businessId}`, kind: "customer" as const }; }),
-    ...cust.filter(c => c.health !== "ok" && c.stage !== "suspended").flatMap(c => c.issues.slice(0, 1).map(i => ({ tone: i.tone, tag: i.text, title: c.name, detail: c.ownerPhone ? `בעלים: ${c.ownerPhone}` : "", href: `/admin/crm/customers/${c.id}`, kind: "customer" as const }))),
-    ...staleLeads.map(l => ({ tone: "info" as const, tag: "ליד בלי מענה", title: l.name || l.phone, detail: `נכנס ${slotLabel(l.createdAt).replace(/ ב-.*/, "")}`, href: `/admin/crm/leads/${l.id}`, kind: "lead" as const })),
-  ].slice(0, 8);
+
+  // ── Tasks (10.10.2026: "משימות בנפרד"): what Yair has to DO, derived from the
+  // data, plus the ones he wrote himself. Each one links to where it is done.
+  const now = new Date();
+  const [pastCalls, followUps, manual, autosOn, nextFree] = await Promise.all([
+    owner ? prisma.salesCall.findMany({ where: { repId: owner.id, status: "booked", startsAt: { lt: new Date(now.getTime() - 15 * 60_000), gte: new Date(now.getTime() - 14 * 86400_000) } }, orderBy: { startsAt: "asc" } }) : [],
+    prisma.lead.findMany({ where: { followUpAt: { lt: dayEnd }, optedOut: false, stage: { notIn: ["paying", "not_relevant"] } }, select: { id: true, name: true, phone: true, businessName: true, followUpAt: true }, orderBy: { followUpAt: "asc" }, take: 10 }),
+    prisma.crmTask.findMany({ where: { OR: [{ doneAt: null }, { doneAt: { gte: dayStart } }] }, orderBy: [{ dueAt: "asc" }, { createdAt: "asc" }], take: 50 }),
+    prisma.crmAutomation.count({ where: { enabled: true } }),
+    owner ? freeCallSlots({ repId: owner.id, limit: 1 }) : [],
+  ]);
+  const taskLeads = await prisma.lead.findMany({ where: { id: { in: [...pastCalls.map(c => c.leadId), ...manual.map(t => t.leadId).filter((x): x is string => !!x)] } }, select: { id: true, name: true, phone: true, businessName: true } });
+  const leadName = (id: string | null) => { const l = taskLeads.find(x => x.id === id); return l ? (l.name || l.phone) : null; };
+  type Task = { id: string; kind: "call" | "outcome" | "followup" | "lead" | "setup" | "customer" | "calendar" | "automations" | "manual"; title: string; detail: string; href: string | null; time?: string | null; due?: string | null; overdue?: boolean; done?: boolean };
+  const tasks: Task[] = [
+    ...callsToday.filter(c => c.startsAt.getTime() > now.getTime() - 15 * 60_000).map(c => { const l = callLeads.find(x => x.id === c.leadId); return { id: `call-${c.id}`, kind: "call" as const, title: `להתקשר ל${l?.name || l?.phone || "ליד"}`, detail: [l?.businessName, l?.phone].filter(Boolean).join(" · "), href: `/admin/crm/leads/${c.leadId}`, time: slotLabel(c.startsAt).replace("היום ב-", "") }; }),
+    ...pastCalls.map(c => ({ id: `outcome-${c.id}`, kind: "outcome" as const, title: `לסמן מה יצא מהשיחה עם ${leadName(c.leadId) || "הליד"}`, detail: `השיחה הייתה ${slotLabel(c.startsAt)}`, href: `/admin/crm/leads/${c.leadId}`, overdue: true })),
+    ...followUps.map(l => ({ id: `follow-${l.id}`, kind: "followup" as const, title: `לחזור ל${l.name || l.phone}`, detail: [l.businessName, `נקבע ל${slotLabel(l.followUpAt!)}`].filter(Boolean).join(" · "), href: `/admin/crm/leads/${l.id}`, overdue: l.followUpAt! < dayStart })),
+    ...staleLeads.map(l => ({ id: `stale-${l.id}`, kind: "lead" as const, title: `ליד בלי מענה יום: ${l.name || l.phone}`, detail: `נכנס ${slotLabel(l.createdAt).replace(/ ב-.*/, "")}`, href: `/admin/crm/leads/${l.id}` })),
+    ...stuck.map(x => { const c = cust.find(y => y.id === x.businessId); return { id: `stuck-${x.businessId}`, kind: "setup" as const, title: `לעזור ל${c?.name ?? "עסק"} בהקמה`, detail: `תקוע ${Math.floor(x.stuckHours / 24)} ימים ב: ${x.current!.label}${c?.ownerPhone ? ` · ${c.ownerPhone}` : ""}`, href: `/admin/crm/customers/${x.businessId}` }; }),
+    ...cust.filter(c => c.health === "bad" && c.stage !== "suspended").map(c => ({ id: `health-${c.id}`, kind: "customer" as const, title: `${c.name}: ${c.issues[0]?.text ?? "דורש טיפול"}`, detail: c.ownerPhone ? `בעלים: ${c.ownerPhone}` : "", href: `/admin/crm/customers/${c.id}` })),
+    ...(owner && nextFree.length === 0 ? [{ id: "calendar-empty", kind: "calendar" as const, title: "לפתוח ימים לשיחות בשבוע הקרוב", detail: "אין לך אף זמן פתוח, אז הסוכן לא יכול לקבוע שיחות", href: "/admin/crm/calendar" }] : []),
+    ...(autosOn === 0 ? [{ id: "automations-off", kind: "automations" as const, title: "לעבור על נוסחי האוטומציות ולהדליק", detail: "כולן כבויות, אז לידים חדשים לא מקבלים הודעה אוטומטית", href: "/admin/crm/automations" }] : []),
+    ...manual.map(t => ({ id: t.id, kind: "manual" as const, title: t.title, detail: [leadName(t.leadId), t.businessId ? cust.find(c => c.id === t.businessId)?.name : null].filter(Boolean).join(" · "), href: t.leadId ? `/admin/crm/leads/${t.leadId}` : t.businessId ? `/admin/crm/customers/${t.businessId}` : null, due: t.dueAt ? t.dueAt.toISOString() : null, overdue: !t.doneAt && !!t.dueAt && t.dueAt < dayStart, done: !!t.doneAt })),
+  ];
+
+  // ── Notifications (separate from tasks): what happened, read/unread.
+  const [notifications, unread] = await Promise.all([
+    prisma.crmNotification.findMany({ orderBy: { createdAt: "desc" }, take: 40 }),
+    prisma.crmNotification.count({ where: { readAt: null } }),
+  ]);
 
   return {
     testKey: hasTestKey(),
+    tasks,
+    notifications: notifications.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, href: n.href, at: n.createdAt, read: !!n.readAt })),
+    unread,
     kpis: { mrr, paying: paying.length, newPayingThisMonth, trials: cust.filter(c => c.stage === "trial").length, trialsEndingWeek: cust.filter(c => c.trialDaysLeft != null && c.trialDaysLeft <= 7 && c.trialDaysLeft >= 0).length, leadsWeek, leadsWeekBySource: leadsWeekBySource.map(x => ({ source: x.source, n: x._count._all })), churnedThisMonth, churnPct: paying.length + churnedThisMonth > 0 ? Math.round((churnedThisMonth / (paying.length + churnedThisMonth)) * 1000) / 10 : 0 },
-    todo,
     funnel: [
       { label: "לידים", n: leadsMonth },
       { label: "שיחה נקבעה", n: callsMonth.length },
@@ -204,8 +232,11 @@ async function calendarView(weekISO: string | null) {
   const dow = new Date(base + "T12:00:00Z").getUTCDay();
   const sunday = addDaysISO(base, -dow);
   const reps = await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] });
-  const [windows, offs, calls] = await Promise.all([
+  const prevSunday = addDaysISO(sunday, -7);
+  const [windows, dated, offs, calls] = await Promise.all([
     prisma.repWindow.findMany({ orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] }),
+    // This week's opened days + last week's (for "כמו שבוע שעבר").
+    prisma.repDateWindow.findMany({ where: { date: { gte: new Date(prevSunday + "T00:00:00Z"), lt: new Date(addDaysISO(sunday, 7) + "T00:00:00Z") } }, orderBy: [{ date: "asc" }, { startTime: "asc" }] }),
     prisma.repDayOff.findMany({ where: { date: { gte: new Date(sunday + "T00:00:00Z"), lt: new Date(addDaysISO(sunday, 7) + "T00:00:00Z") } } }),
     prisma.salesCall.findMany({ where: { status: { in: ["booked", "done"] }, startsAt: { gte: appointmentInstant(new Date(sunday + "T00:00:00Z"), "00:00"), lt: appointmentInstant(new Date(addDaysISO(sunday, 7) + "T00:00:00Z"), "00:00") } }, orderBy: { startsAt: "asc" } }),
   ]);
@@ -215,7 +246,16 @@ async function calendarView(weekISO: string | null) {
   return {
     settings: s, today, sunday,
     days: Array.from({ length: 7 }, (_, i) => addDaysISO(sunday, i)),
-    reps: reps.map(r => ({ ...r, windows: windows.filter(w => w.repId === r.id), daysOff: offs.filter(o => o.repId === r.id).map(o => o.date.toISOString().slice(0, 10)) })),
+    reps: reps.map(r => {
+      const mine = dated.filter(w => w.repId === r.id).map(w => ({ date: w.date.toISOString().slice(0, 10), startTime: w.startTime, endTime: w.endTime }));
+      return {
+        ...r,
+        week: mine.filter(w => w.date >= sunday),
+        lastWeek: mine.filter(w => w.date < sunday),
+        template: windows.filter(w => w.repId === r.id).map(w => ({ dayOfWeek: w.dayOfWeek, startTime: w.startTime, endTime: w.endTime })),
+        daysOff: offs.filter(o => o.repId === r.id).map(o => o.date.toISOString().slice(0, 10)),
+      };
+    }),
     calls: calls.map(c => { const l = leads.find(x => x.id === c.leadId); return { id: c.id, repId: c.repId, leadId: c.leadId, status: c.status, outcome: c.outcome, date: dateOf(c.startsAt), time: fmt(c.startsAt), name: l?.name || l?.phone || "ליד", shop: l?.businessName || "" }; }),
   };
 }
@@ -375,6 +415,52 @@ export async function POST(req: NextRequest) {
         const valid = rows.filter(w => Number.isInteger(w.dayOfWeek) && w.dayOfWeek >= 0 && w.dayOfWeek <= 6 && /^\d{2}:\d{2}$/.test(w.startTime) && /^\d{2}:\d{2}$/.test(w.endTime) && w.startTime < w.endTime);
         await prisma.repWindow.deleteMany({ where: { repId } });
         if (valid.length) await prisma.repWindow.createMany({ data: valid.map(w => ({ repId, dayOfWeek: w.dayOfWeek, startTime: w.startTime, endTime: w.endTime })) });
+        return NextResponse.json({ ok: true });
+      }
+      case "notif.read": {
+        await prisma.crmNotification.updateMany({ where: { id: str("id"), readAt: null }, data: { readAt: new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      case "notif.readAll": {
+        await prisma.crmNotification.updateMany({ where: { readAt: null }, data: { readAt: new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      case "task.create": {
+        const title = str("title");
+        if (!title) return NextResponse.json({ error: "כתוב מה צריך לעשות" }, { status: 400 });
+        const due = str("due");
+        const dueAt = /^\d{4}-\d{2}-\d{2}$/.test(due) ? appointmentInstant(new Date(due + "T00:00:00Z"), /^\d{2}:\d{2}$/.test(str("time")) ? str("time") : "09:00") : null;
+        const t = await prisma.crmTask.create({ data: { title: title.slice(0, 300), dueAt, leadId: str("leadId") || null, businessId: str("businessId") || null } });
+        return NextResponse.json({ ok: true, id: t.id });
+      }
+      case "task.toggle": {
+        await prisma.crmTask.update({ where: { id: str("id") }, data: { doneAt: b.done === false ? null : new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      case "task.delete": {
+        await prisma.crmTask.delete({ where: { id: str("id") } }).catch(() => {});
+        return NextResponse.json({ ok: true });
+      }
+      case "rep.week": {
+        // The days and hours of ONE week; the agent books only inside them.
+        const repId = str("repId"), sunday = str("sunday");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(sunday)) return NextResponse.json({ error: "bad_week" }, { status: 400 });
+        const end = addDaysISO(sunday, 7);
+        const rows = Array.isArray(b.windows) ? (b.windows as { date: string; startTime: string; endTime: string }[]) : [];
+        const valid = rows.filter(w => typeof w.date === "string" && w.date >= sunday && w.date < end && /^\d{2}:\d{2}$/.test(w.startTime) && /^\d{2}:\d{2}$/.test(w.endTime) && w.startTime < w.endTime);
+        await prisma.repDateWindow.deleteMany({ where: { repId, date: { gte: new Date(sunday + "T00:00:00Z"), lt: new Date(end + "T00:00:00Z") } } });
+        if (valid.length) await prisma.repDateWindow.createMany({ data: valid.map(w => ({ repId, date: new Date(w.date + "T00:00:00Z"), startTime: w.startTime, endTime: w.endTime })) });
+        // "זה השבוע הרגיל שלי" → also the template the next weeks can start from.
+        if (b.asTemplate === true) {
+          await prisma.repWindow.deleteMany({ where: { repId } });
+          if (valid.length) await prisma.repWindow.createMany({ data: valid.map(w => ({ repId, dayOfWeek: new Date(w.date + "T12:00:00Z").getUTCDay(), startTime: w.startTime, endTime: w.endTime })) });
+        }
+        return NextResponse.json({ ok: true });
+      }
+      case "rep.closeDay": {
+        const repId = str("repId"), date = str("date");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: "bad_date" }, { status: 400 });
+        await prisma.repDateWindow.deleteMany({ where: { repId, date: new Date(date + "T00:00:00Z") } });
         return NextResponse.json({ ok: true });
       }
       case "rep.dayOff": {

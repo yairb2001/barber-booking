@@ -105,7 +105,7 @@ async function alertOnce(businessId: string, kind: "token_alert_80" | "token_ale
     await prisma.messageLog.create({ data: { businessId, customerPhone: "-", kind, body, status: "skipped", error: "no owner phone" } }).catch(() => {});
   }
   pushToOwner(businessId, { title: kind === "token_alert_80" ? "⚠️ 80% מחבילת הסוכן נוצלו" : "⛔ חבילת הסוכן נגמרה לחודש", body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
-  notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת טוקנים — ${owner.name} (${month})`).catch(() => {});
+  notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת טוקנים — ${owner.name} (${month})`, { kind: "customer", businessId }).catch(() => {});
   return true;
 }
 

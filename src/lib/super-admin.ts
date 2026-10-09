@@ -3,6 +3,7 @@ import { getRequestSession } from "@/lib/session";
 import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { verifySession } from "@/lib/auth";
+import { recordCrmNotification, type NotifyMeta } from "@/lib/crm/notify";
 
 /**
  * The platform owner's own business id. The super-admin dashboard (/admin/super)
@@ -35,7 +36,9 @@ export async function isPlatformStaff(req: NextRequest): Promise<boolean> {
  * business's own (connected) WhatsApp line. Never throws — alerts must not break
  * the flow that triggered them (a signup or a lead capture).
  */
-export async function notifyPlatformOwner(body: string): Promise<void> {
+export async function notifyPlatformOwner(body: string, meta?: NotifyMeta): Promise<void> {
+  // Also into the CRM's notifications feed (kind + link when the caller knows them).
+  await recordCrmNotification(body, meta);
   try {
     await sendMessage({
       businessId: SUPER_ADMIN_BUSINESS_ID,

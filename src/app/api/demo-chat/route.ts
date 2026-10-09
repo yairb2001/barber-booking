@@ -133,6 +133,7 @@ export async function POST(req: NextRequest) {
       });
       notifyPlatformOwner(
         `🎯 ליד חדש מדמו האתר!\nשם: ${leadName}\n(שיחת דמו: ${phone})`,
+        { kind: "lead", href: "/admin/crm/leads" },
       ).catch(() => {});
       return NextResponse.json({ bubbles: [thankYou], leadCaptured: true });
     }

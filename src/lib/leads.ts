@@ -73,6 +73,6 @@ export async function createBusinessFromLead(leadId: string): Promise<{ business
   } catch (e) {
     console.error("[leads] onboarding link send failed", e);
   }
-  notifyPlatformOwner(`🏪 ${created ? "עסק נוצר מליד" : "קישור הקמה נשלח שוב"}: ${lead.businessName || lead.name || lead.phone}\nקישור: ${link}\n${sent ? "נשלח לבעל העסק בוואטסאפ מהמספר של הדמו." : "השליחה נכשלה — שלח לו את הקישור ידנית."}`).catch(() => {});
+  notifyPlatformOwner(`🏪 ${created ? "עסק נוצר מליד" : "קישור הקמה נשלח שוב"}: ${lead.businessName || lead.name || lead.phone}\nקישור: ${link}\n${sent ? "נשלח לבעל העסק בוואטסאפ מהמספר של הדמו." : "השליחה נכשלה — שלח לו את הקישור ידנית."}`, { kind: "customer", businessId }).catch(() => {});
   return { businessId, slug, link, sent, created };
 }

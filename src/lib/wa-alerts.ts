@@ -64,7 +64,7 @@ export async function alertWhatsAppDown(businessId: string): Promise<void> {
     const body = `🔴 הוואטסאפ של ${biz.name} התנתק מהמערכת. הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.\nלחיבור מחדש: במערכת → הגדרות → וואטסאפ → "חבר את הטלפון" (סריקה אחת, פחות מדקה).`;
     const status = await tellOwner(biz, "wa_down_alert", "🔴 הוואטסאפ של העסק התנתק", body);
     await ledger(businessId, "wa_down_alert", body, status);
-    notifyPlatformOwner(`🔴 וואטסאפ התנתק — ${biz.name} (${biz.slug}) · ${biz.whatsappNumber || biz.phone || "ללא מספר"}`).catch(() => {});
+    notifyPlatformOwner(`🔴 וואטסאפ התנתק — ${biz.name} (${biz.slug}) · ${biz.whatsappNumber || biz.phone || "ללא מספר"}`, { kind: "whatsapp", businessId }).catch(() => {});
   } catch (e) { console.error("[wa-alerts] down", e); }
 }
 
@@ -78,7 +78,7 @@ export async function alertWhatsAppRecovered(businessId: string, downSince: Date
     const body = `✅ הוואטסאפ של ${biz.name} חזר להתחבר${since}. הסוכן והתזכורות פועלים שוב.`;
     const status = await tellOwner(biz, "wa_up_alert", "✅ הוואטסאפ של העסק חזר", body);
     await ledger(businessId, "wa_up_alert", body, status);
-    notifyPlatformOwner(`✅ וואטסאפ חזר — ${biz.name} (${biz.slug})${since}`).catch(() => {});
+    notifyPlatformOwner(`✅ וואטסאפ חזר — ${biz.name} (${biz.slug})${since}`, { kind: "whatsapp", businessId }).catch(() => {});
   } catch (e) { console.error("[wa-alerts] recovered", e); }
 }
 
@@ -90,6 +90,6 @@ export async function alertLinkingStuck(businessId: string): Promise<void> {
     if (!biz) return;
     const body = `⚠️ ${biz.name} (${biz.slug}) מנסה לחבר וואטסאפ כבר כמה דקות ולא מצליח · ${biz.whatsappNumber || biz.phone || "ללא מספר"}. שווה להתקשר לפני שהוא מוותר.`;
     await ledger(businessId, "wa_link_stuck", body, "sent");
-    notifyPlatformOwner(body).catch(() => {});
+    notifyPlatformOwner(body, { kind: "whatsapp", businessId }).catch(() => {});
   } catch (e) { console.error("[wa-alerts] stuck", e); }
 }
