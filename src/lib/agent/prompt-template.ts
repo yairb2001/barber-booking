@@ -105,7 +105,7 @@ export function compactAgentBody(p: TemplateParams): string {
     : "";
 
   const personal = str(a.platformNotes).split(/\n+/).map(x => x.trim().replace(/^[-•]\s*/, "")).filter(Boolean).slice(0, 12).map(x => `- ${x.slice(0, 300)}`);
-  const personalBlock = personal.length ? `\n\nדברים ייחודיים ל${p.businessName} (כשיש סתירה, הם גוברים על הכללים הכלליים)\n${personal.join("\n")}` : "";
+  const personalBlock = personal.length ? `\n\nדברים ייחודיים לעסק הזה (כשיש סתירה, הם גוברים על הכללים הכלליים)\n${personal.join("\n")}` : "";
 
   const site = p.bookingLink
     ? `\n- שואל איך קובעים או מעדיף את האתר → ${p.bookingLink}. מותר להציע לסגור בצ'אט, כבד את ההעדפה שלו.`
