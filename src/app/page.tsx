@@ -744,7 +744,7 @@ export default function HomePage() {
         </div>
 
         {/* ── Center content ── */}
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-4 pb-4">
+        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-10 pb-4">
           {/* Greeting and "my appointments" as two small pills above the logo, so
               the hero stays clean (owner, 7.10.2026). "התורים שלי" is always there —
               a returning customer logs in once and the session cookie comes back. */}
@@ -775,10 +775,21 @@ export default function HomePage() {
           )}
 
 
-          <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"
-            style={{ fontSize: "clamp(2rem,10vw,4.5rem)", textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
-            {business?.name || "DOMINANT"}
-          </h1>
+          {(() => {
+            // The small "barbershop" line already sits under the title, so a name
+            // like "DOMINANT Barbershop" (renamed 9.10.2026) would say it twice and
+            // wrap to two huge lines. Show the brand part only, and size long
+            // names down so the title always stays on one line.
+            const full = business?.name || "DOMINANT";
+            const title = full.replace(/\s*(barber\s*shop|ברברשופ)\s*$/i, "").trim() || full;
+            const size = title.length <= 9 ? "clamp(2rem,10vw,4.5rem)" : `clamp(1.4rem,${Math.max(5, 88 / title.length).toFixed(1)}vw,3.6rem)`;
+            return (
+              <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest whitespace-nowrap"
+                style={{ fontSize: size, textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
+                {title}
+              </h1>
+            );
+          })()}
           <p className="text-white/40 tracking-[0.5em] text-[10px] mb-8 uppercase">barbershop</p>
 
           <Link href={publicHref(slug, "/book")}
