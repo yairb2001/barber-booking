@@ -29,6 +29,16 @@ export default function CalendarPage() {
   useEffect(() => { setEdit(rep ? rep.windows.map(w => ({ ...w })) : null); }, [rep]);
 
   const step = (data?.settings.callMinutes ?? 10) + (data?.settings.breakMinutes ?? 5);
+  // Several windows a day are fine (a bit of morning, a bit of evening) — they just may not overlap.
+  const windowsError = useMemo(() => {
+    if (!edit) return null;
+    for (const w of edit) if (toMin(w.endTime) <= toMin(w.startTime)) return `ב${DAYS[w.dayOfWeek]}: שעת הסיום ${w.endTime} לפני שעת ההתחלה ${w.startTime}.`;
+    for (let d = 0; d < 7; d++) {
+      const day = edit.filter(w => w.dayOfWeek === d).sort((a, b) => a.startTime.localeCompare(b.startTime));
+      for (let i = 1; i < day.length; i++) if (toMin(day[i].startTime) < toMin(day[i - 1].endTime)) return `ב${DAYS[d]} יש שני חלונות חופפים (${day[i - 1].startTime}–${day[i - 1].endTime} ו-${day[i].startTime}–${day[i].endTime}).`;
+    }
+    return null;
+  }, [edit]);
   const grid = useMemo(() => {
     if (!data || !rep) return { times: [] as string[], days: [] as string[] };
     const days = data.days.filter(d => rep.windows.some(w => w.dayOfWeek === new Date(d + "T12:00:00Z").getUTCDay()) || data.calls.some(c => c.repId === rep.id && c.date === d));
@@ -121,23 +131,41 @@ export default function CalendarPage() {
             <Card title={`החלונות של ${rep.name}`}>
               <div className="flex flex-col gap-2">
                 {DAYS.map((name, dow) => {
-                  const w = edit.find(x => x.dayOfWeek === dow);
+                  const ws = edit.map((w, idx) => ({ w, idx })).filter(x => x.w.dayOfWeek === dow).sort((a, b) => a.w.startTime.localeCompare(b.w.startTime));
+                  const setW = (idx: number, patch: Partial<Win>) => setEdit(ed => (ed ?? []).map((x, j) => (j === idx ? { ...x, ...patch } : x)));
+                  // A second window starts an hour after the day's last one ends (morning 09:00–10:00 → evening default 18:00–19:00).
+                  const nextWindow = (): Win => {
+                    const last = ws[ws.length - 1]?.w;
+                    if (!last) return { id: `n${dow}-${Date.now()}`, dayOfWeek: dow, startTime: "12:00", endTime: "13:00" };
+                    const s0 = Math.max(toMin(last.endTime) + 60, toMin(last.endTime) < 14 * 60 ? 18 * 60 : 0);
+                    const s1 = Math.min(s0, 22 * 60);
+                    return { id: `n${dow}-${Date.now()}`, dayOfWeek: dow, startTime: toHHMM(s1), endTime: toHHMM(Math.min(s1 + 60, 23 * 60 + 55)) };
+                  };
                   return (
-                    <div key={dow} className="flex items-center justify-between gap-2 pb-2" style={{ borderBottom: `1px solid ${C.soft}` }}>
-                      <label className="flex items-center gap-2 text-sm font-semibold min-h-[40px]">
-                        <input type="checkbox" checked={!!w} onChange={e => setEdit(ed => e.target.checked ? [...(ed ?? []), { id: `n${dow}`, dayOfWeek: dow, startTime: "12:00", endTime: "13:00" }] : (ed ?? []).filter(x => x.dayOfWeek !== dow))} className="w-[18px] h-[18px]" style={{ accentColor: C.petrol }} />{name}
-                      </label>
-                      {w ? (
-                        <span className="flex items-center gap-1 text-sm" dir="ltr">
-                          <input type="time" step={300} value={w.startTime} onChange={e => setEdit(ed => (ed ?? []).map(x => x.dayOfWeek === dow ? { ...x, startTime: e.target.value } : x))} className="h-9 rounded-lg px-1" style={{ border: "1px solid #C7D8D5" }} aria-label={`${name} משעה`} />
-                          –
-                          <input type="time" step={300} value={w.endTime} onChange={e => setEdit(ed => (ed ?? []).map(x => x.dayOfWeek === dow ? { ...x, endTime: e.target.value } : x))} className="h-9 rounded-lg px-1" style={{ border: "1px solid #C7D8D5" }} aria-label={`${name} עד שעה`} />
-                        </span>
-                      ) : <span className="text-sm" style={{ color: "#8A9C9D" }}>סגור</span>}
+                    <div key={dow} className="flex flex-col gap-1.5 pb-2" style={{ borderBottom: `1px solid ${C.soft}` }}>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="flex items-center gap-2 text-sm font-semibold min-h-[40px]">
+                          <input type="checkbox" checked={ws.length > 0} onChange={e => setEdit(ed => e.target.checked ? [...(ed ?? []), nextWindow()] : (ed ?? []).filter(x => x.dayOfWeek !== dow))} className="w-[18px] h-[18px]" style={{ accentColor: C.petrol }} />{name}
+                        </label>
+                        {ws.length === 0
+                          ? <span className="text-sm" style={{ color: "#8A9C9D" }}>סגור</span>
+                          : <button type="button" onClick={() => setEdit(ed => [...(ed ?? []), nextWindow()])} className="text-[13px] font-semibold min-h-[36px] px-2" style={{ color: C.petrol }}>+ עוד חלון</button>}
+                      </div>
+                      {ws.map(({ w, idx }) => (
+                        <div key={w.id} className="flex flex-wrap items-center gap-1.5 text-sm ps-1 sm:ps-7">
+                          <span className="flex items-center gap-1" dir="ltr">
+                            <input type="time" step={300} value={w.startTime} onChange={e => setW(idx, { startTime: e.target.value })} className="h-9 rounded-lg px-1" style={{ border: "1px solid #C7D8D5" }} aria-label={`${name} משעה`} />
+                            –
+                            <input type="time" step={300} value={w.endTime} onChange={e => setW(idx, { endTime: e.target.value })} className="h-9 rounded-lg px-1" style={{ border: "1px solid #C7D8D5" }} aria-label={`${name} עד שעה`} />
+                          </span>
+                          <button type="button" onClick={() => setEdit(ed => (ed ?? []).filter((_, j) => j !== idx))} aria-label={`הסר חלון ${w.startTime}–${w.endTime} ב${name}`} className="w-9 h-9 rounded-lg text-base" style={{ color: "#B42318" }}>×</button>
+                        </div>
+                      ))}
                     </div>
                   );
                 })}
-                <Btn kind="dark" disabled={busy} onClick={() => act({ action: "rep.windows", repId: rep.id, windows: edit.map(w => ({ dayOfWeek: w.dayOfWeek, startTime: w.startTime, endTime: w.endTime })) }, "החלונות נשמרו")}>שמור חלונות</Btn>
+                {windowsError && <p className="m-0 text-[13px]" style={{ color: "#B42318" }}>{windowsError}</p>}
+                <Btn kind="dark" disabled={busy || !!windowsError} onClick={() => act({ action: "rep.windows", repId: rep.id, windows: edit.map(w => ({ dayOfWeek: w.dayOfWeek, startTime: w.startTime, endTime: w.endTime })) }, "החלונות נשמרו")}>שמור חלונות</Btn>
                 {!rep.isOwner && <Btn kind={rep.active ? "danger" : "outline"} disabled={busy} onClick={() => act({ action: "rep.update", id: rep.id, active: !rep.active }, rep.active ? "הנציג הושבת" : "הנציג הופעל")}>{rep.active ? "השבת נציג" : "הפעל נציג"}</Btn>}
               </div>
             </Card>
