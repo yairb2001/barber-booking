@@ -4,6 +4,10 @@
  *   npx tsx --env-file=.env scripts/promote-prompt-candidate.ts promote   # backup live prompt → write candidate → agentPromptV2=true
  *   npx tsx --env-file=.env scripts/promote-prompt-candidate.ts rollback <backup.json>   # restore prompt + agentPromptV2=false
  *   npx tsx --env-file=.env scripts/promote-prompt-candidate.ts status
+ *   npx tsx --env-file=.env scripts/promote-prompt-candidate.ts to-template <answers.json>
+ *        # backup → setup answers (author "crm") → systemPrompt = null: the shop runs on the
+ *        # shared template with its answers in their sections (spec 10.10.2026). Rollback with
+ *        # the printed backup restores the prompt AND the answers as they were.
  *
  * Only the DB side lives here (AgentConfig.systemPrompt + Business.settings).
  * The trimmed tool descriptions are code: promotion also means the commit that
@@ -66,7 +70,7 @@ async function main() {
     const prev = backup.settings ? JSON.parse(backup.settings) : {};
     const restoredSettings = { ...settings, agentPromptV2: prev.agentPromptV2 === true, agentPromptV3: prev.agentPromptV3 === true, agentPromptV4: prev.agentPromptV4 === true };
     await prisma.$transaction([
-      prisma.agentConfig.update({ where: { id: cfg.id }, data: { systemPrompt: backup.systemPrompt } }),
+      prisma.agentConfig.update({ where: { id: cfg.id }, data: { systemPrompt: backup.systemPrompt, ...("setupConfig" in backup ? { setupConfig: backup.setupConfig } : {}) } }),
       prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify(restoredSettings) } }),
     ]);
     const after = await prisma.agentConfig.findUnique({ where: { id: cfg.id }, select: { systemPrompt: true } });
@@ -74,6 +78,23 @@ async function main() {
     console.log(`rolled back to ${backup.takenAt} (${backup.systemPrompt?.length} chars), agentPromptV2=false`);
     return;
   }
-  throw new Error("usage: promote | promote-v3 | promote-v4 | rollback <file> | status");
+  if (cmd === "to-template") {
+    if (!arg) throw new Error("to-template needs the answers file (JSON object)");
+    const answers = JSON.parse(fs.readFileSync(arg, "utf8")) as Record<string, string | boolean>;
+    if (!cfg.systemPrompt?.trim()) throw new Error("already on the template (no custom prompt)");
+    const dir = path.join(process.cwd(), "prompt-backups");
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `dominant-prompt-pre-template-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    const backup = { businessId: biz.id, agentConfigId: cfg.id, systemPrompt: cfg.systemPrompt, setupConfig: cfg.setupConfig, settings: biz.settings, sha256: sha(cfg.systemPrompt ?? ""), takenAt: new Date().toISOString() };
+    fs.writeFileSync(file, JSON.stringify(backup, null, 1));
+    const { saveSetupAnswers } = await import("../src/lib/agent/setup-save");
+    await saveSetupAnswers(biz.id, answers, "crm");
+    await prisma.agentConfig.update({ where: { id: cfg.id }, data: { systemPrompt: null } });
+    const after = await prisma.agentConfig.findUnique({ where: { id: cfg.id }, select: { systemPrompt: true, setupConfig: true } });
+    if (after?.systemPrompt) throw new Error("verification failed — custom prompt still set");
+    console.log(`on the template. backup: ${file} (${backup.systemPrompt?.length} chars) · answers now: ${after?.setupConfig}`);
+    return;
+  }
+  throw new Error("usage: promote | promote-v3 | promote-v4 | to-template <answers.json> | rollback <file> | status");
 }
 main().catch(e => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
