@@ -374,9 +374,9 @@ export default function HomePage() {
     } catch { /* private mode */ }
   }, []);
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const root = rootRef.current;
     if (!root) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     // Nudge — LIVE for everyone since 9.10.2026 (the owner: "just the jump");
     // the rest of the motion below stays behind ?fx=1.
     // Nudge once, only if the visitor hasn't scrolled yet. (A touch alone used
@@ -389,12 +389,24 @@ export default function HomePage() {
       // Lift far enough that the gallery's title and the top of its photos show.
       // innerHeight can read 0 while a mobile browser settles → fall back.
       const vh = window.innerHeight || document.documentElement.clientHeight || 760;
-      root.style.setProperty("--nudge", `-${Math.round(Math.min(vh * 0.34, 290))}px`);
+      const lift = -Math.round(Math.min(vh * 0.34, 290));
       const first = root.querySelector(":scope > section ~ section");
       first?.classList.add("fx-in");
       first?.querySelectorAll(".fx-reveal").forEach(el => el.classList.add("fx-in"));
-      root.classList.add("fx-nudge");
-      setTimeout(() => root.classList.remove("fx-nudge"), 2500);
+      // Web Animations with literal px: a CSS var inside @keyframes never moved
+      // on the owner's iPhone. Runs even under "reduce motion" — it's a single
+      // short lift the owner asked for (it IS the cue that the page continues).
+      const y = `translateY(${lift}px)`;
+      if (typeof root.animate === "function") {
+        root.animate(
+          [{ transform: "translateY(0)" }, { transform: y, offset: 0.3 }, { transform: y, offset: 0.68 }, { transform: "translateY(0)" }],
+          { duration: 2400, easing: "cubic-bezier(.45,0,.2,1)" },
+        );
+      } else {
+        root.style.setProperty("--nudge", `${lift}px`);
+        root.classList.add("fx-nudge");
+        setTimeout(() => root.classList.remove("fx-nudge"), 2500);
+      }
     }, 2500);
     // Parallax (preview only): one CSS var, updated once per frame.
     let raf = 0;
@@ -402,7 +414,7 @@ export default function HomePage() {
       if (raf) return;
       raf = requestAnimationFrame(() => { raf = 0; root.style.setProperty("--sy", String(Math.min(window.scrollY, 1200))); });
     };
-    if (fx) window.addEventListener("scroll", onScroll, { passive: true });
+    if (fx && !reduced) window.addEventListener("scroll", onScroll, { passive: true });
     return () => { clearTimeout(t); window.removeEventListener("scroll", onScroll); window.removeEventListener("scroll", mark); if (raf) cancelAnimationFrame(raf); };
   }, [fx]);
 
@@ -733,10 +745,10 @@ export default function HomePage() {
 
         {/* ── Center content ── */}
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 pt-4 pb-4">
-          {fx && (
-            // Preview: greeting and "my appointments" as two small pills above
-            // the logo, so the hero stays clean (owner, 7.10.2026).
-            <div className="mb-4 flex items-center justify-center gap-2">
+          {/* Greeting and "my appointments" as two small pills above the logo, so
+              the hero stays clean (owner, 7.10.2026). "התורים שלי" is always there —
+              a returning customer logs in once and the session cookie comes back. */}
+          <div className="mb-4 flex items-center justify-center gap-2">
             {welcomeName && (
               <span className="inline-flex items-center px-3 py-1 rounded-full text-white/85 text-[11px] font-medium"
                 style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(10px)", border: "1px solid rgba(255,255,255,0.16)" }}>
@@ -751,8 +763,7 @@ export default function HomePage() {
               </svg>
               <span className="text-white/85 text-[11px] font-semibold">התורים שלי</span>
             </Link>
-            </div>
-          )}
+          </div>
           {business?.logoUrl && (
             <div className="mb-5 rounded-full overflow-hidden border-2 border-white/20"
               style={{
@@ -763,27 +774,6 @@ export default function HomePage() {
             </div>
           )}
 
-          {!fx && <div className="mb-3 flex flex-col items-center gap-2">
-            {welcomeName && (
-              <div className="px-5 py-2 rounded-full"
-                style={{ background: "rgba(255,255,255,0.12)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-                <p className="text-white text-[14px] font-semibold tracking-wide">
-                  👋 ברוך הבא, {welcomeName}!
-                </p>
-              </div>
-            )}
-            {/* Always available — even without a saved session. Tapping it lets a
-                returning customer log in once; the session cookie then comes back
-                so their next booking skips phone re-verification. */}
-            <Link href={publicHref(slug, "/book/my-appointments")}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full active:scale-95 transition-transform"
-              style={{ background: "rgba(255,255,255,0.10)", backdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.18)" }}>
-              <svg className="w-3.5 h-3.5 text-white/90" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span className="text-white/90 text-[12px] font-semibold">התורים שלי</span>
-            </Link>
-          </div>}
 
           <h1 className="text-white font-bold uppercase leading-none mb-2 tracking-widest"
             style={{ fontSize: "clamp(2rem,10vw,4.5rem)", textShadow: "0 2px 24px rgba(0,0,0,0.8)" }}>
