@@ -5,6 +5,7 @@
  *   npx tsx --env-file=.env scripts/replay-local.ts --business shop-p9hh --scenarios scripts/replay-scenarios.json [--only new-booking,cancel] [--out /tmp/dir]
  *   npx tsx --env-file=.env scripts/replay-local.ts --business shop-p9hh --corpus-from dominant --n 20 --days 45 [--out /tmp/dir]
  *   --template   run the business on the compact template (as if its custom prompt were cleared), without touching the DB
+ *   --setup <f>  with --template: setup answers (JSON object) to try in their template sections instead of the stored ones
  *   --demo       stage 1: send each turn to action "demo-turn" (the demo shop's tag → demo → pitch → sales routing)
  *   --dry        list the selected episodes and exit (no calls)
  *   --via-api    send the turns to production's POST /api/admin/agent/test (deployed code, production API key) instead of
@@ -113,6 +114,8 @@ async function main() {
   let scenarios: Scenario[] = args.scenarios ? JSON.parse(fs.readFileSync(args.scenarios, "utf8")) : await corpusFrom(args["corpus-from"] ?? "dominant", Number(args.n ?? 20), Number(args.days ?? 45));
   if (args.only) { const ids = args.only.split(","); scenarios = scenarios.filter(s => ids.includes(s.id)); }
   const viaApi = !!args["via-api"];
+  const setupOverride = args.setup ? JSON.parse(fs.readFileSync(args.setup, "utf8")) as Record<string, string | boolean> : null;
+  if (setupOverride && !viaApi) throw new Error("--setup works with --via-api (the server builds the template with the answers)");
   const session = viaApi ? await signSession({ businessId: biz.id, role: "owner" }) : "";
   if (viaApi) console.log(`via API: ${BASE} (variant ${templateBody || args.template ? "template" : "live"})`);
   const out = args.out ?? `/tmp/claude-501/replay-${slug}-${Date.now()}`;
@@ -132,7 +135,7 @@ async function main() {
           try {
             const r = args.demo
               ? await apiTurn(session, { action: "demo-turn", phone, text, senderName: sc.title.split(" · ")[0] }) as unknown as { replies: string[]; tools: { name: string; input: string | null; result: string }[]; toolLog: string[]; usage: { calls: number; costUsd: number }; ms: number; mode?: string; handled?: boolean }
-              : await apiTurn(session, { action: "turn", phone, text, variant: args.template ? "template" : "live" });
+              : await apiTurn(session, { action: "turn", phone, text, variant: args.template ? "template" : "live", ...(args.template && setupOverride ? { setupOverride } : {}) });
             const modeTag = args.demo ? [`mode=${(r as { mode?: string }).mode ?? "—"}${(r as { handled?: boolean }).handled === false ? " (not handled)" : ""}`] : [];
             turn = { text, replies: r.replies ?? [], tools: [...(r.tools ?? []).map(t => t.name).filter(Boolean) as string[], ...(r.toolLog ?? [])], toolResults: [...modeTag, ...(r.tools ?? []).map(t => `${t.name}(${(t.input ?? "").slice(0, 90)}) → ${(t.result ?? "").replace(/\n/g, " ").slice(0, 140)}`), ...(r.toolLog ?? [])], calls: r.usage?.calls ?? 0, costUsd: r.usage?.costUsd ?? 0, ms: Date.now() - t0 };
           } catch (e) { turn = { text, replies: [], tools: [], calls: 0, costUsd: 0, ms: Date.now() - t0, error: String((e as Error).message ?? e) }; }

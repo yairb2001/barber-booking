@@ -28,7 +28,7 @@ export type SetupFieldType = "choice" | "text" | "bool";
  *  with a hand-written prompt still gets them as the appended block. */
 export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set([
   "tone", "emojis", "address", "defaultService", "barberAssign",
-  "cancelPolicy", "deposit", "walkin", "location", "payment",
+  "priceNote", "cancelPolicy", "deposit", "walkin", "location", "payment",
   "styleNotes", "styleSamples", "escalateWhen",
 ]);
 
@@ -124,6 +124,13 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
       if (typeof v === "string" && v.startsWith(voc.staff)) return `${notAsking}, שבץ ${him} אצל ${voc.staffDef} ${voc.regular} של${voc.customerFem ? "ה" : "ו"} לפי ההיסטוריה, בלי לשאול; אין — אצל ${voc.staffDef} ${voc.staffFem ? "הפנויה" : "הפנוי"} ביותר.`;
       return `${notAsking}, שבץ ${him} בשקט אצל ${voc.staffDef} ${voc.staffFem ? "הפנויה" : "הפנוי"} ביותר.`;
     },
+  },
+
+  // ── B2. Prices — only when the price depends on who does it ──
+  {
+    key: "priceNote", label: "מחיר כשלא ברור אצל מי", group: "ברירות מחדל", core: false, type: "text",
+    question: v => `כש${v.customer} ${v.customerFem ? "שואלת" : "שואל"} כמה זה עולה ועוד לא ברור אצל מי, איזה מחיר להגיד? (רק אם המחירים שונים בין ${v.staffPlural}, למשל: 90₪ תספורת + זקן, 120–130₪ מספריים)`,
+    compile: v => `כשלא ברור אצל מי, המחיר להגיד: ${v}.`,
   },
 
   // ── C. Policy ──
