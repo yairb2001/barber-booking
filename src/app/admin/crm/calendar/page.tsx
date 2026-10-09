@@ -121,35 +121,13 @@ export default function CalendarPage() {
         </div>
       </section>
 
-      {/* The week as it is now: one card per opened day */}
-      {dayCards.length === 0 ? (
+      {/* The week as a calendar: a column per opened day, hours down the side */}
+      {rep && dayCards.length === 0 ? (
         <section className="rounded-2xl p-4 text-sm" style={{ background: C.mist, color: C.petrol }}>
           עוד לא פתחת ימים לשבוע הזה, אז הסוכן לא יכול לקבוע בו שיחות. פתח ימים למטה.
         </section>
-      ) : (
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 230px), 1fr))" }}>
-          {dayCards.map(({ d, open, slots }) => (
-            <section key={d} className="bg-white rounded-2xl p-3.5 flex flex-col gap-2.5 min-w-0" style={{ border: `1px solid ${d === data.today ? C.petrol : C.line}` }}>
-              <div className="flex items-baseline justify-between gap-2">
-                <div><span className="font-bold">{DAYS[dowOf(d)]}</span> <span className="text-sm" style={{ ...NUM, color: C.muted }}>{dm(d)}{d === data.today ? " · היום" : ""}</span></div>
-                {rep && open && !isPastDay(d) && <button type="button" disabled={busy} onClick={() => confirm(`לסגור את ${DAYS[dowOf(d)]} ${dm(d)} לשיחות חדשות? שיחות שכבר נקבעו נשארות.`) && act({ action: "rep.closeDay", repId: rep.id, date: d }, "היום נסגר לשיחות חדשות")} className="text-xs underline min-h-[32px]" style={{ color: C.muted }}>סגור יום</button>}
-              </div>
-              <div className="grid gap-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(94px, 1fr))" }}>
-                {slots.map(({ t, call, past }) => call ? (
-                  <Link key={t} href={`/admin/crm/leads/${call.leadId}`} className="rounded-xl px-2.5 py-2 flex flex-col min-w-0" style={{ gridColumn: "1 / -1", background: call.status === "done" ? "#DDE7E5" : C.petrol, color: call.status === "done" ? C.ink : "#fff", textDecoration: "none" }}>
-                    <span className="text-[13px] font-bold truncate"><span style={NUM}>{t}</span> · {call.name}</span>
-                    <span className="text-[11px] truncate" style={{ color: call.status === "done" ? C.muted : "#A9C9C4" }}>{call.status === "done" ? `הסתיימה${call.outcome ? ` · ${OUTCOME[call.outcome] ?? ""}` : ""}` : call.shop || "שיחה"}</span>
-                  </Link>
-                ) : (
-                  <div key={t} className="rounded-xl px-2 py-1.5 text-center" style={past ? { background: C.ground, color: "#8A9C9D" } : { border: "1px dashed #8FB8B0", color: "#0F6B4F" }}>
-                    <div className="text-[13px] font-bold" style={NUM}>{t}</div>
-                    <div className="text-[11px]">{past ? "עבר" : "פנוי"}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
+      ) : rep && (
+        <WeekGrid days={dayCards.map(x => x.d)} today={data.today} nowIL={nowIL} wins={rep.week} calls={data.calls.filter(c => c.repId === rep.id && c.status !== "cancelled")} callMinutes={data.settings.callMinutes} step={step} />
       )}
 
       {/* Open days and hours for THIS week */}
@@ -212,5 +190,75 @@ export default function CalendarPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+const SHORT = ["א׳", "ב׳", "ג׳", "ד׳", "ה׳", "ו׳", "ש׳"];
+const HOUR = 72; // px per hour
+
+/** A week calendar: hours down the side, one column per opened day (so a phone
+ *  fits them all), opened hours as green bands, calls as blocks, a "now" line. */
+function WeekGrid({ days, today, nowIL, wins, calls, callMinutes, step }: { days: string[]; today: string; nowIL: string; wins: DateWin[]; calls: CallRow[]; callMinutes: number; step: number }) {
+  const mins: number[] = [], maxs: number[] = [];
+  for (const d of days) {
+    for (const w of wins.filter(x => x.date === d)) { mins.push(toMin(w.startTime)); maxs.push(toMin(w.endTime)); }
+    for (const c of calls.filter(x => x.date === d)) { mins.push(toMin(c.time)); maxs.push(toMin(c.time) + step); }
+  }
+  const startH = Math.floor(Math.min(...mins) / 60), endH = Math.ceil(Math.max(...maxs) / 60);
+  const hours = Math.max(endH - startH, 1);
+  const y = (m: number) => ((m - startH * 60) / 60) * HOUR;
+  const now = toMin(nowIL);
+  const cols = `40px repeat(${days.length}, minmax(0, 1fr))`;
+  const lines = `repeating-linear-gradient(to bottom, ${C.line} 0, ${C.line} 1px, transparent 1px, transparent ${HOUR / 2}px)`;
+  return (
+    <section className="bg-white rounded-2xl overflow-hidden" style={{ border: `1px solid ${C.line}` }} aria-label="יומן השבוע">
+      <div className="grid sticky top-0 z-10 bg-white" style={{ gridTemplateColumns: cols, borderBottom: `1px solid ${C.line}` }}>
+        <div />
+        {days.map(d => (
+          <div key={d} className="text-center py-2 min-w-0" style={{ borderInlineStart: `1px solid ${C.soft}` }}>
+            <div className="text-xs" style={{ color: d === today ? C.petrol : C.muted, fontWeight: d === today ? 700 : 400 }}>{SHORT[dowOf(d)]}</div>
+            <div className="mx-auto w-8 h-8 rounded-full inline-flex items-center justify-center text-[15px] font-bold" style={{ ...NUM, background: d === today ? C.petrol : "transparent", color: d === today ? "#fff" : C.ink }}>{Number(d.slice(8, 10))}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid" style={{ gridTemplateColumns: cols, height: hours * HOUR + 18 }}>
+        <div className="relative">
+          {Array.from({ length: hours + 1 }, (_, i) => (
+            <span key={i} className="absolute end-1.5 text-[11px] -translate-y-1/2" style={{ ...NUM, top: i * HOUR + 4, color: C.muted }}>{String(startH + i).padStart(2, "0")}:00</span>
+          ))}
+        </div>
+        {days.map(d => {
+          const pastAll = d < today, isToday = d === today;
+          const dayCalls = calls.filter(c => c.date === d);
+          return (
+            <div key={d} className="relative min-w-0" style={{ borderInlineStart: `1px solid ${C.soft}`, backgroundImage: lines, backgroundPosition: "0 4px" }}>
+              {wins.filter(w => w.date === d).map(w => {
+                let free = 0;
+                for (let m = toMin(w.startTime); m + callMinutes <= toMin(w.endTime); m += step) {
+                  const t = toHHMM(m);
+                  if (!dayCalls.some(c => c.time === t) && !pastAll && !(isToday && t <= nowIL)) free++;
+                }
+                return (
+                  <div key={w.startTime} className="absolute inset-x-0.5 rounded-lg px-1 pt-0.5 overflow-hidden" style={{ top: y(toMin(w.startTime)) + 4, height: y(toMin(w.endTime)) - y(toMin(w.startTime)), background: "#E3F7EF", border: "1px dashed #8FB8B0" }}>
+                    <span className="block text-[10px] leading-tight font-semibold truncate" style={{ color: "#0F6B4F" }}>{free ? `${free} פנויים` : "מלא"}</span>
+                  </div>
+                );
+              })}
+              {(pastAll || isToday) && <div className="absolute inset-x-0 top-0 pointer-events-none" style={{ height: pastAll ? "100%" : Math.max(0, Math.min(y(now) + 4, hours * HOUR + 8)), background: "rgba(238,243,242,.65)" }} />}
+              {dayCalls.map(c => (
+                <Link key={c.id} href={`/admin/crm/leads/${c.leadId}`} className="absolute inset-x-0.5 rounded-md px-1 overflow-hidden flex flex-col justify-center" style={{ top: y(toMin(c.time)) + 4, height: Math.max(y(toMin(c.time) + step) - y(toMin(c.time)), 20), background: c.status === "done" ? "#C9D6D4" : C.petrol, color: c.status === "done" ? C.ink : "#fff", textDecoration: "none" }} title={`${c.time} · ${c.name}${c.shop ? ` · ${c.shop}` : ""}${c.status === "done" ? ` · הסתיימה${c.outcome ? ` · ${OUTCOME[c.outcome] ?? ""}` : ""}` : ""}`}>
+                  <span className="text-[10px] leading-tight font-bold truncate"><span style={NUM}>{c.time}</span> {c.name}</span>
+                </Link>
+              ))}
+              {isToday && now >= startH * 60 && now <= endH * 60 && (
+                <div className="absolute inset-x-0 pointer-events-none" style={{ top: y(now) + 4, borderTop: "2px solid #E5484D" }}>
+                  <span className="absolute -top-[5px] -start-[4px] w-2 h-2 rounded-full" style={{ background: "#E5484D" }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

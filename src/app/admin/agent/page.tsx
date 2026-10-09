@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import AgentBehaviorSettings from "./AgentBehaviorSettings";
+import { WhatsAppConnectCard } from "@/components/WhatsAppQrPanel";
 import AgentSetupCard, { type Answers, type SetupFieldDTO, type SetupHistoryDTO } from "./AgentSetupCard";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
@@ -51,10 +52,6 @@ type Conversation = {
   messages: ConvMessage[];
 };
 
-const WEBHOOK_URL =
-  typeof window !== "undefined"
-    ? `${window.location.origin}/api/webhook/whatsapp`
-    : "/api/webhook/whatsapp";
 
 export default function AdminAgentPage() {
   const [tab, setTab] = useState<"config" | "conversations">("config");
@@ -76,9 +73,9 @@ export default function AdminAgentPage() {
   const [convsLoading, setConvsLoading] = useState(false);
   const [clearingConvs, setClearingConvs] = useState(false);
 
-  // GreenAPI one-click webhook wiring
-  const [connecting, setConnecting] = useState(false);
-  const [connectMsg, setConnectMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // WhatsApp runs on Chator's own server (Green API retired 7.10.2026).
+  const [onOurServer, setOnOurServer] = useState(false);
+  const loadWa = () => fetch("/api/admin/business").then(r => r.json()).then(d => setOnOurServer(d?.messagingProvider === "evolution" && !!d?.evolutionInstance)).catch(() => {});
   // Sandbox test scenarios — the real agent, nothing sent, nothing saved.
   const [testRunning, setTestRunning] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<{ label: string; transcript: { role: string; text: string }[]; toolLog: string[]; error?: string } | null>(null);
@@ -100,6 +97,8 @@ export default function AdminAgentPage() {
         setFaqs(d.faqs ?? []);
         setAnswers(parseAnswers(d.setupConfig));
       });
+    void loadWa();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -165,24 +164,6 @@ export default function AdminAgentPage() {
     setConvs([]);
     setSelectedConv(null);
     setClearingConvs(false);
-  }
-
-  async function connectWebhook() {
-    setConnecting(true);
-    setConnectMsg(null);
-    try {
-      const res = await fetch("/api/admin/agent/connect-webhook", { method: "POST" });
-      const data = await res.json();
-      setConnectMsg(
-        data.ok
-          ? { ok: true, text: "✓ חובר! ייתכן ש-GreenAPI יקח דקה-שתיים להחיל. שלח הודעת בדיקה לוואטסאפ." }
-          : { ok: false, text: `שגיאה: ${data.error}` }
-      );
-    } catch {
-      setConnectMsg({ ok: false, text: "שגיאה בחיבור לשרת" });
-    } finally {
-      setConnecting(false);
-    }
   }
 
   function addFAQ() {
@@ -655,47 +636,8 @@ export default function AdminAgentPage() {
             </div>
           </div>
 
-          {/* Webhook info */}
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-3">
-            <h2 className="font-semibold text-neutral-800">🔗 חיבור ל-Green API</h2>
-
-            {/* One-click connect — sets the webhook in GreenAPI automatically */}
-            <button
-              onClick={connectWebhook}
-              disabled={connecting}
-              className="w-full bg-teal-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition"
-            >
-              {connecting ? "מחבר..." : "⚡ חבר אוטומטית ל-Green API"}
-            </button>
-            <p className="text-xs text-neutral-500">
-              לחיצה אחת תגדיר את ה-Webhook ב-Green API לבד — אין צורך להעתיק כלום.
-            </p>
-
-            {connectMsg && (
-              <div
-                className={`text-xs rounded-lg px-3 py-2 ${
-                  connectMsg.ok
-                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                    : "bg-red-50 border border-red-200 text-red-600"
-                }`}
-              >
-                {connectMsg.text}
-              </div>
-            )}
-
-            {/* Manual fallback — the raw URL, still copyable for advanced users */}
-            <div className="pt-2 border-t border-slate-200 space-y-1">
-              <p className="text-[11px] text-neutral-400">או ידנית — הכתובת להדבקה ב-Green API:</p>
-              <div
-                className="bg-white border border-slate-200 rounded-lg px-3 py-2 font-mono text-xs text-neutral-700 break-all select-all cursor-pointer"
-                dir="ltr"
-                onClick={() => navigator.clipboard?.writeText(WEBHOOK_URL)}
-                title="לחץ להעתקה"
-              >
-                {WEBHOOK_URL}
-              </div>
-            </div>
-          </div>
+          {/* WhatsApp connection — Chator's own server, scan the code from the business phone */}
+          <WhatsAppConnectCard provisioned={onOurServer} onChanged={() => void loadWa()} />
 
           {/* Save */}
           <div className="flex justify-end pb-8">
