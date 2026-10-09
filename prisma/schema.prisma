@@ -1062,15 +1062,30 @@ model SalesCall {
   @@map("sales_calls")
 }
 
+/// A note on a lead or on a customer (business) — one of the two ids is set.
 model LeadNote {
-  id        String   @id @default(uuid())
-  leadId    String   @map("lead_id")
-  author    String
-  body      String
-  createdAt DateTime @default(now()) @map("created_at")
+  id         String   @id @default(uuid())
+  leadId     String?  @map("lead_id")
+  businessId String?  @map("business_id")
+  author     String
+  body       String
+  createdAt  DateTime @default(now()) @map("created_at")
 
   @@index([leadId])
+  @@index([businessId])
   @@map("lead_notes")
+}
+
+/// Every save of a shop's agent setup answers (AgentConfig.setupConfig), for history and undo.
+model AgentSetupHistory {
+  id         String   @id @default(uuid())
+  businessId String   @map("business_id")
+  config     String
+  author     String              // "owner" | "wizard" | "owner_agent" | "crm"
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, createdAt])
+  @@map("agent_setup_history")
 }
 
 /// An editable CRM automation: trigger + steps (JSON) + when it stops.

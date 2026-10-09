@@ -9,6 +9,11 @@ import { hasTestKey } from "@/lib/anthropic-clients";
 import { ensureCrmSeed, getCrmSettings, setCrmSettings, freeCallSlots, slotLabel, isStage, STAGES, legacyStatusFor, type CrmSettings } from "@/lib/crm/core";
 import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/calls";
 import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, type AutoStep } from "@/lib/crm/automations";
+import { computeSetup } from "@/lib/crm/setup-progress";
+import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
+import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
+import { signOnboardingToken } from "@/lib/auth";
+import { onboardingLinkFor } from "@/lib/leads";
 
 export const dynamic = "force-dynamic";
 
@@ -64,7 +69,6 @@ async function customers(settings: CrmSettings) {
     const trialDaysLeft = b.trialEndsAt && !b.paidAt ? Math.ceil((b.trialEndsAt.getTime() - now) / 86400_000) : null;
     const issues: { tone: "bad" | "warn"; text: string }[] = [];
     if (waKnown && !waUp && stage !== "suspended") issues.push({ tone: "bad", text: "וואטסאפ מנותק" });
-    if (stage === "setup" && now - b.createdAt.getTime() > 2 * 86400_000) issues.push({ tone: "warn", text: "הקמה תקועה" });
     if (stage !== "setup" && stage !== "suspended" && !waKnown && !waUp) issues.push({ tone: "warn", text: "וואטסאפ עוד לא חובר" });
     if (stage === "paying" && apptsWeek === 0) issues.push({ tone: "bad", text: "אין תורים 7 ימים" });
     if (trialDaysLeft != null && trialDaysLeft <= 5 && trialDaysLeft >= 0) issues.push({ tone: "warn", text: `ניסיון נגמר בעוד ${trialDaysLeft} ימים` });
@@ -111,8 +115,11 @@ async function home() {
   const usage = await prisma.agentUsage.aggregate({ where: { createdAt: { gte: since }, kind: { not: "sandbox" } }, _sum: { costUsd: true } });
   const tokensIls = Math.round((usage._sum.costUsd ?? 0) * s.usdIls);
 
+  const setup = await computeSetup({ persist: true });
+  const stuck = setup.filter(x => !x.isLive && x.current && x.stuckHours >= 48);
   const todo = [
-    ...cust.filter(c => c.health !== "ok" && c.stage !== "suspended").flatMap(c => c.issues.slice(0, 1).map(i => ({ tone: i.tone, tag: i.text, title: c.name, detail: c.ownerPhone ? `בעלים: ${c.ownerPhone}` : "", href: `/admin/crm/customers?focus=${c.id}`, kind: "customer" as const }))),
+    ...stuck.map(x => { const c = cust.find(y => y.id === x.businessId); return { tone: "warn" as const, tag: `הקמה תקועה ${Math.floor(x.stuckHours / 24)} ימים`, title: c?.name ?? "עסק", detail: `עצר ב: ${x.current!.label}`, href: `/admin/crm/customers/${x.businessId}`, kind: "customer" as const }; }),
+    ...cust.filter(c => c.health !== "ok" && c.stage !== "suspended").flatMap(c => c.issues.slice(0, 1).map(i => ({ tone: i.tone, tag: i.text, title: c.name, detail: c.ownerPhone ? `בעלים: ${c.ownerPhone}` : "", href: `/admin/crm/customers/${c.id}`, kind: "customer" as const }))),
     ...staleLeads.map(l => ({ tone: "info" as const, tag: "ליד בלי מענה", title: l.name || l.phone, detail: `נכנס ${slotLabel(l.createdAt).replace(/ ב-.*/, "")}`, href: `/admin/crm/leads/${l.id}`, kind: "lead" as const })),
   ].slice(0, 8);
 
@@ -229,6 +236,36 @@ async function automationsView() {
   };
 }
 
+async function customerView(id: string) {
+  const s = await getCrmSettings();
+  const all = await customers(s);
+  const c = all.find(x => x.id === id);
+  if (!c) return null;
+  const biz = await prisma.business.findUnique({ where: { id }, select: { id: true, name: true, slug: true, businessType: true, monthlyPrice: true, paidAt: true, trialEndsAt: true, suspendedAt: true, createdAt: true, settings: true, tier: true } });
+  const [setup] = await computeSetup({ businessIds: [id], persist: true });
+  const agent = await prisma.agentConfig.findUnique({ where: { businessId: id }, select: { isEnabled: true, setupConfig: true, systemPrompt: true, agentName: true, faqs: { select: { id: true, question: true, answer: true } } } });
+  let cfg: SetupConfig = {};
+  try { cfg = agent?.setupConfig ? JSON.parse(agent.setupConfig) : {}; } catch { cfg = {}; }
+  const fields = setupFieldsFor(biz?.businessType).map(f => ({ key: f.key, group: f.group, question: f.question, type: f.type, options: f.options ?? null, core: f.core, value: cfg[f.key] ?? null, default: f.default ?? null }));
+  const week = new Date(Date.now() - 7 * 86400_000);
+  const [convs, escalated, agentAppts, notes, history, lead] = await Promise.all([
+    prisma.conversation.count({ where: { businessId: id, lastMessageAt: { gte: week }, NOT: { phone: { startsWith: "972000" } } } }),
+    prisma.conversation.count({ where: { businessId: id, escalatedAt: { gte: week } } }),
+    prisma.appointment.count({ where: { businessId: id, source: "agent", createdAt: { gte: week } } }),
+    prisma.leadNote.findMany({ where: { businessId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
+    prisma.agentSetupHistory.findMany({ where: { businessId: id }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, author: true, createdAt: true } }),
+    prisma.lead.findFirst({ where: { businessId: id }, select: { id: true, name: true, phone: true, createdAt: true } }),
+  ]);
+  let budget = 40;
+  try { const st = biz?.settings ? JSON.parse(biz.settings) : {}; if (Number(st.tokenBudgetIls) > 0) budget = Number(st.tokenBudgetIls); } catch { /* ignore */ }
+  return {
+    customer: c, business: biz && { ...biz, settings: undefined, tokenBudgetIls: budget }, setup,
+    agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
+    quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
+    notes, lead,
+  };
+}
+
 export async function GET(req: NextRequest) {
   const g = await guard(req); if (g) return g;
   const sp = new URL(req.url).searchParams;
@@ -239,7 +276,15 @@ export async function GET(req: NextRequest) {
     if (view === "lead") { const v = await leadView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "calendar") return NextResponse.json(await calendarView(sp.get("week")));
     if (view === "automations") return NextResponse.json(await automationsView());
-    if (view === "customers") return NextResponse.json({ customers: await customers(await getCrmSettings()) });
+    if (view === "customers") {
+      const [cust, setup] = await Promise.all([customers(await getCrmSettings()), computeSetup({ persist: true })]);
+      return NextResponse.json({ customers: cust.map(c => {
+        const st = setup.find(x => x.businessId === c.id);
+        const segment = c.stage === "suspended" ? "suspended" : st && !st.isLive ? "setup" : c.health === "bad" ? "risk" : "live";
+        return { ...c, segment, setup: st ? { doneCount: st.doneCount, total: st.steps.length, current: st.current?.label ?? null, stuckHours: st.stuckHours } : null };
+      }) });
+    }
+    if (view === "customer") { const v = await customerView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "settings") return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
     return NextResponse.json({ error: "unknown_view" }, { status: 400 });
   } catch (e) {
@@ -357,6 +402,45 @@ export async function POST(req: NextRequest) {
         await prisma.crmAutomation.update({ where: { id: str("id") }, data });
         return NextResponse.json({ ok: true });
       }
+      case "customer.note": {
+        const body = str("body");
+        if (!body) return NextResponse.json({ error: "empty" }, { status: 400 });
+        await prisma.leadNote.create({ data: { businessId: str("id"), author: str("author") || "יאיר", body } });
+        return NextResponse.json({ ok: true });
+      }
+      case "customer.message": {
+        const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { phone: true, settings: true } });
+        const body = str("body");
+        const to = biz ? ownerPhoneOf(biz) : null;
+        if (!to || !body) return NextResponse.json({ error: "אין טלפון לבעל העסק" }, { status: 400 });
+        const phone = normalizeIsraeliPhone(to);
+        const r = await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body });
+        if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
+        await mirrorToConversation(DEMO_BUSINESS_ID, phone, body, "admin");
+        await prisma.leadNote.create({ data: { businessId: str("id"), author: "וואטסאפ", body: `נשלח לבעל העסק: ${body}` } });
+        return NextResponse.json({ ok: true });
+      }
+      case "customer.resendLink": {
+        const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { id: true, name: true, phone: true, settings: true } });
+        const to = biz ? ownerPhoneOf(biz) : null;
+        if (!biz || !to) return NextResponse.json({ error: "אין טלפון לבעל העסק" }, { status: 400 });
+        const link = onboardingLinkFor(await signOnboardingToken(biz.id));
+        const body = `היי, כאן Chator. הנה הקישור האישי להמשך ההקמה של ${biz.name}:\n${link}\n\nכל שלב נשמר, אפשר להמשיך מאיפה שעצרת.`;
+        const phone = normalizeIsraeliPhone(to);
+        const r = await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body });
+        if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
+        await mirrorToConversation(DEMO_BUSINESS_ID, phone, body, "admin");
+        return NextResponse.json({ ok: true, link });
+      }
+      case "customer.setup": {
+        const key = str("key");
+        const field = setupFieldsFor((await prisma.business.findUnique({ where: { id: str("id") }, select: { businessType: true } }))?.businessType).find(f => f.key === key);
+        if (!field) return NextResponse.json({ error: "unknown_field" }, { status: 400 });
+        const value = field.type === "bool" ? b.value === true || b.value === "true" : str("value");
+        await saveSetupAnswers(str("id"), { [key]: value }, "crm");
+        return NextResponse.json({ ok: true });
+      }
+      case "customer.setupRestore": return NextResponse.json({ ok: await restoreSetupVersion(str("id"), str("historyId"), "crm") });
       case "automation.preview": {
         const { renderText } = await import("@/lib/crm/automations");
         const lead = await prisma.lead.findFirst({ orderBy: { createdAt: "desc" }, select: { id: true } });

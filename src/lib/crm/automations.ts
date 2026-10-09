@@ -22,7 +22,7 @@ import { signOnboardingToken } from "@/lib/auth";
 
 export type AutoStep = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
 export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid";
-export type AutomationKey = "lead_new" | "call_booked" | "call_no_answer" | "call_won" | "followup" | "trial_ending" | "churn_risk";
+export type AutomationKey = "lead_new" | "call_booked" | "call_no_answer" | "call_won" | "followup" | "trial_ending" | "churn_risk" | "setup_stuck" | "setup_stuck_rep";
 
 export const STOP_LABELS: Record<StopReason, string> = {
   replied: "הליד ענה",
@@ -34,7 +34,7 @@ export const STOP_LABELS: Record<StopReason, string> = {
   paid: "עבר לתשלום",
 };
 
-export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}"];
+export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}"];
 
 const DAY = 24 * 60;
 
@@ -86,6 +86,20 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
     ],
   },
   {
+    key: "setup_stuck", name: "הקמה תקועה: עזרה לבעל העסק", trigger: "24 שעות בלי התקדמות בהקמה", audience: "lead",
+    stopOn: ["onboarding_done", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, ראיתי שעצרת בשלב \"{השלב שנתקע}\" בהקמה של {שם העסק}. משהו לא ברור? אפשר לענות לי כאן ונעזור, או להמשיך מהקישור: {קישור הקמה}" },
+    ],
+  },
+  {
+    key: "setup_stuck_rep", name: "הקמה תקועה: התראה לנציג", trigger: "48 שעות בלי התקדמות בהקמה", audience: "rep",
+    stopOn: [],
+    steps: [
+      { delayMinutes: 0, text: "הקמה תקועה יומיים: {שם העסק} עצר ב\"{השלב שנתקע}\". שווה להתקשר." },
+    ],
+  },
+  {
     key: "churn_risk", name: "סיכון עזיבה", trigger: "עסק בלי תורים 7 ימים", audience: "rep",
     stopOn: [],
     steps: [
@@ -107,7 +121,7 @@ export function parseStopOn(raw: string): StopReason[] {
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter((x): x is StopReason => typeof x === "string" && x in STOP_LABELS) : []; } catch { return []; }
 }
 
-type RunContext = { callId?: string };
+type RunContext = { callId?: string; stepLabel?: string };
 
 /** Start (or restart) an automation for a lead / business. Silently does nothing when it is OFF. */
 export async function startAutomation(key: AutomationKey, target: { leadId?: string; businessId?: string; context?: RunContext }): Promise<void> {
@@ -184,7 +198,10 @@ export async function renderText(text: string, target: { leadId?: string | null;
   const slots = needSlots ? await freeCallSlots({ limit: 2 }) : [];
   const needLink = /\{קישור הקמה\}/.test(text) && biz;
   const link = needLink ? onboardingLinkFor(await signOnboardingToken(biz!.id)) : "";
-  const firstName = (lead?.name ?? "").trim().split(/\s+/)[0] || "";
+  let ownerName = "";
+  if (!lead && biz) { try { const s = biz.settings ? JSON.parse(biz.settings) : {}; ownerName = typeof s.ownerName === "string" ? s.ownerName : ""; } catch { /* ignore */ } }
+  const ownerLead = !lead && biz ? await prisma.lead.findFirst({ where: { businessId: biz.id }, select: { name: true } }) : null;
+  const firstName = (lead?.name ?? ownerLead?.name ?? ownerName ?? "").trim().split(/\s+/)[0] || "";
   const vars: Record<string, string> = {
     "{שם}": firstName,
     "{שם העסק}": lead?.businessName || biz?.name || "המספרה",
@@ -193,6 +210,7 @@ export async function renderText(text: string, target: { leadId?: string | null;
     "{שעה פנויה ראשונה}": slots[0] ? slotLabel(slots[0].startsAt) : "השבוע",
     "{שעה פנויה שנייה}": slots[1] ? slotLabel(slots[1].startsAt) : "בשעה שנוחה לך",
     "{קישור הקמה}": link,
+    "{השלב שנתקע}": target.context?.stepLabel ?? "",
   };
   let body = text;
   for (const [k, v] of Object.entries(vars)) body = body.split(k).join(v);
@@ -233,6 +251,7 @@ export async function tickAutomations(now = new Date()): Promise<{ sent: number;
 
 /** Daily-ish scans that start time-based automations (trial ending, follow-up dates, churn risk). Idempotent. */
 export async function scanTimeTriggers(now = new Date()): Promise<void> {
+  try { const { scanStuckSetups } = await import("@/lib/crm/setup-progress"); await scanStuckSetups(); } catch (e) { console.error("[crm] stuck setups", e); }
   const autos = await prisma.crmAutomation.findMany({ where: { enabled: true, key: { in: ["trial_ending", "followup", "churn_risk"] } }, select: { id: true, key: true } });
   const has = (k: string) => autos.find(a => a.key === k);
   const already = async (automationId: string, where: { leadId?: string; businessId?: string }, sinceDays: number) =>
