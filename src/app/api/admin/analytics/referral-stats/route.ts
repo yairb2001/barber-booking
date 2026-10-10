@@ -67,9 +67,29 @@ export async function GET(req: NextRequest) {
     select: {
       referralSource: true,
       utmContent: true,
+      utmRef: true,
       _count: { select: { appointments: { where: staffId ? { staffId } : undefined } } },
     },
   });
+
+  // view=links → customers per tagged link (?ref), regardless of what source
+  // they picked by hand. Answers "how many came from each bio link".
+  if (searchParams.get("view") === "links") {
+    const links = new Map<string, { total: number; returning: number }>();
+    for (const c of customers) {
+      const ref = c.utmRef?.trim();
+      if (!ref) continue;
+      const row = links.get(ref) ?? { total: 0, returning: 0 };
+      row.total += 1;
+      if (c._count.appointments >= 2) row.returning += 1;
+      links.set(ref, row);
+    }
+    return NextResponse.json(
+      Array.from(links.entries())
+        .map(([link, v]) => ({ link, ...v }))
+        .sort((a, b) => b.total - a.total),
+    );
+  }
 
   // ── Group by referral source ──────────────────────────────────────────────────
   // Each source also keeps a per-ad breakdown (from utm_content) so the dashboard

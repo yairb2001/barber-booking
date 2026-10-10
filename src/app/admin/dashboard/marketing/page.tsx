@@ -58,6 +58,7 @@ export default function MarketingDeepPage() {
   const [to, setTo]               = useState(todayISO);
 
   const [rows, setRows]           = useState<ReferralRow[]>([]);
+  const [links, setLinks]         = useState<{ link: string; total: number; returning: number }[]>([]);
   const [loading, setLoading]     = useState(false);
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
 
@@ -180,6 +181,13 @@ export default function MarketingDeepPage() {
       .then(r => r.json())
       .then(data => { setRows(Array.isArray(data) ? data : []); setLoading(false); })
       .catch(() => setLoading(false));
+    // Per tagged link (?ref) — counted even when the customer picked another source by hand.
+    const linkParams = new URLSearchParams(params);
+    linkParams.set("view", "links");
+    fetch(`/api/admin/analytics/referral-stats?${linkParams}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setLinks(Array.isArray(data) ? data : []))
+      .catch(() => setLinks([]));
   }, [period, from, to, selStaff, statsReloadKey]);
 
   const totalCustomers  = rows.reduce((s, r) => s + r.total,     0);
@@ -393,6 +401,27 @@ export default function MarketingDeepPage() {
             <p className="text-2xl font-bold text-amber-600">{totalLoyal.toLocaleString("he-IL")}</p>
             <p className="text-xs text-neutral-500 mt-1">נאמנים (10+ ביקורים)</p>
             <p className="text-xs text-amber-500 font-semibold">{loyalPct}%</p>
+          </div>
+        </div>
+      )}
+
+      {/* Tagged links (?ref) */}
+      {!loading && links.length > 0 && (
+        <div className="bg-white rounded-2xl border border-neutral-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-neutral-100">
+            <h2 className="font-semibold text-neutral-800 text-sm">לקוחות לפי קישור</h2>
+            <p className="text-xs text-neutral-400 mt-0.5">מאיזה קישור נכנסו לקבוע, גם אם בחרו מקור אחר בשאלה</p>
+          </div>
+          <div className="divide-y divide-neutral-50">
+            {links.map(l => (
+              <div key={l.link} className="px-5 py-3 flex items-center justify-between text-sm">
+                <span className="font-medium text-neutral-900 truncate">{l.link}</span>
+                <span className="flex items-center gap-4 shrink-0">
+                  <span className="text-neutral-700">{l.total.toLocaleString("he-IL")} לקוחות</span>
+                  <span className="text-xs text-blue-600">{l.returning.toLocaleString("he-IL")} חזרו</span>
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

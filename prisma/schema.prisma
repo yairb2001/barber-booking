@@ -316,6 +316,7 @@ model Customer {
   utmSource         String?   @map("utm_source")     // platform: meta | google | ...
   utmCampaign       String?   @map("utm_campaign")   // campaign name
   utmContent        String?   @map("utm_content")    // specific ad name
+  utmRef            String?   @map("utm_ref")        // ?ref tag from the link (bio-dominant…) — kept even when the customer picks a source by hand
   referredById      String?   @map("referred_by_id")
   // ── Referral rewards fulfillment (as a REFERRER, not as the referred friend) ──
   // How many reward tiers of the "חבר מביא חבר" program have actually been

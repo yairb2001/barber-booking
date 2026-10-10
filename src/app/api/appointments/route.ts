@@ -201,6 +201,7 @@ export async function POST(request: NextRequest) {
         utmSource:   (attr.source   || "").toString().trim() || null,
         utmCampaign: (attr.campaign || "").toString().trim() || null,
         utmContent:  (attr.content  || "").toString().trim() || null,
+        utmRef:      (attr.ref      || "").toString().trim() || null,
         referredById: referredById ?? null,
       },
     });
