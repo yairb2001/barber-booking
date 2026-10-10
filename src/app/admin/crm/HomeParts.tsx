@@ -23,6 +23,7 @@ export type Home = {
   funnel: { label: string; n: number }[];
   callsToday: { time: string; leadId: string | null; name: string; shop: string; booked: boolean }[];
   money: { revenue: number; tokensIls: number; infraIls: number; left: number };
+  chatorAgent?: { monthIls: number; salesIls: number; demoIls: number; testsIls: number; todayIls: number; convs: number; leads: number; callsBooked: number };
 };
 
 export const TASK_TAG: Record<Task["kind"], [string, Tone]> = {
@@ -203,6 +204,7 @@ export function Numbers({ data }: { data: Home }) {
           })}
         </div>
       </Card>
+      {data.chatorAgent && <ChatorAgentCost a={data.chatorAgent} />}
       <Card title="רווחיות החודש">
         {[
           ["הכנסה חודשית", ils(data.money.revenue), C.ink],
@@ -221,3 +223,27 @@ export function Numbers({ data }: { data: Home }) {
   );
 }
 
+
+/** What Chator's own number cost this month: the sales agent + the demo shop (10.10.2026). */
+function ChatorAgentCost({ a }: { a: NonNullable<Home["chatorAgent"]> }) {
+  const per = (n: number) => (n > 0 ? `${(a.monthIls / n).toFixed(1)} ₪` : "—");
+  const rows: [string, string][] = [
+    ["סוכן המכירות", `${a.salesIls.toFixed(1)} ₪`],
+    ["מספרת הדמו (קובע התורים)", `${a.demoIls.toFixed(1)} ₪`],
+    ["היום", `${a.todayIls.toFixed(1)} ₪`],
+    [`לשיחה (${a.convs} שיחות)`, per(a.convs)],
+    [`לליד מוואטסאפ (${a.leads})`, per(a.leads)],
+    [`לשיחה שהסוכן קבע (${a.callsBooked})`, per(a.callsBooked)],
+  ];
+  return (
+    <Card collapsible defaultOpen title="הסוכן של צ'אטור והדמו" aside={`${a.monthIls.toFixed(1)} ₪ החודש`}>
+      {rows.map(([l, v]) => (
+        <div key={l} className="flex justify-between text-sm pb-2 mb-2" style={{ borderBottom: `1px solid ${C.soft}` }}>
+          <span style={{ color: C.muted }}>{l}</span>
+          <span className="font-bold" style={NUM}>{v}</span>
+        </div>
+      ))}
+      <p className="m-0 text-xs" style={{ color: C.muted }}>שיחות אמיתיות בלבד. בדיקות בארגז חול החודש: {a.testsIls.toFixed(1)} ₪.</p>
+    </Card>
+  );
+}

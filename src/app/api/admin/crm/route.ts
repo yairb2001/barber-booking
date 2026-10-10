@@ -120,6 +120,28 @@ async function home() {
   const usage = await prisma.agentUsage.aggregate({ where: { createdAt: { gte: since }, kind: { not: "sandbox" } }, _sum: { costUsd: true } });
   const tokensIls = Math.round((usage._sum.costUsd ?? 0) * s.usdIls);
 
+  // What Chator's own number costs (Yair, 10.10.2026: "כמה עלה לי הדמו, כולל
+  // הקובע פגישות"): the sales agent + the demo shop's booking agent, real chats
+  // only; the sandbox tests on its own line.
+  const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+  const todayStart = appointmentInstant(new Date(getBusinessNow().date + "T00:00:00Z"), "00:00");
+  const [demoUse, demoToday, demoConvs, waLeads, agentCalls] = await Promise.all([
+    prisma.agentUsage.groupBy({ by: ["kind"], where: { businessId: DEMO, createdAt: { gte: since } }, _sum: { costUsd: true } }),
+    prisma.agentUsage.aggregate({ where: { businessId: DEMO, createdAt: { gte: todayStart }, kind: { not: "sandbox" } }, _sum: { costUsd: true } }),
+    prisma.conversation.count({ where: { businessId: DEMO, lastMessageAt: { gte: since }, NOT: { phone: { startsWith: "972000" } }, messages: { some: { role: "assistant", createdAt: { gte: since } } } } }),
+    prisma.lead.count({ where: { createdAt: { gte: since }, source: { startsWith: "whatsapp" } } }),
+    prisma.salesCall.count({ where: { createdAt: { gte: since }, bookedBy: "agent" } }),
+  ]);
+  const ils = (usd: number) => Math.round(usd * s.usdIls * 10) / 10;
+  const kindUsd = (pred: (k: string) => boolean) => demoUse.filter(g => pred(g.kind ?? "")).reduce((a, g) => a + (g._sum.costUsd ?? 0), 0);
+  const salesUsd = kindUsd(k => k === "sales" || k === "demo_sales");
+  const testsUsd = kindUsd(k => k === "sandbox");
+  const demoUsd = kindUsd(k => k !== "sales" && k !== "demo_sales" && k !== "sandbox");
+  const chatorAgent = {
+    monthIls: ils(salesUsd + demoUsd), salesIls: ils(salesUsd), demoIls: ils(demoUsd), testsIls: ils(testsUsd),
+    todayIls: ils(demoToday._sum.costUsd ?? 0), convs: demoConvs, leads: waLeads, callsBooked: agentCalls,
+  };
+
   const setup = await computeSetup({ persist: true });
   const stuck = setup.filter(x => !x.isLive && x.current && x.stuckHours >= 48);
 
@@ -183,6 +205,7 @@ async function home() {
       ...freeToday.map(f => ({ at: f.startsAt, time: f.time, leadId: null, name: "פנוי", shop: "הסוכן יכול לקבוע כאן", booked: false })),
     ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime()),
     money: { revenue: mrr, tokensIls, infraIls: s.infraCostIls, left: mrr - tokensIls - s.infraCostIls },
+    chatorAgent,
   };
 }
 
