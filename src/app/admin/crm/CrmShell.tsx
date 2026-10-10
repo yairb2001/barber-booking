@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { C } from "./ui";
+import { CardHost } from "./CardModal";
 
 /**
  * Chator CRM shell — direction A ("חדר בקרה", chosen 9.10.2026): a petrol side
@@ -119,6 +120,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
         </aside>
       </div>
       <main className="flex-1 min-w-0 px-4 py-5 md:px-8 md:py-7">{children}</main>
+      <CardHost />
     </div>
   );
 }

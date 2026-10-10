@@ -17,8 +17,6 @@ export const metadata: Metadata = {
   },
 };
 
-// @modal: a lead or customer card opened from inside the CRM shows as a sheet
-// over the current screen (intercepted routes, CardModal.tsx).
-export default function CrmLayout({ children, modal }: { children: React.ReactNode; modal: React.ReactNode }) {
-  return <CrmShell>{children}{modal}</CrmShell>;
+export default function CrmLayout({ children }: { children: React.ReactNode }) {
+  return <CrmShell>{children}</CrmShell>;
 }
