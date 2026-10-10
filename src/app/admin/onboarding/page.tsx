@@ -66,6 +66,7 @@ export default function OnboardingPage() {
   const [waTestSent, setWaTestSent] = useState(false);
   const [waBox, setWaBox] = useState(false);       // the linking box is open (device opened on our server)
   const [waLinked, setWaLinked] = useState(false);  // the phone linked during this visit
+  const [waOfficial, setWaOfficial] = useState(false); // asked for official WhatsApp
 
   const fields: SetupField[] = useMemo(() => setupFieldsFor(bizType), [bizType]);
 
@@ -239,6 +240,17 @@ export default function OnboardingPage() {
     else { setWaStatus("requested"); setWaBox(true); }
     setBusy(false);
   };
+  // Official WhatsApp: recorded until Meta's connect window is ready (api/admin/whatsapp/official).
+  const chooseOfficial = async () => {
+    setBusy(true);
+    const r = await fetch("/api/admin/whatsapp/official", { method: "POST" }).catch(() => null);
+    if (r?.ok) setWaOfficial(true); else setError("לא הצלחנו לשמור, נסה שוב");
+    setBusy(false);
+  };
+  useEffect(() => {
+    if (step !== 5) return;
+    fetch("/api/admin/whatsapp/official").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.wanted) setWaOfficial(true); }).catch(() => {});
+  }, [step]);
   // Came back to this step with a device already opened earlier → straight to the box.
   useEffect(() => {
     if (step === 5 && waStatus === "requested" && !waBox && !waLinked) void connectWhatsApp();
@@ -405,10 +417,24 @@ export default function OnboardingPage() {
           ) : waBox ? (
             <ConnectBox onLinked={() => setWaLinked(true)} />
           ) : (
-            <>
-              <p className="text-sm text-slate-600 mb-4">לוחצים פעם אחת, ומופיע כאן קוד לסריקה מאפליקציית הוואטסאפ בטלפון של העסק. פחות מדקה, בלי שום פרטים או טוקנים.</p>
-              <Primary onClick={connectWhatsApp} busy={busy}>חבר את הטלפון</Primary>
-            </>
+            // Regular or official, chosen right here at the connection step (10.10.2026).
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <p className="text-sm font-semibold text-slate-800">וואטסאפ רגיל</p>
+                <p className="text-xs text-slate-500 mt-1 mb-3">סורקים קוד מהוואטסאפ בטלפון של העסק ומתחברים מיד. פחות מדקה.</p>
+                <Primary onClick={connectWhatsApp} busy={busy}>חבר את הטלפון</Primary>
+              </div>
+              <div className="rounded-2xl border p-4" style={{ borderColor: waOfficial ? C.turquoise : "#E2E8F0", background: waOfficial ? C.mist : "#fff" }}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-800">וואטסאפ רשמי של מטא</p>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FFF1D6", color: "#7A4A00" }}>בקרוב</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">חיבור מאושר על ידי מטא, בלי סיכון לחסימה. וואטסאפ ביזנס ממשיך לעבוד אצלך בטלפון.</p>
+                {waOfficial
+                  ? <p className="text-xs mt-3 leading-relaxed" style={{ color: C.petrol }}>רשמנו שאתה רוצה רשמי. כשהחיבור הרשמי ייפתח נחבר אותך. בינתיים אפשר להתחבר ברגיל ולהתחיל לעבוד, והמעבר יהיה בלחיצה.</p>
+                  : <button type="button" onClick={chooseOfficial} disabled={busy} className="mt-3 w-full rounded-xl py-2.5 text-sm font-semibold border disabled:opacity-50" style={{ borderColor: C.petrol, color: C.petrol }}>אני רוצה רשמי</button>}
+              </div>
+            </div>
           )}
           <div className="flex items-center justify-between mt-5">
             <button type="button" onClick={() => goTo(6, waStatus === "connected" || waLinked ? "whatsapp" : undefined)} className="text-sm text-slate-500">{waStatus === "connected" || waLinked ? "המשך" : "אמשיך בלי לחבר עכשיו"}</button>
