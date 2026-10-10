@@ -8,6 +8,13 @@ import CrmShell from "./CrmShell";
 export const metadata: Metadata = {
   manifest: "/admin/crm/manifest.webmanifest",
   appleWebApp: { capable: true, title: "CRM", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/chator/crm-icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/chator/crm-icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/chator/crm-apple-touch-icon.png",
+  },
 };
 
 export default function CrmLayout({ children }: { children: React.ReactNode }) {
