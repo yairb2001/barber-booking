@@ -39,9 +39,8 @@ export async function POST(req: NextRequest) {
   if (!kind || !["push", "whatsapp", "screen"].includes(ch) || (ch === "whatsapp" && !kind.whatsapp)) return NextResponse.json({ error: "בחירה לא תקינה" }, { status: 400 });
   const s = parse(ctx.raw);
   s.notifChannels = { ...((s.notifChannels ?? {}) as Record<string, string>), [kind.kind]: ch };
-  // The push paths that predate the center read these toggles; keep them in step.
-  const legacy: Record<string, string> = { booking: "notifyOnAppointments", cancellation: "notifyOnCancellation", waitlist: "notifyOnWaitlist", escalation: "notifyOnEscalation" };
-  if (legacy[kind.kind]) s[legacy[kind.kind]] = kind.kind === "escalation" ? ch !== "screen" : ch === "push";
+  // The escalation push (pushChatEvent) predates the center and reads this toggle.
+  if (kind.kind === "escalation") s.notifyOnEscalation = ch !== "screen";
   await ctx.save(JSON.stringify(s));
   return NextResponse.json({ ok: true });
 }

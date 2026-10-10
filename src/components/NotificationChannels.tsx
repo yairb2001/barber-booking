@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
  * as push or WhatsApp. Serves the owner and each barber (the API knows who).
  */
 type Kind = { kind: string; label: string; hint: string; whatsapp: boolean; channel: "push" | "whatsapp" | "screen" };
-const OPTS: { v: Kind["channel"]; label: string }[] = [{ v: "push", label: "פוש" }, { v: "whatsapp", label: "וואטסאפ" }, { v: "screen", label: "רק במסך" }];
+const OPTS: { v: Kind["channel"]; label: string }[] = [{ v: "whatsapp", label: "וואטסאפ" }, { v: "push", label: "למסך + פוש" }, { v: "screen", label: "רק במסך" }];
 
 export default function NotificationChannels() {
   const [kinds, setKinds] = useState<Kind[] | null>(null);
@@ -24,8 +24,8 @@ export default function NotificationChannels() {
   if (!kinds) return null;
   return (
     <div className="bg-white border border-neutral-200 rounded-2xl p-5">
-      <h3 className="text-sm font-semibold text-neutral-900">איך כל התראה מגיעה אליי</h3>
-      <p className="text-xs text-neutral-500 mt-1 mb-4 leading-relaxed">כל ההתראות תמיד נמצאות בלשונית &quot;התראות&quot;. כאן בוחרים אם הן מגיעות גם בפוש לטלפון או בוואטסאפ.</p>
+      <h3 className="text-sm font-semibold text-neutral-900">מה שהיה מגיע בוואטסאפ</h3>
+      <p className="text-xs text-neutral-500 mt-1 mb-4 leading-relaxed">כל אלה נשמרים תמיד בלשונית &quot;התראות&quot;. לכל סוג בוחרים: להמשיך לקבל בוואטסאפ, לקבל פוש שפותח את המסך, או רק במסך בלי להפריע.</p>
       <div className="space-y-4">
         {kinds.map(k => (
           <div key={k.kind} className="space-y-1.5">

@@ -17,6 +17,7 @@ import { sendMessage, sendProactiveMessage } from "@/lib/messaging/index";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, timeToMinutes } from "@/lib/utils";
 import { DEFAULT_CLOSURE_REMINDER_TEMPLATE, renderClosureText, describeSlot, rangeLabel, whenLabel } from "./message";
+import { staffAlert } from "@/lib/notify/center";
 
 export type CustomerState = "sent" | "rescheduled" | "agent" | "silent" | "silent_escalated" | "manual" | "failed";
 const END_OF_DAY_MIN = 20 * 60;
@@ -164,10 +165,14 @@ export async function runClosureSweep(now = new Date(), scope: { businessId?: st
       const barberPhone = p.primary.staff.phone;
       if (!barberPhone) continue;
       const orig = describeSlot({ date: p.primary.date.toISOString().slice(0, 10), startTime: p.primary.startTime });
-      await sendMessage({
-        businessId: c.businessId, appointmentId: p.primaryAppointmentId, customerPhone: normalizeIsraeliPhone(barberPhone), kind: "closure_escalation",
-        body: `${p.primary.customer.name} לא ענה על הביטול של התור ${orig} גם אחרי תזכורת — כדאי להתקשר אליו או לברר ישירות: ${p.primary.customer.phone}`,
-      }).catch(e => console.error("[closure] escalation send failed", e));
+      const escBody = `${p.primary.customer.name} לא ענה על הביטול של התור ${orig} גם אחרי תזכורת — כדאי להתקשר אליו או לברר ישירות: ${p.primary.customer.phone}`;
+      // Notification center (10.10.2026); WhatsApp only if the barber chose it. The
+      // MessageLog row is also the "already escalated" mark, so it is written either way.
+      const escCh = await staffAlert({
+        businessId: c.businessId, staffId: p.primary.staffId, kind: "closure", title: `${p.primary.customer.name} לא ענה על הביטול`, body: escBody,
+        whatsapp: () => sendMessage({ businessId: c.businessId, appointmentId: p.primaryAppointmentId, customerPhone: normalizeIsraeliPhone(barberPhone), kind: "closure_escalation", body: escBody }).catch(e => console.error("[closure] escalation send failed", e)),
+      });
+      if (escCh !== "whatsapp") await prisma.messageLog.create({ data: { businessId: c.businessId, appointmentId: p.primaryAppointmentId, customerPhone: normalizeIsraeliPhone(barberPhone), kind: "closure_escalation", body: escBody, status: "skipped", error: "center" } }).catch(() => {});
       out.escalated++;
     }
     // 3) everyone handled → summary to the closing barber, once; closure resolved
@@ -177,7 +182,10 @@ export async function runClosureSweep(now = new Date(), scope: { businessId?: st
       const silent = s.customers.filter(r => r.state.startsWith("silent")).map(r => `${r.customerName} ${r.customerPhone}`).join(", ");
       const range = rangeLabel(c.fromTime, c.toTime);
       const body = `סיכום סגירה ${describeSlot({ date: s.date, startTime: "" }).replace(/ ב‑$/, "")} ${range}: ${s.counts.total} בוטלו — ${s.counts.rescheduled} נקבעו מחדש, ${s.counts.manual} בטיפול ידני שלך` + (silent ? `, לא ענו: ${silent}` : "") + ".";
-      if (staff?.phone) await sendMessage({ businessId: c.businessId, customerPhone: normalizeIsraeliPhone(staff.phone), kind: "closure_summary", body }).catch(e => console.error("[closure] summary send failed", e));
+      await staffAlert({
+        businessId: c.businessId, staffId: c.staffId, kind: "closure", title: "סיכום סגירת היום", body,
+        whatsapp: async () => { if (staff?.phone) await sendMessage({ businessId: c.businessId, customerPhone: normalizeIsraeliPhone(staff.phone), kind: "closure_summary", body }).catch(e => console.error("[closure] summary send failed", e)); },
+      });
       await prisma.calendarClosure.update({ where: { id: c.id }, data: { summarySentAt: now, status: "resolved", resolvedAt: now } });
       out.summarized++;
     }

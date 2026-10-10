@@ -77,9 +77,12 @@ export default function NotificationSettings({ endpoint = "/api/admin/business" 
     </button>
   );
 
-  // 10.10.2026: bookings, cancellations, waitlist and escalations moved to the
-  // per-kind picker (NotificationChannels); this toggle has no kind of its own.
+  // 10.10.2026: what used to come by WhatsApp moved to the notification center
+  // (NotificationChannels above); these stay plain push, as before.
   const ROWS: { key: ToggleKey; icon: string; label: string; hint: string }[] = [
+    { key: "notifyOnAppointments", icon: "🔔", label: "תור חדש נקבע", hint: "כשלקוח או הסוכן קובעים תור חדש" },
+    { key: "notifyOnCancellation", icon: "❌", label: "תור בוטל", hint: "כשלקוח מבטל תור שכבר נקבע" },
+    { key: "notifyOnWaitlist", icon: "⏳", label: "הצטרפות לרשימת המתנה", hint: "כשלקוח נרשם לרשימת המתנה לתור פנוי" },
     { key: "notifyOnReply", icon: "💬", label: "לקוח ענה לך בצ׳אט", hint: "רק בשיחות שאתה מטפל בהן, עם תוכן ההודעה" },
   ];
 

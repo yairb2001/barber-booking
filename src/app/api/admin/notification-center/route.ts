@@ -6,11 +6,11 @@ import { answerQuestion } from "@/lib/agent/learn";
 export const dynamic = "force-dynamic";
 
 /**
- * The shop's notification center (10.10.2026). Owner = rows with no staffId;
- * a barber = his own rows. Open questions of the agent (owner only) come with
- * what is needed to answer them in place. Bookings / cancellations / waitlist
- * keep coming from the older derived feed (/api/admin/notifications), which the
- * screen merges in.
+ * The shop's notification center (10.10.2026): what used to reach the owner or
+ * a barber by WhatsApp. Owner = rows with no staffId (his own barber row maps
+ * there too); a barber = his own rows. The agent's open questions (owner) are
+ * answered in place, and a request that waits for "כן / לא" (swap, late
+ * arrival) is answered with a button, exactly as a WhatsApp reply would.
  */
 function scope(req: NextRequest) {
   const s = getRequestSession(req);
@@ -31,7 +31,11 @@ export async function GET(req: NextRequest) {
   ]);
   return NextResponse.json({
     unread,
-    items: rows.map(r => ({ id: r.id, kind: r.kind, title: r.title, body: r.body, href: r.href, at: r.createdAt, read: !!r.readAt, done: !!r.doneAt, questionId: (() => { try { return r.meta ? (JSON.parse(r.meta).questionId ?? null) : null; } catch { return null; } })() })),
+    items: rows.map(r => {
+      let m: { questionId?: string; proposalId?: string; ask?: string } = {};
+      try { m = r.meta ? JSON.parse(r.meta) : {}; } catch { /* none */ }
+      return { id: r.id, kind: r.kind, title: r.title, body: r.body, href: r.href, at: r.createdAt, read: !!r.readAt, done: !!r.doneAt, questionId: m.questionId ?? null, ask: m.proposalId && m.ask ? m.ask : null };
+    }),
     questions: questions.map(q => ({ id: q.id, question: q.question, customerName: q.customerName, customerPhone: q.customerPhone.replace(/^972/, "0"), at: q.createdAt })),
   });
 }
@@ -46,6 +50,25 @@ export async function POST(req: NextRequest) {
   }
   if (b.action === "readAll") {
     await prisma.businessNotification.updateMany({ where: { ...sc.where, readAt: null }, data: { readAt: new Date() } });
+    return NextResponse.json({ ok: true });
+  }
+  // "מאשר / לא" on a swap or late-arrival request: the same path as the WhatsApp reply.
+  if (b.action === "reply" && typeof b.id === "string") {
+    const n = await prisma.businessNotification.findFirst({ where: { ...sc.where, id: b.id } });
+    if (!n) return NextResponse.json({ error: "לא נמצא" }, { status: 404 });
+    if (n.doneAt) return NextResponse.json({ error: "כבר נענה" }, { status: 400 });
+    let m: { proposalId?: string } = {};
+    try { m = n.meta ? JSON.parse(n.meta) : {}; } catch { /* none */ }
+    const proposal = m.proposalId ? await prisma.swapProposal.findFirst({ where: { id: m.proposalId, businessId: sc.s.businessId } }) : null;
+    const done = () => prisma.businessNotification.update({ where: { id: n.id }, data: { doneAt: new Date(), readAt: new Date() } });
+    if (!proposal || !["pending_staff_approval", "pending_staff_swap_confirm"].includes(proposal.status)) { await done(); return NextResponse.json({ error: "הבקשה כבר לא פתוחה (נענתה או פגה)" }, { status: 400 }); }
+    const latest = await prisma.swapProposal.findFirst({ where: { businessId: sc.s.businessId, approvalStaffId: proposal.approvalStaffId, status: { in: ["pending_staff_approval", "pending_staff_swap_confirm"] }, initiatedBy: "agent" }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    if (latest?.id !== proposal.id) return NextResponse.json({ error: "יש בקשה חדשה יותר מאותו ספר. ענה עליה קודם" }, { status: 409 });
+    const staff = proposal.approvalStaffId ? await prisma.staff.findUnique({ where: { id: proposal.approvalStaffId }, select: { phone: true } }) : null;
+    if (!staff?.phone) return NextResponse.json({ error: "לספר אין טלפון רשום" }, { status: 400 });
+    const { handleStaffApprovalReply } = await import("@/lib/agent/appointment-swap");
+    await handleStaffApprovalReply(sc.s.businessId, staff.phone, b.yes === true ? "כן" : "לא");
+    await done();
     return NextResponse.json({ ok: true });
   }
   if (!sc.owner) return NextResponse.json({ error: "רק בעל העסק עונה על שאלות הסוכן" }, { status: 403 });

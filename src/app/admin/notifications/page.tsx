@@ -5,23 +5,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 /**
- * The notification center (10.10.2026, Yair: "מסך שכל הפוש וההתראות יהיו בו").
- * Questions the agent could not answer (answered right here), escalations,
- * reports, swaps and system alerts, plus the bookings / cancellations /
- * waitlist feed. How each kind also reaches you: settings → notifications.
+ * The notification center (10.10.2026, Yair: "שם יהיה כל מה שעד כה נשלח
+ * אליי לווצאפ"): the agent's questions (answered here), escalations, swap and
+ * late-arrival requests (answered with a button), day closures, reports and
+ * system alerts. Bookings and cancellations are not here; they stay push.
  */
-type Item = { id: string; kind: string; title: string; body: string | null; href: string | null; at: string; read: boolean; done: boolean; questionId: string | null };
+type Item = { id: string; kind: string; title: string; body: string | null; href: string | null; at: string; read: boolean; done: boolean; questionId: string | null; ask: string | null };
 type Question = { id: string; question: string; customerName: string | null; customerPhone: string; at: string };
-type FeedEvent = { id: string; type: "booking" | "cancellation" | "waitlist"; at: string; customerName: string; staffName: string; serviceName: string; dateLabel: string; startTime: string; unread: boolean };
-type Row = { key: string; at: string; tag: string; tone: string; title: string; body: string | null; href: string | null; unread: boolean; id?: string };
+type Row = { key: string; at: string; tag: string; tone: string; title: string; body: string | null; href: string | null; unread: boolean; id: string; ask: string | null; done: boolean };
 
 const TAG: Record<string, [string, string]> = {
   agent_question: ["שאלה", "bg-amber-50 text-amber-700"],
   escalation: ["טיפול אנושי", "bg-red-50 text-red-700"],
-  booking: ["תור חדש", "bg-teal-50 text-teal-700"],
-  cancellation: ["ביטול", "bg-neutral-100 text-neutral-600"],
-  waitlist: ["רשימת המתנה", "bg-indigo-50 text-indigo-700"],
-  swap: ["החלפה", "bg-sky-50 text-sky-700"],
+  swap: ["החלפה / איחור", "bg-sky-50 text-sky-700"],
+  closure: ["סגירת יום", "bg-indigo-50 text-indigo-700"],
   report: ["דוח", "bg-emerald-50 text-emerald-700"],
   system: ["תקלה", "bg-red-50 text-red-700"],
 };
@@ -70,19 +67,15 @@ function CenterInner() {
   const focusQ = useSearchParams().get("q");
   const [items, setItems] = useState<Item[] | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [feed, setFeed] = useState<FeedEvent[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [c, f] = await Promise.all([
-      fetch("/api/admin/notification-center", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).catch(() => null),
-      fetch("/api/admin/notifications", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).catch(() => null),
-    ]);
+    const c = await fetch("/api/admin/notification-center", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).catch(() => null);
     setItems(c?.items ?? []);
     setQuestions(c?.questions ?? []);
-    setFeed(Array.isArray(f?.events) ? f.events : []);
-    // Opening the screen = seen (the badge clears; the old bell too).
+    // Opening the screen = seen (the badge clears).
     if (c?.unread) await fetch("/api/admin/notification-center", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "readAll" }) }).catch(() => {});
-    if (f?.hasUnread) await fetch("/api/admin/notifications", { method: "POST" }).catch(() => {});
     window.dispatchEvent(new Event("center:read"));
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -90,14 +83,17 @@ function CenterInner() {
 
   if (!items) return <div className="p-8 text-center text-neutral-400">טוען...</div>;
 
-  const rows: Row[] = [
-    ...items.filter(i => !(i.kind === "agent_question" && !i.done)).map(i => ({ key: i.id, id: i.id, at: i.at, tag: TAG[i.kind]?.[0] ?? "עדכון", tone: TAG[i.kind]?.[1] ?? "bg-neutral-100 text-neutral-600", title: i.title, body: i.body, href: i.href && !i.href.startsWith("/admin/notifications") ? i.href : null, unread: !i.read })),
-    ...feed.map(e => ({
-      key: `f-${e.id}`, at: e.at, tag: TAG[e.type][0], tone: TAG[e.type][1], unread: e.unread, href: null,
-      title: e.type === "waitlist" ? `${e.customerName} נרשם לרשימת המתנה` : `${e.type === "booking" ? "תור חדש" : "ביטול"}: ${e.customerName}`,
-      body: [e.staffName && `אצל ${e.staffName}`, e.serviceName, e.dateLabel, e.startTime].filter(Boolean).join(" · "),
-    })),
-  ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  const rows: Row[] = items
+    .filter(i => !(i.kind === "agent_question" && !i.done))
+    .map(i => ({ key: i.id, id: i.id, at: i.at, tag: TAG[i.kind]?.[0] ?? "עדכון", tone: TAG[i.kind]?.[1] ?? "bg-neutral-100 text-neutral-600", title: i.title, body: i.body, href: i.href && !i.href.startsWith("/admin/notifications") ? i.href : null, unread: !i.read, ask: i.ask, done: i.done }));
+
+  async function reply(id: string, yes: boolean) {
+    setBusy(id); setErr(null);
+    const r = await fetch("/api/admin/notification-center", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reply", id, yes }) });
+    setBusy(null);
+    if (!r.ok) setErr((await r.json().catch(() => ({}))).error || "לא נשלח");
+    await load();
+  }
 
   return (
     <div className="p-4 sm:p-8 overflow-auto h-full">
@@ -105,7 +101,7 @@ function CenterInner() {
         <div className="flex items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold text-neutral-900">התראות</h1>
-            <p className="text-neutral-500 text-sm mt-1">כל מה שקורה בעסק, במקום אחד</p>
+            <p className="text-neutral-500 text-sm mt-1">כל מה שהיה מגיע אליך בוואטסאפ, במקום אחד</p>
           </div>
           <Link href="/admin/settings/notifications" className="text-sm text-teal-700 shrink-0">איך זה מגיע אליי ←</Link>
         </div>
@@ -117,20 +113,29 @@ function CenterInner() {
           </section>
         )}
 
+        {err && <p className="text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
         <section className="bg-white rounded-2xl border border-neutral-200 divide-y divide-neutral-100">
           {rows.length === 0 && <p className="p-5 text-sm text-neutral-500">אין עדיין התראות.</p>}
           {rows.map(r => {
+            const waiting = !!r.ask && !r.done;
             const inner = (
-              <div className={`flex items-start gap-3 px-4 py-3 ${r.unread ? "bg-teal-50/40" : ""}`}>
+              <div className={`flex items-start gap-3 px-4 py-3 ${r.unread || waiting ? "bg-teal-50/40" : ""}`}>
                 <span className={`shrink-0 text-[11px] font-semibold px-2 py-0.5 rounded-full mt-0.5 ${r.tone}`}>{r.tag}</span>
                 <span className="flex-1 min-w-0">
-                  <span className={`block text-sm ${r.unread ? "font-semibold text-neutral-900" : "text-neutral-800"}`}>{r.title}</span>
-                  {r.body && <span className="block text-xs text-neutral-500 mt-0.5 whitespace-pre-line line-clamp-3">{r.body}</span>}
+                  <span className={`block text-sm ${r.unread || waiting ? "font-semibold text-neutral-900" : "text-neutral-800"}`}>{r.title}</span>
+                  {r.body && <span className={`block text-xs text-neutral-500 mt-0.5 whitespace-pre-line ${waiting ? "" : "line-clamp-3"}`}>{r.body}</span>}
+                  {waiting && (
+                    <span className="flex gap-2 mt-2">
+                      <button type="button" disabled={!!busy} onClick={e => { e.stopPropagation(); void reply(r.id, true); }} className="px-4 py-1.5 rounded-lg bg-teal-600 text-white text-sm font-semibold disabled:opacity-50">{busy === r.id ? "..." : "מאשר"}</button>
+                      <button type="button" disabled={!!busy} onClick={e => { e.stopPropagation(); void reply(r.id, false); }} className="px-4 py-1.5 rounded-lg border border-neutral-300 text-neutral-700 text-sm disabled:opacity-50">לא מאשר</button>
+                    </span>
+                  )}
+                  {r.ask && r.done && <span className="block text-[11px] text-emerald-600 mt-1">נענה</span>}
                 </span>
                 <span className="shrink-0 text-[11px] text-neutral-400 mt-0.5">{ago(r.at)}</span>
               </div>
             );
-            return r.href
+            return r.href && !waiting
               ? <button key={r.key} type="button" onClick={() => router.push(r.href!)} className="block w-full text-right">{inner}</button>
               : <div key={r.key}>{inner}</div>;
           })}

@@ -34,6 +34,7 @@ import { executeApprovedProposal } from "@/lib/appointments/swap-exec";
 import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, hoursUntilAppointment, getShopPhone } from "@/lib/cancellation-policy";
+import { staffAlert } from "@/lib/notify/center";
 
 /** Swap outcomes to the owner (10.10.2026): into the notification center, and as push unless he chose "screen only". */
 async function ownerSwapNotice(bizId: string, payload: Parameters<typeof pushToOwner>[1], eventStaffId?: string | null): Promise<void> {
@@ -142,7 +143,7 @@ async function notifyRequester(
  * outcome only gets messaged to the requester's conversation), which reads as
  * the system ignoring them even though it acted correctly. Found 2026-08-13.
  */
-async function notifyStaffByPhone(bizId: string, phone: string, text: string): Promise<void> {
+async function notifyStaffByPhone(bizId: string, phone: string, text: string, ask?: { proposalId: string; ask: string }): Promise<void> {
   const normalized = normalizeIsraeliPhone(phone);
   const conv = await prisma.conversation.findFirst({
     where: { businessId: bizId, phone: normalized, agentType: { not: "owner" } },
@@ -157,7 +158,11 @@ async function notifyStaffByPhone(bizId: string, phone: string, text: string): P
       data: { lastMessageAt: new Date() },
     }).catch(() => {});
   }
-  await sendMessage({ businessId: bizId, customerPhone: normalized, kind: "agent_reply", body: text }).catch(() => {});
+  await staffAlert({
+    businessId: bizId, phone: normalized, kind: "swap", title: text.split("\n")[0].replace(/\s*ענה כן או לא\.?$/, "").slice(0, 120), body: text.replace(/\s*ענה כן או לא\.?$/, ""),
+    meta: ask ?? null,
+    whatsapp: () => sendMessage({ businessId: bizId, customerPhone: normalized, kind: "agent_reply", body: text }).catch(() => {}),
+  });
 }
 
 /** Find up to 2 OTHER customers' appointments occupying a specific slot. */
@@ -435,7 +440,7 @@ export async function requestAppointmentMove(opts: {
       return `כדי לבקש מלקוח אחר להחליף צריך לקבל אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום במערכת ואי אפשר לפנות אליו. אל תפתח בקשה — הצע ללקוח זמן פנוי אחר במקום.`;
     }
 
-    await prisma.swapProposal.create({
+    const swapReq = await prisma.swapProposal.create({
       data: {
         businessId: bizId,
         primaryAppointmentId: appt.id,
@@ -463,12 +468,18 @@ export async function requestAppointmentMove(opts: {
       `רוצה לעבור ל: ${targetLabel}\n` +
       `אבל השעה הזו תפוסה אצל: ${occupantNames}\n` +
       `אפשר להציע ל${occupantNames} להחליף? ענה כן או לא.`;
-    await sendMessage({
-      businessId: bizId,
-      customerPhone: normalizeIsraeliPhone(appt.staff.phone),
-      kind: "swap_staff_request",
-      body: approvalMsg,
-    }).catch(err => console.error("[agent-swap] staff approval send failed", err));
+    // Notification center (10.10.2026): with "מאשר / לא" buttons; WhatsApp only if he chose it.
+    await staffAlert({
+      businessId: bizId, staffId: appt.staffId, kind: "swap",
+      title: `בקשת החלפת תור: ${appt.customer.name}`, body: approvalMsg.replace(/\s*ענה כן או לא\.$/, ""),
+      meta: { proposalId: swapReq.id, ask: "swap" },
+      whatsapp: () => sendMessage({
+        businessId: bizId,
+        customerPhone: normalizeIsraeliPhone(appt.staff.phone!),
+        kind: "swap_staff_request",
+        body: approvalMsg,
+      }).catch(err => console.error("[agent-swap] staff approval send failed", err)),
+    });
 
     return `אין מקום פנוי בשעה שביקש, אז שלחתי ל${appt.staff.name} בקשה לאשר החלפה עם לקוח אחר. אמור ללקוח שאתה בודק מול הספר אפשרות להחליף לשעה הזו ותעדכן אותו ברגע שיש תשובה — בלי להבטיח שזה סגור.`;
   }
@@ -569,12 +580,11 @@ export async function reportRunningLate(opts: {
   const apptLabel = `${appt.startTime}`;
 
   if (delayMinutes <= grace) {
-    await sendMessage({
-      businessId: bizId,
-      customerPhone: normalizeIsraeliPhone(appt.staff.phone ?? ""),
-      kind: "agent_reply",
-      body: `ℹ️ ${appt.customer.name} עדכן/ה שיאחר/תאחר בכ-${delayMinutes} דקות לתור היום ב-${apptLabel}. בגבול הזמן המקובל, אין צורך בפעולה.`,
-    }).catch(() => {});
+    const info = `ℹ️ ${appt.customer.name} עדכן/ה שיאחר/תאחר בכ-${delayMinutes} דקות לתור היום ב-${apptLabel}. בגבול הזמן המקובל, אין צורך בפעולה.`;
+    await staffAlert({
+      businessId: bizId, staffId: appt.staffId, kind: "swap", title: `${appt.customer.name} מאחר ${delayMinutes} דקות`, body: info,
+      whatsapp: () => sendMessage({ businessId: bizId, customerPhone: normalizeIsraeliPhone(appt.staff.phone ?? ""), kind: "agent_reply", body: info }).catch(() => {}),
+    });
     return `✅ בתוך הזמן שמוגדר (${grace} דקות) — עדכנתי את ${appt.staff.name}. אמור ללקוח שאין בעיה, נתראה בקרוב.`;
   }
 
@@ -582,7 +592,7 @@ export async function reportRunningLate(opts: {
     return `האיחור (${delayMinutes} דק') מעל ${grace} הדקות המוגדרות, וזה בדרך כלל דורש אישור מ${appt.staff.name}, אבל אין לו מספר טלפון רשום. אמור ללקוח שאתה מעביר את זה לצוות (קרא ל-escalate_to_human).`;
   }
 
-  await prisma.swapProposal.create({
+  const lateReq = await prisma.swapProposal.create({
     data: {
       businessId: bizId,
       primaryAppointmentId: appt.id,
@@ -595,16 +605,22 @@ export async function reportRunningLate(opts: {
     },
   });
 
-  await sendMessage({
-    businessId: bizId,
-    customerPhone: normalizeIsraeliPhone(appt.staff.phone),
-    kind: "swap_staff_request",
-    body:
-      `🔔 עדכון איחור\n` +
+  const lateMsg =
+    `🔔 עדכון איחור\n` +
       `${appt.customer.name} מודיע/ה שיאחר/תאחר בכ-${delayMinutes} דקות לתור היום ב-${apptLabel} (${appt.service.name}).\n` +
       `זה מעל ${grace} הדקות שהוגדרו כברירת מחדל לפני שנחשב הברזה.\n` +
-      `אפשר לאשר את האיחור בכל זאת? ענה כן או לא.`,
-  }).catch(err => console.error("[agent-swap] late-arrival staff alert failed", err));
+      `אפשר לאשר את האיחור בכל זאת? ענה כן או לא.`;
+  await staffAlert({
+    businessId: bizId, staffId: appt.staffId, kind: "swap",
+    title: `${appt.customer.name} מאחר ${delayMinutes} דקות: לאשר?`, body: lateMsg.replace(/\s*ענה כן או לא\.$/, ""),
+    meta: { proposalId: lateReq.id, ask: "late" },
+    whatsapp: () => sendMessage({
+      businessId: bizId,
+      customerPhone: normalizeIsraeliPhone(appt.staff.phone!),
+      kind: "swap_staff_request",
+      body: lateMsg,
+    }).catch(err => console.error("[agent-swap] late-arrival staff alert failed", err)),
+  });
 
   return `❌ מעל ${grace} הדקות שמוגדרות — זה בדרך כלל נחשב הברזה. שלחתי ל${appt.staff.name} בקשת אישור. אמור ללקוח, במדויק ובעדינות: "${delayMinutes} דקות זה קצת מעל הזמן שמקובל אצלנו — בדרך כלל עד ${grace} דקות אנחנו מבליגים, מעל זה האיחור נחשב הברזה. בודק מול ${appt.staff.name} אם אפשר לאשר את זה בכל זאת, ותעדכן ברגע שיש תשובה" — לא יכול להבטיח לו שזה יאושר, רק שאתה בודק.`;
 }
@@ -1015,6 +1031,7 @@ async function handleLateArrivalStaffReply(
         bizId,
         phone,
         `מבחינתנו זה נחשב הברזה. רוצה שאציע ל${next.customer.name} (התור הבא) להחליף איתו? ענה כן או לא.`,
+        { proposalId: proposal.id, ask: "late_swap" },
       );
       await notifyRequester(
         bizId,
