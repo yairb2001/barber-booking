@@ -389,7 +389,10 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
   }
   const turns = (state.demoTurns ?? 0) + 1;
   const next: SalesState = { ...state, demoTurns: turns };
-  if (turns >= 3 && !state.demoNudged) {
+  // Not while the demo is in the middle of a booking (it just offered times or asked for a name).
+  const lastDemo = await prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true } });
+  const midBooking = !!lastDemo && (/\d{1,2}:\d{2}/.test(lastDemo.content) || /שם/.test(lastDemo.content) || /מאשר|לאשר/.test(lastDemo.content));
+  if (turns >= 3 && !state.demoNudged && !midBooking) {
     next.demoNudged = true;
     await saveState(convId, next);
     const line = `אגב, כשתרצה לעצור את הדמו פשוט תכתוב "סיימתי", ונקבע שיחה קצרה עם ${rep}.`;
