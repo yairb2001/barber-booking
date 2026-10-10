@@ -452,7 +452,7 @@ function salesSystemV2(state: SalesState, senderName: string | null, rep: string
   const known = [state.fullName ? `שם: ${state.fullName}` : "", state.businessName ? `מספרה: ${state.businessName}` : ""].filter(Boolean).join(", ");
   const isLead = state.mode === "lead";
   const opener = !firstTurn ? "" : isLead
-    ? `זו ההודעה הראשונה שלך אליו: פתח בשם הפרטי שלו ובשם המספרה, הזכר שהשאיר פרטים, וענה במשפט על מה שכתב אם שאל משהו. סיים בשאלה אחת על המספרה.`
+    ? `זו ההודעה הראשונה שלך אליו. פתח במילים "היי ${(state.fullName ?? "").trim().split(/\s+/)[0]}, כאן צ'אטור." ענה במשפט על מה שכתב, ואם עוד לא אמרת, הזכר שהשאיר פרטים לגבי המספרה שלו. סיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
     : state.source === "keywords"
       ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו): "היי, כאן צ'אטור." ומשפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
       : `זו ההודעה הראשונה שלך אליו: "היי, כאן צ'אטור." אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
@@ -491,6 +491,7 @@ ${ctx}
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות.
 - "לא מעוניין" או "לא עכשיו": not_interested ומשפט אדיב אחד.
+- אל תגיד שמישהו יתקשר אליו או שנקבעה שיחה, אלא אם כתוב למעלה "שיחה קבועה". אין שיחה: הצע לקבוע.
 
 ${knowledge}
 
@@ -635,7 +636,10 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
 
   await saveState(p.conversationId, state);
   // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
-  const out = v2 ? [guardPriceV2(replies.join("\n\n"))] : guardPrice(replies);
+  let joined = replies.join("\n\n");
+  // v2: the first reply always says who is writing.
+  if (v2 && firstTurn && !/צ['׳]אטור/.test(joined)) joined = `היי, כאן צ'אטור. ${joined}`;
+  const out = v2 ? [guardPriceV2(joined)] : guardPrice(replies);
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };
 }
@@ -659,8 +663,10 @@ function guardPrice(replies: string[]): string[] {
 
 async function reply(conversationId: string, phone: string, texts: string[], sandbox?: DemoSandbox): Promise<void> {
   for (const body of texts) {
-    if (sandbox) { sandbox.replies.push(body); continue; }
+    // Saved in the sandbox too (its conversation is wiped by the test cleanup), so the
+    // next turn sees what was already said, as in a real chat.
     await prisma.conversationMessage.create({ data: { conversationId, role: "assistant", content: body, source: "agent" } });
+    if (sandbox) { sandbox.replies.push(body); continue; }
     await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "sales_reply", body }).catch(e => console.error("[sales-agent] send failed", e));
   }
   await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date() } }).catch(() => {});
