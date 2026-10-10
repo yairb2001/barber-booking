@@ -149,6 +149,8 @@ ANTHROPIC_API_KEY     # AI agent
 CRON_SECRET           # REQUIRED — every cron route fails closed without it
 WHATSAPP_WEBHOOK_TOKEN # shared secret GreenAPI sends on the inbound webhook (set in Vercel + GreenAPI)
 VAPID_PRIVATE_KEY     # web push (or per-business settings.vapidPrivateKey)
+INSTAGRAM_VERIFY_TOKEN # Instagram webhook handshake (GET /api/webhook/instagram) — experiment endpoint
+INSTAGRAM_APP_SECRET  # signs Instagram webhook POSTs (X-Hub-Signature-256) — experiment endpoint
 ```
 
 GreenAPI credentials are stored **per-business** in the DB (`Business.greenApiInstanceId`, `Business.greenApiToken`) — not in env.
