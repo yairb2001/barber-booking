@@ -265,7 +265,7 @@ export async function runDemoTurn(p: {
   if (state.mode === "lead" || state.mode === "choosing" || state.mode === "lead_demo") {
     if (state.mode === "lead_demo") {
       // v2: "סיימתי" or a question about the product ends the demo, back to the sale.
-      if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text) || PRICE_RE.test(text))) {
+      if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text))) {
         state = { ...state, mode: "lead" };
         await saveState(conv.id, state);
         const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
@@ -452,10 +452,10 @@ function salesSystemV2(state: SalesState, senderName: string | null, rep: string
   const known = [state.fullName ? `שם: ${state.fullName}` : "", state.businessName ? `מספרה: ${state.businessName}` : ""].filter(Boolean).join(", ");
   const isLead = state.mode === "lead";
   const opener = !firstTurn ? "" : isLead
-    ? `זו ההודעה הראשונה שלך אליו. פתח במילים "היי ${(state.fullName ?? "").trim().split(/\s+/)[0]}, כאן צ'אטור." ענה במשפט על מה שכתב, ואם עוד לא אמרת, הזכר שהשאיר פרטים לגבי המספרה שלו. סיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
+    ? `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. ענה במשפט על מה שכתב, הזכר שהשאיר פרטים לגבי המספרה שלו, וסיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
     : state.source === "keywords"
-      ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו): "היי, כאן צ'אטור." ומשפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
-      : `זו ההודעה הראשונה שלך אליו: "היי, כאן צ'אטור." אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
+      ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו). המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. משפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
+      : `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
   return `אתה צ'אטור. מערכת תורים למספרות עם סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה. אתה מתכתב בוואטסאפ על המספר של צ'אטור, ואתה עצמך ההדגמה הכי טובה למוצר.
 זהות: אתה מציג את עצמך "כאן צ'אטור", בגוף ראשון. בלי שם של בן אדם, ולא קורא לעצמך בוט מיוזמתך. שואלים אם אתה בוט או בן אדם: עונים בפשטות "כן, אני הסוכן של צ'אטור, וזה בדיוק מה שהלקוחות שלך יקבלו בוואטסאפ של המספרה." בלי להתפתל.
 
@@ -482,7 +482,7 @@ ${ctx}
 - "לא רוצה שייגעו לי בוואטסאפ": המספר נשאר שלך, הכל נראה אצלך בטלפון, ואפשר לכבות את הסוכן בכל רגע.
 - "תן לי לחשוב": סבבה, בלי לחץ. משפט אחד ועוצר.
 
-מעבירים ל${rep} (handoff_to_rep): מבקש בן אדם, מבקש הנחה, שאלה שאין עליה תשובה בידע למטה, תלונה, או לקוח קיים עם בעיה.
+רוצה לדבר עם בן אדם: הצע שיחה עם ${rep} עם שתי שעות מהרשימה, זו המטרה. מעבירים ל${rep} (handoff_to_rep) רק כשמתעקש שיחזרו אליו עכשיו או כשאין שעות פנויות, וגם כשמבקש הנחה, שואל שאלה שאין עליה תשובה בידע למטה, מתלונן, או לקוח קיים עם בעיה.
 
 גבולות:
 - הודעה אחת, עד שלושה משפטים. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
@@ -638,7 +638,10 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
   let joined = replies.join("\n\n");
   // v2: the first reply always says who is writing.
-  if (v2 && firstTurn && !/צ['׳]אטור/.test(joined)) joined = `היי, כאן צ'אטור. ${joined}`;
+  if (v2 && firstTurn && !/כאן צ['׳]אטור/.test(joined)) {
+    const first = (state.fullName ?? "").trim().split(/\s+/)[0];
+    joined = `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
+  }
   const out = v2 ? [guardPriceV2(joined)] : guardPrice(replies);
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };
