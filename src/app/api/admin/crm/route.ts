@@ -400,6 +400,9 @@ export async function GET(req: NextRequest) {
     // Chator's own WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות").
     if (view === "chats" || view === "chat") {
       const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+      // Leads are saved as 05X, 9725X or +9725X; a chat's phone is any of these.
+      const local = (p: string) => { const d = p.replace(/\D/g, ""); return d.startsWith("972") ? `0${d.slice(3)}` : d; };
+      const forms = (p: string) => { const l = local(p); const i = `972${l.slice(1)}`; return [p, l, i, `+${i}`]; };
       if (view === "chats") {
         const convs = await prisma.conversation.findMany({
           where: { businessId: DEMO, agentType: { not: "owner" }, NOT: { phone: { startsWith: "972000" } }, lastMessageAt: { not: null } },
@@ -407,21 +410,21 @@ export async function GET(req: NextRequest) {
           select: { id: true, phone: true, whatsappName: true, lastMessageAt: true, escalatedAt: true, salesState: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, source: true } } },
         });
         const people = convs.filter(c => /^\d{8,15}$/.test(c.phone)); // no groups, no channels
-        const leads = await prisma.lead.findMany({ where: { phone: { in: people.flatMap(c => [c.phone, c.phone.replace(/^972/, "0")]) } }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
-        const leadOf = (p: string) => leads.find(l => l.phone === p || l.phone === p.replace(/^972/, "0"));
+        const leads = await prisma.lead.findMany({ where: { phone: { in: people.flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
+        const leadOf = (p: string) => leads.find(l => local(l.phone) === local(p));
         return NextResponse.json({ chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, phone: c.phone.replace(/^972/, "0"), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, phone: local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, salesState: true } });
       if (!conv) return NextResponse.json({ error: "not_found" }, { status: 404 });
       const [msgs, lead] = await Promise.all([
         prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }),
-        prisma.lead.findFirst({ where: { phone: { in: [conv.phone, conv.phone.replace(/^972/, "0")] } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
+        prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
       ]);
-      return NextResponse.json({ chat: { id: conv.id, phone: conv.phone.replace(/^972/, "0"), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      return NextResponse.json({ chat: { id: conv.id, phone: local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });

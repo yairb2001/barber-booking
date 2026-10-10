@@ -26,7 +26,7 @@ export default function ChatsPage() {
             <span className="flex-1 min-w-0">
               <span className="flex items-center gap-2">
                 <b className="text-[15px] truncate">{c.name || c.phone}</b>
-                {c.stage && <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.soft, borderInlineStart: `3px solid ${STAGE_TONE[c.stage]?.accent ?? C.line}` }}>{STAGE_TONE[c.stage]?.label ?? c.stage}</span>}
+                {c.stage && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.soft }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_TONE[c.stage]?.accent ?? C.line }} aria-hidden="true" />{STAGE_TONE[c.stage]?.label ?? c.stage}</span>}
                 {c.paused && <Tag tone="warn">אתה עונה</Tag>}
               </span>
               <span className="block text-[13px] truncate" style={{ color: c.waiting ? C.ink : C.muted, fontWeight: c.waiting ? 600 : 400 }}>{c.last ? `${c.last.role === "assistant" ? (c.last.source === "admin" ? "אתה: " : "הסוכן: ") : ""}${c.last.text}` : ""}</span>
