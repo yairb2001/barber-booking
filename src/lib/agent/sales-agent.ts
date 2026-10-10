@@ -81,6 +81,7 @@ const GREETING_RE = /^(היי|הי|שלום|שלום לך|אהלן|הלו|מה �
 const DONE_RE = /^(סיימתי|סיימנו|די|מספיק|הבנתי את הרעיון|הבנתי|יצאתי)[\s!.]*$/;
 /** Inside the demo: a question about what the PRODUCT can do ("איך זה יכול להחליף בין לקוחות?"). */
 const PRODUCT_Q_RE = /(איך|האם|מה|אפשר ש)\s*(זה|הוא|המערכת|הסוכן|הבוט)\s+(יכול|יודע|עובד|מחליף|עושה|מטפל|שולח|מזכיר|קובע)|זה יכול ל|הוא יכול ל|מה עוד (הוא|זה)|(להחליף|החלפה|החלפות) בין לקוחות|אצלי במספרה|במספרה שלי|ללקוחות שלי/;
+const FROM_DEMO_NOTE = "הוא היה בתוך הדמו ושאל שאלה על המערכת עצמה. ענה עליה ישירות ובקצרה מתוך הידע, בלי להגיד שהוא יצא מהדמו, ואז הצע להמשיך לנסות או שיחה עם יאיר.";
 const HANDOFF_WAIT = "השיחה אצל טיפול אנושי, יחזרו אליך בהקדם.";
 const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/signup`;
 const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
@@ -296,7 +297,7 @@ export async function runDemoTurn(p: {
       if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text) || PRODUCT_Q_RE.test(text))) {
         state = { ...state, mode: "lead" };
         await saveState(conv.id, state);
-        const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
+        const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2, note: DONE_RE.test(text) ? undefined : FROM_DEMO_NOTE });
         return { handled: true, mode: out.state.mode, replies: out.replies };
       }
       return runDemoBooking(conv.id, phone, text, state, p, true, v2, lead);
@@ -339,8 +340,9 @@ export async function runDemoTurn(p: {
     ? state.mode !== "demo" || DONE_RE.test(text) || PRODUCT_Q_RE.test(text) || looksLikeProspect(text, state.mode)
     : looksLikeProspect(text, state.mode) || (state.mode === "pitched" && YES_RE.test(text));
   if (toSales) {
+    const wasDemo = state.mode === "demo";
     if (state.mode !== "sales") { state = { ...state, mode: "sales" }; await saveState(conv.id, state); }
-    const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
+    const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2, note: v2 && wasDemo && !DONE_RE.test(text) ? FROM_DEMO_NOTE : undefined });
     return { handled: true, mode: out.state.mode, replies: out.replies };
   }
   return runDemoBooking(conv.id, phone, text, state, p, false, v2, lead);
@@ -388,7 +390,7 @@ async function runDemoBooking(convId: string, phone: string, text: string, state
     if (askedChator && !booked) {
       const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", demoTurns: undefined, demoNudged: undefined };
       await saveState(convId, next);
-      const out = await runSalesTurn({ conversationId: convId, phone, text, state: next, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
+      const out = await runSalesTurn({ conversationId: convId, phone, text, state: next, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2, note: FROM_DEMO_NOTE });
       return { handled: true, mode: out.state.mode, replies: out.replies };
     }
     return demoAfterTurnV2(convId, phone, state, p, isLead, booked);
@@ -582,7 +584,7 @@ ${SALES_KNOWLEDGE}
 ${FORBIDDEN_CLAIMS}`;
 }
 
-async function runSalesTurn(p: { conversationId: string; phone: string; text: string; state: SalesState; senderName: string | null; sandbox?: DemoSandbox; lead: LeadRow | null; v2?: boolean }): Promise<{ replies: string[]; state: SalesState }> {
+async function runSalesTurn(p: { conversationId: string; phone: string; text: string; state: SalesState; senderName: string | null; sandbox?: DemoSandbox; lead: LeadRow | null; v2?: boolean; note?: string }): Promise<{ replies: string[]; state: SalesState }> {
   let state = p.state;
   const v2 = !!p.v2;
   const history = await prisma.conversationMessage.findMany({
@@ -615,7 +617,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
   if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
-  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) : salesSystem(state, p.senderName, rep, ctx.block);
+  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
   void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
   const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
