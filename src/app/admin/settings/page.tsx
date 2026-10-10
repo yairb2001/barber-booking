@@ -2,6 +2,7 @@
 import { BUILD_LABEL } from "@/lib/build-id";
 
 import Link from "next/link";
+import PlanSummary from "./PlanSummary";
 
 type Card = { href: string; icon: string; title: string; desc: string };
 type Group = { label: string; icon: string; tint: string; cards: Card[] };
@@ -62,6 +63,8 @@ export default function SettingsHubPage() {
         <h1 className="text-2xl font-bold text-neutral-900">הגדרות</h1>
         <p className="text-neutral-500 text-sm mt-1">כל ההגדרות של המערכת, מסודרות לפי נושא</p>
       </div>
+
+      <PlanSummary />
 
       <div className="max-w-4xl space-y-4">
         {GROUPS.map(group => (
