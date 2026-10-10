@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 
 type SetupStatus = {
   hasOwnerPassword: boolean;
@@ -11,8 +10,6 @@ type SetupStatus = {
 };
 
 export default function AdminLoginPage() {
-  const router = useRouter();
-
   // ── On mount: check if password is set up. If not, show first-run UI. ──
   const [status, setStatus] = useState<SetupStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
@@ -64,8 +61,9 @@ export default function AdminLoginPage() {
 
       // Only an /admin path from our own redirect (?next=…), never another site.
       const next = new URLSearchParams(window.location.search).get("next");
-      router.push(next && /^\/admin(\/|\?|$)/.test(next) ? next : "/admin");
-      router.refresh();
+      // A real page load, not router.push: the page must start with its own
+      // manifest, or "Add to Home Screen" on the CRM saves the bookings app.
+      window.location.assign(next && /^\/admin(\/|\?|$)/.test(next) ? next : "/admin");
     } catch {
       setError("שגיאה בחיבור לשרת");
       setSubmitting(false);

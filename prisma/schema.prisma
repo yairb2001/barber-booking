@@ -1243,3 +1243,22 @@ model CrmSetting {
   @@map("crm_settings")
 }
 
+
+// Message diet (10.10.2026): a customer who installed the shop's app and
+// allowed notifications gets appointment messages as push, not WhatsApp.
+// basePath = "" or "/<slug>", where he installed it (push links must stay
+// inside that app's scope or iOS opens Safari instead).
+model CustomerPushSub {
+  id         String    @id @default(uuid())
+  businessId String    @map("business_id")
+  customerId String    @map("customer_id")
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  basePath   String    @default("") @map("base_path")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  lastOkAt   DateTime? @map("last_ok_at")
+
+  @@index([businessId, customerId])
+  @@map("customer_push_subs")
+}

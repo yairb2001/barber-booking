@@ -36,6 +36,20 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+  // Safari's "Add to Home Screen" takes the manifest of the page as it was
+  // first LOADED. Reaching the CRM by in-app navigation (the bookings app's
+  // menu, or the login page) leaves the bookings app's manifest in force and
+  // the shortcut opened the bookings calendar (10.10.2026, twice). In the
+  // browser, enter the CRM with a real page load once.
+  useEffect(() => {
+    try {
+      const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+      if (standalone) return;
+      const nav = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+      const first = nav ? new URL(nav.name).pathname : "";
+      if (first && !first.startsWith("/admin/crm")) window.location.replace(window.location.href);
+    } catch { /* ignore */ }
+  }, []);
 
   if (allowed === null) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-500 font-heebo" style={{ background: C.ground }}>טוען…</div>;
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
