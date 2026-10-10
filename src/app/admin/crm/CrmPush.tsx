@@ -86,11 +86,11 @@ export function CrmPushBanner() {
   const [err, setErr] = useState<string | null>(null);
   if (state !== "off" && state !== "busy" && state !== "needs-install") return null;
   return (
-    <section className="rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-sm" style={{ background: C.mist, color: C.petrol }}>
+    <section className="rounded-2xl ps-4 pe-2 py-2 flex flex-wrap items-center justify-between gap-2 text-sm" style={{ background: C.mist, color: C.petrol }}>
       {state === "needs-install"
         ? <span>להתראות לטלפון: שיתוף ← &quot;הוסף למסך הבית&quot;, ופתח את ה-CRM מהאייקון.</span>
-        : <span>התראות לטלפון רק על מה שצריך אותך (ליד חדש, 10 דק׳ לפני שיחה, תקלה).{err ? ` ${err}` : ""}</span>}
-      {state !== "needs-install" && <Btn kind="dark" disabled={state === "busy"} onClick={async () => setErr(await enable())}>{state === "busy" ? "מפעיל…" : "הפעל התראות"}</Btn>}
+        : <span>התראות לטלפון, רק על מה שחשוב.{err ? ` ${err}` : ""}</span>}
+      {state !== "needs-install" && <Btn kind="dark" className="!min-h-[38px] !px-3 !text-[13px]" disabled={state === "busy"} onClick={async () => setErr(await enable())}>{state === "busy" ? "מפעיל…" : "הפעל"}</Btn>}
     </section>
   );
 }

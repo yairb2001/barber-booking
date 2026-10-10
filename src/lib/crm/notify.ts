@@ -36,7 +36,7 @@ export async function recordCrmNotification(text: string, meta: NotifyMeta = {})
     const body = lines.slice(1).join(" · ").slice(0, 600) || null;
     const href = meta.href ?? (meta.leadId ? `/admin/crm/leads/${meta.leadId}` : meta.businessId ? `/admin/crm/customers/${meta.businessId}` : null);
     const n = await prisma.crmNotification.create({ data: { kind: meta.kind ?? "system", title, body, href, leadId: meta.leadId ?? null, businessId: meta.businessId ?? null, repId: meta.repId ?? null } });
-    if (meta.push) await sendCrmPush({ title, body: body ?? "", url: href ?? "/admin/crm?tab=alerts", tag: `crm-${n.id}` });
+    if (meta.push) await sendCrmPush({ title, body: body ?? "", url: href ?? "/admin/crm/alerts", tag: `crm-${n.id}` });
   } catch (e) {
     console.error("[crm-notify]", e);
   }

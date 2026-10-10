@@ -353,6 +353,13 @@ export async function GET(req: NextRequest) {
   const view = sp.get("view") ?? "home";
   try {
     if (view === "home") return NextResponse.json(await home());
+    // The notifications screen, without the dashboard's heavy queries.
+    if (view === "alerts") {
+      const [list, unread] = await Promise.all([prisma.crmNotification.findMany({ orderBy: { createdAt: "desc" }, take: 60 }), prisma.crmNotification.count({ where: { readAt: null } })]);
+      return NextResponse.json({ unread, notifications: list.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, href: n.href, at: n.createdAt, read: !!n.readAt })) });
+    }
+    // The bell in the header: one cheap count.
+    if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });
     if (view === "leads") return NextResponse.json(await leadsView(sp.get("q")));
     if (view === "lead") { const v = await leadView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "calendar") return NextResponse.json(await calendarView(sp.get("week")));
@@ -480,7 +487,7 @@ export async function POST(req: NextRequest) {
       }
       case "push.test": {
         const { sendCrmPush } = await import("@/lib/crm/notify");
-        const sent = await sendCrmPush({ title: "✅ ההתראות של ה-CRM עובדות", body: "ככה ייראו: קצר, רק מה שצריך אותך.", url: "/admin/crm?tab=alerts", tag: "crm-test" });
+        const sent = await sendCrmPush({ title: "✅ ההתראות של ה-CRM עובדות", body: "ככה ייראו: קצר, רק מה שצריך אותך.", url: "/admin/crm/alerts", tag: "crm-test" });
         return NextResponse.json({ ok: sent > 0, sent, error: sent ? undefined : "אין טלפון עם התראות פעילות" });
       }
       case "notif.read": {

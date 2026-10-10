@@ -75,7 +75,7 @@ export default function CustomerCard() {
 
       <div className="flex flex-wrap gap-4 items-start">
         <div className="flex-[999_1_480px] min-w-0 flex flex-col gap-4">
-          <Card title="שלבי ההקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
+          <Card collapsible title="שלבי ההקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.current ? ` · ${st.current.label}` : ""}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
             <ol className="m-0 p-0 list-none flex flex-col gap-2">
               {st.steps.map((s, i) => {
                 const isCurrent = !s.done && st.steps.findIndex(x => !x.done) === i;
@@ -90,7 +90,7 @@ export default function CustomerCard() {
             </ol>
           </Card>
 
-          <Card title="הסוכן שלו" aside={`${answered}/${ag.fields.length} תשובות · ${ag.enabled ? "פעיל" : "כבוי"}`}>
+          <Card collapsible title="הסוכן שלו" aside={`${answered}/${ag.fields.length} תשובות · ${ag.enabled ? "פעיל" : "כבוי"}`}>
             {ag.customPrompt && <p className="m-0 mb-3 text-[13px] rounded-lg px-3 py-2" style={{ background: TONE.warn.bg, color: TONE.warn.color }}>לעסק הזה יש פרומפט שנכתב ביד, אז התשובות למטה לא משפיעות עליו והוא לא מקבל שיפורים של הבסיס.</p>}
             <div className="flex flex-col">
               {ag.fields.map(f => {
@@ -154,7 +154,7 @@ export default function CustomerCard() {
         </div>
 
         <aside className="flex-[1_1_320px] min-w-0 flex flex-col gap-4">
-          <Card title="איכות הסוכן · 7 ימים">
+          <Card collapsible title="איכות הסוכן · 7 ימים" aside={`${data.quality.conversationsWeek} שיחות · ${data.quality.agentBookingsWeek} תורים`}>
             {[["שיחות", data.quality.conversationsWeek], ["תורים שהסוכן קבע", data.quality.agentBookingsWeek], ["הועברו לאדם", data.quality.escalatedWeek], ["תורים השבוע (כל המקורות)", c.apptsWeek]].map(([l, v]) => (
               <div key={String(l)} className="flex justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${C.soft}` }}><span style={{ color: C.muted }}>{l}</span><b style={NUM}>{v}</b></div>
             ))}
@@ -162,7 +162,7 @@ export default function CustomerCard() {
 
           <PlanCard id={id} data={data.billing} busy={busy} act={act} />
 
-          <Card title="כסף">
+          <Card collapsible title="כסף" aside={b.suspendedAt ? "מושהה" : b.paidAt ? "משלם" : b.trialEndsAt ? "בניסיון" : undefined}>
             <div className="flex flex-col gap-2 text-sm">
               <div className="flex justify-between"><span style={{ color: C.muted }}>מצב</span><b>{b.suspendedAt ? "מושהה" : b.paidAt ? `משלם מ-${d(b.paidAt).split(",")[0]}` : b.trialEndsAt ? `ניסיון עד ${d(b.trialEndsAt).split(",")[0]}` : "—"}</b></div>
               <div className="flex justify-between"><span style={{ color: C.muted }}>עולה לנו החודש</span><b style={{ ...NUM, color: c.price > 0 && c.costIls > c.price ? "#B42318" : C.ink }}>{ils(c.costIls)} ({c.pkgPct}% מהחבילה)</b></div>
@@ -182,7 +182,7 @@ export default function CustomerCard() {
 
           <InvoicesCard id={id} data={data.billing} busy={busy} act={act} />
 
-          <Card title="וואטסאפ לבעל העסק">
+          <Card collapsible title="וואטסאפ לבעל העסק">
             <div className="flex gap-2">
               <label className="sr-only" htmlFor="own-msg">הודעה</label>
               <input id="own-msg" value={msg} onChange={e => setMsg(e.target.value)} placeholder="נשלח מהמספר של צ׳אטור" className="flex-1 h-11 rounded-xl px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
@@ -190,7 +190,7 @@ export default function CustomerCard() {
             </div>
           </Card>
 
-          <Card title="הערות וציר זמן">
+          <Card collapsible title="הערות וציר זמן" aside={data.notes.length ? `${data.notes.length} הערות` : undefined}>
             <div className="flex gap-2 mb-3">
               <label className="sr-only" htmlFor="cust-note">הערה</label>
               <input id="cust-note" value={note} onChange={e => setNote(e.target.value)} placeholder="מה חשוב לזכור" className="flex-1 h-11 rounded-xl px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />

@@ -42,7 +42,7 @@ export function PlanCard({ id, data, busy, act }: { id: string; data: BillingDat
   const u = data.usage;
   const pp = data.packPrices;
   return (
-    <Card title="מסלול ושימוש החודש" aside={plan ? `${plan.name} · ${plan.priceIls} ₪` : "בלי מסלול"}>
+    <Card collapsible title="מסלול ושימוש החודש" aside={plan ? `${plan.name} · ${plan.priceIls} ₪` : "בלי מסלול"}>
       <div className="flex flex-col gap-3">
         <label className="flex items-center gap-2 text-sm">
           <span style={{ color: C.muted }}>מסלול</span>
@@ -82,7 +82,8 @@ export function InvoicesCard({ id, data, busy, act }: { id: string; data: Billin
   const [email, setEmail] = useState(data.billingEmail);
   const [link, setLink] = useState<string | null>(null);
   return (
-    <Card title="חשבוניות ותשלום" aside={data.providerConnected ? "Invoice4U מחובר" : "Invoice4U עוד לא מחובר"}>
+    <Card collapsible title="חשבוניות ותשלום" aside={data.invoices.some(i => i.status === "failed") ? "יש חיוב שנכשל" : data.invoices.length ? `${data.invoices.length} חשבוניות` : undefined}>
+      {!data.providerConnected && <p className="m-0 mb-2 text-xs" style={{ color: C.muted }}>Invoice4U עוד לא מחובר.</p>}
       <div className="flex flex-col gap-2">
         {data.invoices.length === 0 && <p className="m-0 text-sm" style={{ color: C.muted }}>אין עדיין חשבוניות.</p>}
         {data.invoices.map(i => {

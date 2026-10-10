@@ -14,16 +14,28 @@ export const TONE = {
 } as const;
 export type Tone = keyof typeof TONE;
 
-export function Card({ title, aside, children, className = "", dark = false }: { title?: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode; className?: string; dark?: boolean }) {
+/** A white card. collapsible: the title row opens and closes it (closed by
+ *  default unless defaultOpen); aside stays visible as the summary. */
+export function Card({ title, aside, children, className = "", dark = false, collapsible = false, defaultOpen = false }: { title?: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode; className?: string; dark?: boolean; collapsible?: boolean; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(!collapsible || defaultOpen);
+  const asideEl = aside && <div className="text-[13px]" style={{ color: dark ? "#A9C9C4" : C.muted }}>{aside}</div>;
   return (
-    <section className={`rounded-[18px] p-5 ${className}`} style={dark ? { background: C.petrol, color: "#fff" } : { background: "#fff", border: `1px solid ${C.line}` }}>
-      {(title || aside) && (
+    <section className={`rounded-[18px] ${collapsible ? "px-5 py-1" : "p-5"} ${className}`} style={dark ? { background: C.petrol, color: "#fff" } : { background: "#fff", border: `1px solid ${C.line}` }}>
+      {collapsible ? (
+        <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="w-full min-h-[52px] flex items-center justify-between gap-3 text-start" style={{ color: "inherit" }}>
+          {title && <h2 className="m-0 text-[16px] font-bold">{title}</h2>}
+          <span className="flex items-center gap-2 shrink-0">
+            {asideEl}
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke={C.muted} strokeWidth="2.2" strokeLinecap="round" style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform .15s" }}><path d="M6 9l6 6 6-6" /></svg>
+          </span>
+        </button>
+      ) : (title || aside) && (
         <div className="flex items-baseline justify-between gap-3 mb-3">
           {title && <h2 className="m-0 text-[17px] font-bold">{title}</h2>}
-          {aside && <div className="text-[13px]" style={{ color: dark ? "#A9C9C4" : C.muted }}>{aside}</div>}
+          {asideEl}
         </div>
       )}
-      {children}
+      {open && <div className={collapsible ? "pb-4 pt-1" : ""}>{children}</div>}
     </section>
   );
 }

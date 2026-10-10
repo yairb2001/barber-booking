@@ -13,6 +13,7 @@ import { C } from "./ui";
 
 const NAV = [
   { href: "/admin/crm", label: "בית", exact: true },
+  { href: "/admin/crm/tasks", label: "משימות" },
   { href: "/admin/crm/leads", label: "לידים" },
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
@@ -26,6 +27,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(me => {
@@ -36,6 +38,14 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+  // The bell: unread notifications, refreshed on every screen change and when
+  // a screen marks something read (bumpBell in HomeParts).
+  useEffect(() => {
+    const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); }).catch(() => {});
+    void load();
+    window.addEventListener("crm:bell", load);
+    return () => window.removeEventListener("crm:bell", load);
+  }, [pathname]);
   // Safari's "Add to Home Screen" takes the manifest of the page as it was
   // first LOADED. Reaching the CRM by in-app navigation (the bookings app's
   // menu, or the login page) leaves the bookings app's manifest in force and
@@ -60,12 +70,23 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
       <nav aria-label="תפריט CRM" className="md:w-[232px] md:shrink-0 md:min-h-screen flex flex-col" style={{ background: C.petrol, color: "#E8F4F1" }}>
-        <div className="flex items-center justify-between px-5 py-4 md:py-6">
-          <Link href="/admin/crm" className="flex items-baseline gap-2" style={{ textDecoration: "none" }}>
-            <span className="text-[26px] font-bold text-white" style={{ fontFamily: "Outfit, Heebo, sans-serif", letterSpacing: "-0.5px" }}>Chator</span>
+        {/* Phone: menu button on the right (start), logo on the left (Yair, 10.10.2026). */}
+        <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-6">
+          <div className="flex items-center gap-1">
+            <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(o => !o)} aria-expanded={menuOpen} aria-label="תפריט">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                {menuOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
+              </svg>
+            </button>
+            <Link href="/admin/crm/alerts" className="relative w-11 h-11 rounded-lg inline-flex items-center justify-center" style={{ color: pathname.startsWith("/admin/crm/alerts") ? C.turquoise : "#E8F4F1" }} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"}>
+              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+              {unread > 0 && <span className="absolute top-1 end-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold inline-flex items-center justify-center" style={{ background: C.coral, color: C.ink, fontFamily: "Outfit, Heebo, sans-serif" }}>{unread > 99 ? "99+" : unread}</span>}
+            </Link>
+          </div>
+          <Link href="/admin/crm" className="flex items-baseline gap-2" style={{ textDecoration: "none" }} dir="ltr">
+            <span className="text-[24px] md:text-[26px] font-bold text-white" style={{ fontFamily: "Outfit, Heebo, sans-serif", letterSpacing: "-0.5px" }}>Chator</span>
             <span className="text-xs font-semibold tracking-widest" style={{ color: C.turquoise }}>CRM</span>
           </Link>
-          <button type="button" className="md:hidden h-11 px-3 rounded-lg text-sm border" style={{ borderColor: "#36585A" }} onClick={() => setMenuOpen(o => !o)} aria-expanded={menuOpen}>תפריט</button>
         </div>
         <div className={`${menuOpen ? "flex" : "hidden"} md:flex flex-col gap-1 px-3 pb-4 md:flex-1`}>
           {NAV.map(n => (
