@@ -19,8 +19,8 @@ import { getCrmSettings } from "@/lib/crm/core";
 
 export const DEFAULT_PLANS = [
   { key: "base", name: "בסיס", apptsCap: 300, messages: 1200, aiBudgetIls: 30, priceIls: 287, sort: 1 },
-  { key: "mid", name: "ביניים", apptsCap: 600, messages: 2400, aiBudgetIls: 60, priceIls: 497, sort: 2 },
-  { key: "top", name: "עליון", apptsCap: 1000, messages: 4000, aiBudgetIls: 100, priceIls: 797, sort: 3 },
+  { key: "mid", name: "ביניים", apptsCap: 600, messages: 2400, aiBudgetIls: 60, priceIls: 367, sort: 2 },
+  { key: "top", name: "עליון", apptsCap: 1000, messages: 4000, aiBudgetIls: 100, priceIls: 467, sort: 3 },
 ];
 
 /** Re-engagement and promotion kinds — "marketing" on Meta's side, never in a plan. */
