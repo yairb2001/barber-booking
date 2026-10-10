@@ -68,16 +68,22 @@ export function currentMonth(now = new Date()): { key: string; start: Date } {
 
 export const weightedTokens = (usd: number) => Math.round(usd / USD_PER_WEIGHTED_TOKEN);
 
-export function budgetOf(biz: { tier: string | null; settings: string | null }, monthKey: string): { base: number; topup: number; total: number } {
+/** The free month's agent package (10.10.2026, Yair: "להגביל את הסוכן ל־10 ש״ח בערך"): a
+ *  business in its trial and not paying gets at most this much; its plan's package starts when it pays. */
+export const TRIAL_AGENT_BUDGET_ILS = 10;
+export const inTrial = (biz: { paidAt?: Date | null; trialEndsAt?: Date | null }, now = new Date()) => !biz.paidAt && !!biz.trialEndsAt && biz.trialEndsAt > now;
+
+export function budgetOf(biz: { tier: string | null; settings: string | null; paidAt?: Date | null; trialEndsAt?: Date | null }, monthKey: string): { base: number; topup: number; total: number } {
   const s = parse(biz.settings);
-  const base = typeof s.tokenBudgetIls === "number" && s.tokenBudgetIls >= 0 ? s.tokenBudgetIls : (TIER_TOKEN_BUDGET_ILS[biz.tier ?? "basic"] ?? 0);
+  let base = typeof s.tokenBudgetIls === "number" && s.tokenBudgetIls >= 0 ? s.tokenBudgetIls : (TIER_TOKEN_BUDGET_ILS[biz.tier ?? "basic"] ?? 0);
+  if (inTrial(biz)) base = Math.min(base, TRIAL_AGENT_BUDGET_ILS);
   const topups = Array.isArray(s.tokenTopups) ? (s.tokenTopups as { month?: string; ils?: number }[]) : [];
   const topup = topups.filter(t => t.month === monthKey && typeof t.ils === "number").reduce((a, t) => a + (t.ils as number), 0);
   return { base, topup, total: base + topup };
 }
 
 export async function tokenBudgetState(businessId: string, now = new Date()): Promise<TokenBudgetState> {
-  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { tier: true, settings: true } });
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { tier: true, settings: true, paidAt: true, trialEndsAt: true } });
   const { key, start } = currentMonth(now);
   const b = budgetOf(biz ?? { tier: "basic", settings: null }, key);
   const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: start }, NOT: { kind: "sandbox" } }, _sum: { costUsd: true } });

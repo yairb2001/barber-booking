@@ -56,7 +56,7 @@ export async function usageFor(businessIds: string[], now = new Date()): Promise
   const { key, start } = currentMonth(now);
   const [plans, bizs, appts, msgs, mkt, ai, packs] = await Promise.all([
     getPlans(),
-    prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tier: true, settings: true } }),
+    prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tier: true, settings: true, paidAt: true, trialEndsAt: true } }),
     prisma.appointment.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start } }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent" }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent", kind: { in: MARKETING_KINDS } }, _count: { _all: true } }),
@@ -66,7 +66,7 @@ export async function usageFor(businessIds: string[], now = new Date()): Promise
   for (const b of bizs) {
     const plan = plans.find(p => p.key === planKeyOf(b.settings)) ?? null;
     const pack = (k: PackKind) => packs.find(p => p.businessId === b.id && p.kind === k)?._sum.qty ?? 0;
-    const aiCap = budgetOf({ tier: b.tier, settings: b.settings }, key).total;
+    const aiCap = budgetOf(b, key).total;
     const aiUsed = Math.round((ai.find(x => x.businessId === b.id)?._sum.costUsd ?? 0) * USD_ILS * 10) / 10;
     out.set(b.id, {
       month: key,

@@ -107,7 +107,7 @@ export default function SignupPage() {
             <input type="text" value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="המספרה של דני" autoFocus className={input} />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1.5">טלפון (לכניסה למערכת)</label>
+            <label className="block text-sm text-slate-600 mb-1.5">נייד של המספרה (לכניסה ולוואטסאפ)</label>
             <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="050-0000000" dir="ltr" className={input} />
           </div>
           <div>
@@ -131,7 +131,7 @@ export default function SignupPage() {
             <Link href="/admin/login" className="font-medium" style={{ color: C.petrol }}>כניסה</Link>
           </p>
         </form>
-        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם. ההקמה בליווי, ביחד איתנו.</p>
+        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם, בוואטסאפ הרגיל של המספרה. ההקמה בליווי, ביחד איתנו.</p>
       </div>
     </div>
   );

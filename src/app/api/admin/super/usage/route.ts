@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       where: { kind: { in: ["broadcast", "agent_broadcast"] }, createdAt: { gte: monthStart } },
       _count: { _all: true },
     }),
-    prisma.business.findMany({ select: { id: true, name: true, tier: true, settings: true } }),
+    prisma.business.findMany({ select: { id: true, name: true, tier: true, settings: true, paidAt: true, trialEndsAt: true } }),
   ]);
 
   const nameMap = new Map(businesses.map((b) => [b.id, b.name]));

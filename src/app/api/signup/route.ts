@@ -49,8 +49,10 @@ export async function POST(req: NextRequest) {
     if (!businessName || typeof businessName !== "string" || businessName.trim().length < 2) {
       return NextResponse.json({ error: "נא להזין שם עסק" }, { status: 400 });
     }
-    if (!phone || typeof phone !== "string" || digits(phone).length < 9) {
-      return NextResponse.json({ error: "נא להזין מספר טלפון תקין" }, { status: 400 });
+    // The free month runs on the shop's own WhatsApp (regular, by QR), so the
+    // shop needs a mobile number (10.10.2026). Israeli mobile: 05XXXXXXXX / 9725XXXXXXXX.
+    if (!phone || typeof phone !== "string" || !/^(05\d{8}|9725\d{8})$/.test(digits(phone))) {
+      return NextResponse.json({ error: "צריך מספר נייד של המספרה (מתחיל ב־05). זה גם המספר שהסוכן יענה ממנו בוואטסאפ." }, { status: 400 });
     }
     if (!password || typeof password !== "string" || password.length < 6) {
       return NextResponse.json({ error: "סיסמה חייבת להיות לפחות 6 תווים" }, { status: 400 });

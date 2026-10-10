@@ -427,11 +427,11 @@ export default function OnboardingPage() {
               <div className="rounded-2xl border p-4" style={{ borderColor: waOfficial ? C.turquoise : "#E2E8F0", background: waOfficial ? C.mist : "#fff" }}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-slate-800">וואטסאפ רשמי של מטא</p>
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FFF1D6", color: "#7A4A00" }}>בקרוב</span>
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FFF1D6", color: "#7A4A00" }}>אחרי החודש החינמי</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">חיבור מאושר על ידי מטא, בלי סיכון לחסימה. וואטסאפ ביזנס ממשיך לעבוד אצלך בטלפון.</p>
+                <p className="text-xs text-slate-500 mt-1">חיבור מאושר על ידי מטא, בלי סיכון לחסימה. וואטסאפ ביזנס ממשיך לעבוד אצלך בטלפון. החודש החינמי עובד בוואטסאפ הרגיל, והרשמי נפתח אחרי ההצטרפות למסלול.</p>
                 {waOfficial
-                  ? <p className="text-xs mt-3 leading-relaxed" style={{ color: C.petrol }}>רשמנו שאתה רוצה רשמי. כשהחיבור הרשמי ייפתח נחבר אותך. בינתיים אפשר להתחבר ברגיל ולהתחיל לעבוד, והמעבר יהיה בלחיצה.</p>
+                  ? <p className="text-xs mt-3 leading-relaxed" style={{ color: C.petrol }}>רשמנו שאתה רוצה רשמי. בחודש החינמי מתחברים ברגיל, ואחרי ההצטרפות למסלול נעביר אותך לרשמי.</p>
                   : <button type="button" onClick={chooseOfficial} disabled={busy} className="mt-3 w-full rounded-xl py-2.5 text-sm font-semibold border disabled:opacity-50" style={{ borderColor: C.petrol, color: C.petrol }}>אני רוצה רשמי</button>}
               </div>
             </div>
