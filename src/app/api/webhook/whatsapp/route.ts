@@ -419,15 +419,23 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const DEDUP_WINDOW_MS = 30_000;
   const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS);
   // Two voice notes in a row share the same placeholder text — never dedup media.
-  const existingMsg = isNonText ? null : await prisma.conversationMessage.findFirst({
+  const sameText = isNonText ? null : await prisma.conversationMessage.findFirst({
     where: {
       conversationId: conv.id,
       role: "user",
       content: text,
       createdAt: { gte: dedupSince },
     },
-    select: { id: true },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, createdAt: true },
   });
+  // Same text AFTER a reply is a new answer, not a retry: "כן" to "18:15?" and
+  // then "כן" to "תספורת + זקן?" 15 seconds later was dropped (10.10.2026).
+  const answeredSince = sameText ? await prisma.conversationMessage.findFirst({
+    where: { conversationId: conv.id, role: "assistant", createdAt: { gt: sameText.createdAt } },
+    select: { id: true },
+  }) : null;
+  const existingMsg = sameText && !answeredSince ? sameText : null;
   if (existingMsg) {
     console.warn(`[webhook] duplicate message skipped — conv=${conv.id} idMessage=${body.idMessage ?? "n/a"}`);
     return NextResponse.json({ ok: true, skipped: "duplicate_message" });

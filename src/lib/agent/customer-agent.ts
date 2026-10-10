@@ -42,6 +42,7 @@ import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistC
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
+import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -1296,6 +1297,10 @@ export async function execTool(
 
       // ── escalate_to_human ────────────────────────────────────────────────────
       case "escalate_to_human": {
+        // Chator's demo shop has no staff: what it cannot answer is a question
+        // about the product, and Chator answers it (sales-agent.ts sees this
+        // tool call and hands the message to the sales agent). Never mutes the chat.
+        if (bizId === DEMO_BUSINESS_ID) return "זו מספרת ההדגמה של צ'אטור ואין בה צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
         const reason = (input.reason || "").trim() || "הלקוח ביקש לדבר עם נציג.";
         const { notified, targetStaffName } = await escalateToHuman({
           bizId,
