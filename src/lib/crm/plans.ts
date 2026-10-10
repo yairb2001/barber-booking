@@ -1,10 +1,10 @@
 /**
  * Plans, monthly quotas and add-on packs (10.10.2026, Yair).
  *
- * A plan is sold by appointments a month (בסיס 300 / ביניים 600 / עליון
- * 1,000); messages and the AI agent's raw budget are the safety quotas behind
- * it (measured on DOMINANT: ~3.4 messages and ~8 agorot of AI per
- * appointment). Same plans for official and unofficial WhatsApp. No marketing
+ * A plan is a WhatsApp message quota (Yair, 10.10.2026: "לא להגביל תורים, רק
+ * הודעות"). apptsCap is only the ESTIMATE shown at signup ("מתאים לכ־300
+ * תורים"), never a limit: measured on DOMINANT ~3.4 messages per appointment
+ * after the diet. The AI agent's raw budget stays as a cost safety net. Same plans for official and unofficial WhatsApp. No marketing
  * messages in any plan, only bought. Packs are priced at 3× our cost and
  * count for the month they were bought in.
  *
@@ -125,7 +125,7 @@ export async function scanQuotas(now = new Date()): Promise<void> {
     const s = parse(b.settings);
     const alerts = (s.quotaAlerts ?? {}) as Record<string, string[]>;
     const done = new Set(alerts[u.month] ?? []);
-    const hit = (["appts", "messages", "ai"] as const).filter(k => u[k].cap > 0 && u[k].pct >= 80 && !done.has(k));
+    const hit = (["messages", "ai"] as const).filter(k => u[k].cap > 0 && u[k].pct >= 80 && !done.has(k));
     if (!hit.length) continue;
     for (const k of hit) {
       await recordCrmNotification(`${b.name}: ${u[k].pct}% מ${METER_LABEL[k]} של המסלול`, { kind: "customer", businessId: b.id, push: false });

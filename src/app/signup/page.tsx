@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/lib/vocab";
@@ -17,6 +17,12 @@ export default function SignupPage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("");
   const [businessType, setBusinessType] = useState("barber_men");
+  // Plan by how many appointments he has (10.10.2026). Only WhatsApp messages
+  // are limited; the appointments are the estimate the plan fits.
+  const [plans, setPlans] = useState<{ key: string; name: string; apptsEstimate: number; messages: number; priceIls: number }[]>([]);
+  const [planKey, setPlanKey] = useState("base");
+  useEffect(() => { fetch("/api/plans").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.plans?.length) setPlans(j.plans); }).catch(() => {}); }, []);
+  const plan = plans.find(p => p.key === planKey) ?? null;
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -34,7 +40,7 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword }),
+        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, planKey: plan ? planKey : undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -75,6 +81,26 @@ export default function SignupPage() {
               })}
             </div>
           </div>
+
+          {plans.length > 0 && (
+            <div>
+              <label className="block text-sm text-slate-600 mb-1.5">כמה תורים יש לך בחודש, בערך?</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {plans.map(p => {
+                  const on = planKey === p.key;
+                  return (
+                    <button key={p.key} type="button" onClick={() => setPlanKey(p.key)}
+                      className={`rounded-xl border px-2 py-2 text-center transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-700"}`}
+                      style={on ? { background: C.petrol } : {}}>
+                      <span className="block text-sm font-bold">עד {p.apptsEstimate.toLocaleString("he-IL")}</span>
+                      <span className={`block text-[11px] ${on ? "text-white/80" : "text-slate-500"}`}>{p.priceIls} ₪ לחודש</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {plan && <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש. התורים לא מוגבלים, ואפשר לשנות מסלול בכל רגע.</p>}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm text-slate-600 mb-1.5">שם העסק</label>

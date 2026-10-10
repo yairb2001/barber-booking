@@ -48,13 +48,13 @@ export function PlanCard({ id, data, busy, act }: { id: string; data: BillingDat
           <span style={{ color: C.muted }}>מסלול</span>
           <select value={data.planKey ?? ""} disabled={!!busy} onChange={e => e.target.value && confirm("להעביר למסלול הזה? המחיר וחבילת הסוכן יתעדכנו.") && act("plan", { action: "customer.plan", id, planKey: e.target.value }, "המסלול עודכן")} className="flex-1 h-10 rounded-lg px-2" style={{ border: "1px solid #C7D8D5" }}>
             <option value="">בחר מסלול</option>
-            {data.plans.map(p => <option key={p.key} value={p.key}>{p.name}: עד {p.apptsCap} תורים · {p.priceIls} ₪</option>)}
+            {data.plans.map(p => <option key={p.key} value={p.key}>{p.name}: {p.messages.toLocaleString("he-IL")} הודעות · {p.priceIls} ₪</option>)}
           </select>
         </label>
         {u && (
           <>
-            <Bar label="תורים" m={u.appts} />
             <Bar label="הודעות" m={u.messages} />
+            <p className="m-0 text-[13px]" style={{ color: C.muted }}>תורים החודש: <b style={NUM}>{u.appts.used.toLocaleString("he-IL")}</b>{u.appts.cap ? ` (המסלול מתאים לכ־${u.appts.cap.toLocaleString("he-IL")})` : ""}</p>
             <Bar label="חבילת הסוכן" m={u.ai} unit=" ₪" />
             {u.marketing.cap > 0 || u.marketing.used > 0 ? <Bar label="הודעות שיווק" m={u.marketing} /> : null}
           </>

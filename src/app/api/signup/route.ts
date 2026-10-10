@@ -4,6 +4,7 @@ import { hashPassword, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/au
 import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
+import { getPlans } from "@/lib/crm/plans";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -39,7 +40,7 @@ const TRIAL_DAYS = 14;
 
 export async function POST(req: NextRequest) {
   try {
-    const { businessName, phone, password, confirmPassword, businessType: rawType } = await req.json();
+    const { businessName, phone, password, confirmPassword, businessType: rawType, planKey } = await req.json();
     const businessType = isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE;
 
     if (!businessName || typeof businessName !== "string" || businessName.trim().length < 2) {
@@ -83,6 +84,9 @@ export async function POST(req: NextRequest) {
     const slug = await generateSlug(name);
     const passwordHash = await hashPassword(password);
     const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
+    // The plan picked at signup (10.10.2026): a WhatsApp message quota that
+    // fits his estimated appointments. Billing starts after the trial.
+    const plan = typeof planKey === "string" ? (await getPlans()).find(p => p.key === planKey && p.active) ?? null : null;
 
     const business = await prisma.business.create({
       data: {
@@ -95,12 +99,13 @@ export async function POST(req: NextRequest) {
         trialEndsAt,
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
-        settings: JSON.stringify({ ownerLoginPhone: phone }),
+        settings: JSON.stringify({ ownerLoginPhone: phone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}) }),
+        ...(plan ? { monthlyPrice: plan.priceIls } : {}),
       },
       select: { id: true, slug: true },
     });
 
-    await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}`, { kind: "customer", businessId: business.id, push: false });
+    await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}${plan ? `\n\u05de\u05e1\u05dc\u05d5\u05dc: ${plan.name}` : ""}`, { kind: "customer", businessId: business.id, push: false });
 
     const token = await signSession({ businessId: business.id, role: "owner" });
     const res = NextResponse.json({ ok: true, slug: business.slug });

@@ -16,8 +16,8 @@ export default function PlanSummary() {
   const plan = d.plans.find(p => p.key === d.planKey) ?? null;
   const u = d.usage;
   const line = plan ? `${plan.name} · ${plan.priceIls} ₪ לחודש` : d.trialEndsAt ? `תקופת ניסיון עד ${shortDate(d.trialEndsAt)}` : "עוד לא נבחר מסלול";
+  // Only messages are limited; appointments show as a plain count.
   const meters = u && plan ? [
-    { label: "תורים", text: `${n(u.appts.used)} / ${n(u.appts.cap)}`, pct: u.appts.pct },
     { label: "הודעות", text: `${n(u.messages.used)} / ${n(u.messages.cap)}`, pct: u.messages.pct },
     { label: "סוכן", text: `${Math.min(u.aiPct, 999)}%`, pct: u.aiPct },
   ] : [];
@@ -31,7 +31,8 @@ export default function PlanSummary() {
         <span className="text-sm text-teal-700 shrink-0">לפרטים ←</span>
       </div>
       {meters.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mt-3">
+        <div className="grid grid-cols-3 gap-3 mt-3 items-end">
+          <div className="min-w-0 text-[11px] text-neutral-500">תורים החודש<div className="text-sm font-semibold text-neutral-800 tabular-nums">{n(u!.appts.used)}</div></div>
           {meters.map(m => (
             <div key={m.label} className="min-w-0">
               <div className="flex justify-between text-[11px] text-neutral-500 gap-1"><span>{m.label}</span><span className="tabular-nums truncate">{m.text}</span></div>

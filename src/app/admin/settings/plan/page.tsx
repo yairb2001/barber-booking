@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { barColor, n, shortDate, type Meter, type PlanData } from "./shared";
 
 /**
- * "המסלול שלי" (10.10.2026). The owner sees his plan, this month's use, the
+ * "המסלול שלי" (10.10.2026). A plan is a WhatsApp message quota; appointments
+ * are never limited, the plan only says how many it usually fits. The owner sees his plan, this month's use, the
  * other plans, add-on packs and his invoices. Changing plan or adding a pack
  * sends a request to Chator (nothing is charged from this screen); the agent
  * meter is a percentage, never money.
@@ -57,8 +58,9 @@ export default function MyPlanPage() {
   const plan = d.plans.find(p => p.key === d.planKey) ?? null;
   const u = d.usage;
   const monthPacks = u ? d.packs.filter(p => p.month === u.month) : [];
-  const full = u && plan ? [u.appts, u.messages].some(m => m.pct >= 100) || u.aiPct >= 100 : false;
-  const near = u && plan ? [u.appts, u.messages].some(m => m.pct >= 80) || u.aiPct >= 80 : false;
+  // Only WhatsApp messages are limited (Yair, 10.10.2026); appointments are never capped.
+  const full = u && plan ? u.messages.pct >= 100 || u.aiPct >= 100 : false;
+  const near = u && plan ? u.messages.pct >= 80 || u.aiPct >= 80 : false;
 
   return (
     <div className="p-6 sm:p-8 overflow-auto h-full">
@@ -75,18 +77,18 @@ export default function MyPlanPage() {
             <div>
               <h2 className="font-semibold text-neutral-800">{plan ? `מסלול ${plan.name}` : d.trialEndsAt ? "תקופת ניסיון" : "עוד לא נבחר מסלול"}</h2>
               <p className="text-xs text-neutral-500 mt-0.5">
-                {plan ? `${plan.priceIls} ₪ לחודש · עד ${n(plan.apptsCap)} תורים בחודש` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
+                {plan ? `${plan.priceIls} ₪ לחודש · ${n(plan.messages)} הודעות וואטסאפ` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
               </p>
             </div>
             {u && <span className="text-[11px] text-neutral-400 shrink-0 mt-1">מתאפס ב-1 לחודש</span>}
           </div>
           {u && plan ? (
             <div className="space-y-3.5">
-              <Bar label="תורים החודש" m={u.appts} text={`${n(u.appts.used)} מתוך ${n(u.appts.cap)}`} />
               <Bar label="הודעות וואטסאפ" m={u.messages} text={`${n(u.messages.used)} מתוך ${n(u.messages.cap)}`} />
               <Bar label="הסוכן" m={{ pct: u.aiPct }} text={`${u.aiPct}% מהחבילה`} />
               {(u.marketing.cap > 0 || u.marketing.used > 0) && <Bar label="הודעות שיווק" m={u.marketing} text={`${n(u.marketing.used)} מתוך ${n(u.marketing.cap)}`} />}
-              {full ? <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">הגעת לתקרה של החודש. אפשר להוסיף חבילה או לעבור למסלול גדול יותר.</p>
+              <p className="text-sm text-neutral-600">תורים החודש: <b className="tabular-nums">{n(u.appts.used)}</b> <span className="text-xs text-neutral-400">(בלי הגבלה)</span></p>
+              {full ? <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">נגמרו ההודעות של החודש. אפשר להוסיף חבילת הודעות או לעבור למסלול גדול יותר.</p>
                 : near ? <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">מתקרב לתקרה של החודש. כדאי לשקול חבילה או מסלול גדול יותר.</p> : null}
             </div>
           ) : u ? (
@@ -97,7 +99,7 @@ export default function MyPlanPage() {
         {/* Plans */}
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
           <h2 className="font-semibold text-neutral-800 mb-1">המסלולים</h2>
-          <p className="text-xs text-neutral-500 mb-4">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. בוחרים לפי כמות התורים בחודש.</p>
+          <p className="text-xs text-neutral-500 mb-4">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. התורים לא מוגבלים, רק הודעות הוואטסאפ.</p>
           <div className="grid sm:grid-cols-3 gap-2">
             {d.plans.map(p => {
               const mine = p.key === d.planKey;
@@ -109,8 +111,8 @@ export default function MyPlanPage() {
                     {mine && <span className="text-[11px] font-semibold text-teal-700">המסלול שלך</span>}
                   </div>
                   <span className="text-2xl font-bold text-neutral-900 tabular-nums">{p.priceIls} ₪<span className="text-xs font-normal text-neutral-500"> לחודש</span></span>
-                  <span className="text-xs text-neutral-600">עד {n(p.apptsCap)} תורים בחודש</span>
-                  <span className="text-xs text-neutral-500">{n(p.messages)} הודעות וואטסאפ</span>
+                  <span className="text-xs text-neutral-700 font-medium">{n(p.messages)} הודעות וואטסאפ בחודש</span>
+                  <span className="text-xs text-neutral-500">מתאים לכ־{n(p.apptsCap)} תורים בחודש</span>
                   {!mine && (
                     askedRecently(key)
                       ? <span className="text-xs text-teal-700 mt-2">הבקשה נשלחה, נחזור אליך לאשר</span>

@@ -7,7 +7,7 @@ import { C, NUM, Btn, crmAction } from "../ui";
 type Plan = { key: string; name: string; apptsCap: number; messages: number; aiBudgetIls: number; priceIls: number };
 export type PackSettings = { packMessagesQty: number; packMessagesPrice: number; packAiIls: number; packAiPrice: number; packMarketingQty: number; packMarketingPrice: number };
 
-const COLS: [keyof Plan, string][] = [["apptsCap", "תורים בחודש"], ["messages", "הודעות"], ["aiBudgetIls", "סוכן (₪ עלות)"], ["priceIls", "מחיר ₪"]];
+const COLS: [keyof Plan, string][] = [["apptsCap", "מתאים לכ־X תורים"], ["messages", "הודעות"], ["aiBudgetIls", "סוכן (₪ עלות)"], ["priceIls", "מחיר ₪"]];
 const PACKS: [keyof PackSettings, keyof PackSettings, string, string][] = [
   ["packMessagesQty", "packMessagesPrice", "חבילת הודעות", "הודעות"],
   ["packAiIls", "packAiPrice", "חבילת סוכן", "₪ עלות"],
@@ -59,7 +59,7 @@ export function PlansEditor({ plans, packs, onSaved }: { plans: Plan[]; packs: P
           </div>
         ))}
       </div>
-      <p className="m-0 text-xs" style={{ color: C.muted }}>הלקוח רואה תורים. הודעות וסוכן נמדדים מאחורי הקלעים. אין הודעות שיווק באף מסלול, רק בחבילה.</p>
+      <p className="m-0 text-xs" style={{ color: C.muted }}>המגבלה היא רק הודעות וואטסאפ. התורים הם הערכה שמוצגת בהרשמה, לא תקרה. הסוכן נמדד מאחורי הקלעים. אין הודעות שיווק באף מסלול, רק בחבילה.</p>
       <div className="flex items-center gap-3">
         <Btn kind="dark" disabled={busy} onClick={save}>{busy ? "שומר…" : "שמור מסלולים"}</Btn>
         {note && <span className="text-sm" style={{ color: C.petrol }}>{note}</span>}
