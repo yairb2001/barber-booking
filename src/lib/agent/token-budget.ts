@@ -106,7 +106,7 @@ async function alertOnce(businessId: string, kind: "token_alert_80" | "token_ale
     await prisma.messageLog.create({ data: { businessId, customerPhone: "-", kind, body, status: "skipped", error: "no owner phone" } }).catch(() => {});
   }
   pushToOwner(businessId, { title: kind === "token_alert_80" ? "⚠️ 80% מחבילת הסוכן נוצלו" : "⛔ חבילת הסוכן נגמרה לחודש", body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
-  notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת טוקנים — ${owner.name} (${month})`, { kind: "customer", businessId, push: kind === "token_alert_100" }).catch(() => {});
+  notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: kind === "token_alert_100" }).catch(() => {});
   return true;
 }
 
@@ -122,11 +122,11 @@ export async function tokenBudgetGate(businessId: string, phone: string): Promis
   const state = await tokenBudgetState(businessId);
   if (state.level === "none" || state.level === "ok") return { blocked: false, state };
   if (state.level === "warn") {
-    await alertOnce(businessId, "token_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מחבילת הטוקנים של הסוכן החודש (${fmtTokens(state.usedTokens)} מתוך ${fmtTokens(state.packageTokens)}). כשהחבילה תיגמר הסוכן יפסיק לענות ללקוחות עד תחילת החודש; תזכורות ואישורים ממשיכים. להרחבת החבילה — כתוב ליאיר.`);
+    await alertOnce(businessId, "token_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מחבילת הסוכן החודש. כשהחבילה תיגמר הסוכן יפסיק לענות ללקוחות עד תחילת החודש; תזכורות ואישורים ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
     return { blocked: false, state };
   }
   // blocked
-  await alertOnce(businessId, "token_alert_100", state.month, `⛔ חבילת הטוקנים של הסוכן נגמרה לחודש (${fmtTokens(state.packageTokens)}). הסוכן לא עונה ללקוחות חדשים עד תחילת החודש — כל לקוח שכותב מקבל את ההודעה הקבועה עם קישור ההזמנה, ומגיע אליך בפוש. תזכורות, אישורים והחלפות ממשיכים. להוספת חבילה — כתוב ליאיר.`);
+  await alertOnce(businessId, "token_alert_100", state.month, `⛔ חבילת הסוכן נגמרה לחודש. הסוכן לא עונה ללקוחות חדשים עד תחילת החודש: כל לקוח שכותב מקבל את ההודעה הקבועה עם קישור ההזמנה, ומגיע אליך בפוש. תזכורות, אישורים והחלפות ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
   const owner = await ownerPhoneOf(businessId);
   const s = parse(owner.settings);
   const link = await buildBookingLink({ id: owner.id, slug: owner.slug });

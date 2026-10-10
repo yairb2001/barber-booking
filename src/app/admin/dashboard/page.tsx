@@ -4,8 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import NewCustomersRetentionCard from "./RetentionCard";
 
-// ── Token package meter (stage 1): tokens only, no money ──────────────────────
-type Meter = { monthLabel: string; usedLabel: string; packageLabel: string; pct: number; level: "ok" | "warn" | "blocked" | "none" };
+// ── Agent package meter: a percentage and what the agent did. No tokens, no
+// money (10.10.2026: token counts can be converted back to our cost). ────────
+type Meter = { monthLabel: string; pct: number; level: "ok" | "warn" | "blocked" | "none"; conversations: number; agentBookings: number };
 function TokenMeterCard() {
   const [m, setM] = useState<Meter | null>(null);
   useEffect(() => { fetch("/api/admin/agent/usage-meter", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(setM).catch(() => {}); }, []);
@@ -13,13 +14,14 @@ function TokenMeterCard() {
   const color = m.level === "blocked" ? "bg-red-500" : m.level === "warn" ? "bg-amber-500" : "bg-teal-600";
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-semibold text-neutral-800">🤖 חבילת הסוכן · {m.monthLabel}</div>
-        <div className="text-xs text-neutral-500">נוצלו {m.usedLabel} מתוך {m.packageLabel} טוקנים</div>
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="text-sm font-semibold text-neutral-800">🤖 הסוכן · {m.monthLabel}</div>
+        <div className="text-sm font-semibold text-neutral-700 tabular-nums">{m.pct}%</div>
       </div>
+      <div className="mt-0.5 text-xs text-neutral-500">ענה ל־{m.conversations.toLocaleString("he-IL")} שיחות וקבע {m.agentBookings.toLocaleString("he-IL")} תורים</div>
       <div className="mt-2 h-2.5 rounded-full bg-neutral-100 overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${Math.min(100, m.pct)}%` }} /></div>
       <div className="mt-1.5 text-[11px] text-neutral-500">
-        {m.level === "blocked" ? "החבילה נגמרה לחודש — הסוכן לא עונה ללקוחות חדשים עד תחילת החודש; תזכורות ואישורים ממשיכים. להרחבה כתוב ליאיר." : m.level === "warn" ? `${m.pct}% נוצלו. כשהחבילה תיגמר הסוכן יפסיק לענות עד תחילת החודש.` : `${m.pct}% נוצלו. מתאפס ב‑1 לחודש.`}
+        {m.level === "blocked" ? <>החבילה נגמרה לחודש. הסוכן לא עונה ללקוחות חדשים עד תחילת החודש; תזכורות ואישורים ממשיכים. <Link href="/admin/settings/plan" className="underline">להוספת חבילה</Link></> : m.level === "warn" ? <>{m.pct}% מהחבילה של החודש. כשהיא תיגמר הסוכן יפסיק לענות עד תחילת החודש. <Link href="/admin/settings/plan" className="underline">להוספת חבילה</Link></> : `${m.pct}% מהחבילה של החודש. מתאפס ב־1 לחודש.`}
       </div>
     </div>
   );
