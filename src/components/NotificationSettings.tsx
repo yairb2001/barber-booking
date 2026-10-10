@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import EnableNotifications from "./EnableNotifications";
+import NotificationChannels from "./NotificationChannels";
 
 function parseMaybeJson(raw: unknown): Record<string, unknown> {
   if (!raw) return {};
@@ -76,15 +77,15 @@ export default function NotificationSettings({ endpoint = "/api/admin/business" 
     </button>
   );
 
+  // 10.10.2026: bookings, cancellations, waitlist and escalations moved to the
+  // per-kind picker (NotificationChannels); this toggle has no kind of its own.
   const ROWS: { key: ToggleKey; icon: string; label: string; hint: string }[] = [
-    { key: "notifyOnAppointments", icon: "🔔", label: "תור חדש נקבע", hint: "כשלקוח או הבוט קובעים תור חדש" },
-    { key: "notifyOnCancellation", icon: "❌", label: "תור בוטל", hint: "כשלקוח מבטל תור שכבר נקבע" },
-    { key: "notifyOnWaitlist", icon: "⏳", label: "הצטרפות לרשימת המתנה", hint: "כשלקוח נרשם לרשימת המתנה לתור פנוי" },
-    { key: "notifyOnEscalation", icon: "👤", label: "הופנה לטיפול אנושי", hint: "כששיחה מועברת אליך מהבוט" },
-    { key: "notifyOnReply", icon: "💬", label: "לקוח ענה לך בצ׳אט", hint: "רק בשיחות שאתה מטפל בהן — עם תוכן ההודעה" },
+    { key: "notifyOnReply", icon: "💬", label: "לקוח ענה לך בצ׳אט", hint: "רק בשיחות שאתה מטפל בהן, עם תוכן ההודעה" },
   ];
 
   return (
+    <>
+    <NotificationChannels />
     <div className="bg-white border border-neutral-200 rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-lg">🔔</span>
@@ -113,5 +114,6 @@ export default function NotificationSettings({ endpoint = "/api/admin/business" 
         </div>
       )}
     </div>
+    </>
   );
 }

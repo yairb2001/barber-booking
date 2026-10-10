@@ -91,9 +91,9 @@ export default function AgentSetupCard({ fields, answers, onChange, history, onR
                   <textarea
                     value={typeof answers[f.key] === "string" ? String(answers[f.key]) : ""}
                     onChange={e => onChange(f.key, e.target.value)}
-                    rows={f.key === "styleSamples" ? 4 : 3}
+                    rows={f.key === "styleSamples" || f.key === "businessRules" ? 4 : 3}
                     className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                    placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : "כמה מילים בסגנון שלך"}
+                    placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : f.key === "businessRules" || f.key === "staffRules" ? "שורה לכל כלל" : "כמה מילים בסגנון שלך"}
                   />
                 ) : (
                   <input

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { buildWeeklyReportManager, buildWeeklyReportStaff } from "@/lib/messaging/reports";
 import { resolveReportsConfig } from "@/lib/messaging/reports-config";
+import { reportToCenter } from "@/lib/notify/center";
 
 /** Normalized dial key so "0509300173" / "972509300173" / "‭0509…‬" all compare equal. */
 const normKey = (ph: string | null | undefined) => (ph || "").replace(/\D/g, "").replace(/^0/, "972");
@@ -67,8 +68,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // The notification center keeps every report; WhatsApp only if the owner chose it (default).
+    const ownerWa = shop ? await reportToCenter({ businessId: biz.id, title: "הדוח השבועי", body: shop }) : true;
+
     // 1) Business phone → shop report.
-    if (biz.phone && shop) {
+    if (biz.phone && shop && ownerWa) {
       const result = await sendMessage({ businessId: biz.id, customerPhone: biz.phone, kind: "report_weekly", body: shop });
       if (result.ok) sentManager++;
       else errors.push(`${biz.name} (manager): ${result.error}`);
@@ -93,7 +97,7 @@ export async function GET(req: NextRequest) {
         } else if (cfg.staff && ownerStaff) {
           body = await buildWeeklyReportStaff(biz.id, ownerStaff.id);
         }
-        if (body) {
+        if (body && ownerWa) {
           const result = await sendMessage({
             businessId: biz.id,
             customerPhone: ownerStaff?.phone || ownerPhone,
@@ -117,6 +121,7 @@ export async function GET(req: NextRequest) {
         if (ownerStaff && st.id === ownerStaff.id) { skipped++; continue; }
         try {
           const body = await buildWeeklyReportStaff(biz.id, st.id);
+          if (!(await reportToCenter({ businessId: biz.id, staffId: st.id, title: "הדוח השבועי שלך", body }))) continue;
           const result = await sendMessage({ businessId: biz.id, customerPhone: st.phone, kind: "report_weekly", body });
           if (result.ok) sentStaff++;
           else errors.push(`${biz.name} / ${st.name}: ${result.error}`);

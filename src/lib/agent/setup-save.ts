@@ -7,7 +7,9 @@
 import { prisma } from "@/lib/prisma";
 import type { SetupConfig } from "@/lib/agent/setup-fields";
 
-export type SetupAuthor = "owner" | "wizard" | "owner_agent" | "crm";
+const LONG_KEYS = new Set(["businessRules", "platformNotes", "staffRules", "styleSamples"]);
+
+export type SetupAuthor = "owner" | "wizard" | "owner_agent" | "crm" | "review";
 
 export async function saveSetupAnswers(businessId: string, patch: Record<string, unknown>, author: SetupAuthor): Promise<SetupConfig> {
   const cur = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } });
@@ -15,7 +17,8 @@ export async function saveSetupAnswers(businessId: string, patch: Record<string,
   try { existing = cur?.setupConfig ? JSON.parse(cur.setupConfig) : {}; } catch { existing = {}; }
   const next: SetupConfig = { ...existing };
   for (const [k, v] of Object.entries(patch)) {
-    if (typeof v === "string") { const t = v.trim().slice(0, 1500); if (t) next[k] = t; else delete next[k]; }
+    // Lists the shop keeps adding to (rules, notes) get more room than a single answer.
+    if (typeof v === "string") { const t = v.trim().slice(0, LONG_KEYS.has(k) ? 4000 : 1500); if (t) next[k] = t; else delete next[k]; }
     else if (typeof v === "boolean") next[k] = v;
     else if (v === null) delete next[k];
   }

@@ -104,7 +104,8 @@ export function compactAgentBody(p: TemplateParams): string {
     ? `\n- בעל העסק ביקש להעביר לאדם גם: ${clip(escalateWhen, 300)}. גם אז escalate_to_human, אמור שנציג יחזור ועצור.`
     : "";
 
-  const personal = str(a.platformNotes).split(/\n+/).map(x => x.trim().replace(/^[-•]\s*/, "")).filter(Boolean).slice(0, 12).map(x => `- ${x.slice(0, 300)}`);
+  // The shop's own rules (owner, "כללים של העסק") and the platform's notes, one block.
+  const personal = [str(a.businessRules), str(a.platformNotes)].join("\n").split(/\n+/).map(x => x.trim().replace(/^[-•]\s*/, "")).filter(Boolean).slice(0, 24).map(x => `- ${x.slice(0, 300)}`);
   const personalBlock = personal.length ? `\n\nדברים ייחודיים לעסק הזה (כשיש סתירה, הם גוברים על הכללים הכלליים)\n${personal.join("\n")}` : "";
 
   const site = p.bookingLink
@@ -170,6 +171,7 @@ ${regularLine}
 - הזזה: לא לבטל ולקבוע מחדש. המזהה של התור כתוב בהנחיות. שאל/אשר את היעד ("להזיז ל-12:00?") וחכה לכן → רק אז request_appointment_move (allowOtherBarber=true אם לא אכפת לו מ${v.staffDef}). שעה שהלקוח זרק בתשובה לשאלתך היא היעד, לא האישור. תפוס → הצג יחד, פעם אחת, את הזמנים הפנויים שחזרו ואת אפשרות ההחלפה עם הלקוח שבשעה (דורשת אישור ${v.staffDef} והלקוח השני); בחר זמן → קרא שוב איתו; מעדיף החלפה או עונה "תנסה"/"תבדוק" → insistExactTime=true. "בודק מול ${v.staffDef}" → עדכן שבודק ותחזור, בלי להבטיח.
 - ביטול: אשר עם הלקוח ("לבטל את התור ביום X בשעה Y?") ורק אז cancel_appointment עם המזהה שבהנחיות.
 - מתעכב לתור של היום: אם לא אמר כמה דקות — שאל; אמר טווח ("10-15") → קח את הגבוה, בלי לשאול שוב. ואז report_running_late עם המזהה שבהנחיות; מסור את מה שחזר מילה במילה, בלי להבטיח שהאיחור אושר.
+- שאלה על העסק שאין לה תשובה בהנחיות או במידע (חניה, ביט, נגישות, משהו מיוחד) → ask_owner עם השאלה, ואמור במשפט שאתה בודק וחוזר אליו. לא escalate_to_human בשביל זה, ולא לנחש.
 - מבקש בן אדם, מתלונן, או שאין דרך לעזור → escalate_to_human (reason: שם הלקוח והבעיה; staffId אם ברור). אמור שנציג יחזור בהקדם ועצור.${escalateExtra}
 - "הסר" / לא רוצה הודעות → opt_out_of_messages.${personalBlock}`;
 }

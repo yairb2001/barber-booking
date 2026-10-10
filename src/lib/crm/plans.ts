@@ -60,7 +60,7 @@ export async function usageFor(businessIds: string[], now = new Date()): Promise
     prisma.appointment.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start } }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent" }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent", kind: { in: MARKETING_KINDS } }, _count: { _all: true } }),
-    prisma.agentUsage.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, NOT: { kind: "sandbox" } }, _sum: { costUsd: true } }),
+    prisma.agentUsage.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, NOT: { kind: { in: ["sandbox", "review"] } } }, _sum: { costUsd: true } }),
     prisma.crmPack.groupBy({ by: ["businessId", "kind"], where: { businessId: { in: businessIds }, month: key }, _sum: { qty: true } }),
   ]);
   for (const b of bizs) {

@@ -1263,3 +1263,81 @@ model CustomerPushSub {
   @@index([businessId, customerId])
   @@map("customer_push_subs")
 }
+
+// ── Notification center + the agent that learns (10.10.2026) ────────────────
+// Everything that concerns the shop lands in its notification center (a tab in
+// the admin app); each person picks per type whether it also comes as push or
+// WhatsApp. staffId null = the owner.
+model BusinessNotification {
+  id         String    @id @default(uuid())
+  businessId String    @map("business_id")
+  staffId    String?   @map("staff_id")
+  kind       String    // agent_question | escalation | booking | cancellation | waitlist | swap | report | system | billing
+  title      String
+  body       String?
+  href       String?
+  meta       String?   // JSON
+  createdAt  DateTime  @default(now()) @map("created_at")
+  readAt     DateTime? @map("read_at")
+  doneAt     DateTime? @map("done_at")
+
+  @@index([businessId, createdAt])
+  @@map("business_notifications")
+}
+
+// A customer asked something the agent did not know. The owner answers once in
+// the app; the answer goes to the customer and is kept as an FAQ.
+model AgentQuestion {
+  id            String    @id @default(uuid())
+  businessId    String    @map("business_id")
+  conversationId String?  @map("conversation_id")
+  customerPhone String    @map("customer_phone")
+  customerName  String?   @map("customer_name")
+  question      String
+  status        String    @default("open") // open | answered | dismissed | expired
+  answer        String?
+  answeredBy    String?   @map("answered_by")
+  answeredAt    DateTime? @map("answered_at")
+  faqId         String?   @map("faq_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([businessId, status])
+  @@map("agent_questions")
+}
+
+// "What I didn't like about the agent", from the agent tab; optional chat.
+model AgentFeedback {
+  id             String    @id @default(uuid())
+  businessId     String    @map("business_id")
+  staffId        String?   @map("staff_id")
+  author         String?
+  conversationId String?   @map("conversation_id")
+  text           String
+  status         String    @default("new") // new | in_review | applied | dismissed
+  reviewNote     String?   @map("review_note")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  reviewedAt     DateTime? @map("reviewed_at")
+
+  @@index([businessId, status])
+  @@map("agent_feedback")
+}
+
+// The daily review's proposals. Nothing is applied before Yair approves in the CRM.
+model AgentImprovement {
+  id         String    @id @default(uuid())
+  businessId String    @map("business_id")
+  source     String    // daily_review | feedback
+  kind       String    // rule | faq | setup | base
+  title      String
+  proposal   String
+  evidence   String?
+  targetKey  String?   @map("target_key")
+  status     String    @default("pending") // pending | approved | rejected | applied
+  createdAt  DateTime  @default(now()) @map("created_at")
+  decidedAt  DateTime? @map("decided_at")
+  decidedBy  String?   @map("decided_by")
+
+  @@index([status, createdAt])
+  @@index([businessId])
+  @@map("agent_improvements")
+}

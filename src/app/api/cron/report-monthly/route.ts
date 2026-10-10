@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { buildMonthlyReportManager, buildMonthlyReportStaff } from "@/lib/messaging/reports";
 import { resolveReportsConfig } from "@/lib/messaging/reports-config";
+import { reportToCenter } from "@/lib/notify/center";
 
 /** Normalized dial key so "0509300173" / "972509300173" compare equal. */
 const normKey = (ph: string | null | undefined) => (ph || "").replace(/\D/g, "").replace(/^0/, "972");
@@ -68,7 +69,8 @@ export async function GET(req: NextRequest) {
       } else {
         try {
           const body = await buildMonthlyReportManager(biz.id);
-          for (const to of recipients) {
+          const wa = await reportToCenter({ businessId: biz.id, title: "הדוח החודשי", body });
+          for (const to of wa ? recipients : []) {
             const result = await sendMessage({
               businessId: biz.id,
               customerPhone: to,
@@ -92,6 +94,7 @@ export async function GET(req: NextRequest) {
       if (cfg.owner && ownerStaff && st.id === ownerStaff.id) { skipped++; continue; }
       try {
         const body = await buildMonthlyReportStaff(biz.id, st.id);
+        if (!(await reportToCenter({ businessId: biz.id, staffId: st.id, title: "הדוח החודשי שלך", body }))) continue;
         const result = await sendMessage({
           businessId: biz.id,
           customerPhone: st.phone,

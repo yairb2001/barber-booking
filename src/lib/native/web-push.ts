@@ -33,7 +33,7 @@ export type PushPayload = {
   actions?: { action: string; title: string }[];
   actionUrls?: Record<string, string>;
 };
-export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply" | "billing";
+export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply" | "billing" | "center";
 
 const TOGGLE_KEY: Record<NotifyType, string> = {
   appointment: "notifyOnAppointments",
@@ -42,6 +42,7 @@ const TOGGLE_KEY: Record<NotifyType, string> = {
   escalation: "notifyOnEscalation",
   reply: "notifyOnReply", // customer wrote back in a chat a human is handling
   billing: "notifyOnBilling", // the free month is ending (business-level, ignores the owner's staff scope)
+  center: "notifyOnCenter", // the notification center (src/lib/notify/center.ts); per-kind choice is made there
 };
 
 function parseSettings(raw: string | null): Record<string, unknown> {

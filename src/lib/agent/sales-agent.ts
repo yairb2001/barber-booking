@@ -385,8 +385,8 @@ async function runDemoBooking(convId: string, phone: string, text: string, state
     : !!(await prisma.appointment.findFirst({ where: { businessId: DEMO_BUSINESS_ID, createdAt: { gte: started }, customer: { phone: { in: [phone, phone.replace(/^972/, "0")] } } }, select: { id: true } }));
   if (v2) {
     const askedChator = p.sandbox
-      ? p.sandbox.toolLog.some(t => t.startsWith("escalate_to_human"))
-      : !!(await prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "tool", toolName: "escalate_to_human", createdAt: { gte: started } }, select: { id: true } }));
+      ? p.sandbox.toolLog.some(t => t.startsWith("escalate_to_human") || t.startsWith("ask_owner"))
+      : !!(await prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "tool", toolName: { in: ["escalate_to_human", "ask_owner"] }, createdAt: { gte: started } }, select: { id: true } }));
     if (askedChator && !booked) {
       const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", demoTurns: undefined, demoNudged: undefined };
       await saveState(convId, next);

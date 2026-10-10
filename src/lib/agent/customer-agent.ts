@@ -504,6 +504,16 @@ const BASE_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    // 10.10.2026: the agent learns the shop's small things from its owner.
+    name: "ask_owner",
+    description: "הלקוח שאל שאלה על העסק שאין לך עליה תשובה בהנחיות, במידע או בכלים (למשל חניה, תשלום בביט, נגישות, משהו מיוחד). השאלה עוברת לבעל העסק, והתשובה שלו תישלח ללקוח ותישמר לפעם הבאה. אחרי הקריאה אמור ללקוח במשפט אחד שאתה בודק וחוזר אליו, והמשך לעזור בשאר. לא בשביל בקשה לדבר עם בן אדם או תלונה (שם escalate_to_human).",
+    input_schema: {
+      type: "object" as const,
+      properties: { question: { type: "string", description: "השאלה של הלקוח, בניסוח קצר וברור" } },
+      required: ["question"],
+    },
+  },
+  {
     name: "escalate_to_human",
     description: "מעביר את הלקוח לטיפול אנושי ושולח התראה לספר הרלוונטי (או לבעל העסק) עם פרטי הלקוח והבעיה. לשימוש כשהלקוח מבקש לדבר עם ספר/בעל עסק, מתלונן, או כשהסוכן לא מצליח לעזור. נסה להעביר staffId אם ברור על איזה ספר מדובר (למשל הלקוח התלונן על תספורת אצל ניתאי) — אחרת המערכת תזהה לבד את הספר של הלקוח.",
     input_schema: {
@@ -550,7 +560,7 @@ export function selectTools(all: Anthropic.Tool[], o: { v3: boolean; hasCatalog:
 const MUTATING_TOOLS = new Set([
   "book_appointment", "book_for_customer", "cancel_appointment", "join_waitlist", "move_appointment",
   "request_appointment_change", "request_appointment_move", "swap_appointments", "escalate_to_human",
-  "send_to_customer", "send_to_customers", "send_to_today_customers", "save_setup_field", "report_running_late",
+  "send_to_customer", "send_to_customers", "send_to_today_customers", "save_setup_field", "report_running_late", "ask_owner",
 ]);
 
 export async function execTool(
@@ -1295,6 +1305,16 @@ export async function execTool(
         return `✅ רשמתי את הלקוח לרשימת המתנה ל-${service.name}${staffLabel} לכל יום בטווח ${rangeLabel} (${createdCount} ימים חדשים${alreadyCount ? `, ${alreadyCount} כבר היו רשומים` : ""}). ברגע שיתפנה תור מתאים באחד הימים הוא יקבל הודעה אוטומטית. עדכן את הלקוח בנימוס, בלי לפרט מספרים טכניים.`;
       }
 
+      // ── ask_owner (10.10.2026) ───────────────────────────────────────────────
+      case "ask_owner": {
+        if (bizId === DEMO_BUSINESS_ID) return "זו מספרת ההדגמה של צ'אטור ואין בה צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
+        const q = (input.question || "").trim();
+        if (!q) return "חסרה שאלה.";
+        const { askOwner } = await import("@/lib/agent/learn");
+        await askOwner({ businessId: bizId, conversationId, phone: callerPhone, question: q });
+        return "השאלה הועברה לבעל העסק. אמור ללקוח במשפט אחד שאתה בודק וחוזר אליו עם תשובה, בלי להבטיח מתי, והמשך לעזור בשאר אם יש.";
+      }
+
       // ── escalate_to_human ────────────────────────────────────────────────────
       case "escalate_to_human": {
         // Chator's demo shop has no staff: what it cannot answer is a question
@@ -1419,8 +1439,17 @@ export async function escalateToHuman(opts: {
     alert = `🔔 פנייה שדורשת טיפול (${who})\nלקוח: ${custLine}\nבעיה: ${reason}\n\nהלקוח ממתין בוואטסאפ — כדאי לחזור אליו.`;
   }
 
-  let notified = false;
-  if (recipientPhone) {
+  // The notification center (10.10.2026): always there; WhatsApp only if the
+  // recipient chose it for escalations (the default, as before). Push stays with
+  // pushChatEvent below, which follows the same choice.
+  const { centerNotify } = await import("@/lib/notify/center");
+  const center = await centerNotify({
+    businessId: bizId, staffId: targetStaff?.phone ? targetStaff.id : null, kind: "escalation",
+    title: `${custName} ממתין לטיפול אנושי`, body: reason,
+    href: `/admin/chats?phone=${encodeURIComponent(normalizeIsraeliPhone(callerPhone))}`, noPush: true,
+  });
+  let notified = !!center.id;
+  if (recipientPhone && center.channel === "whatsapp") {
     try {
       await sendMessage({
         businessId: bizId,

@@ -29,7 +29,7 @@ export type SetupFieldType = "choice" | "text" | "bool";
 export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set([
   "tone", "emojis", "address", "defaultService", "barberAssign",
   "priceNote", "cancelPolicy", "deposit", "walkin", "location", "payment",
-  "styleNotes", "styleSamples", "escalateWhen", "platformNotes",
+  "styleNotes", "styleSamples", "escalateWhen", "platformNotes", "businessRules",
 ]);
 
 /** Written only by the platform (CRM card / promote script), never asked in the
@@ -170,6 +170,41 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
     compile: v => `אמצעי תשלום מקובלים: ${v}.`,
   },
 
+  // ── D1. The shop's small things (10.10.2026, Yair: "לכל עסק יש את השיקולים שלו") ──
+  {
+    key: "kids", label: "ילדים", group: "כללים ופרטים", core: false, type: "text",
+    question: () => "מספרים ילדים? מגיל כמה ובכמה? (למשל: מגיל 3, תספורת ילד 50 ₪)",
+    compile: v => `ילדים: ${v}.`,
+  },
+  {
+    key: "groupBooking", label: "כמה אנשים ברצף", group: "כללים ופרטים", core: false, type: "choice",
+    options: () => ["כן, אחד אחרי השני", "רק אם שואלים", "לא, כל אחד קובע לבד"], default: () => "כן, אחד אחרי השני",
+    question: v => `${v.customer} רוצה לקבוע לכמה אנשים ברצף (אבא וילד, שני חברים)? כן / רק אם שואלים / לא`,
+    compile: v => v === "לא, כל אחד קובע לבד" ? "תור לכמה אנשים ברצף: לא קובעים, כל אחד קובע בעצמו." : v === "רק אם שואלים" ? "תור לכמה אנשים ברצף: רק אם הלקוח ביקש, אל תציע מיוזמתך." : "תור לכמה אנשים ברצף: אפשר, אחד אחרי השני.",
+  },
+  {
+    key: "staffFull", label: "כשהמבוקש מלא", group: "כללים ופרטים", core: false, type: "choice",
+    options: v => [`להציע ${v.staff} אחר`, "רשימת המתנה", "לשאול מה עדיף"], default: () => "לשאול מה עדיף",
+    question: v => `${v.staffDef} ש${v.customer} ביקש מלא. מה עושים? ${v.staff} אחר / רשימת המתנה / לשאול`,
+    compile: (v, voc) => `כש${voc.staffDef} המבוקש מלא: ${v}.`,
+  },
+  {
+    key: "lateTolerance", label: "איחור", group: "כללים ופרטים", core: false, type: "choice",
+    options: () => ["5 דקות", "10 דקות", "15 דקות", "תלוי בספר"], default: () => "10 דקות",
+    question: v => `כמה דקות איחור זה בסדר לפני שהתור הולך? 5 / 10 / 15 / תלוי ב${v.staffDef}`,
+    compile: v => v === "תלוי בספר" ? "איחור: תלוי בספר. עדכן אותו ואל תבטיח." : `איחור מקובל: עד ${v}. מעבר לזה עדכן את הספר ואל תבטיח שהתור נשמר.`,
+  },
+  {
+    key: "staffRules", label: "כללים לספר מסוים", group: "כללים ופרטים", core: false, type: "text", multiline: true,
+    question: v => `יש ${v.staff} עם שעות מיוחדות או שירות שרק הוא עושה? שורה לכל אחד (למשל: מוטי מתחיל ב־10:00, רק דני עושה צבע)`,
+    compile: v => `כללים לפי ${"ספר"}: ${String(v).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 10).join("; ")}.`,
+  },
+  {
+    key: "businessRules", label: "כללים של העסק", group: "כללים ופרטים", core: false, type: "text", multiline: true,
+    question: () => "דברים קטנים שהסוכן צריך לדעת, שורה לכל כלל (למשל: בשישי עד 14:00 רק תספורות, יש חניה כחול לבן ברחוב)",
+    compile: v => `כללים של העסק (כשיש סתירה, הם גוברים על הכללים הכלליים): ${String(v).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 20).join("; ")}.`,
+  },
+
   // ── D2. Style, in the owner's own words (the wizard's "short talk" field) ──
   {
     key: "styleNotes", label: "הסגנון שלך במילים", group: "זהות וטון", core: false, type: "text", multiline: true,
@@ -245,6 +280,9 @@ export function compileSetupConfig(cfg: SetupConfig | null | undefined, vocab?: 
     if (v === undefined || v === "") continue;
     const line = f.compile(v);
     if (line) lines.push(`- ${line}`);
+  }
+  if (!o?.skipTemplateKeys && typeof c.platformNotes === "string" && c.platformNotes.trim()) {
+    lines.push(`- דברים ייחודיים לעסק הזה (גוברים על הכללים הכלליים): ${c.platformNotes.split(/\n+/).map(x => x.trim().replace(/^[-•]\s*/, "")).filter(Boolean).slice(0, 12).join("; ")}`);
   }
   if (!lines.length) return "";
   return `הגדרות ספציפיות של העסק הזה (כבד אותן):\n${lines.join("\n")}`;

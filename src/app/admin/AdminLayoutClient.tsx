@@ -43,6 +43,7 @@ const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
   { href: "/admin/chats",        label: "שיחות",          icon: "💬", requiresChats: true },
+  { href: "/admin/notifications", label: "התראות",        icon: "🔔" },
   { href: "/admin/customers",    label: "לקוחות",         icon: "👥" },
   { href: "/admin/referrals",    label: "חבר מביא חבר",   icon: "🤝", requiresReferral: true },
   { href: "/admin/messaging",    label: "הודעות תפוצה",   icon: "📢" },
@@ -174,6 +175,22 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", tick); };
   }, [showChats, pathname]);
 
+  // The notification center's badge (10.10.2026): unread items, polled like the chats.
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
+  useEffect(() => {
+    if (pathname === "/admin/login" || pathname.startsWith("/admin/crm") || pathname.startsWith("/admin/onboarding")) return;
+    let cancelled = false;
+    const tick = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      fetch("/api/admin/notification-center?count=1").then(r => (r.ok ? r.json() : null)).then(j => { if (!cancelled && j && typeof j.unread === "number") setUnreadNotifs(j.unread); }).catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    window.addEventListener("center:read", tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => { cancelled = true; clearInterval(id); window.removeEventListener("center:read", tick); document.removeEventListener("visibilitychange", tick); };
+  }, [pathname]);
+
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
   const referralEnabled = me?.referralProgramEnabled ?? false;
@@ -285,7 +302,8 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
           {visibleNav.map((item) => {
             const isChats = item.href === "/admin/chats";
-            const showBadge = isChats && unreadChats > 0;
+            const badgeCount = isChats ? unreadChats : item.href === "/admin/notifications" ? unreadNotifs : 0;
+            const showBadge = badgeCount > 0;
             return (
               <Link
                 key={item.href}
@@ -301,7 +319,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
                 <span>{item.label}</span>
                 {showBadge && (
                   <span className="mr-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center">
-                    {unreadChats > 99 ? "99+" : unreadChats}
+                    {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
               </Link>

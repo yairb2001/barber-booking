@@ -86,7 +86,7 @@ export async function tokenBudgetState(businessId: string, now = new Date()): Pr
   const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { tier: true, settings: true, paidAt: true, trialEndsAt: true } });
   const { key, start } = currentMonth(now);
   const b = budgetOf(biz ?? { tier: "basic", settings: null }, key);
-  const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: start }, NOT: { kind: "sandbox" } }, _sum: { costUsd: true } });
+  const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: start }, NOT: { kind: { in: ["sandbox", "review"] } } }, _sum: { costUsd: true } });
   const usedUsd = agg._sum.costUsd ?? 0;
   const usedIls = usedUsd * USD_ILS;
   const pct = b.total > 0 ? Math.round((usedIls / b.total) * 1000) / 10 : 0;
@@ -106,12 +106,15 @@ async function alertOnce(businessId: string, kind: "token_alert_80" | "token_ale
   const dup = await prisma.messageLog.findFirst({ where: { businessId, kind, createdAt: { gte: currentMonth().start } }, select: { id: true } });
   if (dup) return false;
   const owner = await ownerPhoneOf(businessId);
-  if (owner.phone) {
+  // Notification center (10.10.2026): always there; WhatsApp as the owner chose for "תקלות" (default).
+  const { centerNotify } = await import("@/lib/notify/center");
+  const { channel } = await centerNotify({ businessId, kind: "system", title: kind === "token_alert_80" ? "80% מחבילת הסוכן נוצלו" : "חבילת הסוכן נגמרה לחודש", body, href: "/admin/settings/plan", noPush: true });
+  if (owner.phone && channel === "whatsapp") {
     await sendMessage({ businessId, customerPhone: owner.phone, kind, body }).catch(e => console.error("[token-budget] alert send failed", e));
-  } else {
+  } else if (!owner.phone) {
     await prisma.messageLog.create({ data: { businessId, customerPhone: "-", kind, body, status: "skipped", error: "no owner phone" } }).catch(() => {});
   }
-  pushToOwner(businessId, { title: kind === "token_alert_80" ? "⚠️ 80% מחבילת הסוכן נוצלו" : "⛔ חבילת הסוכן נגמרה לחודש", body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
+  if (channel !== "screen") pushToOwner(businessId, { title: kind === "token_alert_80" ? "⚠️ 80% מחבילת הסוכן נוצלו" : "⛔ חבילת הסוכן נגמרה לחודש", body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
   notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: kind === "token_alert_100" }).catch(() => {});
   return true;
 }

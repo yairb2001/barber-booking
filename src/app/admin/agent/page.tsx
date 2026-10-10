@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AgentBehaviorSettings from "./AgentBehaviorSettings";
 import { WhatsAppConnectCard } from "@/components/WhatsAppQrPanel";
 import AgentSetupCard, { type Answers, type SetupFieldDTO, type SetupHistoryDTO } from "./AgentSetupCard";
+import AgentFeedbackCard from "./AgentFeedbackCard";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
 type Config = {
@@ -503,6 +504,9 @@ export default function AdminAgentPage() {
             restoring={restoring}
             hasCustomPrompt={config.hasCustomPrompt && !config.canEditPrompt}
           />
+
+          {/* What the owner didn't like → the daily review (10.10.2026) */}
+          <AgentFeedbackCard />
 
           {/* Raw prompt — platform owner only (also while impersonating) */}
           {config.canEditPrompt && (

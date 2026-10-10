@@ -19,6 +19,7 @@ const NAV = [
   { href: "/admin/crm/customers", label: "לקוחות" },
   { href: "/admin/crm/invoices", label: "חשבוניות" },
   { href: "/admin/crm/automations", label: "אוטומציות" },
+  { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
   { href: "/admin/crm/settings", label: "הגדרות" },
 ];
 

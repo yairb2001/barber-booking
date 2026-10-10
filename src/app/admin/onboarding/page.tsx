@@ -376,7 +376,7 @@ export default function OnboardingPage() {
                   {[true, false].map(v => { const on = (setup[f.key] ?? f.default) === v; return <button key={String(v)} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: v }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{v ? "כן" : "לא"}</button>; })}
                 </div>
               ) : f.multiline ? (
-                <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : "כמה מילים בסגנון שלך"} />
+                <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : f.key === "businessRules" || f.key === "staffRules" ? "שורה לכל כלל" : "כמה מילים בסגנון שלך"} />
               ) : (
                 <input value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={typeof f.default === "string" ? f.default : ""} />
               )}

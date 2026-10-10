@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
 import { buildDailyReport, buildDailyReportStaff } from "@/lib/messaging/reports";
 import { resolveReportsConfig } from "@/lib/messaging/reports-config";
+import { reportToCenter } from "@/lib/notify/center";
 
 /** Normalized dial key so "0509300173" / "972509300173" compare equal. */
 const normKey = (ph: string | null | undefined) => (ph || "").replace(/\D/g, "").replace(/^0/, "972");
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
         } catch (e: unknown) {
           errors.push(`${biz.name}: ${e instanceof Error ? e.message : String(e)}`);
         }
-        if (body) {
+        if (body && (await reportToCenter({ businessId: biz.id, title: "הדוח היומי", body }))) {
           for (const to of recipients) {
             try {
               const result = await sendMessage({
@@ -86,6 +87,7 @@ export async function GET(req: NextRequest) {
         if (cfg.owner && managerKeys.has(normKey(st.phone))) { skipped++; continue; }
         try {
           const body = await buildDailyReportStaff(biz.id, st.id);
+          if (!(await reportToCenter({ businessId: biz.id, staffId: st.id, title: "הדוח היומי שלך", body }))) continue;
           const result = await sendMessage({ businessId: biz.id, customerPhone: st.phone, kind: "report_daily", body });
           if (result.ok) sentStaff++;
           else errors.push(`${biz.name} / ${st.name}: ${result.error}`);

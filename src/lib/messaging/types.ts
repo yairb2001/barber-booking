@@ -25,6 +25,8 @@ export type MessageKind =
   | "link_nudge"       // link-first: 30-min "didn't book / didn't reply" nudge (0 tokens)
   | "qa_report" // daily QA digest sent to the owner (not a customer)
   | "agent_escalation" // alert sent to a barber/owner when the agent hands a customer off
+  | "agent_question"   // the agent did not know; the owner is asked (10.10.2026, src/lib/agent/learn.ts)
+  | "owner_answer"     // the owner's answer to that question, sent to the customer
   | "reengage"
   | "post_first_visit"
   | "post_every_visit"

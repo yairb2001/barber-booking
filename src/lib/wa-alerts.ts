@@ -42,7 +42,11 @@ async function recently(businessId: string, kind: Kind, withinMs: number): Promi
 }
 
 async function tellOwner(biz: NonNullable<Awaited<ReturnType<typeof ownerOf>>>, kind: Kind, title: string, body: string): Promise<"sent" | "skipped"> {
-  pushToOwner(biz.id, { title, body: body.split("\n")[0], data: { type: "whatsapp", kind } }).catch(() => {});
+  // Notification center (10.10.2026): always there; push / WhatsApp as the owner chose for "תקלות".
+  const { centerNotify } = await import("@/lib/notify/center");
+  const { channel } = await centerNotify({ businessId: biz.id, kind: "system", title, body, href: "/admin/settings/whatsapp", noPush: true });
+  if (channel !== "screen") pushToOwner(biz.id, { title, body: body.split("\n")[0], data: { type: "whatsapp", kind } }).catch(() => {});
+  if (channel !== "whatsapp") return "skipped";
   // A WhatsApp from Chator's number — unless this IS Chator's number (then the push has to do).
   if (!biz.ownerPhone || biz.id === SUPER_ADMIN_BUSINESS_ID) return "skipped";
   try {

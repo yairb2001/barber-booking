@@ -35,6 +35,14 @@ import { timeToMinutes, getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, hoursUntilAppointment, getShopPhone } from "@/lib/cancellation-policy";
 
+/** Swap outcomes to the owner (10.10.2026): into the notification center, and as push unless he chose "screen only". */
+async function ownerSwapNotice(bizId: string, payload: Parameters<typeof pushToOwner>[1], eventStaffId?: string | null): Promise<void> {
+  const { centerNotify } = await import("@/lib/notify/center");
+  const { channel } = await centerNotify({ businessId: bizId, kind: "swap", title: payload.title, body: payload.body, noPush: true });
+  if (channel !== "screen") await pushToOwner(bizId, payload, eventStaffId);
+}
+
+
 // Hebrew label for a change-request kind (used in owner alerts).
 function kindLabelHe(kind: string): string {
   return kind === "move" ? "העברה" : kind === "cancel" ? "ביטול" : "החלפה";
@@ -814,7 +822,7 @@ async function markLateArrivalNoShow(
   }).catch(err => console.error("[agent-swap] late-arrival no-show update failed", err));
 
   const dateLabel = hebDate(dateOnly(proposal.primary.date.toISOString().slice(0, 10)));
-  pushToOwner(bizId, {
+  ownerSwapNotice(bizId, {
     title: "לא הגיע לתור 🚫",
     body: `${proposal.primary.customer.name} אצל ${proposal.primary.staff.name}\n${dateLabel} בשעה ${proposal.primary.startTime} (איחור לא אושר)`,
     data: { type: "appointment_no_show", appointmentId: proposal.primary.id },
@@ -1223,7 +1231,7 @@ export async function handleAdminProposalReply(
       body: `אין בעיה, תודה על התשובה! התור נשאר כרגיל 🙏`,
     }).catch(() => {});
     // Alert the owner (persisted as the proposal's rejected_by_customer status).
-    pushToOwner(bizId, {
+    ownerSwapNotice(bizId, {
       title: "לקוח דחה בקשת שינוי",
       body: `${subjectName} ענה/תה "לא" ל${kindLabelHe(proposal.kind)}. התור נשאר כרגיל.`,
       data: { type: "change_declined", proposalId: proposal.id },
@@ -1251,7 +1259,7 @@ export async function handleAdminProposalReply(
       body: `תודה על הנכונות! בסוף השינוי כבר לא רלוונטי, אז התור נשאר כרגיל 🙏`,
     }).catch(() => {});
     // Alert the owner: the customer said yes but we couldn't apply it.
-    pushToOwner(bizId, {
+    ownerSwapNotice(bizId, {
       title: "בקשת שינוי נכשלה",
       body: `${subjectName} אישר/ה ${kindLabelHe(proposal.kind)} אבל לא ניתן היה לבצע (כנראה השעה נתפסה). התור נשאר.`,
       data: { type: "change_failed", proposalId: proposal.id },
@@ -1351,7 +1359,7 @@ export async function expireStaleAgentSwaps(bizId: string): Promise<void> {
     const nm = s.kind === "swap"
       ? (s.candidate?.customer.name ?? "לקוח")
       : (s.primary?.customer.name ?? "לקוח");
-    pushToOwner(bizId, {
+    ownerSwapNotice(bizId, {
       title: "בקשת שינוי פגה",
       body: `${nm} לא ענה/תה על בקשת ${kindLabelHe(s.kind)} בזמן. התור נשאר כרגיל.`,
       data: { type: "change_expired", proposalId: s.id },

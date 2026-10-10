@@ -383,6 +383,20 @@ export async function GET(req: NextRequest) {
       const [list, unread] = await Promise.all([prisma.crmNotification.findMany({ orderBy: { createdAt: "desc" }, take: 60 }), prisma.crmNotification.count({ where: { readAt: null } })]);
       return NextResponse.json({ unread, notifications: list.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, href: n.href, at: n.createdAt, read: !!n.readAt })) });
     }
+    // The daily agent review's proposals + the owners' notes about their agents (10.10.2026).
+    if (view === "improvements") {
+      const [items, feedback] = await Promise.all([
+        prisma.agentImprovement.findMany({ where: { OR: [{ status: "pending" }, { decidedAt: { gte: new Date(Date.now() - 14 * 86400_000) } }] }, orderBy: [{ status: "desc" }, { createdAt: "desc" }], take: 200 }),
+        prisma.agentFeedback.findMany({ orderBy: { createdAt: "desc" }, take: 60 }),
+      ]);
+      const bizIds = Array.from(new Set([...items.map(i => i.businessId), ...feedback.map(f => f.businessId)]));
+      const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
+      const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
+      return NextResponse.json({
+        items: items.map(i => ({ ...i, businessName: name(i.businessId) })),
+        feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
+      });
+    }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });
     if (view === "leads") return NextResponse.json(await leadsView(sp.get("q")));
@@ -582,6 +596,41 @@ export async function POST(req: NextRequest) {
       case "salesAgent.v2": {
         const { setCrmText } = await import("@/lib/crm/core");
         return NextResponse.json({ ok: true, ...(await setCrmText("salesAgentV2", b.on === true ? "1" : "0")) });
+      }
+      // Approve a proposal = apply it to that business's agent; "base" is a change for every agent, done by hand.
+      case "improvement.decide": {
+        const imp = await prisma.agentImprovement.findUnique({ where: { id: str("id") } });
+        if (!imp || imp.status !== "pending") return NextResponse.json({ error: "כבר טופל" }, { status: 400 });
+        const approve = b.approve === true;
+        const text = str("proposal") || imp.proposal;
+        let status = approve ? "applied" : "rejected";
+        if (approve) {
+          const { addFaq, appendBusinessRule } = await import("@/lib/agent/learn");
+          if (imp.kind === "rule") await appendBusinessRule(imp.businessId, text, "review");
+          else if (imp.kind === "faq") {
+            const m = text.match(/ש:\s*([\s\S]*?)\s*ת:\s*([\s\S]*)/);
+            if (!m) return NextResponse.json({ error: "הפורמט צריך להיות ש: ... ת: ..." }, { status: 400 });
+            await addFaq(imp.businessId, m[1], m[2]);
+          } else if (imp.kind === "setup") {
+            const field = setupFieldsFor((await prisma.business.findUnique({ where: { id: imp.businessId }, select: { businessType: true } }))?.businessType).find(f => f.key === imp.targetKey);
+            if (!field) return NextResponse.json({ error: "שאלת הגדרה לא מוכרת" }, { status: 400 });
+            if (field.type === "choice" && field.options && !field.options.includes(text)) return NextResponse.json({ error: `הערך חייב להיות אחד מ: ${field.options.join(" / ")}` }, { status: 400 });
+            await saveSetupAnswers(imp.businessId, { [field.key]: field.type === "bool" ? text === "כן" || text === "true" : text }, "review");
+          } else status = "approved"; // base: for every agent, implemented by hand
+        }
+        await prisma.agentImprovement.update({ where: { id: imp.id }, data: { status, proposal: text, decidedAt: new Date(), decidedBy: "יאיר" } });
+        return NextResponse.json({ ok: true, status });
+      }
+      case "feedback.status": {
+        const st = str("status");
+        if (!["new", "in_review", "applied", "dismissed"].includes(st)) return NextResponse.json({ error: "bad_status" }, { status: 400 });
+        await prisma.agentFeedback.update({ where: { id: str("id") }, data: { status: st, reviewNote: str("note") || null, reviewedAt: new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      case "review.runNow": {
+        const { runDailyReview, reviewBusiness } = await import("@/lib/agent/daily-review");
+        if (str("businessId")) return NextResponse.json({ ok: true, proposals: await reviewBusiness(str("businessId"), new Date(), { sinceHours: Number(b.sinceHours) || 24 }) });
+        return NextResponse.json({ ok: true, ...(await runDailyReview()) });
       }
       case "settings.update": {
         const patch: Partial<CrmSettings> = {};

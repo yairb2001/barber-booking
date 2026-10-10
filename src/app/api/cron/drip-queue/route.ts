@@ -51,6 +51,10 @@ import { getDayOfWeekISO } from "@/lib/utils";
 // on Saturday. Keyed by date so a warm instance runs it once; a second
 // instance in the same window is harmless (per-customer de-dup in the run).
 let lastRhythmRunDate = "";
+// The daily agent review (src/lib/agent/daily-review.ts): 08:00–08:59 Israel,
+// once a day; the date is also kept in crm_settings so two warm instances
+// do not both run it.
+let lastAgentReviewDate = "";
 import { notifyOwnerWeb } from "@/lib/native/web-push";
 
 // Quiet hours (Israel time): nothing in this queue is urgent enough to wake a
@@ -447,6 +451,21 @@ async function checkStuckQueue(now: Date): Promise<void> {
 
 async function runPiggybackTasks(now: Date): Promise<void> {
   const nowMs = now.getTime();
+
+  {
+    const { date: ilDate, minutes: ilMin } = getBusinessNow();
+    if (ilMin >= 8 * 60 && ilMin < 9 * 60 && lastAgentReviewDate !== ilDate) {
+      lastAgentReviewDate = ilDate;
+      try {
+        const { getCrmText, setCrmText } = await import("@/lib/crm/core");
+        if ((await getCrmText("agentReviewLastRun")).text !== ilDate) {
+          await setCrmText("agentReviewLastRun", ilDate);
+          const { runDailyReview } = await import("@/lib/agent/daily-review");
+          await runDailyReview(now);
+        }
+      } catch (err) { console.error("[drip-queue] daily agent review failed:", err); }
+    }
+  }
 
   try { await tickAutomations(now); } catch (err) { console.error("[drip-queue] crm automations failed:", err); }
   // CRM: one small push 10 minutes before each sales call.
