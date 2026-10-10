@@ -11,6 +11,7 @@ export type PlanData = {
   paying: boolean;
   monthlyPrice: number | null;
   requested: Record<string, string>;
+  payUrl: string | null;
 };
 
 export const barColor = (pct: number) => (pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-400" : "bg-teal-500");

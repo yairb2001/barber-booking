@@ -4,6 +4,7 @@ import { getSessionBusiness, requireOwner } from "@/lib/session";
 import { getPlans, planKeyOf, usageFor, type PackKind } from "@/lib/crm/plans";
 import { getCrmSettings } from "@/lib/crm/core";
 import { recordCrmNotification } from "@/lib/crm/notify";
+import { payLinkFor } from "@/lib/billing/pay-link";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ const parse = (raw: string | null | undefined): Record<string, unknown> => { try
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true });
+  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
   const [plans, usage, cs, packs, invoices] = await Promise.all([
     getPlans(),
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
     paying: !!biz.paidAt,
     monthlyPrice: biz.monthlyPrice,
     requested: requests,
+    payUrl: biz.paidAt ? null : payLinkFor(biz),
   });
 }
 

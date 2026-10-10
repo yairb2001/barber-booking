@@ -92,8 +92,14 @@ export default function MyPlanPage() {
                 : near ? <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">מתקרב לתקרה של החודש. כדאי לשקול חבילה או מסלול גדול יותר.</p> : null}
             </div>
           ) : u ? (
-            <p className="text-sm text-neutral-600">החודש: <b className="tabular-nums">{n(u.appts.used)}</b> תורים · <b className="tabular-nums">{n(u.messages.used)}</b> הודעות</p>
+            <p className="text-sm text-neutral-600 mb-1">החודש: <b className="tabular-nums">{n(u.appts.used)}</b> תורים · <b className="tabular-nums">{n(u.messages.used)}</b> הודעות</p>
           ) : null}
+          {d.payUrl && (plan || d.monthlyPrice) && (
+            <a href={d.payUrl} className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-teal-600 text-white px-4 py-3 hover:bg-teal-700 transition">
+              <span className="text-sm font-semibold">להזנת כרטיס אשראי</span>
+              <span className="text-xs text-white/80">{d.trialEndsAt ? `לפני ${shortDate(d.trialEndsAt)}, כדי שהכל ימשיך בלי הפסקה` : "חיוב חודשי, חשבונית במייל"}</span>
+            </a>
+          )}
         </section>
 
         {/* Plans */}

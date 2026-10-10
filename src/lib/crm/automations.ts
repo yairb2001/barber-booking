@@ -19,6 +19,8 @@ import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { freeCallSlots, slotLabel } from "@/lib/crm/core";
 import { onboardingLinkFor } from "@/lib/leads";
 import { signOnboardingToken } from "@/lib/auth";
+import { getPlans, planKeyOf } from "@/lib/crm/plans";
+import { payLinkFor } from "@/lib/billing/pay-link";
 
 export type AutoStep = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
 export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid";
@@ -34,7 +36,10 @@ export const STOP_LABELS: Record<StopReason, string> = {
   paid: "עבר לתשלום",
 };
 
-export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}"];
+// 10.10.2026 (Yair): no rep unless he asks; the link is where he enters his card.
+export const TRIAL_ENDING_TEXT = "היי {שם}, החודש החינמי של {שם העסק} בצ'אטור מסתיים ב{תאריך סיום}. כדי שהכל ימשיך לעבוד בלי הפסקה, ממשיכים במסלול {מסלול}, {מחיר} ₪ לחודש. להזנת כרטיס האשראי: {קישור לתשלום}\nרוצה לדבר עם נציג? תכתוב לי כאן ונארגן.";
+
+export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}", "{תאריך סיום}", "{מסלול}", "{מחיר}", "{קישור לתשלום}"];
 
 const DAY = 24 * 60;
 
@@ -82,7 +87,7 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
     key: "trial_ending", name: "הניסיון מסתיים", trigger: "5 ימים לפני סוף החודש החינמי", audience: "lead",
     stopOn: ["paid", "opted_out"],
     steps: [
-      { delayMinutes: 0, text: "היי {שם}, החודש החינמי של {שם העסק} בצ'אטור מסתיים בעוד 5 ימים. רוצה שנמשיך? {שם הנציג} ישמח לעבור איתך על זה בשיחה קצרה." },
+      { delayMinutes: 0, text: TRIAL_ENDING_TEXT },
     ],
   },
   {
@@ -189,7 +194,7 @@ async function shouldStop(stopOn: StopReason[], run: { leadId: string | null; bu
 export async function renderText(text: string, target: { leadId?: string | null; businessId?: string | null; context?: RunContext }): Promise<{ body: string; phone: string | null; repPhone: string | null }> {
   const lead = target.leadId ? await prisma.lead.findUnique({ where: { id: target.leadId } }) : null;
   const bizId = target.businessId ?? lead?.businessId ?? null;
-  const biz = bizId ? await prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true, phone: true, settings: true } }) : null;
+  const biz = bizId ? await prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true, phone: true, settings: true, slug: true, trialEndsAt: true, monthlyPrice: true } }) : null;
   const rep = lead?.repId ? await prisma.salesRep.findUnique({ where: { id: lead.repId } }) : await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] });
   const call = target.context?.callId ? await prisma.salesCall.findUnique({ where: { id: target.context.callId } }) : null;
   let ownerPhone: string | null = null;
@@ -198,6 +203,11 @@ export async function renderText(text: string, target: { leadId?: string | null;
   const slots = needSlots ? await freeCallSlots({ limit: 2 }) : [];
   const needLink = /\{קישור הקמה\}/.test(text) && biz;
   const link = needLink ? onboardingLinkFor(await signOnboardingToken(biz!.id)) : "";
+  // Plan, price, end of the free month and the personal card link (trial_ending).
+  const needPlan = /\{(מסלול|מחיר)\}/.test(text) && biz;
+  const plan = needPlan ? (await getPlans()).find(p => p.key === planKeyOf(biz!.settings)) ?? null : null;
+  const payLink = /\{קישור לתשלום\}/.test(text) && biz ? payLinkFor(biz) : "";
+  const endsLabel = biz?.trialEndsAt ? biz.trialEndsAt.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" }) : "";
   let ownerName = "";
   if (!lead && biz) { try { const s = biz.settings ? JSON.parse(biz.settings) : {}; ownerName = typeof s.ownerName === "string" ? s.ownerName : ""; } catch { /* ignore */ } }
   const ownerLead = !lead && biz ? await prisma.lead.findFirst({ where: { businessId: biz.id }, select: { name: true } }) : null;
@@ -211,6 +221,10 @@ export async function renderText(text: string, target: { leadId?: string | null;
     "{שעה פנויה שנייה}": slots[1] ? slotLabel(slots[1].startsAt) : "בשעה שנוחה לך",
     "{קישור הקמה}": link,
     "{השלב שנתקע}": target.context?.stepLabel ?? "",
+    "{תאריך סיום}": endsLabel,
+    "{מסלול}": plan?.name ?? "בסיס",
+    "{מחיר}": String(plan?.priceIls ?? biz?.monthlyPrice ?? 287),
+    "{קישור לתשלום}": payLink,
   };
   let body = text;
   for (const [k, v] of Object.entries(vars)) body = body.split(k).join(v);
