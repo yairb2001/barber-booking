@@ -689,8 +689,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const lastReply = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
   const runOf = burst.filter(m => !lastReply || m.createdAt > lastReply.createdAt).map(m => m.content);
   const incoming = runOf.length > 1 ? runOf.join("\n") : text;
-  // Answered meanwhile by the run we waited for (it saw this message too) → nothing to add.
-  if (lastReply && lastReply.createdAt > savedUserMsg.createdAt) return NextResponse.json({ ok: true, coalesced: true });
+  // A reply that came after this message (from the run we waited for) does not
+  // mean it was answered: that run may have read the chat before it arrived.
+  // So this message is answered now, with that reply in the history.
   try {
     await runCustomerAgent({ businessId: biz.id, phone, incomingText: incoming, alreadyPersisted: true });
   } catch (firstErr) {
