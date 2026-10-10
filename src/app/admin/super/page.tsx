@@ -1,5 +1,6 @@
 "use client";
 
+import { USD_ILS } from "@/lib/fx";
 import { useEffect, useState, useCallback, type ReactNode } from "react";
 import type { AgentCostResult } from "@/lib/analytics/agent-cost";
 import { BUSINESS_TYPES } from "@/lib/vocab";
@@ -126,7 +127,7 @@ type UsageData = {
   totals: { costUsd: number; costUsdMonth: number; conversations: number; broadcasts: number; businesses: number };
 };
 
-const USD_TO_ILS = 3.7; // approx, display only
+const USD_TO_ILS = USD_ILS; // one rate for the whole app (src/lib/fx.ts)
 
 /** Usage-vs-quota cell: used / quota + a bar (teal, amber at 80%, red over). */
 function QuotaCell({ used, quota }: { used: number; quota: number }) {
@@ -241,7 +242,7 @@ type AgentCostData = {
   previous: AgentCostResult;
   baseline: AgentCostResult;
 };
-const AGENT_ILS_PER_USD = 3.3; // matches scripts/measure-agent-cost.ts
+const AGENT_ILS_PER_USD = USD_ILS;
 const agorot = (usd: number | null) => (usd == null ? "—" : `${Math.round(usd * AGENT_ILS_PER_USD * 100)} אג׳`);
 const usd3 = (n: number | null) => (n == null ? "—" : `$${n.toFixed(3)}`);
 const perBooking = (w: AgentCostResult, n: number) => (w.bookedEpisodes ? n / w.bookedEpisodes : null);

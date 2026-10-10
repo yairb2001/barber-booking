@@ -28,7 +28,8 @@ import { buildBookingLink } from "@/lib/link-first";
 
 /** Raw-cost budget (₪ / month) by tier; the launch price (287 ₪) rides on premium. */
 export const TIER_TOKEN_BUDGET_ILS: Record<string, number> = { basic: 0, pro: 40, premium: 40 };
-export const USD_ILS = Number(process.env.TOKEN_USD_ILS) || 3.65;
+export { USD_ILS } from "@/lib/fx";
+import { USD_ILS } from "@/lib/fx";
 /** Sonnet input price, $ per token — the unit of a "weighted token". */
 const USD_PER_WEIGHTED_TOKEN = 3 / 1_000_000;
 

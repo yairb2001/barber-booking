@@ -7,6 +7,7 @@
  * only the super-admin reaches it (/admin/crm, /api/admin/crm/*).
  */
 import { prisma } from "@/lib/prisma";
+import { USD_ILS } from "@/lib/fx";
 import { appointmentInstant, getBusinessNow, addDaysISO } from "@/lib/utils";
 import { SUPER_ADMIN_PHONE } from "@/lib/super-admin";
 
@@ -37,7 +38,7 @@ export const CRM_DEFAULTS = {
   horizonDays: 7,         // how far ahead a lead can book
   minNoticeMinutes: 60,   // never offer a slot sooner than this
   infraCostIls: 150,      // servers + database per month, for the profitability card
-  usdIls: 3.65,
+  usdIls: USD_ILS,
 };
 export type CrmSettings = typeof CRM_DEFAULTS;
 
