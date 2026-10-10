@@ -742,6 +742,8 @@ model Conversation {
   whatsappName  String?   @map("whatsapp_name")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
+  // The agent is answering this chat right now (a second message waits for it).
+  agentLockAt   DateTime? @map("agent_lock_at")
   lastMessageAt DateTime? @map("last_message_at")
 
   business    Business  @relation(fields: [businessId], references: [id])

@@ -1312,7 +1312,7 @@ export async function execTool(
         if (!q) return "חסרה שאלה.";
         const { askOwner } = await import("@/lib/agent/learn");
         await askOwner({ businessId: bizId, conversationId, phone: callerPhone, question: q });
-        return "השאלה הועברה לבעל העסק. אמור ללקוח במשפט אחד שאתה בודק וחוזר אליו עם תשובה, בלי להבטיח מתי, והמשך לעזור בשאר אם יש.";
+        return "השאלה הועברה לבעל העסק. כתוב ללקוח במשפט אחד בזמן הווה, למשל \"שאלה טובה, אני בודק את זה ואחזור אליך\", בלי להבטיח מתי, והמשך לעזור בשאר אם יש.";
       }
 
       // ── escalate_to_human ────────────────────────────────────────────────────

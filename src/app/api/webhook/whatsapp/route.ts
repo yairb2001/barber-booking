@@ -666,6 +666,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     select: { id: true },
   });
   if (newer) return NextResponse.json({ ok: true, coalesced: true });
+
+  // One agent run per chat at a time (10.10.2026). A message that lands while
+  // the agent is still answering the previous one waits for it, then answers
+  // whatever is still unanswered; a newer message by then takes over instead.
+  let locked = false;
+  for (let i = 0; i < 20 && !locked; i++) { // ≤20s: the webhook has 60s in all
+    const n = await prisma.$executeRaw`UPDATE conversations SET agent_lock_at = now() WHERE id = ${conv.id} AND (agent_lock_at IS NULL OR agent_lock_at < now() - interval '90 seconds')`;
+    if (n > 0) locked = true; else await new Promise(r => setTimeout(r, 1000));
+  }
+  const releaseLock = () => (locked ? prisma.$executeRaw`UPDATE conversations SET agent_lock_at = NULL WHERE id = ${conv.id}`.catch(() => 0) : Promise.resolve(0));
+  if (locked) {
+    const newerNow = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "user", createdAt: { gt: savedUserMsg.createdAt } }, select: { id: true } });
+    if (newerNow) { await releaseLock(); return NextResponse.json({ ok: true, coalesced: true }); }
+  }
+  try {
   const burst = await prisma.conversationMessage.findMany({
     where: { conversationId: conv.id, role: "user", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000), lte: savedUserMsg.createdAt } },
     orderBy: { createdAt: "asc" }, select: { content: true, createdAt: true },
@@ -674,7 +689,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const lastReply = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
   const runOf = burst.filter(m => !lastReply || m.createdAt > lastReply.createdAt).map(m => m.content);
   const incoming = runOf.length > 1 ? runOf.join("\n") : text;
-  await runCustomerAgent({ businessId: biz.id, phone, incomingText: incoming, alreadyPersisted: true });
+  // Answered meanwhile by the run we waited for (it saw this message too) → nothing to add.
+  if (lastReply && lastReply.createdAt > savedUserMsg.createdAt) return NextResponse.json({ ok: true, coalesced: true });
+  try {
+    await runCustomerAgent({ businessId: biz.id, phone, incomingText: incoming, alreadyPersisted: true });
+  } catch (firstErr) {
+    // Keep the error (6 unexplained fallbacks on 8–9.10 left no trace) and retry
+    // once, unless something already went out to the customer.
+    await logAgentError(biz, phone, text, firstErr);
+    const answered = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant", createdAt: { gt: savedUserMsg.createdAt } }, select: { id: true } });
+    if (answered) throw firstErr;
+    await new Promise(r => setTimeout(r, 2000));
+    await runCustomerAgent({ businessId: biz.id, phone, incomingText: incoming, alreadyPersisted: true });
+  }
+  } finally { await releaseLock(); }
 
   return NextResponse.json({ ok: true });
 
@@ -689,6 +717,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     // push at all (real incident: a customer's message got zero reply, zero
     // indication anything was wrong, for hours — 2026-08-12 01:17).
     console.error("[agent] step 2/3 failed:", stepErr);
+    await logAgentError(biz, phone, text, stepErr);
     pushToOwner(biz.id, {
       title: `⚠️ הסוכן לא הצליח לענות ל${senderName || phone}`,
       body: previewText(text),
@@ -723,4 +752,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error("[webhook] unhandled error:", err);
     return NextResponse.json({ ok: true, error: "internal" });
   }
+}
+
+/** The agent threw on a customer message: a ledger row + a quiet note in Chator's CRM (10.10.2026). */
+async function logAgentError(biz: { id: string; name?: string | null; slug?: string | null }, phone: string, text: string, err: unknown): Promise<void> {
+  const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+  const where = err instanceof Error && err.stack ? err.stack.split("\n").slice(1, 3).map(l => l.trim()).join(" | ") : "";
+  await prisma.messageLog.create({ data: { businessId: biz.id, customerPhone: phone, kind: "agent_error", body: text.slice(0, 500), status: "failed", error: `${msg} @ ${where}`.slice(0, 900) } }).catch(() => {});
+  const { recordCrmNotification } = await import("@/lib/crm/notify");
+  await recordCrmNotification(`הסוכן של ${biz.name || biz.slug || "עסק"} נתקל בשגיאה\n${msg.slice(0, 200)}`, { kind: "system", businessId: biz.id, push: false }).catch(() => {});
 }

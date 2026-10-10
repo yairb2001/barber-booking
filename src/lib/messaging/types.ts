@@ -27,6 +27,7 @@ export type MessageKind =
   | "agent_escalation" // alert sent to a barber/owner when the agent hands a customer off
   | "agent_question"   // the agent did not know; the owner is asked (10.10.2026, src/lib/agent/learn.ts)
   | "owner_answer"     // the owner's answer to that question, sent to the customer
+  | "agent_error"      // the agent threw on a customer message (ledger only, never sent)
   | "reengage"
   | "post_first_visit"
   | "post_every_visit"
