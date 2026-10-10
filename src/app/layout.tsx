@@ -9,6 +9,7 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import ClientErrorListener from "@/components/ClientErrorListener";
 import { VocabProvider } from "@/components/VocabProvider";
 import { getServerTheme, getServerBusinessType } from "@/lib/server-theme";
 
@@ -100,6 +101,7 @@ export default async function RootLayout({
   return (
     <html lang="he" dir="rtl">
       <body className={`antialiased min-h-screen ${fontVars}`}>
+        <ClientErrorListener />
         <ThemeProvider theme={theme}>
           <VocabProvider type={businessType}>
             {children}
