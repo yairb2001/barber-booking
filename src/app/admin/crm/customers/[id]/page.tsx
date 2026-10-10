@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
 import { PlanCard, InvoicesCard, type BillingData } from "./Billing";
+import { InModal } from "../../CardModal";
 
 type Field = { key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
 type Data = {
@@ -22,6 +23,7 @@ const AUTHOR: Record<string, string> = { owner: "בעל העסק", wizard: "אש
 
 export default function CustomerCard() {
   const { id } = useParams<{ id: string }>();
+  const inModal = useContext(InModal);
   const { data, error, reload } = useCrm<Data>(`view=customer&id=${id}`);
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -58,7 +60,7 @@ export default function CustomerCard() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/admin/crm/customers" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללקוחות</Link>
+      {!inModal && <Link href="/admin/crm/customers" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללקוחות</Link>}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="m-0 text-2xl font-extrabold">{c.name}</h1>
@@ -67,6 +69,7 @@ export default function CustomerCard() {
         <div className="flex flex-wrap gap-2">
           <Btn kind="dark" disabled={busy === "imp"} onClick={impersonate}>{busy === "imp" ? "נכנס…" : "היכנס כמנהל"}</Btn>
           <Btn disabled={!!busy || !c.ownerPhone} onClick={() => act("link", { action: "customer.resendLink", id }, "קישור ההקמה נשלח לו בוואטסאפ")}>שלח קישור הקמה</Btn>
+          {data.lead && <Link href={`/admin/crm/leads/${data.lead.id}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס המכירה</Link>}
           {c.ownerPhone && <a href={`tel:${c.ownerPhone}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>חייג</a>}
         </div>
       </header>

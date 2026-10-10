@@ -15,6 +15,7 @@ const NAV = [
   { href: "/admin/crm", label: "בית", exact: true },
   { href: "/admin/crm/tasks", label: "משימות" },
   { href: "/admin/crm/leads", label: "לידים" },
+  { href: "/admin/crm/chats", label: "צ׳אטים" },
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
   { href: "/admin/crm/invoices", label: "חשבוניות" },
@@ -66,6 +67,17 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
   const active = (h: string, exact?: boolean) => (exact ? pathname === h : pathname.startsWith(h));
+  const links = (
+    <>
+      {NAV.map(n => (
+        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact) ? C.petrol2 : "transparent", color: active(n.href, n.exact) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact) ? 600 : 400, textDecoration: "none" }}>{n.label}</Link>
+      ))}
+      <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
+        <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
+        <Link href="/admin" className="text-[13px]" style={{ color: "#A9C9C4" }}>חזרה למספרה</Link>
+      </div>
+    </>
+  );
   return (
     <div dir="rtl" className="min-h-screen flex flex-col md:flex-row font-heebo" style={{ background: C.ground, color: C.ink }}>
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
@@ -74,10 +86,8 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
         {/* Phone: menu button on the right (start), logo on the left (Yair, 10.10.2026). */}
         <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-6">
           <div className="flex items-center gap-1">
-            <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(o => !o)} aria-expanded={menuOpen} aria-label="תפריט">
-              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                {menuOpen ? <path d="M6 6l12 12M18 6L6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
-              </svg>
+            <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label="תפריט">
+              <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             </button>
             <Link href="/admin/crm/alerts" className="relative w-11 h-11 rounded-lg inline-flex items-center justify-center" style={{ color: pathname.startsWith("/admin/crm/alerts") ? C.turquoise : "#E8F4F1" }} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"}>
               <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -89,16 +99,25 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
             <span className="text-xs font-semibold tracking-widest" style={{ color: C.turquoise }}>CRM</span>
           </Link>
         </div>
-        <div className={`${menuOpen ? "flex" : "hidden"} md:flex flex-col gap-1 px-3 pb-4 md:flex-1`}>
-          {NAV.map(n => (
-            <Link key={n.href} href={n.href} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact) ? C.petrol2 : "transparent", color: active(n.href, n.exact) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact) ? 600 : 400, textDecoration: "none" }}>{n.label}</Link>
-          ))}
-          <div className="md:mt-auto pt-4 mt-2 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
-            <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
-            <Link href="/admin" className="text-[13px]" style={{ color: "#A9C9C4" }}>חזרה למספרה</Link>
-          </div>
-        </div>
+        {/* Desktop: the side menu, always open. */}
+        <div className="hidden md:flex flex-col gap-1 px-3 pb-4 flex-1">{links}</div>
       </nav>
+      {/* Phone: the menu slides in from the side, full height (Yair, 10.10.2026). */}
+      <div className={`md:hidden fixed inset-0 z-40 ${menuOpen ? "" : "pointer-events-none"}`} aria-hidden={!menuOpen}>
+        <div className={`absolute inset-0 transition-opacity duration-200 ${menuOpen ? "opacity-100" : "opacity-0"}`} style={{ background: "rgba(11,31,33,0.45)" }} onClick={() => setMenuOpen(false)} />
+        <aside className={`absolute top-0 right-0 h-full w-[80%] max-w-[300px] flex flex-col transition-transform duration-200 ${menuOpen ? "translate-x-0" : "translate-x-full"}`} style={{ background: C.petrol, color: "#E8F4F1" }}>
+          <div className="flex items-center justify-between px-4 py-3">
+            <button type="button" className="w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(false)} aria-label="סגור תפריט">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+            </button>
+            <span className="flex items-baseline gap-2" dir="ltr">
+              <span className="text-[22px] font-bold text-white" style={{ fontFamily: "Outfit, Heebo, sans-serif", letterSpacing: "-0.5px" }}>Chator</span>
+              <span className="text-xs font-semibold tracking-widest" style={{ color: C.turquoise }}>CRM</span>
+            </span>
+          </div>
+          <nav aria-label="תפריט CRM" className="flex flex-col gap-1 px-3 pb-6 flex-1 overflow-y-auto">{links}</nav>
+        </aside>
+      </div>
       <main className="flex-1 min-w-0 px-4 py-5 md:px-8 md:py-7">{children}</main>
     </div>
   );

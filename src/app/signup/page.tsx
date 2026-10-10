@@ -32,7 +32,6 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!businessName.trim()) { setError("נא להזין שם עסק"); return; }
     if (!phone) { setError("נא להזין טלפון"); return; }
     if (password.length < 6) { setError("סיסמה חייבת להיות לפחות 6 תווים"); return; }
     if (password !== confirmPassword) { setError("הסיסמאות לא תואמות"); return; }
@@ -103,7 +102,7 @@ export default function SignupPage() {
           )}
 
           <div>
-            <label className="block text-sm text-slate-600 mb-1.5">שם העסק</label>
+            <label className="block text-sm text-slate-600 mb-1.5">שם העסק <span className="text-slate-400">(לא חובה, אפשר גם אחר כך)</span></label>
             <input type="text" value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="המספרה של דני" autoFocus className={input} />
           </div>
           <div>
@@ -121,7 +120,7 @@ export default function SignupPage() {
 
           {error && <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 text-center">{error}</div>}
 
-          <button type="submit" disabled={submitting || !businessName || !phone || !password || !confirmPassword}
+          <button type="submit" disabled={submitting || !phone || !password || !confirmPassword}
             className="w-full rounded-2xl py-3.5 text-[15px] font-bold text-white disabled:opacity-50 transition active:scale-[0.99]" style={{ background: C.coral }}>
             {submitting ? "רגע…" : "פתיחת העסק שלי"}
           </button>

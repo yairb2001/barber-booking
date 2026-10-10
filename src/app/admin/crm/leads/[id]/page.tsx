@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useState, useContext } from "react";
 import { C, Btn, Card, useCrm, crmAction, STAGE_TONE, SOURCE_LABEL } from "../../ui";
+import { InModal } from "../../CardModal";
 
 type Msg = { id: string; role: string; content: string; source: string | null; createdAt: string };
 type Call = { id: string; startsAt: string; status: string; outcome: string | null; label: string; rep: string };
@@ -25,6 +26,7 @@ const who = (m: Msg) => (m.role === "user" ? "הליד" : m.source === "admin" ?
 
 export default function LeadCard() {
   const { id } = useParams<{ id: string }>();
+  const inModal = useContext(InModal);
   const { data, error, reload } = useCrm<Data>(`view=lead&id=${id}`);
   const [text, setText] = useState("");
   const [note, setNote] = useState("");
@@ -51,7 +53,7 @@ export default function LeadCard() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/admin/crm/leads" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללידים</Link>
+      {!inModal && <Link href="/admin/crm/leads" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללידים</Link>}
 
       <header className="flex flex-wrap items-center justify-between gap-3.5">
         <div className="flex items-center gap-3.5">
@@ -173,7 +175,7 @@ export default function LeadCard() {
               </label>
               {l.summary && <p className="m-0 text-[13px] leading-relaxed" style={{ color: "#3E5A5B" }}><b>מה כתב בשיחה:</b> {l.summary}</p>}
               {l.lostReason && <p className="m-0 text-[13px]" style={{ color: "#B42318" }}>סיבה: {l.lostReason}</p>}
-              {l.businessId && <Link href={`/admin/crm/customers?focus=${l.businessId}`} className="text-[13px]" style={{ color: C.petrol }}>לעסק שנפתח ←</Link>}
+              {l.businessId && <Link href={`/admin/crm/customers/${l.businessId}`} className="text-[13px] font-semibold" style={{ color: C.petrol }}>כרטיס הלקוח ←</Link>}
               <span className="text-xs" style={{ color: C.muted }}>שלב: {STAGE_TONE[l.stage]?.label ?? l.stage}</span>
             </div>
           </Card>

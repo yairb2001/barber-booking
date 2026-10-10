@@ -46,9 +46,7 @@ export async function POST(req: NextRequest) {
     const { businessName, phone, password, confirmPassword, businessType: rawType, planKey } = await req.json();
     const businessType = isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE;
 
-    if (!businessName || typeof businessName !== "string" || businessName.trim().length < 2) {
-      return NextResponse.json({ error: "נא להזין שם עסק" }, { status: 400 });
-    }
+    // The shop's name is optional at signup (Yair, 10.10.2026); the wizard asks for it.
     // The free month runs on the shop's own WhatsApp (regular, by QR), so the
     // shop needs a mobile number (10.10.2026). Israeli mobile: 05XXXXXXXX / 9725XXXXXXXX.
     if (!phone || typeof phone !== "string" || !/^(05\d{8}|9725\d{8})$/.test(digits(phone))) {
@@ -85,7 +83,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const name = businessName.trim();
+    const name = typeof businessName === "string" && businessName.trim().length >= 2 ? businessName.trim() : "המספרה שלי";
     const slug = await generateSlug(name);
     const passwordHash = await hashPassword(password);
     const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
