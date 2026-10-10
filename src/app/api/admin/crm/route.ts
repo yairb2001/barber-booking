@@ -328,21 +328,29 @@ async function customerView(id: string) {
   try { cfg = agent?.setupConfig ? JSON.parse(agent.setupConfig) : {}; } catch { cfg = {}; }
   const fields = setupFieldsFor(biz?.businessType).map(f => ({ key: f.key, label: f.label, group: f.group, question: f.question, type: f.type, options: f.options ?? null, core: f.core, value: cfg[f.key] ?? null, default: f.default ?? null }));
   const week = new Date(Date.now() - 7 * 86400_000);
-  const [convs, escalated, agentAppts, notes, history, lead] = await Promise.all([
+  const [convs, escalated, agentAppts, notes, history, lead, refRows] = await Promise.all([
     prisma.conversation.count({ where: { businessId: id, lastMessageAt: { gte: week }, NOT: { phone: { startsWith: "972000" } } } }),
     prisma.conversation.count({ where: { businessId: id, escalatedAt: { gte: week } } }),
     prisma.appointment.count({ where: { businessId: id, source: "agent", createdAt: { gte: week } } }),
     prisma.leadNote.findMany({ where: { businessId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
     prisma.agentSetupHistory.findMany({ where: { businessId: id }, orderBy: { createdAt: "desc" }, take: 20, select: { id: true, author: true, createdAt: true } }),
     prisma.lead.findFirst({ where: { businessId: id }, select: { id: true, name: true, phone: true, createdAt: true } }),
+    prisma.businessReferral.findMany({ where: { OR: [{ referrerId: id }, { referredId: id }] }, orderBy: { createdAt: "desc" } }),
   ]);
+  // "חבר מביא חבר" between shops (src/lib/chator-referral.ts).
+  const refNames = new Map((await prisma.business.findMany({ where: { id: { in: refRows.flatMap(r => [r.referrerId, r.referredId]) } }, select: { id: true, name: true } })).map(x => [x.id, x.name]));
+  const by = refRows.find(r => r.referredId === id);
+  const referral = {
+    referredBy: by ? { id: by.referrerId, name: refNames.get(by.referrerId) ?? "", source: by.source } : null,
+    brought: refRows.filter(r => r.referrerId === id).map(r => ({ id: r.id, businessId: r.referredId, name: refNames.get(r.referredId) ?? "", at: r.createdAt, rewardedAt: r.rewardedAt, appliedAt: r.appliedAt })),
+  };
   let budget = 40;
   try { const st = biz?.settings ? JSON.parse(biz.settings) : {}; if (Number(st.tokenBudgetIls) > 0) budget = Number(st.tokenBudgetIls); } catch { /* ignore */ }
   return {
     customer: c, business: biz && { ...biz, settings: undefined, tokenBudgetIls: budget }, setup,
     agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
     quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
-    notes, lead,
+    notes, lead, referral,
     billing: await billingOf(id, biz?.settings ?? null),
   };
 }
@@ -649,6 +657,11 @@ export async function POST(req: NextRequest) {
         }
         await prisma.agentImprovement.update({ where: { id: imp.id }, data: { status, proposal: text, decidedAt: new Date(), decidedBy: "יאיר" } });
         return NextResponse.json({ ok: true, status });
+      }
+      // Yair gave the referral's free month in Invoice4U (or takes it back).
+      case "referral.applied": {
+        await prisma.businessReferral.update({ where: { id: str("id") }, data: { appliedAt: b.applied === false ? null : new Date() } });
+        return NextResponse.json({ ok: true });
       }
       case "feedback.status": {
         const st = str("status");

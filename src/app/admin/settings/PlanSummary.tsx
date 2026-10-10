@@ -22,7 +22,8 @@ export default function PlanSummary() {
     { label: "סוכן", text: `${Math.min(u.aiPct, 999)}%`, pct: u.aiPct },
   ] : [];
   return (
-    <Link href="/admin/settings/plan" className="block max-w-4xl mb-4 bg-white border border-neutral-200 rounded-2xl px-5 py-4 hover:border-teal-300 transition">
+    <>
+    <Link href="/admin/settings/plan" className="block max-w-4xl mb-2 bg-white border border-neutral-200 rounded-2xl px-5 py-4 hover:border-teal-300 transition">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-neutral-400">המסלול שלי</p>
@@ -42,5 +43,11 @@ export default function PlanSummary() {
         </div>
       )}
     </Link>
+    {/* "חבר מביא חבר" (11.10.2026): one line under the plan, to the link and the count. */}
+    <Link href="/admin/settings/plan#referral" className="flex items-center justify-between gap-3 max-w-4xl mb-4 rounded-2xl border border-teal-200 bg-teal-50 px-5 py-3 hover:border-teal-400 transition">
+      <span className="text-sm text-teal-900 min-w-0"><b>חבר מביא חבר:</b> חודש חינם על כל מספרה שתביא{d.referral?.earned ? ` · הרווחת ${d.referral.earned}` : ""}</span>
+      <span className="text-sm text-teal-700 shrink-0">לקישור שלי ←</span>
+    </Link>
+    </>
   );
 }

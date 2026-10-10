@@ -4,6 +4,7 @@ import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { isBusinessType } from "@/lib/vocab";
 import { ensureEvolutionInstance, deleteEvolutionInstance } from "@/lib/messaging/evolution";
 import { GreenApiProvider } from "@/lib/messaging/green-api";
+import { rewardReferral } from "@/lib/chator-referral";
 
 /**
  * PATCH /api/admin/super/businesses/[id]
@@ -98,6 +99,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     data,
     select: { id: true, monthlyPrice: true, setupFee: true, tier: true, businessType: true, paidAt: true, suspendedAt: true, trialEndsAt: true, messagingProvider: true, evolutionInstance: true, whatsappStatus: true },
   });
+  // A shop that came through "חבר מביא חבר" started paying: the referrer's free month.
+  if (body.markPaid === true) await rewardReferral(updated.id);
   return NextResponse.json({ ok: true, business: updated });
 }
 

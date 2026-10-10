@@ -28,6 +28,17 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // "חבר מביא חבר" (11.10.2026): a friend's link (?ref=<his shop>), kept for a
+  // later visit too, or the phone of the owner who told him about us.
+  const [ref, setRef] = useState<{ code: string; name: string | null } | null>(null);
+  const [askRef, setAskRef] = useState(false);
+  const [referrerPhone, setReferrerPhone] = useState("");
+  useEffect(() => {
+    let code = new URLSearchParams(window.location.search).get("ref") ?? "";
+    try { if (code) localStorage.setItem("chator_ref", code); else code = localStorage.getItem("chator_ref") ?? ""; } catch { /* private mode */ }
+    if (!code) return;
+    fetch(`/api/signup/referrer?ref=${encodeURIComponent(code)}`).then(r => (r.ok ? r.json() : null)).then(j => { if (j?.ok) setRef({ code, name: j.name ?? null }); }).catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +50,7 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, planKey: plan ? planKey : undefined }),
+        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, planKey: plan ? planKey : undefined, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -63,6 +74,7 @@ export default function SignupPage() {
           <div>
             <h1 className="text-xl font-bold" style={{ color: C.ink }}>פתיחת עסק חדש</h1>
             <p className="text-sm text-slate-500 mt-1">דקה להרשמה, ואז אשף קצר שמקים לך את המערכת ואת הסוכן.</p>
+            {ref && <p className="text-sm font-semibold mt-2.5 rounded-xl px-3 py-2" style={{ background: "#E3F7EF", color: C.petrol }}>{ref.name ? `הגעת בהמלצה של ${ref.name}. ברוך הבא!` : "הגעת בהמלצה של חבר. ברוך הבא!"}</p>}
           </div>
 
           <div>
@@ -91,13 +103,14 @@ export default function SignupPage() {
                     <button key={p.key} type="button" onClick={() => setPlanKey(p.key)}
                       className={`rounded-xl border px-2 py-2 text-center transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-700"}`}
                       style={on ? { background: C.petrol } : {}}>
-                      <span className="block text-sm font-bold">עד {p.apptsEstimate.toLocaleString("he-IL")}</span>
+                      <span className="block text-sm font-bold">כ־{p.apptsEstimate.toLocaleString("he-IL")}</span>
                       <span className={`block text-[11px] ${on ? "text-white/80" : "text-slate-500"}`}>{p.priceIls} ₪ לחודש</span>
                     </button>
                   );
                 })}
               </div>
-              {plan && <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש. התורים לא מוגבלים, ואפשר לשנות מסלול בכל רגע.</p>}
+              {plan && <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש ושימוש בסוכן שמתאים לכ־{plan.apptsEstimate.toLocaleString("he-IL")} תורים. התורים עצמם לא מוגבלים: המסלול נקבע לפי ההודעות והשימוש בסוכן, ומספר התורים הוא רק הערכה. אפשר לשנות מסלול בכל רגע.</p>}
+              <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.petrol }}><b>חבר מביא חבר:</b> על כל מספרה שתביא, כשהיא מתחילה לשלם, אתה מקבל חודש חינם.</p>
             </div>
           )}
 
@@ -117,6 +130,16 @@ export default function SignupPage() {
             <label className="block text-sm text-slate-600 mb-1.5">אימות סיסמה</label>
             <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} dir="ltr" className={input} />
           </div>
+
+          {!ref && (askRef ? (
+            <div>
+              <label className="block text-sm text-slate-600 mb-1.5">הנייד של בעל המספרה שהמליץ <span className="text-slate-400">(לא חובה)</span></label>
+              <input type="tel" value={referrerPhone} onChange={e => setReferrerPhone(e.target.value)} placeholder="050-0000000" dir="ltr" className={input} />
+              <p className="text-[11px] text-slate-500 mt-1">ככה הוא יקבל חודש חינם כשתתחיל לשלם.</p>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setAskRef(true)} className="text-sm font-medium" style={{ color: C.petrol }}>מישהו המליץ לך עלינו?</button>
+          ))}
 
           {error && <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 text-center">{error}</div>}
 

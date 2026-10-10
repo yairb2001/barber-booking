@@ -5,6 +5,7 @@ import { getPlans, planKeyOf, usageFor, type PackKind } from "@/lib/crm/plans";
 import { getCrmSettings } from "@/lib/crm/core";
 import { recordCrmNotification } from "@/lib/crm/notify";
 import { payLinkFor } from "@/lib/billing/pay-link";
+import { referralStats } from "@/lib/chator-referral";
 
 export const dynamic = "force-dynamic";
 
@@ -25,12 +26,13 @@ export async function GET(req: NextRequest) {
   if (guard) return guard;
   const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
-  const [plans, usage, cs, packs, invoices] = await Promise.all([
+  const [plans, usage, cs, packs, invoices, referral] = await Promise.all([
     getPlans(),
     usageFor([biz.id]),
     getCrmSettings(),
     prisma.crmPack.findMany({ where: { businessId: biz.id }, orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.crmInvoice.findMany({ where: { businessId: biz.id }, orderBy: { issuedAt: "desc" }, take: 24 }),
+    referralStats(biz),
   ]);
   const u = usage.get(biz.id) ?? null;
   const s = parse(biz.settings);
@@ -51,6 +53,7 @@ export async function GET(req: NextRequest) {
     monthlyPrice: biz.monthlyPrice,
     requested: requests,
     payUrl: biz.paidAt ? null : payLinkFor(biz),
+    referral,
   });
 }
 

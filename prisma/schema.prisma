@@ -1343,3 +1343,19 @@ model AgentImprovement {
   @@index([businessId])
   @@map("agent_improvements")
 }
+
+/// Chator "חבר מביא חבר" (11.10.2026): the referrer gets a free month once the
+/// friend starts paying (rewardedAt). Billing is in Invoice4U by hand for now:
+/// appliedAt = Yair gave the free month there.
+model BusinessReferral {
+  id         String    @id @default(uuid())
+  referrerId String    @map("referrer_id")
+  referredId String    @unique @map("referred_id")
+  source     String    @default("link") // link | phone
+  createdAt  DateTime  @default(now()) @map("created_at")
+  rewardedAt DateTime? @map("rewarded_at")
+  appliedAt  DateTime? @map("applied_at")
+
+  @@index([referrerId])
+  @@map("business_referrals")
+}

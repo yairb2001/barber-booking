@@ -6,6 +6,7 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { getPlans } from "@/lib/crm/plans";
 import { FREE_FIRST_MONTH_DAYS } from "@/lib/leads";
+import { findReferrer, recordReferral } from "@/lib/chator-referral";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -43,7 +44,7 @@ const TRIAL_DAYS = FREE_FIRST_MONTH_DAYS;
 
 export async function POST(req: NextRequest) {
   try {
-    const { businessName, phone, password, confirmPassword, businessType: rawType, planKey } = await req.json();
+    const { businessName, phone, password, confirmPassword, businessType: rawType, planKey, ref, referrerPhone } = await req.json();
     const businessType = isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE;
 
     // The shop's name is optional at signup (Yair, 10.10.2026); the wizard asks for it.
@@ -108,7 +109,11 @@ export async function POST(req: NextRequest) {
       select: { id: true, slug: true },
     });
 
-    await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}${plan ? `\n\u05de\u05e1\u05dc\u05d5\u05dc: ${plan.name}` : ""}`, { kind: "customer", businessId: business.id, push: false });
+    // "חבר מביא חבר" (11.10.2026): his link, or the phone of the owner who told him.
+    const referrer = await findReferrer({ ref, phone: referrerPhone }, business.id);
+    if (referrer) await recordReferral({ id: business.id, name }, referrer);
+
+    await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}${plan ? `\n\u05de\u05e1\u05dc\u05d5\u05dc: ${plan.name}` : ""}${referrer ? `\nבהמלצה של: ${referrer.name}` : ""}`, { kind: "customer", businessId: business.id, push: false });
 
     const token = await signSession({ businessId: business.id, role: "owner" });
     const res = NextResponse.json({ ok: true, slug: business.slug });

@@ -15,6 +15,7 @@ type Data = {
   quality: { conversationsWeek: number; escalatedWeek: number; agentBookingsWeek: number };
   notes: { id: string; author: string; body: string; createdAt: string }[];
   lead: { id: string; name: string | null; phone: string; createdAt: string } | null;
+  referral: { referredBy: { id: string; name: string; source: string } | null; brought: { id: string; businessId: string; name: string; at: string; rewardedAt: string | null; appliedAt: string | null }[] };
   billing: BillingData;
 };
 const d = (iso: string | null) => (iso ? new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" }).format(new Date(iso)) : "");
@@ -182,6 +183,20 @@ export default function CustomerCard({ id }: { id: string }) {
           </Card>
 
           <InvoicesCard id={id} data={data.billing} busy={busy} act={act} />
+
+          {(data.referral.referredBy || data.referral.brought.length > 0) && (
+            <Card collapsible title="חבר מביא חבר" aside={data.referral.brought.some(r => r.rewardedAt && !r.appliedAt) ? "יש חודש חינם לתת" : data.referral.brought.length ? `הביא ${data.referral.brought.length}` : undefined}>
+              <div className="flex flex-col gap-2 text-sm">
+                {data.referral.referredBy && <p className="m-0">הגיע בהמלצה של <Link href={`/admin/crm/customers/${data.referral.referredBy.id}`} style={{ color: C.petrol }}>{data.referral.referredBy.name}</Link> <span style={{ color: C.muted }}>({data.referral.referredBy.source === "phone" ? "לפי טלפון" : "מהקישור"})</span></p>}
+                {data.referral.brought.map(r => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 py-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
+                    <span className="min-w-0"><Link href={`/admin/crm/customers/${r.businessId}`} style={{ color: C.petrol }}>{r.name}</Link> <span className="text-xs" style={{ color: C.muted }}>{r.rewardedAt ? (r.appliedAt ? `החודש ניתן ב-${d(r.appliedAt).split(",")[0]}` : "התחיל לשלם: מגיע חודש חינם") : `נרשם ב-${d(r.at).split(",")[0]}`}</span></span>
+                    {r.rewardedAt && <Btn className="!min-h-[36px] shrink-0" kind={r.appliedAt ? "ghost" : "primary"} disabled={!!busy} onClick={() => act(`ref-${r.id}`, { action: "referral.applied", id: r.id, applied: !r.appliedAt }, r.appliedAt ? "סומן שלא ניתן" : "סומן שהחודש ניתן")}>{r.appliedAt ? "בטל סימון" : "נתתי באינוויס"}</Btn>}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card collapsible title="וואטסאפ לבעל העסק">
             <div className="flex gap-2">

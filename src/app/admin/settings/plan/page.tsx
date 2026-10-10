@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { barColor, n, shortDate, type Meter, type PlanData } from "./shared";
+import Referral from "./Referral";
 
 /**
  * "המסלול שלי" (10.10.2026). A plan is a WhatsApp message quota; appointments
@@ -41,6 +42,7 @@ export default function MyPlanPage() {
     setD(await r.json());
   }, []);
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (d && window.location.hash === "#referral") document.getElementById("referral")?.scrollIntoView({ block: "start" }); }, [d]);
 
   async function request(key: string, body: Record<string, unknown>, question: string) {
     if (!confirm(question)) return;
@@ -105,7 +107,7 @@ export default function MyPlanPage() {
         {/* Plans */}
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
           <h2 className="font-semibold text-neutral-800 mb-1">המסלולים</h2>
-          <p className="text-xs text-neutral-500 mb-4">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. התורים לא מוגבלים, רק הודעות הוואטסאפ.</p>
+          <p className="text-xs text-neutral-500 mb-4">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. התורים לא מוגבלים: המסלול נקבע לפי כמות הודעות הוואטסאפ והשימוש בסוכן, ומספר התורים הוא רק הערכה.</p>
           <div className="grid sm:grid-cols-3 gap-2">
             {d.plans.map(p => {
               const mine = p.key === d.planKey;
@@ -118,7 +120,7 @@ export default function MyPlanPage() {
                   </div>
                   <span className="text-2xl font-bold text-neutral-900 tabular-nums">{p.priceIls} ₪<span className="text-xs font-normal text-neutral-500"> לחודש</span></span>
                   <span className="text-xs text-neutral-700 font-medium">{n(p.messages)} הודעות וואטסאפ בחודש</span>
-                  <span className="text-xs text-neutral-500">מתאים לכ־{n(p.apptsCap)} תורים בחודש</span>
+                  <span className="text-xs text-neutral-500">כ־{n(p.apptsCap)} תורים בחודש (הערכה)</span>
                   {!mine && (
                     askedRecently(key)
                       ? <span className="text-xs text-teal-700 mt-2">הבקשה נשלחה, נחזור אליך לאשר</span>
@@ -132,6 +134,8 @@ export default function MyPlanPage() {
             })}
           </div>
         </section>
+
+        {d.referral && <Referral r={d.referral} />}
 
         {/* Packs */}
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
