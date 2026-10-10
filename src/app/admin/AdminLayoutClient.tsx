@@ -73,7 +73,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null } | null>(null);
+  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null } | null>(null);
   // Header title = the logged-in business (each shop sees its own name — this was
   // hard-coded "DOMINANT" for everyone); the product name until /me answers.
   const bizTitle = me?.businessName?.trim() || "Chator";
@@ -362,6 +362,19 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             </button>
           </div>
         )}
+
+        {/* The free month's last 7 days (10.10.2026): what continues after it. */}
+        {me?.trialEnding && !pathname.startsWith("/admin/settings/plan") && (() => {
+          const t = me.trialEnding;
+          const day = new Date(t.endsAt).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" });
+          const next = t.priceIls ? ` אחריו ממשיך ${t.planName ? `מסלול ${t.planName}, ` : ""}${t.priceIls} ₪ לחודש.` : " אחריו בוחרים מסלול.";
+          return (
+            <Link href="/admin/settings/plan" className="shrink-0 bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 flex items-center justify-between gap-3 text-sm">
+              <span className="leading-snug">החודש החינמי מסתיים ב-{day}.{next}</span>
+              <span className="shrink-0 font-semibold">למסלול שלי ←</span>
+            </Link>
+          );
+        })()}
 
         {/* Mobile top header — hamburger on the right, business name/logo on the
             left (links to the calendar, /admin — the default landing page). */}

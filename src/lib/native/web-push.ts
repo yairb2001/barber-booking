@@ -33,7 +33,7 @@ export type PushPayload = {
   actions?: { action: string; title: string }[];
   actionUrls?: Record<string, string>;
 };
-export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply";
+export type NotifyType = "appointment" | "cancellation" | "waitlist" | "escalation" | "reply" | "billing";
 
 const TOGGLE_KEY: Record<NotifyType, string> = {
   appointment: "notifyOnAppointments",
@@ -41,6 +41,7 @@ const TOGGLE_KEY: Record<NotifyType, string> = {
   waitlist: "notifyOnWaitlist",
   escalation: "notifyOnEscalation",
   reply: "notifyOnReply", // customer wrote back in a chat a human is handling
+  billing: "notifyOnBilling", // the free month is ending (business-level, ignores the owner's staff scope)
 };
 
 function parseSettings(raw: string | null): Record<string, unknown> {
@@ -144,7 +145,7 @@ export async function notifyOwnerWeb(
 
     if (s[TOGGLE_KEY[type]] === false) return;
     // Honor the owner's notification SCOPE (all / mine / off).
-    if (!(await ownerScopeAllows(businessId, s, eventStaffId))) return;
+    if (type !== "billing" && !(await ownerScopeAllows(businessId, s, eventStaffId))) return;
 
     const subs = subsOf(s, "ownerWebPushSubs");
     if (subs.length === 0) return;

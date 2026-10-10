@@ -9,6 +9,7 @@ import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { getRootBusinessId } from "@/lib/tenant";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
+import { getPlans, planKeyOf } from "@/lib/crm/plans";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -46,6 +47,9 @@ export async function GET(req: NextRequest) {
       greenApiInstanceId: true,
       greenApiToken: true, evolutionInstance: true,
       onboardingCompletedAt: true,
+      trialEndsAt: true,
+      paidAt: true,
+      monthlyPrice: true,
       cancellationPolicyMode: true,
       minCancellationHours: true,
     },
@@ -129,7 +133,18 @@ export async function GET(req: NextRequest) {
   const slug = business?.slug ?? null;
   const publicPath = isRootBusiness || !slug ? "/" : `/${slug}`;
 
+  // The free month is ending (10.10.2026): the owner sees a strip in the app
+  // for its last 7 days, with the plan that continues after it.
+  let trialEnding: { endsAt: Date; planName: string | null; priceIls: number | null } | null = null;
+  const left = business?.trialEndsAt ? business.trialEndsAt.getTime() - Date.now() : -1;
+  if (session.isOwner && business && !business.paidAt && left > 0 && left < 7 * 86400_000) {
+    const key = planKeyOf(business.settings);
+    const plan = key ? (await getPlans()).find(p => p.key === key) ?? null : null;
+    trialEnding = { endsAt: business.trialEndsAt!, planName: plan?.name ?? null, priceIls: plan?.priceIls ?? business.monthlyPrice ?? null };
+  }
+
   return NextResponse.json({
+    trialEnding,
     businessId: session.businessId,
     businessName: business?.name ?? null,
     isRootBusiness,

@@ -5,6 +5,7 @@ import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { getPlans } from "@/lib/crm/plans";
+import { FREE_FIRST_MONTH_DAYS } from "@/lib/leads";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -36,7 +37,9 @@ function phoneMatches(input: string, stored: string | null | undefined): boolean
   return a === b || a.endsWith(b) || b.endsWith(a);
 }
 
-const TRIAL_DAYS = 14;
+// A free first month for everyone (Yair, 10.10.2026: "30 ניסיון ללא עלות"),
+// same rule as a business opened from the CRM (src/lib/leads.ts).
+const TRIAL_DAYS = FREE_FIRST_MONTH_DAYS;
 
 export async function POST(req: NextRequest) {
   try {
