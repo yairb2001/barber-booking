@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
       const { runDemoTurn } = await import("@/lib/agent/sales-agent");
       const t = String(body.text ?? "").trim();
       if (!t) return NextResponse.json({ error: "text required" }, { status: 400 });
-      const sandbox = { replies: [] as string[], toolLog: [] as string[], asLead: body.asLead === true };
+      const sandbox = { replies: [] as string[], toolLog: [] as string[], asLead: body.asLead === true, v2: body.v2 === true };
       const startedAt = new Date();
       const r = await runDemoTurn({ phone, text: t, senderName: typeof body.senderName === "string" ? body.senderName : null, sandbox });
       const conv = await prisma.conversation.findFirst({ where: { businessId: business.id, phone }, orderBy: { createdAt: "desc" }, select: { id: true, salesState: true } });

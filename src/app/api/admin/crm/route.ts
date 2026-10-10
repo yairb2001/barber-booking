@@ -378,7 +378,11 @@ export async function GET(req: NextRequest) {
     if (view === "invoices") return NextResponse.json(await invoicesView());
     if (view === "settings") {
       const { crmPushDevices } = await import("@/lib/crm/notify");
-      return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), pushDevices: await crmPushDevices(), plans: await getPlans(), providerConnected: billingConfigured(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
+      const { getCrmText } = await import("@/lib/crm/core");
+      const { SALES_KNOWLEDGE_V2 } = await import("@/lib/agent/sales-knowledge");
+      const [knowledge, v2] = await Promise.all([getCrmText("salesKnowledge"), getCrmText("salesAgentV2")]);
+      return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), pushDevices: await crmPushDevices(), plans: await getPlans(), providerConnected: billingConfigured(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }),
+        salesAgent: { v2: v2.text === "1", v2At: v2.updatedAt, knowledge: knowledge.text.trim() || SALES_KNOWLEDGE_V2, custom: !!knowledge.text.trim(), knowledgeAt: knowledge.updatedAt } });
     }
     return NextResponse.json({ error: "unknown_view" }, { status: 400 });
   } catch (e) {
@@ -545,6 +549,16 @@ export async function POST(req: NextRequest) {
         if (b.off === false) await prisma.repDayOff.deleteMany({ where: { repId, date: d } });
         else await prisma.repDayOff.upsert({ where: { repId_date: { repId, date: d } }, create: { repId, date: d, note: str("note") || null }, update: {} });
         return NextResponse.json({ ok: true });
+      }
+      // The Chator agent (10.10.2026): its knowledge (empty = the built-in default) and the version switch.
+      case "salesAgent.knowledge": {
+        const { setCrmText } = await import("@/lib/crm/core");
+        const text = typeof b.knowledge === "string" ? b.knowledge.trim().slice(0, 20000) : "";
+        return NextResponse.json({ ok: true, ...(await setCrmText("salesKnowledge", text)) });
+      }
+      case "salesAgent.v2": {
+        const { setCrmText } = await import("@/lib/crm/core");
+        return NextResponse.json({ ok: true, ...(await setCrmText("salesAgentV2", b.on === true ? "1" : "0")) });
       }
       case "settings.update": {
         const patch: Partial<CrmSettings> = {};

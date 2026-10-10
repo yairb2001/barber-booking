@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { C, TONE, Btn, Card, PageHead, useCrm, crmAction } from "../ui";
 import { CrmPushSettings } from "../CrmPush";
 import { PlansEditor, type PackSettings } from "./Plans";
+import { SalesAgentCard, type SalesAgentData } from "./SalesAgent";
 
 type S = { callMinutes: number; breakMinutes: number; horizonDays: number; minNoticeMinutes: number; infraCostIls: number } & PackSettings;
-type Data = { settings: S; testKey: boolean; pushDevices: number; plans: { key: string; name: string; apptsCap: number; messages: number; aiBudgetIls: number; priceIls: number }[]; providerConnected: boolean; reps: { id: string; name: string; phone: string | null; active: boolean; isOwner: boolean }[] };
+type Data = { settings: S; testKey: boolean; pushDevices: number; plans: { key: string; name: string; apptsCap: number; messages: number; aiBudgetIls: number; priceIls: number }[]; providerConnected: boolean; reps: { id: string; name: string; phone: string | null; active: boolean; isOwner: boolean }[]; salesAgent: SalesAgentData };
 
 const FIELDS: [keyof S, string, string][] = [
   ["callMinutes", "אורך שיחה", "דקות"],
@@ -38,6 +39,7 @@ export default function SettingsPage() {
     <div className="flex flex-col gap-4 max-w-3xl">
       <PageHead title="הגדרות CRM" />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
+      <SalesAgentCard key={data.salesAgent.knowledgeAt ?? "default"} data={data.salesAgent} onSaved={reload} />
       <Card title="מסלולים" aside={data.providerConnected ? "Invoice4U מחובר" : "Invoice4U עוד לא מחובר"}>
         <PlansEditor plans={data.plans} packs={s} onSaved={() => void reload()} />
       </Card>

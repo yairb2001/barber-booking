@@ -28,8 +28,8 @@ import { recordAgentUsage } from "@/lib/agent/usage";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { runCustomerAgent, MODEL_SMART } from "@/lib/agent/customer-agent";
 import { anthropicFor } from "@/lib/anthropic-clients";
-import { SALES_KNOWLEDGE, FORBIDDEN_CLAIMS, OFFER_TEXT, PRICE_TEXT } from "@/lib/agent/sales-knowledge";
-import { ensureCrmSeed, freeCallSlots, slotLabel, stageLabel } from "@/lib/crm/core";
+import { SALES_KNOWLEDGE, FORBIDDEN_CLAIMS, OFFER_TEXT, PRICE_TEXT, SALES_KNOWLEDGE_V2, FORBIDDEN_CLAIMS_V2, PRICE_TEXT_V2, ALLOWED_AMOUNTS_V2 } from "@/lib/agent/sales-knowledge";
+import { ensureCrmSeed, freeCallSlots, slotLabel, stageLabel, getCrmText } from "@/lib/crm/core";
 import { bookCall, cancelCall, alertRep, setLeadStage } from "@/lib/crm/calls";
 import { stopLeadAutomations } from "@/lib/crm/automations";
 
@@ -43,6 +43,8 @@ export type SalesState = {
   fullName?: string;
   businessName?: string;
   pendingCall?: { startsAt: string; label: string; repId: string };
+  demoTurns?: number;     // v2: messages inside the demo since entering it
+  demoNudged?: boolean;   // v2: the one "write 'סיימתי' to stop" line was sent
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
@@ -68,6 +70,28 @@ const PITCH_BUBBLES = [
 const OPT_OUT_REPLY = "הוסרת. לא נשלח לך יותר הודעות.";
 const OWNER_REPLY = "קיבלתי, מעביר לצוות של Chator ויחזרו אליך בהקדם.";
 const LEAD_DEMO_OPENER = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה איך הלקוחות שלך יקבלו מענה.";
+// ── Version 2 (spec "הסוכן של צ'אטור", decisions 10.10.2026) ──
+// "כאן צ'אטור"; a stranger is a prospect first (not dropped into the demo);
+// the demo is entered on request and left with one message; the warm ones
+// get the signup link. Switched on by the CRM setting salesAgentV2 = "1"
+// (sandbox: { v2: true }); until then everyone gets version 1 above.
+const GREETING_RE = /^(היי|הי|שלום|שלום לך|אהלן|הלו|מה נשמע|ערב טוב|בוקר טוב|hello|hi|hey)[\s!.,?]*$/i;
+const DONE_RE = /^(סיימתי|סיימנו|די|מספיק|הבנתי את הרעיון|הבנתי|יצאתי)[\s!.]*$/;
+const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/signup`;
+const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
+const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
+const V2_OPEN_STRANGER = "היי, כאן צ'אטור. יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.";
+const V2_SIGNUP = `אפשר להירשם לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול לפי כמות התורים, וחודש ראשון חינם. אם תיתקע באמצע, תכתוב לי כאן.`;
+const v2Opener = (state: SalesState): string | null => {
+  const first = (state.fullName ?? "").trim().split(/\s+/)[0];
+  if (state.mode === "lead") return `היי${first ? ` ${first}` : ""}, כאן צ'אטור. ראיתי שהשארת פרטים${state.businessName ? ` לגבי ${state.businessName}` : " לגבי המספרה שלך"}. כמה ספרים עובדים אצלך?`;
+  return state.source === "keywords" ? null : V2_OPEN_STRANGER; // an ad / product words → the model opens from what he wrote
+};
+async function salesV2On(sandbox?: DemoSandbox): Promise<boolean> {
+  if (sandbox) return !!sandbox.v2;
+  return (await getCrmText("salesAgentV2")).text === "1";
+}
+
 const declineReply = (state: SalesState) => state.pitchedAt
   ? "סבבה, בלי לחץ. ואם תרצה לשמוע עוד, אני כאן."
   : "סבבה, בלי לחץ. אפשר להמשיך לנסות את הדמו כרגיל, ואם תרצה לשמוע עוד, אני כאן.";
@@ -97,7 +121,7 @@ export function looksLikeProspect(text: string, mode: SalesMode): boolean {
 }
 
 export type DemoTurnResult = { handled: boolean; mode?: SalesMode; replies?: string[] };
-export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean };
+export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean; v2?: boolean };
 
 type LeadRow = { id: string; name: string | null; businessName: string | null; stage: string; repId: string | null; optedOut: boolean };
 
@@ -179,12 +203,24 @@ export async function runDemoTurn(p: {
     return { handled: true, replies: [OWNER_REPLY] };
   }
 
+  const v2 = await salesV2On(p.sandbox);
   if (!state) {
     // An old thread at this number that never was a demo stays with a human, as before.
     if (!lead && conv && conv._count.messages > 6) return { handled: false };
     conv = conv ?? await createConv(phone);
     if (lead) {
       state = { mode: "lead", taggedAt: new Date().toISOString(), source: "lead", leadId: lead.id, fullName: lead.name ?? undefined, businessName: lead.businessName ?? undefined };
+    } else if (v2) {
+      // v2: the site's "try it" button goes straight into the demo; anyone else is a prospect.
+      const opener = looksLikeDemoOpener(text);
+      if (opener.source === "landing") {
+        state = { mode: "demo", taggedAt: new Date().toISOString(), source: "landing", demoTurns: 0 };
+        await saveState(conv.id, state);
+        if (!p.alreadyPersisted) await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
+        await reply(conv.id, phone, [V2_ENTRY_LANDING], p.sandbox);
+        return { handled: true, mode: state.mode, replies: [V2_ENTRY_LANDING] };
+      }
+      state = { mode: "sales", taggedAt: new Date().toISOString(), source: opener.source ?? "open" };
     } else {
       const opener = looksLikeDemoOpener(text);
       state = { mode: "demo", taggedAt: new Date().toISOString(), source: opener.source ?? "open" };
@@ -227,7 +263,22 @@ export async function runDemoTurn(p: {
 
   // ── Lead ──
   if (state.mode === "lead" || state.mode === "choosing" || state.mode === "lead_demo") {
-    if (state.mode === "lead_demo") return runDemoBooking(conv.id, phone, text, state, p, true);
+    if (state.mode === "lead_demo") {
+      // v2: "סיימתי" or a question about the product ends the demo, back to the sale.
+      if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text) || PRICE_RE.test(text))) {
+        state = { ...state, mode: "lead" };
+        await saveState(conv.id, state);
+        const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
+        return { handled: true, mode: out.state.mode, replies: out.replies };
+      }
+      return runDemoBooking(conv.id, phone, text, state, p, true, v2);
+    }
+    if (v2) {
+      // v2: the model offers the demo (enter_demo); "דמו" alone still goes straight in.
+      if (DEMO_ONLY_RE.test(text)) return enterLeadDemo(conv.id, phone, state, p, v2);
+      const out = await runSalesTurn({ conversationId: conv.id, phone, text, state: state.mode === "choosing" ? { ...state, mode: "lead" } : state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
+      return { handled: true, mode: out.state.mode, replies: out.replies };
+    }
     if (state.mode === "choosing") {
       if (CHOOSE_DEMO_RE.test(text) && !CHOOSE_CALL_RE.test(text)) return enterLeadDemo(conv.id, phone, state, p);
       state = { ...state, mode: "lead" };
@@ -255,12 +306,16 @@ export async function runDemoTurn(p: {
     return { handled: true, mode: state.mode, replies: [line] };
   }
   if (state.mode === "pitched" && ACK_RE.test(text)) return { handled: true, mode: state.mode, replies: [] };
-  if (looksLikeProspect(text, state.mode) || (state.mode === "pitched" && YES_RE.test(text))) {
-    if (state.mode === "demo" || state.mode === "pitched") { state = { ...state, mode: "sales" }; await saveState(conv.id, state); }
-    const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead });
+  // v2: outside the demo every message is the sale; inside it "סיימתי" ends it.
+  const toSales = v2
+    ? state.mode !== "demo" || DONE_RE.test(text) || looksLikeProspect(text, state.mode)
+    : looksLikeProspect(text, state.mode) || (state.mode === "pitched" && YES_RE.test(text));
+  if (toSales) {
+    if (state.mode !== "sales") { state = { ...state, mode: "sales" }; await saveState(conv.id, state); }
+    const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2 });
     return { handled: true, mode: out.state.mode, replies: out.replies };
   }
-  return runDemoBooking(conv.id, phone, text, state, p, false);
+  return runDemoBooking(conv.id, phone, text, state, p, false, v2);
 }
 
 async function createConv(phone: string): Promise<{ id: string; salesState: string | null; escalatedAt: Date | null; _count: { messages: number } }> {
@@ -279,24 +334,26 @@ async function twoSlotsSentence(): Promise<string> {
   return slots.length === 1 ? `יש לי ${slotLabel(slots[0].startsAt)}, מתאים?` : `יש לי ${slotLabel(slots[0].startsAt)} או ${slotLabel(slots[1].startsAt)}, מה נוח לך?`;
 }
 
-async function enterLeadDemo(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }): Promise<DemoTurnResult> {
-  const next: SalesState = { ...state, mode: "lead_demo", pitchedAt: undefined };
+async function enterLeadDemo(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }, v2 = false): Promise<DemoTurnResult> {
+  const next: SalesState = { ...state, mode: state.mode === "sales" ? "demo" : "lead_demo", pitchedAt: undefined, demoTurns: 0, demoNudged: false };
   await saveState(convId, next);
-  await reply(convId, phone, [LEAD_DEMO_OPENER], p.sandbox);
-  return { handled: true, mode: next.mode, replies: [LEAD_DEMO_OPENER] };
+  const line = v2 ? V2_ENTRY : LEAD_DEMO_OPENER;
+  await reply(convId, phone, [line], p.sandbox);
+  return { handled: true, mode: next.mode, replies: [line] };
 }
 
 /** The ordinary booking agent of the demo shop; after a booking, the one-time follow-up. */
-async function runDemoBooking(convId: string, phone: string, text: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean): Promise<DemoTurnResult> {
+async function runDemoBooking(convId: string, phone: string, text: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean, v2 = false): Promise<DemoTurnResult> {
   const started = new Date();
   await runCustomerAgent({
     businessId: DEMO_BUSINESS_ID, phone, incomingText: text, alreadyPersisted: true,
     sandbox: p.sandbox ? { replies: p.sandbox.replies, toolLog: p.sandbox.toolLog, usageKind: "sandbox" } : undefined,
   });
-  if (state.pitchedAt) return { handled: true, mode: state.mode };
+  if (state.pitchedAt && !v2) return { handled: true, mode: state.mode };
   const booked = p.sandbox
     ? p.sandbox.toolLog.some(t => t.startsWith("book_appointment(") || (t.startsWith("propose_booking(") && /customerConfirmed/.test(t))) || p.sandbox.replies.some(r => /^סגור, קבעתי לך/.test(r))
     : !!(await prisma.appointment.findFirst({ where: { businessId: DEMO_BUSINESS_ID, createdAt: { gte: started }, customer: { phone: { in: [phone, phone.replace(/^972/, "0")] } } }, select: { id: true } }));
+  if (v2) return demoAfterTurnV2(convId, phone, state, p, isLead, booked);
   if (!booked) return { handled: true, mode: state.mode };
   if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
   if (isLead) {
@@ -311,6 +368,36 @@ async function runDemoBooking(convId: string, phone: string, text: string, state
   await saveState(convId, next);
   await reply(convId, phone, PITCH_BUBBLES, p.sandbox);
   return { handled: true, mode: next.mode, replies: PITCH_BUBBLES };
+}
+
+/**
+ * v2, after each demo message: a booking ends the demo with ONE message back
+ * to the sale ("the moment after 'wow, it booked me'"); three messages without
+ * a booking bring one gentle line on how to stop.
+ */
+async function demoAfterTurnV2(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean, booked: boolean): Promise<DemoTurnResult> {
+  const rep = await repName(null);
+  if (booked) {
+    if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
+    const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined };
+    await saveState(convId, next);
+    const line = isLead
+      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה ש${rep} יראה לך איך זה ייראה אצלך? ${await twoSlotsSentence()}`
+      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה ש${rep} יראה לך איך זה ייראה אצלך?`;
+    await reply(convId, phone, [line], p.sandbox);
+    return { handled: true, mode: next.mode, replies: [line] };
+  }
+  const turns = (state.demoTurns ?? 0) + 1;
+  const next: SalesState = { ...state, demoTurns: turns };
+  if (turns >= 3 && !state.demoNudged) {
+    next.demoNudged = true;
+    await saveState(convId, next);
+    const line = `אגב, כשתרצה לעצור את הדמו פשוט תכתוב "סיימתי", ונקבע שיחה קצרה עם ${rep}.`;
+    await reply(convId, phone, [line], p.sandbox);
+    return { handled: true, mode: next.mode, replies: [line] };
+  }
+  await saveState(convId, next);
+  return { handled: true, mode: next.mode };
 }
 
 // ─── The sales model ─────────────────────────────────────────────────────────
@@ -348,6 +435,67 @@ const NOT_INTERESTED_TOOL: Anthropic.Tool = {
   description: "אמר בבירור שלא מעניין אותו או לא עכשיו. המערכת מפסיקה למכור.",
   input_schema: { type: "object", properties: {} },
 };
+// v2
+const ENTER_DEMO_TOOL: Anthropic.Tool = {
+  name: "enter_demo",
+  description: "הוא רוצה לנסות בעצמו לקבוע תור כמו לקוח. המערכת שולחת את משפט הכניסה לדמו ומעבירה אותו למספרת ההדגמה. אל תכתוב בעצמך את משפט הכניסה.",
+  input_schema: { type: "object", properties: {} },
+};
+const SIGNUP_TOOL: Anthropic.Tool = {
+  name: "send_signup_link",
+  description: "הוא כבר חם ורוצה להתחיל או להירשם לבד, בלי שיחה. המערכת שולחת לו את קישור ההרשמה (בחירת מסלול, חודש ראשון חינם). אל תכתוב בעצמך קישור.",
+  input_schema: { type: "object", properties: {} },
+};
+
+/** v2 system prompt (spec "הסוכן של צ'אטור", 10.10.2026). */
+function salesSystemV2(state: SalesState, senderName: string | null, rep: string, ctx: string, knowledge: string, firstTurn: boolean): string {
+  const known = [state.fullName ? `שם: ${state.fullName}` : "", state.businessName ? `מספרה: ${state.businessName}` : ""].filter(Boolean).join(", ");
+  const isLead = state.mode === "lead";
+  const opener = !firstTurn ? "" : isLead
+    ? `זו ההודעה הראשונה שלך אליו: פתח בשם הפרטי שלו ובשם המספרה, הזכר שהשאיר פרטים, וענה במשפט על מה שכתב אם שאל משהו. סיים בשאלה אחת על המספרה.`
+    : state.source === "keywords"
+      ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו): "היי, כאן צ'אטור." ומשפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
+      : `זו ההודעה הראשונה שלך אליו: "היי, כאן צ'אטור." אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
+  return `אתה צ'אטור. מערכת תורים למספרות עם סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה. אתה מתכתב בוואטסאפ על המספר של צ'אטור, ואתה עצמך ההדגמה הכי טובה למוצר.
+זהות: אתה מציג את עצמך "כאן צ'אטור", בגוף ראשון. בלי שם של בן אדם ובלי המילה "בוט". שואלים אם אתה בוט או בן אדם: אומרים את האמת, אתה הסוכן של צ'אטור, וזה בדיוק מה שהלקוחות שלו יקבלו.
+
+${isLead
+  ? `מולך ליד רשום. המטרה: שיחה של 10 דקות עם ${rep} (${rep} מתקשר אליו). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
+  : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. לשיחה צריך שם מלא ושם המספרה (שאלה אחת), ואז capture_lead.`}
+${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם בוואטסאפ: ${senderName}.` : ""}
+${opener}
+
+מהלך השיחה:
+1. שאלה אחת או שתיים על המספרה: כמה ספרים, מי עונה היום בוואטסאפ, מה הכי מעצבן (טלפונים באמצע תספורת, ביטולים, לקוחות שלא חוזרים).
+2. משפט אחד שמחבר את מה שסיפר ליכולת אחת של המערכת. לא רשימת פיצ'רים.
+3. שתי דרכים להמשיך: לנסות עכשיו בעצמו (enter_demo) או שיחה של 10 דקות עם ${rep}, עם שתי שעות קונקרטיות.
+4. מי שכבר חם ואומר שהוא רוצה להתחיל, להירשם או שהוא מסתדר לבד: send_signup_link (ואפשר להציע שגם ${rep} ילווה אותו בשיחה).
+
+${ctx}
+
+התנגדויות, הקו לתשובה (במילים שלך, קצר):
+- "יקר": תור אחד שלא הלך לאיבוד בשבוע מכסה את זה, והחודש הראשון חינם. מבקש הנחה: handoff_to_rep.
+- "הלקוחות שלי אוהבים לדבר איתי": הסוכן כותב בסגנון שלך, ואתה רואה כל שיחה ויכול לקחת אותה בכל רגע.
+- "מה אם הוא יטעה?": תור נקבע רק אחרי "מאשר?" של הלקוח, על היומן האמיתי. שיחה שמסתבכת עוברת אליך.
+- "יש לי כבר מערכת תורים": צ'אטור היא מערכת מלאה עם יומן, והסוכן בוואטסאפ הוא מה שעושה את ההבדל. מעבר ממערכת אחרת: שיחה עם ${rep}.
+- "אני לא טכני": מקימים יחד, כ־10 דקות, סריקה אחת מהטלפון.
+- "לא רוצה שייגעו לי בוואטסאפ": המספר נשאר שלך, הכל נראה אצלך בטלפון, ואפשר לכבות את הסוכן בכל רגע.
+- "תן לי לחשוב": סבבה, בלי לחץ. משפט אחד ועוצר.
+
+מעבירים ל${rep} (handoff_to_rep): מבקש בן אדם, מבקש הנחה, שאלה שאין עליה תשובה בידע למטה, תלונה, או לקוח קיים עם בעיה.
+
+גבולות:
+- הודעה אחת, עד שלושה משפטים. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
+- כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
+- מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
+- לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
+- לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות.
+- "לא מעוניין" או "לא עכשיו": not_interested ומשפט אדיב אחד.
+
+${knowledge}
+
+${FORBIDDEN_CLAIMS_V2}`;
+}
 
 async function salesContext(state: SalesState, lead: LeadRow | null): Promise<{ block: string; slots: { iso: string; label: string; repId: string }[] }> {
   const slots = (await freeCallSlots({ limit: 6 })).map(s => ({ iso: s.startsAt.toISOString(), label: slotLabel(s.startsAt), repId: s.repId }));
@@ -390,8 +538,9 @@ ${SALES_KNOWLEDGE}
 ${FORBIDDEN_CLAIMS}`;
 }
 
-async function runSalesTurn(p: { conversationId: string; phone: string; text: string; state: SalesState; senderName: string | null; sandbox?: DemoSandbox; lead: LeadRow | null }): Promise<{ replies: string[]; state: SalesState }> {
+async function runSalesTurn(p: { conversationId: string; phone: string; text: string; state: SalesState; senderName: string | null; sandbox?: DemoSandbox; lead: LeadRow | null; v2?: boolean }): Promise<{ replies: string[]; state: SalesState }> {
   let state = p.state;
+  const v2 = !!p.v2;
   const history = await prisma.conversationMessage.findMany({
     where: { conversationId: p.conversationId, role: { in: ["user", "assistant"] } },
     orderBy: { createdAt: "desc" }, take: 16, select: { role: true, content: true },
@@ -405,12 +554,25 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   }
   if (!msgs.length || msgs[msgs.length - 1].role !== "user" || !(msgs[msgs.length - 1].content as string).includes(p.text)) msgs.push({ role: "user", content: p.text });
   if (msgs[0].role !== "user") msgs.unshift({ role: "user", content: "(תחילת השיחה)" });
+  const firstTurn = !history.some(m => m.role === "assistant");
+  // v2: a bare "היי" as the first message gets the fixed opener (0 tokens).
+  if (v2 && firstTurn && GREETING_RE.test(p.text.trim())) {
+    const opener = v2Opener(state);
+    if (opener) {
+      await saveState(p.conversationId, state);
+      await reply(p.conversationId, p.phone, [opener], p.sandbox);
+      return { replies: [opener], state };
+    }
+  }
 
   const rep = await repName(p.lead?.repId ?? null);
   const ctx = await salesContext(state, p.lead);
   const isLead = state.mode === "lead";
   const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
-  const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system: salesSystem(state, p.senderName, rep, ctx.block), tools, messages: msgs });
+  if (v2) tools.push(ENTER_DEMO_TOOL, SIGNUP_TOOL);
+  const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
+  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) : salesSystem(state, p.senderName, rep, ctx.block);
+  const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
   void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
   const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
   const replies: string[] = text ? bubbles(text) : [];
@@ -423,9 +585,15 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     p.sandbox?.toolLog.push(`capture_lead(${JSON.stringify(input)})`);
     const leadId = p.sandbox ? "sandbox" : await createLead({ phone: p.phone, conversationId: p.conversationId, fullName, businessName, businessType: input.businessType ?? null, source: state.source ?? null });
     state = { ...state, mode: "lead", leadId, fullName: fullName || state.fullName, businessName: businessName || state.businessName };
-    if (!replies.length) replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}!`);
-    replies.push(OFFER_TEXT);
-    replies.push(`הצעד הבא הוא שיחה של 10 דקות עם ${rep}. ${await twoSlotsSentence()}`);
+    if (v2) {
+      // One message: thanks + the call with two slots.
+      replies.length = 0;
+      replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}. הצעד הבא הוא שיחה של 10 דקות עם ${rep}. ${await twoSlotsSentence()}`);
+    } else {
+      if (!replies.length) replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}!`);
+      replies.push(OFFER_TEXT);
+      replies.push(`הצעד הבא הוא שיחה של 10 דקות עם ${rep}. ${await twoSlotsSentence()}`);
+    }
   } else if (tool?.name === "propose_call") {
     const iso = String((tool.input as { startsAt?: string }).startsAt ?? "");
     const slot = ctx.slots.find(s => s.iso === iso);
@@ -444,8 +612,19 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     const summary = String((tool.input as { summary?: string }).summary ?? "").slice(0, 300);
     p.sandbox?.toolLog.push(`handoff_to_rep(${summary})`);
     if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || p.phone.replace(/^972/, "0")} מבקש נציג: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null, push: true });
+    // v2: the agent stays quiet in this chat for 24 hours (runDemoTurn checks escalatedAt).
+    if (v2 && !p.sandbox) await prisma.conversation.update({ where: { id: p.conversationId }, data: { escalatedAt: new Date() } }).catch(() => {});
     replies.length = 0;
-    replies.push(`מעביר ל${rep}, הוא יחזור אליך בהקדם.`);
+    replies.push(v2 ? `מעביר ל${rep}, הוא יחזור אליך.` : `מעביר ל${rep}, הוא יחזור אליך בהקדם.`);
+  } else if (v2 && tool?.name === "enter_demo") {
+    p.sandbox?.toolLog.push("enter_demo()");
+    state = { ...state, mode: isLead ? "lead_demo" : "demo", pitchedAt: undefined, demoTurns: 0, demoNudged: false };
+    replies.length = 0;
+    replies.push(V2_ENTRY);
+  } else if (v2 && tool?.name === "send_signup_link") {
+    p.sandbox?.toolLog.push("send_signup_link()");
+    replies.length = 0;
+    replies.push(V2_SIGNUP);
   } else if (tool?.name === "not_interested") {
     p.sandbox?.toolLog.push("not_interested()");
     state = { ...state, mode: isLead ? "lead" : "declined" };
@@ -455,8 +634,15 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (!replies.length) replies.push("רגע, בודק ומיד חוזר אליך.");
 
   await saveState(p.conversationId, state);
-  await reply(p.conversationId, p.phone, guardPrice(replies), p.sandbox);
-  return { replies, state };
+  // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
+  const out = v2 ? [guardPriceV2(replies.join("\n\n"))] : guardPrice(replies);
+  await reply(p.conversationId, p.phone, out, p.sandbox);
+  return { replies: out, state };
+}
+
+function guardPriceV2(r: string): string {
+  const amounts = Array.from(r.matchAll(/(\d[\d,.]*)\s*(?:₪|ש["״]ח|שקל)/g)).map(m => m[1].replace(/[,.]/g, ""));
+  return amounts.some(a => !ALLOWED_AMOUNTS_V2.includes(a)) ? PRICE_TEXT_V2 : r;
 }
 
 function bubbles(text: string): string[] {

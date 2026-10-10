@@ -168,3 +168,17 @@ export function slotLabel(startsAt: Date): string {
 }
 
 export { DAY_NAMES };
+
+// ── Text settings (10.10.2026): the sales agent's knowledge and its version switch.
+// Stored as JSON { text, updatedAt } in crm_settings under their own keys.
+export type CrmText = { text: string; updatedAt: string | null };
+export async function getCrmText(key: "salesKnowledge" | "salesAgentV2"): Promise<CrmText> {
+  const row = await prisma.crmSetting.findUnique({ where: { key } }).catch(() => null);
+  if (!row) return { text: "", updatedAt: null };
+  try { const j = JSON.parse(row.value) as Partial<CrmText>; return { text: typeof j.text === "string" ? j.text : "", updatedAt: j.updatedAt ?? null }; } catch { return { text: row.value, updatedAt: null }; }
+}
+export async function setCrmText(key: "salesKnowledge" | "salesAgentV2", text: string): Promise<CrmText> {
+  const v: CrmText = { text, updatedAt: new Date().toISOString() };
+  await prisma.crmSetting.upsert({ where: { key }, create: { key, value: JSON.stringify(v) }, update: { value: JSON.stringify(v) } });
+  return v;
+}
