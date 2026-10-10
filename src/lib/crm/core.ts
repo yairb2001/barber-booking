@@ -39,6 +39,13 @@ export const CRM_DEFAULTS = {
   minNoticeMinutes: 60,   // never offer a slot sooner than this
   infraCostIls: 150,      // servers + database per month, for the profitability card
   usdIls: USD_ILS,
+  // Add-on packs (10.10.2026: priced at 3× our cost).
+  packMessagesQty: 1000,
+  packMessagesPrice: 49,
+  packAiIls: 30,           // raw AI budget the pack adds, ₪
+  packAiPrice: 90,
+  packMarketingQty: 100,
+  packMarketingPrice: 33,
 };
 export type CrmSettings = typeof CRM_DEFAULTS;
 

@@ -16,6 +16,7 @@ const NAV = [
   { href: "/admin/crm/leads", label: "לידים" },
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
+  { href: "/admin/crm/invoices", label: "חשבוניות" },
   { href: "/admin/crm/automations", label: "אוטומציות" },
   { href: "/admin/crm/settings", label: "הגדרות" },
 ];

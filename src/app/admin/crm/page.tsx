@@ -13,7 +13,7 @@ import { CrmPushBanner } from "./CrmPush";
  * that also reaches him on WhatsApp), read/unread; מספרים = the business.
  */
 
-type Task = { id: string; kind: "call" | "outcome" | "followup" | "lead" | "setup" | "customer" | "calendar" | "automations" | "manual"; title: string; detail: string; href: string | null; time?: string | null; due?: string | null; overdue?: boolean; done?: boolean };
+type Task = { id: string; kind: "call" | "outcome" | "followup" | "lead" | "setup" | "customer" | "calendar" | "automations" | "manual" | "billing"; title: string; detail: string; href: string | null; time?: string | null; due?: string | null; overdue?: boolean; done?: boolean };
 type Notif = { id: string; kind: string; title: string; body: string | null; href: string | null; at: string; read: boolean };
 type Home = {
   testKey: boolean;
@@ -28,7 +28,7 @@ type Home = {
 
 const TASK_TAG: Record<Task["kind"], [string, Tone]> = {
   call: ["שיחה", "info"], outcome: ["תוצאה", "warn"], followup: ["לחזור", "info"], lead: ["ליד", "warn"],
-  setup: ["הקמה", "warn"], customer: ["לקוח", "bad"], calendar: ["יומן", "warn"], automations: ["אוטומציות", "info"], manual: ["שלי", "ok"],
+  setup: ["הקמה", "warn"], customer: ["לקוח", "bad"], calendar: ["יומן", "warn"], automations: ["אוטומציות", "info"], manual: ["שלי", "ok"], billing: ["תשלום", "bad"],
 };
 const NOTIF_TAG: Record<string, [string, Tone]> = { lead: ["ליד", "ok"], call: ["שיחה", "info"], customer: ["לקוח", "info"], whatsapp: ["וואטסאפ", "warn"], system: ["מערכת", "bad"] };
 const FILLS = ["#BDEFDC", "#8FE6C6", C.turquoise, "#2BC293"];

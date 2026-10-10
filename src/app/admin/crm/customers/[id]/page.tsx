@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
+import { PlanCard, InvoicesCard, type BillingData } from "./Billing";
 
 type Field = { key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
 type Data = {
@@ -14,6 +15,7 @@ type Data = {
   quality: { conversationsWeek: number; escalatedWeek: number; agentBookingsWeek: number };
   notes: { id: string; author: string; body: string; createdAt: string }[];
   lead: { id: string; name: string | null; phone: string; createdAt: string } | null;
+  billing: BillingData;
 };
 const d = (iso: string | null) => (iso ? new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" }).format(new Date(iso)) : "");
 const AUTHOR: Record<string, string> = { owner: "בעל העסק", wizard: "אשף ההקמה", owner_agent: "סוכן הבעלים", crm: "CRM" };
@@ -158,6 +160,8 @@ export default function CustomerCard() {
             ))}
           </Card>
 
+          <PlanCard id={id} data={data.billing} busy={busy} act={act} />
+
           <Card title="כסף">
             <div className="flex flex-col gap-2 text-sm">
               <div className="flex justify-between"><span style={{ color: C.muted }}>מצב</span><b>{b.suspendedAt ? "מושהה" : b.paidAt ? `משלם מ-${d(b.paidAt).split(",")[0]}` : b.trialEndsAt ? `ניסיון עד ${d(b.trialEndsAt).split(",")[0]}` : "—"}</b></div>
@@ -175,6 +179,8 @@ export default function CustomerCard() {
               </div>
             </div>
           </Card>
+
+          <InvoicesCard id={id} data={data.billing} busy={busy} act={act} />
 
           <Card title="וואטסאפ לבעל העסק">
             <div className="flex gap-2">

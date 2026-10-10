@@ -14,6 +14,8 @@ import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
 import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
 import { signOnboardingToken } from "@/lib/auth";
 import { onboardingLinkFor } from "@/lib/leads";
+import { getPlans, usageFor, planKeyOf, assignPlan, addPack, type PackKind } from "@/lib/crm/plans";
+import { isConfigured as billingConfigured, createStandingOrderLink } from "@/lib/billing/invoice4u";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +58,7 @@ async function customers(settings: CrmSettings) {
     prisma.lead.findMany({ where: { businessId: { in: ids } }, select: { businessId: true, repId: true } }),
   ]);
   const reps = await prisma.salesRep.findMany({ select: { id: true, name: true } });
+  const [plans, monthUsage] = await Promise.all([getPlans(), usageFor(ids)]);
   return bizs.map(b => {
     const stage = b.suspendedAt ? "suspended" : b.paidAt ? "paying" : !b.onboardingCompletedAt ? "setup" : "trial";
     const waUp = b.waLiveState === "authorized";
@@ -81,6 +84,8 @@ async function customers(settings: CrmSettings) {
       id: b.id, name: b.name, slug: b.slug, businessType: b.businessType, ownerPhone: ownerPhoneOf(b), stage, health, issues,
       wa: !waKnown ? "none" : waUp ? "up" : "down", apptsWeek, pkgPct, costIls, price, trialDaysLeft,
       rep: reps.find(r => r.id === repId)?.name ?? null, createdAt: b.createdAt,
+      plan: plans.find(p => p.key === planKeyOf(b.settings))?.name ?? null,
+      apptsMonth: monthUsage.get(b.id)?.appts ?? null,
     };
   });
 }
@@ -130,7 +135,15 @@ async function home() {
   ]);
   const taskLeads = await prisma.lead.findMany({ where: { id: { in: [...pastCalls.map(c => c.leadId), ...manual.map(t => t.leadId).filter((x): x is string => !!x)] } }, select: { id: true, name: true, phone: true, businessName: true } });
   const leadName = (id: string | null) => { const l = taskLeads.find(x => x.id === id); return l ? (l.name || l.phone) : null; };
-  type Task = { id: string; kind: "call" | "outcome" | "followup" | "lead" | "setup" | "customer" | "calendar" | "automations" | "manual"; title: string; detail: string; href: string | null; time?: string | null; due?: string | null; overdue?: boolean; done?: boolean };
+  // Plan quotas at 80%+ and failed charges (10.10.2026).
+  const planned = cust.filter(c => c.plan);
+  const [quota, failed] = await Promise.all([
+    usageFor(planned.map(c => c.id)),
+    prisma.crmInvoice.findMany({ where: { status: "failed", issuedAt: { gte: new Date(now.getTime() - 14 * 86400_000) } }, orderBy: { issuedAt: "desc" } }),
+  ]);
+  const paidAfter = failed.length ? await prisma.crmInvoice.findMany({ where: { status: "paid", businessId: { in: failed.map(f => f.businessId) }, issuedAt: { gte: new Date(now.getTime() - 14 * 86400_000) } }, select: { businessId: true, issuedAt: true } }) : [];
+  const unresolved = failed.filter((f, i) => failed.findIndex(x => x.businessId === f.businessId) === i && !paidAfter.some(p => p.businessId === f.businessId && p.issuedAt > f.issuedAt));
+  type Task = { id: string; kind: "call" | "outcome" | "followup" | "lead" | "setup" | "customer" | "calendar" | "automations" | "manual" | "billing"; title: string; detail: string; href: string | null; time?: string | null; due?: string | null; overdue?: boolean; done?: boolean };
   const tasks: Task[] = [
     ...callsToday.filter(c => c.startsAt.getTime() > now.getTime() - 15 * 60_000).map(c => { const l = callLeads.find(x => x.id === c.leadId); return { id: `call-${c.id}`, kind: "call" as const, title: `להתקשר ל${l?.name || l?.phone || "ליד"}`, detail: [l?.businessName, l?.phone].filter(Boolean).join(" · "), href: `/admin/crm/leads/${c.leadId}`, time: slotLabel(c.startsAt).replace("היום ב-", "") }; }),
     ...pastCalls.map(c => ({ id: `outcome-${c.id}`, kind: "outcome" as const, title: `לסמן מה יצא מהשיחה עם ${leadName(c.leadId) || "הליד"}`, detail: `השיחה הייתה ${slotLabel(c.startsAt)}`, href: `/admin/crm/leads/${c.leadId}`, overdue: true })),
@@ -138,6 +151,8 @@ async function home() {
     ...staleLeads.map(l => ({ id: `stale-${l.id}`, kind: "lead" as const, title: `ליד בלי מענה יום: ${l.name || l.phone}`, detail: `נכנס ${slotLabel(l.createdAt).replace(/ ב-.*/, "")}`, href: `/admin/crm/leads/${l.id}` })),
     ...stuck.map(x => { const c = cust.find(y => y.id === x.businessId); return { id: `stuck-${x.businessId}`, kind: "setup" as const, title: `לעזור ל${c?.name ?? "עסק"} בהקמה`, detail: `תקוע ${Math.floor(x.stuckHours / 24)} ימים ב: ${x.current!.label}${c?.ownerPhone ? ` · ${c.ownerPhone}` : ""}`, href: `/admin/crm/customers/${x.businessId}` }; }),
     ...cust.filter(c => c.health === "bad" && c.stage !== "suspended").map(c => ({ id: `health-${c.id}`, kind: "customer" as const, title: `${c.name}: ${c.issues[0]?.text ?? "דורש טיפול"}`, detail: c.ownerPhone ? `בעלים: ${c.ownerPhone}` : "", href: `/admin/crm/customers/${c.id}` })),
+    ...unresolved.map(f => ({ id: `fail-${f.id}`, kind: "billing" as const, title: `חיוב נכשל: ${cust.find(c => c.id === f.businessId)?.name ?? "לקוח"}`, detail: "לשלוח לו קישור לעדכון כרטיס", href: `/admin/crm/customers/${f.businessId}`, overdue: true })),
+    ...planned.flatMap(c => { const u = quota.get(c.id); if (!u) return []; const top = (["appts", "messages", "ai"] as const).map(k => ({ k, m: u[k] })).filter(x => x.m.cap > 0 && x.m.pct >= 80).sort((a, b) => b.m.pct - a.m.pct)[0]; return top ? [{ id: `quota-${c.id}`, kind: "customer" as const, title: `${c.name}: ${top.m.pct}% מ${({ appts: "התורים", messages: "ההודעות", ai: "חבילת הסוכן" } as const)[top.k]} במסלול`, detail: "להציע מסלול גבוה יותר או חבילה", href: `/admin/crm/customers/${c.id}` }] : []; }),
     ...(owner && nextFree.length === 0 ? [{ id: "calendar-empty", kind: "calendar" as const, title: "לפתוח ימים לשיחות בשבוע הקרוב", detail: "אין לך אף זמן פתוח, אז הסוכן לא יכול לקבוע שיחות", href: "/admin/crm/calendar" }] : []),
     ...(autosOn === 0 ? [{ id: "automations-off", kind: "automations" as const, title: "לעבור על נוסחי האוטומציות ולהדליק", detail: "כולן כבויות, אז לידים חדשים לא מקבלים הודעה אוטומטית", href: "/admin/crm/automations" }] : []),
     ...manual.map(t => ({ id: t.id, kind: "manual" as const, title: t.title, detail: [leadName(t.leadId), t.businessId ? cust.find(c => c.id === t.businessId)?.name : null].filter(Boolean).join(" · "), href: t.leadId ? `/admin/crm/leads/${t.leadId}` : t.businessId ? `/admin/crm/customers/${t.businessId}` : null, due: t.dueAt ? t.dueAt.toISOString() : null, overdue: !t.doneAt && !!t.dueAt && t.dueAt < dayStart, done: !!t.doneAt })),
@@ -303,7 +318,33 @@ async function customerView(id: string) {
     agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
     quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
     notes, lead,
+    billing: await billingOf(id, biz?.settings ?? null),
   };
+}
+
+/** The customer card's plan, this month's meters, packs and invoices. */
+async function billingOf(id: string, settings: string | null) {
+  const s = await getCrmSettings();
+  const [plans, usage, invoices] = await Promise.all([
+    getPlans(),
+    usageFor([id]),
+    prisma.crmInvoice.findMany({ where: { businessId: id }, orderBy: { issuedAt: "desc" }, take: 36 }),
+  ]);
+  const u = usage.get(id) ?? null;
+  const packs = u ? await prisma.crmPack.findMany({ where: { businessId: id }, orderBy: { createdAt: "desc" }, take: 24 }) : [];
+  let billingEmail = "";
+  try { billingEmail = String((settings ? JSON.parse(settings) : {}).billingEmail ?? ""); } catch { /* ignore */ }
+  return {
+    planKey: planKeyOf(settings), plans, usage: u, packs, invoices, billingEmail,
+    packPrices: { messages: [s.packMessagesQty, s.packMessagesPrice], ai: [s.packAiIls, s.packAiPrice], marketing: [s.packMarketingQty, s.packMarketingPrice] },
+    providerConnected: billingConfigured(),
+  };
+}
+
+async function invoicesView() {
+  const invoices = await prisma.crmInvoice.findMany({ orderBy: { issuedAt: "desc" }, take: 300 });
+  const bizs = await prisma.business.findMany({ where: { id: { in: Array.from(new Set(invoices.map(i => i.businessId))) } }, select: { id: true, name: true } });
+  return { providerConnected: billingConfigured(), invoices: invoices.map(i => ({ ...i, businessName: bizs.find(b => b.id === i.businessId)?.name ?? "—" })) };
 }
 
 export async function GET(req: NextRequest) {
@@ -325,9 +366,10 @@ export async function GET(req: NextRequest) {
       }) });
     }
     if (view === "customer") { const v = await customerView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
+    if (view === "invoices") return NextResponse.json(await invoicesView());
     if (view === "settings") {
       const { crmPushDevices } = await import("@/lib/crm/notify");
-      return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), pushDevices: await crmPushDevices(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
+      return NextResponse.json({ settings: await getCrmSettings(), testKey: hasTestKey(), pushDevices: await crmPushDevices(), plans: await getPlans(), providerConnected: billingConfigured(), reps: await prisma.salesRep.findMany({ orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }] }) });
     }
     return NextResponse.json({ error: "unknown_view" }, { status: 400 });
   } catch (e) {
@@ -497,7 +539,7 @@ export async function POST(req: NextRequest) {
       }
       case "settings.update": {
         const patch: Partial<CrmSettings> = {};
-        for (const k of ["callMinutes", "breakMinutes", "horizonDays", "minNoticeMinutes", "infraCostIls"] as const) if (typeof b[k] === "number") patch[k] = b[k] as number;
+        for (const k of ["callMinutes", "breakMinutes", "horizonDays", "minNoticeMinutes", "infraCostIls", "packMessagesQty", "packMessagesPrice", "packAiIls", "packAiPrice", "packMarketingQty", "packMarketingPrice"] as const) if (typeof b[k] === "number") patch[k] = b[k] as number;
         return NextResponse.json({ ok: true, settings: await setCrmSettings(patch) });
       }
       case "automation.update": {
@@ -517,6 +559,67 @@ export async function POST(req: NextRequest) {
         if (!body) return NextResponse.json({ error: "empty" }, { status: 400 });
         await prisma.leadNote.create({ data: { businessId: str("id"), author: str("author") || "יאיר", body } });
         return NextResponse.json({ ok: true });
+      }
+      case "plans.save": {
+        const rows = Array.isArray(b.plans) ? (b.plans as Record<string, unknown>[]) : [];
+        for (const p of rows) {
+          const key = typeof p.key === "string" ? p.key : "";
+          const num = (k: string) => Math.max(0, Math.round(Number(p[k]) || 0));
+          if (!key || typeof p.name !== "string" || !p.name.trim()) continue;
+          await prisma.crmPlan.update({ where: { key }, data: { name: p.name.trim().slice(0, 40), apptsCap: num("apptsCap"), messages: num("messages"), aiBudgetIls: num("aiBudgetIls"), priceIls: num("priceIls"), updatedAt: new Date() } }).catch(() => {});
+        }
+        return NextResponse.json({ ok: true, plans: await getPlans() });
+      }
+      case "customer.plan": {
+        const ok = await assignPlan(str("id"), str("planKey"));
+        return ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "מסלול לא נמצא" }, { status: 400 });
+      }
+      case "customer.pack": {
+        const kind = str("kind") as PackKind;
+        if (!["messages", "ai", "marketing"].includes(kind)) return NextResponse.json({ error: "bad_kind" }, { status: 400 });
+        const r = await addPack(str("id"), kind);
+        if (!r) return NextResponse.json({ error: "not_found" }, { status: 404 });
+        await prisma.leadNote.create({ data: { businessId: str("id"), author: "מסלול", body: `נוספה חבילת ${kind === "messages" ? `${r.qty} הודעות` : kind === "ai" ? `סוכן (${r.qty} ₪)` : `${r.qty} הודעות שיווק`} ב-${r.priceIls} ₪` } });
+        return NextResponse.json({ ok: true, ...r });
+      }
+      case "invoice.create": {
+        const amount = Number(b.amount);
+        const issued = str("issuedAt");
+        if (!Number.isFinite(amount) || amount <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(issued)) return NextResponse.json({ error: "סכום ותאריך חובה" }, { status: 400 });
+        const pdf = str("pdfUrl");
+        if (pdf && !/^https:\/\//.test(pdf)) return NextResponse.json({ error: "קישור החשבונית חייב להתחיל ב-https" }, { status: 400 });
+        const inv = await prisma.crmInvoice.create({ data: { businessId: str("id"), number: str("number") || null, issuedAt: new Date(issued + "T12:00:00Z"), amountIls: amount, status: str("status") === "unpaid" ? "unpaid" : "paid", pdfUrl: pdf || null, provider: "manual" } });
+        return NextResponse.json({ ok: true, id: inv.id });
+      }
+      case "invoice.delete": {
+        await prisma.crmInvoice.deleteMany({ where: { id: str("invoiceId"), provider: "manual" } });
+        return NextResponse.json({ ok: true });
+      }
+      case "invoice.send": {
+        const inv = await prisma.crmInvoice.findUnique({ where: { id: str("invoiceId") } });
+        if (!inv?.pdfUrl) return NextResponse.json({ error: "לחשבונית הזאת אין קישור" }, { status: 400 });
+        const biz = await prisma.business.findUnique({ where: { id: inv.businessId }, select: { phone: true, settings: true, name: true } });
+        const to = biz ? ownerPhoneOf(biz) : null;
+        if (!to) return NextResponse.json({ error: "אין טלפון לבעל העסק" }, { status: 400 });
+        const body = `החשבונית שלך מצ'אטור${inv.number ? ` מספר ${inv.number}` : ""} על ${inv.amountIls.toLocaleString("he-IL")} ₪:\n${inv.pdfUrl}`;
+        const phone = normalizeIsraeliPhone(to);
+        const r = await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body });
+        if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
+        await mirrorToConversation(DEMO_BUSINESS_ID, phone, body, "admin");
+        await prisma.crmInvoice.update({ where: { id: inv.id }, data: { sentAt: new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      case "customer.payLink": {
+        if (!billingConfigured()) return NextResponse.json({ error: "Invoice4U עוד לא מחובר: צריך להפעיל הוראות קבע ולחדש את המפתח" }, { status: 400 });
+        const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { id: true, name: true, phone: true, settings: true, monthlyPrice: true } });
+        if (!biz) return NextResponse.json({ error: "not_found" }, { status: 404 });
+        const email = str("email");
+        if (email) { const st = biz.settings ? JSON.parse(biz.settings) : {}; st.billingEmail = email; await prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify(st) } }); }
+        const url = await createStandingOrderLink({
+          origin: req.nextUrl.origin, businessId: biz.id, fullName: biz.name, email, phone: ownerPhoneOf(biz) ?? "",
+          amountIls: biz.monthlyPrice ?? 287, itemName: "Chator מנוי חודשי", qa: b.qa === true,
+        });
+        return NextResponse.json({ ok: true, url });
       }
       case "customer.message": {
         const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { phone: true, settings: true } });

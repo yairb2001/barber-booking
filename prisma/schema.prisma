@@ -1082,6 +1082,70 @@ model CrmTask {
   @@map("crm_tasks")
 }
 
+/// A plan (10.10.2026): sold by appointments a month; messages and the AI
+/// budget are the safety quotas behind it. Editable in the CRM.
+model CrmPlan {
+  key         String   @id
+  name        String
+  apptsCap    Int      @map("appts_cap")
+  messages    Int
+  aiBudgetIls Int      @map("ai_budget_ils")
+  priceIls    Int      @map("price_ils")
+  sort        Int      @default(0)
+  active      Boolean  @default(true)
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  @@map("crm_plans")
+}
+
+/// An add-on bought for one month: messages, AI agent budget or marketing messages.
+model CrmPack {
+  id         String   @id @default(uuid())
+  businessId String   @map("business_id")
+  kind       String   // messages | ai | marketing
+  qty        Int      // messages, or ₪ raw AI budget for kind "ai"
+  priceIls   Int      @map("price_ils")
+  month      String   // "2026-10"
+  note       String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([businessId, month])
+  @@map("crm_packs")
+}
+
+/// An invoice to a Chator customer: from the billing provider, or added by hand.
+model CrmInvoice {
+  id         String    @id @default(uuid())
+  businessId String    @map("business_id")
+  number     String?
+  issuedAt   DateTime  @map("issued_at")
+  amountIls  Float     @map("amount_ils")
+  status     String    @default("paid") // paid | unpaid | failed
+  pdfUrl     String?   @map("pdf_url")
+  provider   String    @default("manual") // manual | invoice4u
+  providerId String?   @map("provider_id")
+  sentAt     DateTime? @map("sent_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([businessId, issuedAt])
+  @@map("crm_invoices")
+}
+
+/// Raw callbacks from the billing provider, kept for audit and re-processing.
+model CrmBillingEvent {
+  id         String   @id @default(uuid())
+  provider   String
+  businessId String?  @map("business_id")
+  kind       String
+  payload    String
+  ok         Boolean?
+  handled    Boolean  @default(false)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("crm_billing_events")
+}
+
 model RepDayOff {
   id    String   @id @default(uuid())
   repId String   @map("rep_id")
