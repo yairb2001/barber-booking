@@ -382,8 +382,8 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
     const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined };
     await saveState(convId, next);
     const line = isLead
-      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה ש${rep} יראה לך איך זה ייראה אצלך? ${await twoSlotsSentence()}`
-      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה ש${rep} יראה לך איך זה ייראה אצלך?`;
+      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה שיחה של 10 דקות עם ${rep}, שיראה לך איך זה ייראה אצלך? ${await twoSlotsSentence()}`
+      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה שיחה של 10 דקות עם ${rep}, שיראה לך איך זה ייראה אצלך?`;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
   }
@@ -466,6 +466,7 @@ ${isLead
   ? `מולך ליד רשום. המטרה: שיחה של 10 דקות עם ${rep} (${rep} מתקשר אליו). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
   : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. לשיחה צריך שם מלא ושם המספרה (שאלה אחת), ואז capture_lead.`}
 ${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם בוואטסאפ: ${senderName}.` : ""}
+${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואז שאלת אם הוא רוצה שיחה עם ${rep}. "כן" עכשיו = רוצה את השיחה${isLead ? ": הצע שתי שעות או propose_call אם בחר" : ": בקש שם מלא ושם המספרה בשאלה אחת"}.` : ""}
 ${opener}
 
 מהלך השיחה:
@@ -573,7 +574,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   const ctx = await salesContext(state, p.lead);
   const isLead = state.mode === "lead";
   const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
-  if (v2) tools.push(ENTER_DEMO_TOOL, SIGNUP_TOOL);
+  if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
   const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) : salesSystem(state, p.senderName, rep, ctx.block);
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
