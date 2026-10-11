@@ -16,6 +16,7 @@ const GROUPS: Group[] = [
     cards: [
       { href: "/admin/barber-settings/services", icon: "🛠️", title: "השירותים שלי", desc: "מה אני מציע, מחיר ומשך מותאמים" },
       { href: "/admin/barber-settings/hours", icon: "📅", title: "שעות ויומן", desc: "שעות עבודה, הפסקות וזמני הזמנה" },
+      { href: "/admin/barber-settings/notice", icon: "📢", title: "הודעה ללקוחות שלי", desc: "פופ-אפ כשלקוח בוחר בי בקביעת תור" },
     ],
   },
   {

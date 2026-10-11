@@ -29,6 +29,7 @@ const GROUPS: Group[] = [
     tint: "bg-indigo-50 text-indigo-700 border-indigo-100",
     cards: [
       { href: "/admin/settings/calendar", icon: "📅", title: "יומן ותורים", desc: "טווח הזמנה, זמן מראש, שעות תצוגה ומדיניות ביטולים" },
+      { href: "/admin/settings/notices", icon: "📢", title: "הודעה חשובה ללקוחות", desc: "פופ-אפ בקביעת תור: הודעה כללית והודעה לכל ספר" },
       { href: "/admin/settings/hours", icon: "🗓️", title: "שעות עבודה", desc: "לוח שעות והפסקות לכל ספר" },
       { href: "/admin/settings/permissions", icon: "👥", title: "הרשאות ספרים", desc: "מה ספרים יכולים לראות ולעשות" },
       { href: "/admin/staff", icon: "✂️", title: "ספרים", desc: "ניהול צוות, גישה ופרופילים" },

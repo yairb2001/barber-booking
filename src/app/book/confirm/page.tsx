@@ -7,8 +7,9 @@ import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 import { useVocab } from "@/components/VocabProvider";
 import { getStoredAttribution } from "@/lib/attribution";
+import { ConfirmNotices } from "@/components/BookingNotice";
 
-type StaffInfo = { id: string; name: string };
+type StaffInfo = { id: string; name: string; avatarUrl?: string | null };
 type ServiceInfo = {
   id: string; name: string; price: number; durationMinutes: number;
   showDuration: boolean; customPrice: number | null; customDuration: number | null;
@@ -822,6 +823,8 @@ function ConfirmPageContent() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-24" dir="rtl">
+      {/* "הודעה חשובה" not seen yet in this visit (a quick slot skips the barbers screen). */}
+      <ConfirmNotices slug={slug} staffId={staffId || null} staffName={staffInfo?.name} avatarUrl={staffInfo?.avatarUrl ?? null} />
 
       {/* Header */}
       <div className="book-header sticky top-0 z-20 bg-white/97 backdrop-blur-md border-b border-slate-200 px-4 py-3"

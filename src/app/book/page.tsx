@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { NoticePopup, useBookingNotices, generalKey, staffKey, seen, markSeen, type NoticeItem } from "@/components/BookingNotice";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 import { useVocab } from "@/components/VocabProvider";
 
@@ -66,6 +68,27 @@ export default function ChooseBarberPage() {
   // Returning referrer — thank-you + progress meter ("חבר מביא חבר")
   const [referral, setReferral] = useState<{ name: string; referralCount: number; goal: number; giftLabel: string } | null>(null);
   const [referralPop, setReferralPop] = useState(false); // celebratory modal on a NEW referral
+  // "הודעה חשובה" (11.10.2026): the shop's general notice on arrival, and a
+  // barber's own when the customer picks him (any link that carries his staffId).
+  const router = useRouter();
+  const notices = useBookingNotices(slug);
+  const [notice, setNotice] = useState<{ items: NoticeItem[]; href?: string } | null>(null);
+  useEffect(() => {
+    if (notices?.general && !seen(generalKey(notices.general))) setNotice({ items: [{ key: generalKey(notices.general), title: "הודעה מהמספרה", text: notices.general }] });
+  }, [notices]);
+  const onPick = (e: React.MouseEvent) => {
+    if (!notices || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+    if (!a) return;
+    const u = new URL(a.href, window.location.href);
+    const id = u.searchParams.get("staffId");
+    const text = id ? notices.staff[id] : undefined;
+    if (!id || !text || seen(staffKey(id, text))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const m = staff.find(s => s.id === id);
+    setNotice({ items: [{ key: staffKey(id, text), title: m ? `הודעה מ${m.name}` : "הודעה חשובה", text, avatarUrl: m?.avatarUrl }], href: u.pathname + u.search });
+  };
 
   useEffect(() => {
     Promise.all([
@@ -132,7 +155,8 @@ export default function ChooseBarberPage() {
   };
 
   return (
-    <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>
+    <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }} onClickCapture={onPick}>
+      {notice && <NoticePopup items={notice.items} cta={notice.href ? "הבנתי, ממשיכים" : "הבנתי"} onDone={() => { markSeen(notice.items.map(i => i.key)); const h = notice.href; setNotice(null); if (h) router.push(h); }} />}
 
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 px-4 py-3"
