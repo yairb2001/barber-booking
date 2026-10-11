@@ -1366,8 +1366,10 @@ export async function escalateToHuman(opts: {
   callerPhone: string;
   reason: string;
   staffIdHint?: string | null;
+  /** false = alert a person but keep the agent answering (a technical error, not a customer asking for a human). */
+  mute?: boolean;
 }): Promise<{ notified: boolean; targetStaffName: string | null }> {
-  const { bizId, conversationId, callerPhone, reason } = opts;
+  const { bizId, conversationId, callerPhone, reason, mute = true } = opts;
   const phone = normalizeIsraeliPhone(callerPhone);
   const localPhone = phone.replace(/^972/, "0");
 
@@ -1464,9 +1466,10 @@ export async function escalateToHuman(opts: {
   }
 
   // Mute the agent for this conversation (24h lazy expiry) and mark escalated.
+  // Unmuted escalation (technical error) only flags the chat for a person.
   await prisma.conversation.update({
     where: { id: conversationId },
-    data: { status: "escalated", escalatedAt: new Date() },
+    data: mute ? { status: "escalated", escalatedAt: new Date() } : { status: "escalated" },
   });
   // Push: the customer's regular barber only; no regular barber → everyone.
   pushChatEvent({
@@ -2282,6 +2285,15 @@ export async function runCustomerAgent(opts: {
     }
   }
   while (messages.length && messages[0].role !== "user") messages.shift();
+  // The API rejects a conversation that ends on an assistant turn ("does not
+  // support assistant message prefill"). It happens when this message landed
+  // while another run was still sending its bubbles (a WhatsApp retry of the
+  // same text ~10s later, or a quick follow-up), so those bubbles were saved
+  // after it. All 12 fallbacks of 8–11.10.2026 were this. Re-ask the customer's
+  // message at the end instead of crashing into "תקלה זמנית".
+  if (messages.length && messages[messages.length - 1].role === "assistant") {
+    messages.push({ role: "user", content: `(ההודעה האחרונה של הלקוח, שעדיין מחכה לתשובה: ${incomingText})` });
+  }
 
   // Recent tool activity → lets the router detect a booking already in progress.
   // Same 24h window as the dialogue: last week's booking isn't "in progress".

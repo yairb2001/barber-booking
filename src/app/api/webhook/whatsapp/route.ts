@@ -742,6 +742,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       conversationId: conv.id,
       callerPhone: phone,
       reason: "הסוכן נתקל בשגיאה טכנית ולא הצליח לענות ללקוח באופן אוטומטי.",
+      // A person is alerted, but the agent keeps answering the next message:
+      // muting it here left customers unanswered for up to 19h (8–11.10.2026).
+      mute: false,
     }).catch((e) => console.error("[agent] escalateToHuman on fallback failed", e));
     await sendMessage({ businessId: biz.id, customerPhone: phone, kind: "agent_reply", body: fallbackMsg })
       .catch(e => console.error("[agent] fallback message send failed", e));
