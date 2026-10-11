@@ -250,6 +250,11 @@ export async function tickAutomations(now = new Date()): Promise<{ sent: number;
     const claim = await prisma.crmAutomationRun.updateMany({ where: { id: run.id, stepIndex: run.stepIndex, status: "active" }, data: { stepIndex: run.stepIndex + 1, nextAt: null } });
     if (!claim.count) continue;
     const ctx: RunContext = run.context ? JSON.parse(run.context) : {};
+    // The shop it is about is gone (a deleted test shop, 11.10.2026: Yair got
+    // "סיכון עזיבה: המספרה ..." with no name). Nothing to say about it.
+    if (run.businessId && !(await prisma.business.findUnique({ where: { id: run.businessId }, select: { id: true } }))) {
+      await prisma.crmAutomationRun.update({ where: { id: run.id }, data: { status: "stopped", stopReason: "business_gone" } }); stopped++; continue;
+    }
     const { body, phone, repPhone } = await renderText(step.text, { leadId: run.leadId, businessId: run.businessId, context: ctx });
     const to = a.audience === "rep" ? repPhone : phone;
     if (to && body) {

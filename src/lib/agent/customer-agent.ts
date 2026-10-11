@@ -2196,7 +2196,11 @@ export async function runCustomerAgent(opts: {
   // conversation still isn't resolved, the agent is probably stuck in a loop (or
   // the case is genuinely too complex). Stop burning tokens, hand it to a human,
   // and tell the customer someone will follow up. 0 = disabled.
-  const escalateThreshold = agentConfig?.escalateAfterMessages ?? 0;
+  // Not in Chator's demo shop (11.10.2026): its chat is the same chat as the
+  // sales conversation before it, so those messages pushed a prospect over the
+  // limit mid-booking and the demo "handed him to the team" (twice, Yair).
+  // The sales agent caps that chat itself (REPLY_CAP_PER_DAY).
+  const escalateThreshold = businessId === DEMO_BUSINESS_ID ? 0 : agentConfig?.escalateAfterMessages ?? 0;
   if (escalateThreshold > 0) {
     // Count only the last 24h — a conversation row lives for days (cleanup needs
     // 3 full quiet days), so a lifetime count made chatty REGULARS trip the
