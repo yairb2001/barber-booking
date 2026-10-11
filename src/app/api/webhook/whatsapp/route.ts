@@ -435,7 +435,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     where: { conversationId: conv.id, role: "assistant", createdAt: { gt: sameText.createdAt } },
     select: { id: true },
   }) : null;
-  const existingMsg = sameText && !answeredSince ? sameText : null;
+  // But the WhatsApp server re-delivers a message ~10s later when our webhook is
+  // still busy answering it (all 3 duplicates on 11.10.2026 were exactly 10s
+  // apart) — that copy arrives after the first bubbles, so within 12s it is a
+  // retry even when answered.
+  const isRetry = !!sameText && Date.now() - sameText.createdAt.getTime() < 12_000;
+  const existingMsg = sameText && (!answeredSince || isRetry) ? sameText : null;
   if (existingMsg) {
     console.warn(`[webhook] duplicate message skipped — conv=${conv.id} idMessage=${body.idMessage ?? "n/a"}`);
     return NextResponse.json({ ok: true, skipped: "duplicate_message" });
@@ -530,8 +535,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // conversation tagged as demo/prospect runs the demo agent + the sales
   // agent (src/lib/agent/sales-agent.ts); the number's other traffic keeps
   // the human path below. The message is already persisted at this point.
+  // Same burst coalescing + one-run-per-chat as the shop agent below: a message
+  // sent mid-answer must never run a second, crossing turn (11.10.2026).
   if (biz.id === DEMO_BUSINESS_ID && !isNonText && text) {
-    const demo = await runDemoTurn({ phone, text, senderName, alreadyPersisted: true });
+    const release = await takeAgentTurn(conv.id, savedUserMsg.createdAt);
+    if (!release) return NextResponse.json({ ok: true, coalesced: true });
+    let demo: Awaited<ReturnType<typeof runDemoTurn>>;
+    try { demo = await runDemoTurn({ phone, text, senderName, alreadyPersisted: true }); }
+    finally { await release(); }
     if (demo.handled) return NextResponse.json({ ok: true, demo: demo.mode });
   }
 
@@ -659,27 +670,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // this customer arrived meanwhile, this request yields — the last webhook in
   // the burst runs the agent once, with all the messages in the history.
   // (4% of customer messages are bursts, 2–21.9.2026.)
-  const burstGraceMs = 4000;
-  await new Promise(r => setTimeout(r, burstGraceMs));
-  const newer = await prisma.conversationMessage.findFirst({
-    where: { conversationId: conv.id, role: "user", createdAt: { gt: savedUserMsg.createdAt } },
-    select: { id: true },
-  });
-  if (newer) return NextResponse.json({ ok: true, coalesced: true });
-
-  // One agent run per chat at a time (10.10.2026). A message that lands while
-  // the agent is still answering the previous one waits for it, then answers
-  // whatever is still unanswered; a newer message by then takes over instead.
-  let locked = false;
-  for (let i = 0; i < 20 && !locked; i++) { // ≤20s: the webhook has 60s in all
-    const n = await prisma.$executeRaw`UPDATE conversations SET agent_lock_at = now() WHERE id = ${conv.id} AND (agent_lock_at IS NULL OR agent_lock_at < now() - interval '90 seconds')`;
-    if (n > 0) locked = true; else await new Promise(r => setTimeout(r, 1000));
-  }
-  const releaseLock = () => (locked ? prisma.$executeRaw`UPDATE conversations SET agent_lock_at = NULL WHERE id = ${conv.id}`.catch(() => 0) : Promise.resolve(0));
-  if (locked) {
-    const newerNow = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "user", createdAt: { gt: savedUserMsg.createdAt } }, select: { id: true } });
-    if (newerNow) { await releaseLock(); return NextResponse.json({ ok: true, coalesced: true }); }
-  }
+  const releaseLock = await takeAgentTurn(conv.id, savedUserMsg.createdAt);
+  if (!releaseLock) return NextResponse.json({ ok: true, coalesced: true });
   try {
   const burst = await prisma.conversationMessage.findMany({
     where: { conversationId: conv.id, role: "user", createdAt: { gte: new Date(savedUserMsg.createdAt.getTime() - 45_000), lte: savedUserMsg.createdAt } },
@@ -756,6 +748,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     console.error("[webhook] unhandled error:", err);
     return NextResponse.json({ ok: true, error: "internal" });
   }
+}
+
+/**
+ * Burst coalescing + one agent run per chat at a time (10.10.2026).
+ * People often send "היי יש תור היום?" and, seconds later, "או מחר" — wait a
+ * short grace period; if a newer message arrived meanwhile this request yields
+ * (null) and the last webhook in the burst answers everything. A message that
+ * lands while the agent is still answering waits for that run (≤20s; the
+ * webhook has 60s in all), then answers whatever is still unanswered.
+ * Returns the lock's release function, or null when a newer message took over.
+ */
+async function takeAgentTurn(convId: string, since: Date): Promise<(() => Promise<unknown>) | null> {
+  await new Promise(r => setTimeout(r, 4000));
+  const newer = () => prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "user", createdAt: { gt: since } }, select: { id: true } });
+  if (await newer()) return null;
+  let locked = false;
+  for (let i = 0; i < 20 && !locked; i++) {
+    const n = await prisma.$executeRaw`UPDATE conversations SET agent_lock_at = now() WHERE id = ${convId} AND (agent_lock_at IS NULL OR agent_lock_at < now() - interval '90 seconds')`;
+    if (n > 0) locked = true; else await new Promise(r => setTimeout(r, 1000));
+  }
+  const release = () => (locked ? prisma.$executeRaw`UPDATE conversations SET agent_lock_at = NULL WHERE id = ${convId}`.catch(() => 0) : Promise.resolve(0));
+  if (locked && await newer()) { await release(); return null; }
+  return release;
 }
 
 /** The agent threw on a customer message: a ledger row + a quiet note in Chator's CRM (10.10.2026). */
