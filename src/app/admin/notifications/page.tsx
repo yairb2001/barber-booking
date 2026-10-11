@@ -22,6 +22,7 @@ const TAG: Record<string, [string, string]> = {
   report: ["דוח", "bg-emerald-50 text-emerald-700"],
   system: ["תקלה", "bg-red-50 text-red-700"],
   account: ["החשבון שלי", "bg-teal-50 text-teal-700"],
+  team: ["צוות", "bg-violet-50 text-violet-700"],
 };
 const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);

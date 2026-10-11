@@ -8,7 +8,7 @@ export default function BarberNoticePage() {
       <Link href="/admin/barber-settings" className="text-sm text-neutral-400 hover:text-neutral-600 transition mb-1 inline-block">← חזרה להגדרות שלי</Link>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral-900">הודעה ללקוחות שלי</h1>
-        <p className="text-neutral-500 text-sm mt-1">פופ-אפ שקופץ ללקוח כשהוא בוחר בך בקביעת תור. למשל חופשה, שינוי שעות או משהו שחשוב שידע.</p>
+        <p className="text-neutral-500 text-sm mt-1">פופ-אפ שקופץ ללקוח כשהוא בוחר בך בקביעת תור. למשל חופשה, שינוי שעות או משהו שחשוב שידע. ההודעה עולה ללקוחות אחרי שהמנהל מאשר אותה.</p>
       </div>
       <div className="max-w-2xl"><NoticeEditor /></div>
     </div>

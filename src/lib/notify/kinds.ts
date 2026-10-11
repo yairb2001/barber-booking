@@ -5,7 +5,7 @@
  * Pure module: the settings screen imports labels and defaults. The default is
  * WhatsApp, which keeps what each event did before the center existed.
  */
-export type CenterKind = "agent_question" | "escalation" | "swap" | "closure" | "report" | "system" | "account";
+export type CenterKind = "agent_question" | "escalation" | "swap" | "closure" | "report" | "system" | "account" | "team";
 export type Channel = "push" | "whatsapp" | "screen";
 
 export const CENTER_KINDS: { kind: CenterKind; label: string; hint: string; def: Channel; whatsapp: boolean }[] = [
@@ -17,6 +17,8 @@ export const CENTER_KINDS: { kind: CenterKind; label: string; hint: string; def:
   { kind: "system", label: "תקלות", hint: "וואטסאפ מנותק, חבילת הסוכן", def: "whatsapp", whatsapp: true },
   // New with "חבר מביא חבר" (11.10.2026); never was a WhatsApp, so no WhatsApp option.
   { kind: "account", label: "החשבון שלי", hint: "חבר שנרשם דרכך, חודש חינם שקיבלת", def: "push", whatsapp: false },
+  // 11.10.2026: a barber's "הודעה חשובה" waiting for the owner, and the answer back to him.
+  { kind: "team", label: "בקשות מהצוות", hint: "ספר ביקש לפרסם הודעה ללקוחות, ותשובה על בקשה שלך", def: "push", whatsapp: false },
 ];
 
 export const CHANNEL_LABEL: Record<Channel, string> = { push: "למסך + פוש", whatsapp: "וואטסאפ", screen: "רק במסך" };
