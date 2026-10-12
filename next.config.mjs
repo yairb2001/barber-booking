@@ -17,6 +17,8 @@ const nextConfig = {
       // built in the marketing workspace). beforeFiles so it wins over any page route.
       beforeFiles: [
         { source: "/for-business", destination: "/chator/landing.html" },
+        // Chator privacy policy (static). Meta's app settings point here (+ #delete).
+        { source: "/privacy", destination: "/chator/privacy.html" },
       ],
       // `fallback` rewrites run ONLY after every filesystem route (static, /book/*,
       // the dynamic [slug] tree) has been checked — i.e. only for paths that would
