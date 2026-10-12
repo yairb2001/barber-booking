@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { prisma } from "@/lib/prisma";
 import { notifyPlatformOwner } from "@/lib/super-admin";
-import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
-import { ensureCrmSeed } from "@/lib/crm/core";
+import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
+import { ensureCrmSeed, stageLabel } from "@/lib/crm/core";
 import { startAutomation } from "@/lib/crm/automations";
 
 /**
@@ -29,7 +29,8 @@ export async function POST(req: NextRequest) {
   const normalized = normalizeIsraeliPhone(phone);
   await ensureCrmSeed().catch(() => {});
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
-  const existing = await prisma.lead.findFirst({ where: { phone: { in: [phone, normalized] } }, orderBy: { createdAt: "desc" }, select: { id: true, stage: true } });
+  // Any format: a lead who already talks to the agent on WhatsApp is stored as 05X (12.10.2026).
+  const existing = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, stage: true, name: true } });
   const lead = existing
     ? await prisma.lead.update({ where: { id: existing.id }, data: { ...(name ? { name } : {}), ...(businessName ? { businessName } : {}), ...(shopSize ? { shopSize } : {}) }, select: { id: true } })
     : await prisma.lead.create({
@@ -47,8 +48,12 @@ export async function POST(req: NextRequest) {
       });
   if (!existing || existing.stage === "new") await startAutomation("lead_new", { leadId: lead.id });
 
+  // Already a lead (he chats with the agent, or filled the form before): one card, a line on its timeline.
+  if (existing) await prisma.leadNote.create({ data: { leadId: existing.id, author: "מערכת", body: `השאיר פרטים גם בטופס באתר${businessName ? ` (מספרה: ${businessName})` : ""}` } }).catch(() => {});
   await notifyPlatformOwner(
-    `🔥 ליד חדש מהאתר\nשם: ${name || "—"}\nטלפון: ${phone}\nב-CRM: /admin/crm`,
+    existing
+      ? `🔁 ${name || existing.name || phone} השאיר פרטים גם באתר\nכבר ליד אצלך, בשלב "${stageLabel(existing.stage)}". לא נפתח ליד כפול.\nב-CRM: /admin/crm`
+      : `🔥 ליד חדש מהאתר\nשם: ${name || "—"}\nטלפון: ${phone}\nב-CRM: /admin/crm`,
     { kind: "lead", leadId: lead.id, push: true },
   );
 

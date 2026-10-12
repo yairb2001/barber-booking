@@ -22,7 +22,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
-import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { notifyPlatformOwner, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
@@ -880,20 +880,27 @@ async function createLead(p: { phone: string; conversationId: string; fullName: 
   const summary = userMsgs.map(m => m.content.replace(/\s+/g, " ").trim()).filter(Boolean).join(" · ").slice(0, 600);
   const localPhone = p.phone.replace(/^972/, "0");
   const ig = p.source === "instagram";
-  const recent = await prisma.lead.findFirst({ where: { phone: { in: [p.phone, localPhone] } }, orderBy: { createdAt: "desc" }, select: { id: true, source: true, conversationId: true } });
+  const recent = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(p.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, source: true, conversationId: true, stage: true } });
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
   const data = {
     name: p.fullName || undefined, phone: localPhone, source: ig ? "instagram" : p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: "contacted", stage: "chatting",
     businessName: p.businessName || null, businessType: p.businessType && p.businessType !== "other" ? p.businessType : "barber_men",
     conversationId: p.conversationId, summary, lastInboundAt: new Date(),
   };
-  // A lead we already had (by the number he typed on Instagram) keeps where he came from and his WhatsApp chat.
-  const keep = ig && recent ? { source: recent.source, conversationId: recent.conversationId ?? p.conversationId } : {};
+  // A lead we already had (the website form, or the number he typed on Instagram) keeps where he
+  // first came from, how far he got (a booked call or a trial doesn't fall back to "בשיחה"), and,
+  // from Instagram, his WhatsApp chat (12.10.2026).
+  const keep = recent ? {
+    source: recent.source,
+    ...(recent.stage && recent.stage !== "new" ? { stage: recent.stage } : {}),
+    ...(ig ? { conversationId: recent.conversationId ?? p.conversationId } : {}),
+  } : {};
   const lead = recent
     ? await prisma.lead.update({ where: { id: recent.id }, data: { ...data, name: p.fullName || undefined, ...keep }, select: { id: true } })
     : await prisma.lead.create({ data: { ...data, repId: rep?.id ?? null }, select: { id: true } });
 
-  const body = `🎯 ליד חדש ${ig ? "מאינסטגרם" : "מוואטסאפ הדמו"}${ig && recent ? " (כבר היה ליד עם המספר הזה)" : ""}\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\n${ig ? "מה כתב" : "מה ניסה"}: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
+  if (recent) await prisma.leadNote.create({ data: { leadId: recent.id, author: "מערכת", body: ig ? "פנה גם באינסטגרם" : "פנה גם בוואטסאפ, לסוכן של צ'אטור" } }).catch(() => {});
+  const body = `🎯 ליד חדש ${ig ? "מאינסטגרם" : "מוואטסאפ הדמו"}${recent ? " (כבר היה ליד עם המספר הזה, נשאר כרטיס אחד)" : ""}\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\n${ig ? "מה כתב" : "מה ניסה"}: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
   notifyPlatformOwner(body, { kind: "lead", leadId: lead.id, push: true }).catch(() => {});
   return lead.id;
 }
