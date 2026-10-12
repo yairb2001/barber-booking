@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { C, PageHead, Tag, useCrm, ago, STAGE_TONE } from "../ui";
 
-/** Chator's WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות"). */
-type Chat = { id: string; phone: string; name: string | null; shop: string | null; leadId: string | null; stage: string | null; mode: string | null; at: string; last: { role: string; source: string | null; text: string } | null; waiting: boolean; paused: boolean };
+/** Chator's WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות"), and its Instagram DMs (12.10). */
+type Chat = { id: string; channel: "whatsapp" | "instagram"; phone: string; name: string | null; shop: string | null; leadId: string | null; stage: string | null; mode: string | null; at: string; last: { role: string; source: string | null; text: string } | null; waiting: boolean; paused: boolean };
 
 export default function ChatsPage() {
   const { data, error, reload } = useCrm<{ chats: Chat[] }>("view=chats");
@@ -16,7 +16,7 @@ export default function ChatsPage() {
   const list = data.chats.filter(c => !q.trim() || [c.name, c.phone, c.shop].some(x => (x ?? "").includes(q.trim())));
   return (
     <div className="flex flex-col gap-3 max-w-3xl">
-      <PageHead title="צ׳אטים" sub={`השיחות בוואטסאפ של צ'אטור · ${data.chats.filter(c => c.waiting).length} מחכות לתשובה`} />
+      <PageHead title="צ׳אטים" sub={`השיחות בוואטסאפ ובאינסטגרם של צ'אטור · ${data.chats.filter(c => c.waiting).length} מחכות לתשובה`} />
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="חיפוש לפי שם, טלפון או מספרה" className="h-11 rounded-xl px-3 text-[15px]" style={{ border: "1px solid #C7D8D5" }} />
       <section className="bg-white rounded-2xl" style={{ border: `1px solid ${C.line}` }}>
         {list.length === 0 && <p className="m-0 p-4 text-sm" style={{ color: C.muted }}>אין שיחות.</p>}
@@ -25,7 +25,8 @@ export default function ChatsPage() {
             <span className="w-10 h-10 rounded-full shrink-0 inline-flex items-center justify-center font-bold" style={{ background: C.mist, color: C.petrol }}>{(c.name || "?").trim().charAt(0)}</span>
             <span className="flex-1 min-w-0">
               <span className="flex items-center gap-2">
-                <b className="text-[15px] truncate">{c.name || c.phone}</b>
+                <b className="text-[15px] truncate">{c.name || c.phone || "לקוח מאינסטגרם"}</b>
+                {c.channel === "instagram" && <Tag>אינסטגרם</Tag>}
                 {c.stage && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.soft }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_TONE[c.stage]?.accent ?? C.line }} aria-hidden="true" />{STAGE_TONE[c.stage]?.label ?? c.stage}</span>}
                 {c.paused && <Tag tone="warn">אתה עונה</Tag>}
               </span>

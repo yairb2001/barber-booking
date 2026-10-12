@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { handleInstagramWebhook } from "@/lib/messaging/instagram-inbound";
 
 export const dynamic = "force-dynamic";
 
 /**
- * TEMPORARY Instagram connection-experiment webhook (plan doc, tab "ערוץ אינסטגרם").
- * Only proves that Meta can reach us and shows what arrives: it verifies the
- * request, logs one short line per event and answers 200. No database, no agent,
- * no sending. Message text and tokens are never logged. Grows into the real
- * handler later.
+ * Instagram webhook (plan doc, tab "ערוץ אינסטגרם"). Verifies the request and
+ * logs one short line per event (never message text or tokens). For an account
+ * connected and switched on in Business.settings.instagram, the DM goes into
+ * the chat inbox (src/lib/messaging/instagram-inbound.ts). No agent on
+ * Instagram yet (step 4 of the plan).
  *
  * GET  = Meta's subscribe handshake (INSTAGRAM_VERIFY_TOKEN).
  * POST = events, signed with X-Hub-Signature-256 = HMAC-SHA256(raw body, INSTAGRAM_APP_SECRET).
@@ -78,8 +79,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         for (const ch of entry.changes) console.log(`[ig-webhook] object=${object} entry=${entryId} change=${isObj(ch) ? str(ch.field) : "-"}`);
       }
     }
-  } catch {
-    console.warn("[ig-webhook] non-json body");
+    await handleInstagramWebhook(body);
+  } catch (e) {
+    console.warn("[ig-webhook] not handled:", e instanceof SyntaxError ? "non-json body" : e);
   }
   return NextResponse.json({ ok: true });
 }

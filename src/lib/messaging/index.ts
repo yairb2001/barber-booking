@@ -7,6 +7,7 @@ import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { GreenApiProvider } from "./green-api";
 import { EvolutionProvider } from "./evolution";
 import { normalizeIsraeliPhone } from "./phone";
+import { deliverInstagramLog, isInstagramKey } from "./instagram";
 
 /**
  * Extract the first name for use in the {{name}} variable.
@@ -329,6 +330,9 @@ export async function deliverMessageLog(
   log: DeliverableLog,
   business: ProviderBusiness,
 ): Promise<SendResult> {
+  // An Instagram conversation (key "ig:<IGSID>") answers on Instagram, never WhatsApp.
+  if (isInstagramKey(log.customerPhone)) return deliverInstagramLog(log, business.id);
+
   const provider = providerForBusiness(business);
   if (!provider || !provider.isConfigured()) {
     await prisma.messageLog.update({
@@ -468,7 +472,8 @@ export async function sendProactiveMessage(opts: {
   escalate?: boolean;
 }): Promise<SendResult> {
   const escalate = opts.escalate !== false;
-  const normalized = normalizeIsraeliPhone(opts.customerPhone);
+  // An Instagram key ("ig:<IGSID>") is not a phone number: keep it as is.
+  const normalized = isInstagramKey(opts.customerPhone) ? opts.customerPhone : normalizeIsraeliPhone(opts.customerPhone);
 
   // Find (or create) the customer-facing conversation for this phone. Never glue
   // onto the hidden owner thread (agentType "owner").

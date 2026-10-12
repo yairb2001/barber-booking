@@ -417,22 +417,25 @@ export async function GET(req: NextRequest) {
           orderBy: { lastMessageAt: "desc" }, take: 150,
           select: { id: true, phone: true, whatsappName: true, lastMessageAt: true, escalatedAt: true, salesState: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, source: true } } },
         });
-        const people = convs.filter(c => /^\d{8,15}$/.test(c.phone)); // no groups, no channels
-        const leads = await prisma.lead.findMany({ where: { phone: { in: people.flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
-        const leadOf = (p: string) => leads.find(l => local(l.phone) === local(p));
+        // WhatsApp numbers and Instagram DMs ("ig:<IGSID>", 12.10); no groups, no channels.
+        const isIg = (p: string) => p.startsWith("ig:");
+        const people = convs.filter(c => /^\d{8,15}$/.test(c.phone) || isIg(c.phone));
+        const leads = await prisma.lead.findMany({ where: { phone: { in: people.filter(c => !isIg(c.phone)).flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
+        const leadOf = (p: string) => (isIg(p) ? undefined : leads.find(l => local(l.phone) === local(p)));
         return NextResponse.json({ chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, phone: local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, salesState: true } });
       if (!conv) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const ig = conv.phone.startsWith("ig:");
       const [msgs, lead] = await Promise.all([
         prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }),
-        prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
+        ig ? Promise.resolve(null) : prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
       ]);
-      return NextResponse.json({ chat: { id: conv.id, phone: local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      return NextResponse.json({ chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });
@@ -681,8 +684,18 @@ export async function POST(req: NextRequest) {
         const body = str("body");
         if (!conv || !body) return NextResponse.json({ error: "חסרה הודעה" }, { status: 400 });
         const { sendProactiveMessage } = await import("@/lib/messaging");
+        // Instagram: past Meta's 24h window nothing can go out, so don't add a message that never left.
+        if (conv.phone.startsWith("ig:")) {
+          const { instagramWindowOpen, instagramSendError } = await import("@/lib/messaging/instagram");
+          if (!(await instagramWindowOpen(DEMO, conv.phone))) return NextResponse.json({ error: instagramSendError("instagram_window_closed") }, { status: 409 });
+        }
         const r = await sendProactiveMessage({ businessId: DEMO, customerPhone: conv.phone, body: body.slice(0, 4000), kind: "manual", escalate: true });
-        return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "ההודעה לא יצאה. בדוק את חיבור הוואטסאפ של צ'אטור." }, { status: 502 });
+        if (r.ok) return NextResponse.json({ ok: true });
+        if (conv.phone.startsWith("ig:")) {
+          const { instagramSendError } = await import("@/lib/messaging/instagram");
+          return NextResponse.json({ error: instagramSendError(r.error) }, { status: 502 });
+        }
+        return NextResponse.json({ error: "ההודעה לא יצאה. בדוק את חיבור הוואטסאפ של צ'אטור." }, { status: 502 });
       }
       case "chat.agent": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
