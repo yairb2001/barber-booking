@@ -68,8 +68,8 @@ export default function ChatThread({ id }: { id: string }) {
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px]" style={{ background: chat.paused ? "#FFF1D6" : C.mist, color: chat.paused ? "#7A4A00" : C.petrol }}>
-          <span>{chat.paused ? "הסוכן מושהה בשיחה הזו, אתה עונה." : "הסוכן עונה בשיחה הזו."}</span>
-          <button type="button" disabled={busy} onClick={() => agent(chat.paused)} className="font-semibold underline">{chat.paused ? "החזר לסוכן" : "השהה את הסוכן"}</button>
+          <span>{chat.paused ? "טיפול אנושי: הסוכן מושהה בשיחה הזו, אתה עונה." : "הסוכן עונה בשיחה הזו."}</span>
+          <button type="button" disabled={busy} onClick={() => agent(chat.paused)} className="font-semibold underline">{chat.paused ? "החזר לסוכן" : "העבר לטיפול אנושי"}</button>
         </div>
       )}
 

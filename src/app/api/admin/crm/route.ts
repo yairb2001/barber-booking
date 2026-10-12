@@ -422,10 +422,14 @@ export async function GET(req: NextRequest) {
         const people = convs.filter(c => /^\d{8,15}$/.test(c.phone) || isIg(c.phone));
         const leads = await prisma.lead.findMany({ where: { phone: { in: people.filter(c => !isIg(c.phone)).flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
         const leadOf = (p: string) => (isIg(p) ? undefined : leads.find(l => local(l.phone) === local(p)));
+        // Instagram: does the agent answer this person at all (settings.instagram.agent)?
+        const { instagramAccountOf, instagramAgentAnswers, igsidOf } = await import("@/lib/messaging/instagram");
+        const igAccount = instagramAccountOf((await prisma.business.findUnique({ where: { id: DEMO }, select: { settings: true } }))?.settings);
+        const agentFor = (p: string) => !isIg(p) || (!!igAccount && instagramAgentAnswers(igAccount, igsidOf(p)));
         return NextResponse.json({ chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, salesState: true } });
