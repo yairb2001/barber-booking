@@ -3,6 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { handleInstagramWebhook } from "@/lib/messaging/instagram-inbound";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // the sales agent answers inside the request, like the WhatsApp webhook
 
 /**
  * Instagram webhook (plan doc, tab "ערוץ אינסטגרם"). Verifies the request and

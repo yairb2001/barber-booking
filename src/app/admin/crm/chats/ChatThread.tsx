@@ -8,11 +8,11 @@ import { C, Btn, useCrm, crmAction, STAGE_TONE } from "../ui";
  * One chat on Chator's WhatsApp (10.10.2026). Writing here sends from
  * Chator's number and pauses the agent in this chat for 24 hours; "החזר
  * לסוכן" lets it answer again. An Instagram DM (12.10) answers from
- * @chator.il, only within 24h of the customer's last message, and has no
- * agent yet.
+ * @chator.il, only within 24h of the customer's last message; the sales
+ * agent answers there only when settings.instagram.agent allows this person.
  */
 type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string };
-type Data = { chat: { id: string; channel: "whatsapp" | "instagram"; phone: string; name: string | null; paused: boolean; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
+type Data = { chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
 const time = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 
 export default function ChatThread({ id }: { id: string }) {
@@ -62,9 +62,9 @@ export default function ChatThread({ id }: { id: string }) {
         </div>
       </header>
 
-      {ig ? (
+      {ig && !chat.agent ? (
         <div className="rounded-xl px-3 py-2 text-[13px]" style={{ background: "#FFF1D6", color: "#7A4A00" }}>
-          באינסטגרם הסוכן עוד לא עונה. אתה עונה.
+          באינסטגרם הסוכן לא עונה בשיחה הזו. אתה עונה.
         </div>
       ) : (
         <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-[13px]" style={{ background: chat.paused ? "#FFF1D6" : C.mist, color: chat.paused ? "#7A4A00" : C.petrol }}>
@@ -94,7 +94,7 @@ export default function ChatThread({ id }: { id: string }) {
         <Btn kind="dark" disabled={busy || !text.trim()} onClick={send}>{busy ? "…" : "שלח"}</Btn>
       </div>
       {note && <p className="m-0 text-xs text-red-700">{note}</p>}
-      <p className="m-0 text-[11px]" style={{ color: C.muted }}>{ig ? "באינסטגרם אפשר לענות עד 24 שעות אחרי ההודעה האחרונה שלו." : "הודעה שאתה שולח משהה את הסוכן בשיחה ל־24 שעות."}</p>
+      <p className="m-0 text-[11px]" style={{ color: C.muted }}>{ig ? "באינסטגרם אפשר לענות עד 24 שעות אחרי ההודעה האחרונה שלו. הודעה שאתה שולח משהה את הסוכן בשיחה ל־24 שעות." : "הודעה שאתה שולח משהה את הסוכן בשיחה ל־24 שעות."}</p>
     </div>
   );
 }

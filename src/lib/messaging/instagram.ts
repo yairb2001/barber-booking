@@ -26,16 +26,27 @@ const GRAPH = "https://graph.instagram.com/v23.0";
 const MAX_BYTES = 1000;            // Meta's limit for one text message
 export const INSTAGRAM_WINDOW_MS = 24 * 3600_000;
 
-export type InstagramAccount = { igUserId: string; username: string | null; enabled: boolean };
+/**
+ * enabled: DMs reach the inbox. agent: who the agent answers on Instagram:
+ * "off" (nobody, the default), "test" (only the IGSIDs in testers), "on" (everyone).
+ */
+export type InstagramAccount = { igUserId: string; username: string | null; enabled: boolean; agent: "off" | "test" | "on"; testers: string[] };
 
 export function instagramAccountOf(settings: string | null | undefined): InstagramAccount | null {
   try {
     const ig = (settings ? JSON.parse(settings) : {})?.instagram;
     if (!ig?.igUserId) return null;
-    return { igUserId: String(ig.igUserId), username: ig.username ? String(ig.username) : null, enabled: ig.enabled === true };
+    const agent = ig.agent === "on" || ig.agent === "test" ? ig.agent : "off";
+    const testers = Array.isArray(ig.testers) ? ig.testers.map((t: unknown) => String(t)) : [];
+    return { igUserId: String(ig.igUserId), username: ig.username ? String(ig.username) : null, enabled: ig.enabled === true, agent, testers };
   } catch {
     return null;
   }
+}
+
+/** Does the agent answer this sender on this account? */
+export function instagramAgentAnswers(account: InstagramAccount, igsid: string): boolean {
+  return account.enabled && (account.agent === "on" || (account.agent === "test" && account.testers.includes(igsid)));
 }
 
 /** The business whose settings.instagram.igUserId is this Instagram professional account. */

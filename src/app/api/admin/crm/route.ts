@@ -435,7 +435,15 @@ export async function GET(req: NextRequest) {
         prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }),
         ig ? Promise.resolve(null) : prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
       ]);
-      return NextResponse.json({ chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      // Instagram: does the agent answer this person at all (settings.instagram.agent off / test / on)?
+      let agent = true;
+      if (ig) {
+        const { instagramAccountOf, instagramAgentAnswers, igsidOf } = await import("@/lib/messaging/instagram");
+        const demo = await prisma.business.findUnique({ where: { id: DEMO }, select: { settings: true } });
+        const account = instagramAccountOf(demo?.settings);
+        agent = !!account && instagramAgentAnswers(account, igsidOf(conv.phone));
+      }
+      return NextResponse.json({ chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });

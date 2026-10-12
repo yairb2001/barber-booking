@@ -45,9 +45,18 @@ export type SalesState = {
   pendingCall?: { startsAt: string; label: string; repId: string };
   demoTurns?: number;     // v2: messages inside the demo since entering it
   demoNudged?: boolean;   // v2: the one "write 'סיימתי' to stop" line was sent
+  channel?: "instagram";  // a DM on @chator.il (runInstagramSalesTurn)
+  contactPhone?: string;  // Instagram: the mobile he gave for the call (972…)
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
+// ── Instagram (@chator.il, 12.10.2026; spec "ערוץ אינסטגרם" › "צ'אטור: סוכן מכירות באינסטגרם") ──
+// No demo shop on Instagram: whoever wants to try gets a link to Chator's WhatsApp
+// with this prefilled text, which opens the demo there (like the site's button).
+const IG_DEMO_TEXT = "היי, הגעתי מאינסטגרם ורוצה לנסות את הדמו";
+const IG_DEMO_TEXT_RE = /הגעתי מאינסטגרם ורוצה לנסות את הדמו/;
+/** Decision 10.10: on Instagram the first message says it is the automated agent. */
+const IG_HELLO = "היי, כאן הסוכן האוטומטי של צ'אטור.";
 const DEMO_TAG_RE = /הדמו|דמו באתר|דמו של|chator|צ'אטור|צ׳אטור|לעסק שלי|בעל מספרה|אני ספר(?![א-ת])|יש לי מספרה|כמה עולה המערכת|הסוכן שלכם|המערכת שלכם/i;
 /** Inside a demo: the customer is asking about the PRODUCT, not a haircut. */
 const PROSPECT_RE = /מערכת|סוכן|בוט|לעסק שלי|אני ספר(?![א-ת])|בעל מספרה|יש לי מספרה|מצטרפ|להצטרף|chator|צ'אטור|צ׳אטור|מנוי|לרכוש|איך זה עובד אצל/i;
@@ -90,6 +99,7 @@ const V2_OPEN_STRANGER = "היי, כאן צ'אטור. יש לך מספרה? אש
 const V2_SIGNUP = `אפשר להירשם לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול לפי כמות התורים, וחודש ראשון חינם. אם תיתקע באמצע, תכתוב לי כאן.`;
 const v2Opener = (state: SalesState): string | null => {
   const first = (state.fullName ?? "").trim().split(/\s+/)[0];
+  if (state.channel === "instagram" && state.mode !== "lead") return `${IG_HELLO} יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.`;
   if (state.mode === "lead") return `היי${first ? ` ${first}` : ""}, כאן צ'אטור. ראיתי שהשארת פרטים${state.businessName ? ` לגבי ${state.businessName}` : " לגבי המספרה שלך"}. כמה ספרים עובדים אצלך?`;
   return state.source === "keywords" ? null : V2_OPEN_STRANGER; // an ad / product words → the model opens from what he wrote
 };
@@ -113,7 +123,7 @@ async function saveState(conversationId: string, state: SalesState): Promise<voi
 
 /** True when a message would open a demo/prospect conversation (kept for the tests and the source tag). */
 export function looksLikeDemoOpener(text: string): { tagged: boolean; source?: "landing" | "keywords" } {
-  if (LANDING_TEXT_RE.test(text)) return { tagged: true, source: "landing" };
+  if (LANDING_TEXT_RE.test(text) || IG_DEMO_TEXT_RE.test(text)) return { tagged: true, source: "landing" };
   if (DEMO_TAG_RE.test(text)) return { tagged: true, source: "keywords" };
   return { tagged: false };
 }
@@ -485,6 +495,26 @@ const ENTER_DEMO_TOOL: Anthropic.Tool = {
   description: "הוא רוצה לנסות בעצמו לקבוע תור כמו לקוח. המערכת שולחת את משפט הכניסה לדמו ומעבירה אותו למספרת ההדגמה. אל תכתוב בעצמך את משפט הכניסה.",
   input_schema: { type: "object", properties: {} },
 };
+// Instagram: no phone in the chat, so the call needs his mobile too.
+const CAPTURE_TOOL_IG: Anthropic.Tool = {
+  name: "capture_lead",
+  description: "קרא ברגע שיש לך את השם שלו ומספר נייד (באינסטגרם אין לנו את המספר שלו, והשיחה היא טלפון). שם המספרה לא חובה: אם אמר אותו, העבר. המערכת בודקת את המספר, רושמת אותו ומציעה לו שעות לשיחה. פעם אחת בשיחה.",
+  input_schema: {
+    type: "object",
+    properties: {
+      fullName: { type: "string", description: "שם כפי שכתב" },
+      phone: { type: "string", description: "מספר הנייד כפי שכתב" },
+      businessName: { type: "string", description: "שם המספרה או העסק, אם נתן" },
+      businessType: { type: "string", enum: ["barber_men", "barber_women", "nails", "cosmetics", "other"], description: "סוג העסק אם ברור (ברירת מחדל barber_men)" },
+    },
+    required: ["fullName", "phone"],
+  },
+};
+const DEMO_LINK_TOOL: Anthropic.Tool = {
+  name: "send_demo_link",
+  description: "הוא רוצה לנסות בעצמו. המערכת שולחת לו קישור לוואטסאפ של צ'אטור, ושם הוא קובע תור כמו לקוח במספרת ההדגמה. אל תכתוב בעצמך קישור.",
+  input_schema: { type: "object", properties: {} },
+};
 const SIGNUP_TOOL: Anthropic.Tool = {
   name: "send_signup_link",
   description: "הוא כבר חם ורוצה להתחיל או להירשם לבד, בלי שיחה. המערכת שולחת לו את קישור ההרשמה (בחירת מסלול, חודש ראשון חינם). אל תכתוב בעצמך קישור.",
@@ -493,27 +523,31 @@ const SIGNUP_TOOL: Anthropic.Tool = {
 
 /** v2 system prompt (spec "הסוכן של צ'אטור", 10.10.2026). */
 function salesSystemV2(state: SalesState, senderName: string | null, rep: string, ctx: string, knowledge: string, firstTurn: boolean): string {
-  const known = [state.fullName ? `שם: ${state.fullName}` : "", state.businessName ? `מספרה: ${state.businessName}` : ""].filter(Boolean).join(", ");
+  const known = [state.fullName ? `שם: ${state.fullName}` : "", state.businessName ? `מספרה: ${state.businessName}` : "", state.contactPhone ? `נייד: ${state.contactPhone.replace(/^972/, "0")}` : ""].filter(Boolean).join(", ");
   const isLead = state.mode === "lead";
+  const ig = state.channel === "instagram";
+  const hello = ig ? IG_HELLO : "היי, כאן צ'אטור.";
   const opener = !firstTurn ? "" : isLead
-    ? `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. ענה במשפט על מה שכתב, הזכר שהשאיר פרטים לגבי המספרה שלו, וסיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
+    ? `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "${hello}", אז אל תפתח בברכה. ענה במשפט על מה שכתב, הזכר שהשאיר פרטים לגבי המספרה שלו, וסיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
     : state.source === "keywords"
-      ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו). המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. משפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
-      : `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "היי, כאן צ'אטור.", אז אל תפתח בברכה. אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
-  return `אתה צ'אטור. מערכת תורים למספרות עם סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה. אתה מתכתב בוואטסאפ על המספר של צ'אטור, ואתה עצמך ההדגמה הכי טובה למוצר.
-זהות: אתה מציג את עצמך "כאן צ'אטור", בגוף ראשון. בלי שם של בן אדם, ולא קורא לעצמך בוט מיוזמתך. שואלים אם אתה בוט או בן אדם: עונים בפשטות "כן, אני הסוכן של צ'אטור, וזה בדיוק מה שהלקוחות שלך יקבלו בוואטסאפ של המספרה." בלי להתפתל.
+      ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו). המערכת כבר מוסיפה לפני ההודעה שלך "${hello}", אז אל תפתח בברכה. משפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
+      : `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "${hello}", אז אל תפתח בברכה. אם שאל משהו, ענה עליו בקצרה. סיים בשאלה אם יש לו מספרה.`;
+  return `אתה צ'אטור. מערכת תורים למספרות עם סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה. ${ig ? "אתה מתכתב בהודעות ישירות באינסטגרם של צ'אטור (@chator.il), לא בוואטסאפ" : "אתה מתכתב בוואטסאפ על המספר של צ'אטור"}, ואתה עצמך ההדגמה הכי טובה למוצר.
+זהות: אתה מציג את עצמך "כאן צ'אטור", בגוף ראשון. בלי שם של בן אדם${ig ? ". בהודעה הראשונה המערכת כבר כתבה שאתה הסוכן האוטומטי של צ'אטור, אל תחזור על זה" : ", ולא קורא לעצמך בוט מיוזמתך"}. שואלים אם אתה בוט או בן אדם: עונים בפשטות "כן, אני הסוכן של צ'אטור, וזה בדיוק מה שהלקוחות שלך יקבלו בוואטסאפ של המספרה." בלי להתפתל.
 
 ${isLead
   ? `מולך ליד רשום. המטרה: שיחה של 10 דקות עם ${rep} (${rep} מתקשר אליו). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
-  : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
-${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם בוואטסאפ: ${senderName}.` : ""}
+  : ig
+    ? `מולך מישהו שכתב לאינסטגרם של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. באינסטגרם אין לנו את המספר שלו, ו${rep} מתקשר אליו: לשיחה צריך את השם שלו ומספר נייד, ואז capture_lead. אפשר לבקש את שניהם בשאלה אחת ("איך קוראים לך ומה המספר שלך, כדי ש${rep} יתקשר?"). שם המספרה לא חובה, אל תשאל עליו.`
+    : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
+${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם ${ig ? "באינסטגרם" : "בוואטסאפ"}: ${senderName}.` : ""}
 ${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואז שאלת אם הוא רוצה שיחה עם ${rep}. "כן" עכשיו = רוצה את השיחה${isLead ? ": הצע שתי שעות או propose_call אם בחר" : ": שאל רק איך קוראים לו"}.` : ""}
 ${opener}
 
 מהלך השיחה:
 1. שאלה אחת או שתיים על המספרה: כמה ספרים, מי עונה היום בוואטסאפ, מה הכי מעצבן (טלפונים באמצע תספורת, ביטולים, לקוחות שלא חוזרים).
 2. משפט אחד שמחבר את מה שסיפר ליכולת אחת של המערכת. לא רשימת פיצ'רים.
-3. שתי דרכים להמשיך: לנסות עכשיו בעצמו (enter_demo) או שיחה של 10 דקות עם ${rep}, עם שתי שעות קונקרטיות.
+3. שתי דרכים להמשיך: ${ig ? "לנסות בעצמו בוואטסאפ של צ'אטור, ושם לקבוע תור כמו לקוח (send_demo_link, המערכת שולחת קישור)" : "לנסות עכשיו בעצמו (enter_demo)"} או שיחה של 10 דקות עם ${rep}, עם שתי שעות קונקרטיות.
 4. מי שכבר חם ואומר שהוא רוצה להתחיל, להירשם או שהוא מסתדר לבד: send_signup_link (ואפשר להציע שגם ${rep} ילווה אותו בשיחה).
 
 ${ctx}
@@ -614,8 +648,9 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   const rep = await repName(p.lead?.repId ?? null);
   const ctx = await salesContext(state, p.lead);
   const isLead = state.mode === "lead";
-  const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
-  if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
+  const ig = state.channel === "instagram";
+  const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [ig ? CAPTURE_TOOL_IG : CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
+  if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ig ? DEMO_LINK_TOOL : ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
   const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
@@ -624,13 +659,19 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   const replies: string[] = text ? bubbles(text) : [];
   const tool = res.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
 
-  if (tool?.name === "capture_lead" && !isLead) {
+  // Instagram: the mobile he gave must be an Israeli mobile, or he is asked again.
+  const igPhone = ig && tool?.name === "capture_lead" && !isLead ? normalizeIsraeliPhone(String((tool.input as { phone?: string }).phone ?? "")) : null;
+  if (igPhone !== null && !/^9725\d{8}$/.test(igPhone)) {
+    p.sandbox?.toolLog.push(`capture_lead(bad phone: ${JSON.stringify(tool?.input ?? {})})`);
+    replies.length = 0;
+    replies.push("המספר לא נראה לי כמו נייד ישראלי. אפשר לשלוח אותו שוב? למשל 0501234567.");
+  } else if (tool?.name === "capture_lead" && !isLead) {
     const input = tool.input as { fullName?: string; businessName?: string; businessType?: string };
     const fullName = (input.fullName ?? "").trim();
     const businessName = (input.businessName ?? "").trim();
-    p.sandbox?.toolLog.push(`capture_lead(${JSON.stringify(input)})`);
-    const leadId = p.sandbox ? "sandbox" : await createLead({ phone: p.phone, conversationId: p.conversationId, fullName, businessName, businessType: input.businessType ?? null, source: state.source ?? null });
-    state = { ...state, mode: "lead", leadId, fullName: fullName || state.fullName, businessName: businessName || state.businessName };
+    p.sandbox?.toolLog.push(`capture_lead(${JSON.stringify(tool.input)})`);
+    const leadId = p.sandbox ? "sandbox" : await createLead({ phone: igPhone ?? p.phone, conversationId: p.conversationId, fullName, businessName, businessType: input.businessType ?? null, source: ig ? "instagram" : state.source ?? null });
+    state = { ...state, mode: "lead", leadId, fullName: fullName || state.fullName, businessName: businessName || state.businessName, ...(igPhone ? { contactPhone: igPhone } : {}) };
     if (v2) {
       // One message: thanks + the call with two slots.
       replies.length = 0;
@@ -657,7 +698,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   } else if (tool?.name === "handoff_to_rep") {
     const summary = String((tool.input as { summary?: string }).summary ?? "").slice(0, 300);
     p.sandbox?.toolLog.push(`handoff_to_rep(${summary})`);
-    if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || p.phone.replace(/^972/, "0")} מבקש נציג: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null, push: true });
+    if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || (ig ? "פונה מאינסטגרם" : p.phone.replace(/^972/, "0"))} מבקש נציג${ig ? " (באינסטגרם)" : ""}: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null, push: true });
     // v2: the agent stays quiet in this chat for 24 hours (runDemoTurn checks escalatedAt).
     if (v2 && !p.sandbox) await prisma.conversation.update({ where: { id: p.conversationId }, data: { escalatedAt: new Date() } }).catch(() => {});
     replies.length = 0;
@@ -667,6 +708,10 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     state = { ...state, mode: isLead ? "lead_demo" : "demo", pitchedAt: undefined, demoTurns: 0, demoNudged: false };
     replies.length = 0;
     replies.push(V2_ENTRY);
+  } else if (v2 && tool?.name === "send_demo_link") {
+    p.sandbox?.toolLog.push("send_demo_link()");
+    replies.length = 0;
+    replies.push(await demoLinkLine());
   } else if (v2 && tool?.name === "send_signup_link") {
     p.sandbox?.toolLog.push("send_signup_link()");
     replies.length = 0;
@@ -682,10 +727,10 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   await saveState(p.conversationId, state);
   // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
   let joined = replies.join("\n\n");
-  // v2: the first reply always says who is writing.
-  if (v2 && firstTurn && !/כאן צ['׳]אטור/.test(joined)) {
+  // v2: the first reply always says who is writing (on Instagram: that it is the automated agent).
+  if (v2 && firstTurn && !/כאן (הסוכן האוטומטי של )?צ['׳]אטור/.test(joined)) {
     const first = (state.fullName ?? "").trim().split(/\s+/)[0];
-    joined = `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
+    joined = ig ? `${IG_HELLO} ${joined}` : `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
   }
   const out = v2 ? [guardPriceV2(joined)] : guardPrice(replies);
   await reply(p.conversationId, p.phone, out, p.sandbox);
@@ -720,24 +765,135 @@ async function reply(conversationId: string, phone: string, texts: string[], san
   await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date() } }).catch(() => {});
 }
 
+// ─── Instagram (@chator.il) ──────────────────────────────────────────────────
+
+/** A link to Chator's WhatsApp with the prefilled text that opens the demo there. */
+async function demoLinkLine(): Promise<string> {
+  const biz = await prisma.business.findUnique({ where: { id: DEMO_BUSINESS_ID }, select: { whatsappNumber: true } });
+  const n = normalizeIsraeliPhone(biz?.whatsappNumber ?? "");
+  if (!n) return `כרגע אין לי קישור לדמו. רוצה שיחה של 10 דקות עם ${await repName(null)} במקום?`;
+  return `הנה הקישור לוואטסאפ של צ'אטור. לוחצים, שולחים את ההודעה שכבר כתובה, ושם קובעים תור כמו לקוח במספרת ההדגמה: https://wa.me/${n}?text=${encodeURIComponent(IG_DEMO_TEXT)}`;
+}
+
+/**
+ * One DM on Chator's Instagram (@chator.il, 12.10.2026; spec "ערוץ אינסטגרם" ›
+ * "צ'אטור: סוכן מכירות באינסטגרם"). The v2 sales agent with Instagram's changes
+ * (state.channel = "instagram"): no demo shop here, whoever wants to try gets a
+ * link to Chator's WhatsApp (send_demo_link); a call needs his name AND mobile,
+ * because Instagram has no phone; the first message says it is the automated
+ * agent. The conversation key is "ig:<IGSID>", so every reply goes out on
+ * Instagram. The webhook already saved the message.
+ */
+export async function runInstagramSalesTurn(p: { conversationId: string; key: string; text: string; senderName?: string | null; sandbox?: DemoSandbox }): Promise<DemoTurnResult> {
+  const text = p.text.trim();
+  if (!text) return { handled: false };
+  if (!p.sandbox) await ensureCrmSeed().catch(() => {});
+  const conv = await prisma.conversation.findUnique({ where: { id: p.conversationId }, select: { id: true, salesState: true, escalatedAt: true } });
+  if (!conv) return { handled: false };
+  let state = parseSalesState(conv.salesState);
+
+  // A person took this chat over in the last 24 hours (the CRM, or the Instagram app): quiet, said once.
+  if (!p.sandbox && conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 && !OPT_OUT_RE.test(text)) {
+    const last = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true, source: true } });
+    if (last && last.source === "agent" && last.content !== HANDOFF_WAIT) {
+      await reply(conv.id, p.key, [HANDOFF_WAIT], p.sandbox);
+      return { handled: true, mode: state?.mode, replies: [HANDOFF_WAIT] };
+    }
+    return { handled: true, mode: state?.mode, replies: [] };
+  }
+
+  const lead: LeadRow | null = state?.leadId && !p.sandbox
+    ? await prisma.lead.findUnique({ where: { id: state.leadId }, select: { id: true, name: true, businessName: true, stage: true, repId: true, optedOut: true } })
+    : null;
+
+  if (OPT_OUT_RE.test(text)) {
+    if (lead && !p.sandbox) {
+      await prisma.lead.update({ where: { id: lead.id }, data: { optedOut: true, lastInboundAt: new Date() } });
+      await stopLeadAutomations(lead.id, "opted_out");
+    }
+    await reply(conv.id, p.key, [OPT_OUT_REPLY], p.sandbox);
+    return { handled: true, mode: state?.mode, replies: [OPT_OUT_REPLY] };
+  }
+  if (lead && !p.sandbox) {
+    await prisma.lead.update({ where: { id: lead.id }, data: { lastInboundAt: new Date() } });
+    if (lead.stage === "new") await setLeadStage(lead.id, "chatting");
+  }
+
+  // Same cap as WhatsApp: 30 agent replies per chat per 24 hours, then a person.
+  if (!p.sandbox) {
+    const sent = await prisma.conversationMessage.count({ where: { conversationId: conv.id, role: "assistant", source: "agent", createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } } });
+    if (sent >= REPLY_CAP_PER_DAY) {
+      const line = "מעביר לטיפול אנושי, יאיר יחזור אליך.";
+      await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: new Date() } });
+      await alertRep(lead?.repId ?? null, `💬 ${lead?.name || p.senderName || "פונה מאינסטגרם"} הגיע ל־${REPLY_CAP_PER_DAY} תשובות של הסוכן ביממה באינסטגרם. כנראה חם, שווה לענות לו.`, { kind: "lead", leadId: lead?.id ?? null, push: true });
+      await reply(conv.id, p.key, [line], p.sandbox);
+      return { handled: true, mode: state?.mode, replies: [line] };
+    }
+  }
+
+  if (!state) {
+    state = { mode: "sales", taggedAt: new Date().toISOString(), source: "instagram", channel: "instagram" };
+    await saveState(conv.id, state);
+  } else if (state.channel !== "instagram") {
+    state = { ...state, channel: "instagram" };
+  }
+
+  // A call is waiting for "כן".
+  if (state.pendingCall && state.mode === "lead") {
+    const pending = state.pendingCall;
+    state = { ...state, pendingCall: undefined };
+    await saveState(conv.id, state);
+    if (YES_RE.test(text) && state.leadId) {
+      if (p.sandbox) {
+        p.sandbox.toolLog.push(`book_call(${pending.startsAt})`);
+        const line = `סגור, קבעתי. ${pending.label} מתקשרים אליך לשיחה של 10 דקות.`;
+        await reply(conv.id, p.key, [line], p.sandbox);
+        return { handled: true, mode: state.mode, replies: [line] };
+      }
+      const r = await bookCall({ leadId: state.leadId, startsAt: new Date(pending.startsAt), repId: pending.repId, bookedBy: "agent" });
+      const lines = r.ok
+        ? [`סגור, קבעתי. ${r.repName} יתקשר אליך ${r.label} למספר ששלחת, שיחה של 10 דקות. אם משהו משתנה, תכתוב לי כאן.`]
+        : [`אוי, השעה הזאת בדיוק נתפסה. ${await twoSlotsSentence()}`];
+      await reply(conv.id, p.key, lines, p.sandbox);
+      return { handled: true, mode: state.mode, replies: lines };
+    }
+    // Anything else: the model answers it below (the question is dropped).
+  }
+
+  if (state.mode === "sales" && DECLINE_RE.test(text)) {
+    state = { ...state, mode: "declined" };
+    await saveState(conv.id, state);
+    const line = "סבבה, בלי לחץ. ואם תרצה לשמוע עוד, אני כאן.";
+    await reply(conv.id, p.key, [line], p.sandbox);
+    return { handled: true, mode: state.mode, replies: [line] };
+  }
+  // Writing again after a "no" reopens the conversation.
+  if (state.mode !== "lead") state = { ...state, mode: "sales" };
+  const out = await runSalesTurn({ conversationId: conv.id, phone: p.key, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2: true });
+  return { handled: true, mode: out.state.mode, replies: out.replies };
+}
+
 // ─── Leads ───────────────────────────────────────────────────────────────────
 
 async function createLead(p: { phone: string; conversationId: string; fullName: string; businessName: string; businessType: string | null; source: string | null }): Promise<string> {
   const userMsgs = await prisma.conversationMessage.findMany({ where: { conversationId: p.conversationId, role: "user" }, orderBy: { createdAt: "asc" }, take: 12, select: { content: true } });
   const summary = userMsgs.map(m => m.content.replace(/\s+/g, " ").trim()).filter(Boolean).join(" · ").slice(0, 600);
   const localPhone = p.phone.replace(/^972/, "0");
-  const recent = await prisma.lead.findFirst({ where: { phone: { in: [p.phone, localPhone] } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  const ig = p.source === "instagram";
+  const recent = await prisma.lead.findFirst({ where: { phone: { in: [p.phone, localPhone] } }, orderBy: { createdAt: "desc" }, select: { id: true, source: true, conversationId: true } });
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
   const data = {
-    name: p.fullName || undefined, phone: localPhone, source: p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: "contacted", stage: "chatting",
+    name: p.fullName || undefined, phone: localPhone, source: ig ? "instagram" : p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: "contacted", stage: "chatting",
     businessName: p.businessName || null, businessType: p.businessType && p.businessType !== "other" ? p.businessType : "barber_men",
     conversationId: p.conversationId, summary, lastInboundAt: new Date(),
   };
+  // A lead we already had (by the number he typed on Instagram) keeps where he came from and his WhatsApp chat.
+  const keep = ig && recent ? { source: recent.source, conversationId: recent.conversationId ?? p.conversationId } : {};
   const lead = recent
-    ? await prisma.lead.update({ where: { id: recent.id }, data: { ...data, name: p.fullName || undefined }, select: { id: true } })
+    ? await prisma.lead.update({ where: { id: recent.id }, data: { ...data, name: p.fullName || undefined, ...keep }, select: { id: true } })
     : await prisma.lead.create({ data: { ...data, repId: rep?.id ?? null }, select: { id: true } });
 
-  const body = `🎯 ליד חדש מוואטסאפ הדמו\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\nמה ניסה: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
+  const body = `🎯 ליד חדש ${ig ? "מאינסטגרם" : "מוואטסאפ הדמו"}${ig && recent ? " (כבר היה ליד עם המספר הזה)" : ""}\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\n${ig ? "מה כתב" : "מה ניסה"}: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
   notifyPlatformOwner(body, { kind: "lead", leadId: lead.id, push: true }).catch(() => {});
   return lead.id;
 }

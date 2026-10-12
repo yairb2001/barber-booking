@@ -16,7 +16,8 @@
 import { prisma } from "@/lib/prisma";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { pushToOwner } from "@/lib/native/push";
-import { businessForInstagramAccount, igKey, instagramProfileName, plainForInstagram } from "./instagram";
+import { takeAgentTurn } from "@/lib/agent/agent-turn";
+import { businessForInstagramAccount, igKey, instagramAgentAnswers, instagramProfileName, plainForInstagram, type InstagramAccount } from "./instagram";
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -65,7 +66,7 @@ export async function handleInstagramWebhook(body: unknown): Promise<void> {
   }
 }
 
-async function handleInbound(biz: { id: string; name: string; account: { igUserId: string } }, ev: Obj): Promise<void> {
+async function handleInbound(biz: { id: string; name: string; account: InstagramAccount }, ev: Obj): Promise<void> {
   const msg = ev.message as Obj;
   const igsid = isObj(ev.sender) ? str(ev.sender.id) : "";
   if (!igsid || igsid === biz.account.igUserId) return;
@@ -76,30 +77,46 @@ async function handleInbound(biz: { id: string; name: string; account: { igUserI
   let conv = await prisma.conversation.findFirst({
     where: { businessId: biz.id, phone: key, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, whatsappName: true },
+    select: { id: true, whatsappName: true, escalatedAt: true },
   });
   if (!conv) {
     conv = await prisma.conversation.create({
       data: { businessId: biz.id, phone: key, agentType: "customer", status: "active", lastMessageAt: new Date() },
-      select: { id: true, whatsappName: true },
+      select: { id: true, whatsappName: true, escalatedAt: true },
     });
   }
 
-  // Meta re-sends an event it thinks we missed: the same text within a minute is that retry.
+  // Meta re-sends an event it thinks we missed: the same text in the last 10 minutes is that retry.
   const dup = await prisma.conversationMessage.findFirst({
-    where: { conversationId: conv.id, role: "user", content: text, createdAt: { gte: new Date(Date.now() - 60_000) } },
+    where: { conversationId: conv.id, role: "user", content: text, createdAt: { gte: new Date(Date.now() - 10 * 60_000) } },
     select: { id: true },
   });
   if (dup) return;
 
   const name = conv.whatsappName || (await instagramProfileName(igsid));
-  await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
+  const saved = await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text }, select: { createdAt: true } });
   await prisma.conversation.update({
     where: { id: conv.id },
     data: { lastMessageAt: new Date(), ...(name && !conv.whatsappName ? { whatsappName: name } : {}) },
   });
 
-  // No agent on Instagram yet: every message waits for a person.
+  // Chator's sales agent answers on @chator.il (only text: it can't see media), unless a
+  // person took this chat in the last 24h. Same burst wait + one run per chat as WhatsApp.
+  const humanHasIt = !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000;
+  const isText = !!str(msg.text).trim();
+  if (biz.id === DEMO_BUSINESS_ID && isText && !humanHasIt && instagramAgentAnswers(biz.account, igsid)) {
+    const release = await takeAgentTurn(conv.id, saved.createdAt);
+    if (!release) return; // a newer message in the burst answers everything
+    try {
+      const { runInstagramSalesTurn } = await import("@/lib/agent/sales-agent");
+      await runInstagramSalesTurn({ conversationId: conv.id, key, text, senderName: name });
+    } finally {
+      await release();
+    }
+    return;
+  }
+
+  // Nobody automatic answers this one: a person is told.
   const title = `הודעה חדשה באינסטגרם מ${name || "לקוח"}`;
   if (biz.id === DEMO_BUSINESS_ID) {
     const { recordCrmNotification } = await import("@/lib/crm/notify");
