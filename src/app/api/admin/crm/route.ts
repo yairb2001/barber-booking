@@ -435,6 +435,8 @@ export async function GET(req: NextRequest) {
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, salesState: true } });
       if (!conv) return NextResponse.json({ error: "not_found" }, { status: 404 });
       const ig = conv.phone.startsWith("ig:");
+      // Opening the chat = you saw it: its alerts ("הודעה חדשה באינסטגרם") stop showing in the bell (12.10.2026).
+      const seen = await prisma.crmNotification.updateMany({ where: { href: `/admin/crm/chats/${conv.id}`, readAt: null }, data: { readAt: new Date() } });
       const [msgs, lead] = await Promise.all([
         prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }),
         ig ? Promise.resolve(null) : prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
@@ -447,7 +449,7 @@ export async function GET(req: NextRequest) {
         const account = instagramAccountOf(demo?.settings);
         agent = !!account && instagramAgentAnswers(account, igsidOf(conv.phone));
       }
-      return NextResponse.json({ chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });

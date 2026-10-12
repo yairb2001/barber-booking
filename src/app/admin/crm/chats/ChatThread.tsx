@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { C, Btn, useCrm, crmAction, STAGE_TONE } from "../ui";
+import { bumpBell } from "../HomeParts";
 
 /**
  * One chat on Chator's WhatsApp (10.10.2026). Writing here sends from
@@ -12,7 +13,7 @@ import { C, Btn, useCrm, crmAction, STAGE_TONE } from "../ui";
  * agent answers there only when settings.instagram.agent allows this person.
  */
 type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string };
-type Data = { chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
+type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
 const time = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 
 export default function ChatThread({ id }: { id: string }) {
@@ -28,6 +29,8 @@ export default function ChatThread({ id }: { id: string }) {
     if (el) el.scrollTop = el.scrollHeight; else window.scrollTo(0, document.body.scrollHeight);
   }, [data?.messages.length]);
   useEffect(() => { const t = setInterval(() => void reload(), 15000); return () => clearInterval(t); }, [reload]);
+  // The server marked this chat's alerts read: refresh the bell now, not on the next screen change.
+  useEffect(() => { if (data?.seen) bumpBell(); }, [data]);
 
   async function send() {
     if (!text.trim()) return;
