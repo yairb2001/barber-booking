@@ -49,7 +49,7 @@ async function customers(settings: CrmSettings) {
   const bizs = await prisma.business.findMany({
     // Chator's own demo shop and Yair's own barbershop are not customers.
     where: { id: { notIn: [DEMO_BUSINESS_ID, SUPER_ADMIN_BUSINESS_ID] } },
-    select: { id: true, name: true, slug: true, businessType: true, phone: true, settings: true, monthlyPrice: true, paidAt: true, suspendedAt: true, trialEndsAt: true, onboardingCompletedAt: true, createdAt: true, messagingProvider: true, waLiveState: true, whatsappStatus: true },
+    select: { id: true, name: true, slug: true, businessType: true, phone: true, settings: true, monthlyPrice: true, paidAt: true, suspendedAt: true, trialEndsAt: true, onboardingCompletedAt: true, activatedAt: true, createdAt: true, messagingProvider: true, waLiveState: true, whatsappStatus: true },
     orderBy: { createdAt: "desc" },
   });
   const ids = bizs.map(b => b.id);
@@ -61,7 +61,7 @@ async function customers(settings: CrmSettings) {
   const reps = await prisma.salesRep.findMany({ select: { id: true, name: true } });
   const [plans, monthUsage] = await Promise.all([getPlans(), usageFor(ids)]);
   return bizs.map(b => {
-    const stage = b.suspendedAt ? "suspended" : b.paidAt ? "paying" : !b.onboardingCompletedAt ? "setup" : "trial";
+    const stage = b.suspendedAt ? "suspended" : b.paidAt ? "paying" : !b.activatedAt ? "setup" : "trial";
     const waUp = b.waLiveState === "authorized";
     // "Disconnected" only for a number that was linked once; never linked = still in setup.
     const waKnown = b.whatsappStatus === "connected";

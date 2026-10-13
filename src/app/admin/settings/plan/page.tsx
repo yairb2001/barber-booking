@@ -77,9 +77,9 @@ export default function MyPlanPage() {
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
-              <h2 className="font-semibold text-neutral-800">{plan ? `מסלול ${plan.name}` : d.trialEndsAt ? "תקופת ניסיון" : "עוד לא נבחר מסלול"}</h2>
+              <h2 className="font-semibold text-neutral-800">{plan ? `מסלול ${plan.name}` : d.trialEndsAt ? "תקופת ניסיון" : d.activated === false ? "עוד לא הופעל" : "עוד לא נבחר מסלול"}</h2>
               <p className="text-xs text-neutral-500 mt-0.5">
-                {plan ? `${plan.priceIls} ₪ לחודש · ${n(plan.messages)} הודעות וואטסאפ` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
+                {plan ? `${plan.priceIls} ₪ לחודש · ${n(plan.messages)} הודעות וואטסאפ` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : d.activated === false ? "החודש החינמי מתחיל רק כשמסיימים להקים ולוחצים הפעל. עד אז אפשר לערוך הכל בלי לחץ." : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
               </p>
             </div>
             {u && <span className="text-[11px] text-neutral-400 shrink-0 mt-1">מתאפס ב-1 לחודש</span>}

@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
       greenApiInstanceId: true,
       greenApiToken: true, evolutionInstance: true,
       onboardingCompletedAt: true,
+      activatedAt: true,
       trialEndsAt: true,
       paidAt: true,
       monthlyPrice: true,
@@ -162,6 +163,7 @@ export async function GET(req: NextRequest) {
     waLiveState: waState,
     whatsappDown,
     onboardingCompletedAt: business?.onboardingCompletedAt ?? null,
+    activatedAt: business?.activatedAt ?? null,
     // Effective per-user permissions (the values the UI should gate on).
     canViewAllCalendars: perms.canViewAllCalendars,
     canViewAllChats: perms.canViewAllChats,

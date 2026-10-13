@@ -96,7 +96,7 @@ const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking
 const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
 const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
 const V2_OPEN_STRANGER = "היי, כאן צ'אטור. יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.";
-const V2_SIGNUP = `אפשר להירשם לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול לפי כמות התורים, וחודש ראשון חינם. אם תיתקע באמצע, תכתוב לי כאן.`;
+const V2_SIGNUP = `אפשר להקים לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול, עוברים על ההגדרות בקצב שלך, והחודש החינמי מתחיל רק כשאתה לוחץ "הפעל". אם תיתקע באמצע, תכתוב לי כאן.`;
 const v2Opener = (state: SalesState): string | null => {
   const first = (state.fullName ?? "").trim().split(/\s+/)[0];
   if (state.channel === "instagram" && state.mode !== "lead") return `${IG_HELLO} יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.`;
@@ -286,13 +286,13 @@ export async function runDemoTurn(p: {
     if (YES_RE.test(text) && state.leadId) {
       if (p.sandbox) {
         p.sandbox.toolLog.push(`book_call(${pending.startsAt})`);
-        const line = `סגור, קבעתי. ${pending.label} מתקשרים אליך לשיחה של 10 דקות.`;
+        const line = `סגור, קבעתי. ${pending.label} מתקשרים אליך לשיחת אפיון קצרה.`;
         await reply(conv.id, phone, [line], p.sandbox);
         return { handled: true, mode: state.mode, replies: [line] };
       }
       const r = await bookCall({ leadId: state.leadId, startsAt: new Date(pending.startsAt), repId: pending.repId, bookedBy: "agent" });
       const lines = r.ok
-        ? [`סגור, קבעתי. ${r.repName} יתקשר אליך ${r.label} למספר הזה, שיחה של 10 דקות. אם משהו משתנה, תכתוב לי כאן.`]
+        ? [`סגור, קבעתי. ${r.repName} יתקשר אליך ${r.label} למספר הזה, שיחת אפיון קצרה. אם משהו משתנה, תכתוב לי כאן.`]
         : [`אוי, השעה הזאת בדיוק נתפסה. ${await twoSlotsSentence()}`];
       await reply(conv.id, phone, lines, p.sandbox);
       return { handled: true, mode: state.mode, replies: lines };
@@ -433,8 +433,8 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
     const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined };
     await saveState(convId, next);
     const line = isLead
-      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה שיחה של 10 דקות עם ${rep}, שיראה לך איך זה ייראה אצלך? ${await twoSlotsSentence()}`
-      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. רוצה שיחה של 10 דקות עם ${rep}, שיראה לך איך זה ייראה אצלך?`;
+      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד אצלך?`
+      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד אצלך?`;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
   }
@@ -446,7 +446,7 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
   if (turns >= 3 && !state.demoNudged && !midBooking) {
     next.demoNudged = true;
     await saveState(convId, next);
-    const line = `אגב, כשתרצה לעצור את הדמו פשוט תכתוב "סיימתי", ונקבע שיחה קצרה עם ${rep}.`;
+    const line = `אגב, כשתרצה לעצור את הדמו פשוט תכתוב "סיימתי", ונראה מה הכי מתאים לך מכאן.`;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
   }
@@ -536,18 +536,18 @@ function salesSystemV2(state: SalesState, senderName: string | null, rep: string
 זהות: אתה מציג את עצמך "כאן צ'אטור", בגוף ראשון. בלי שם של בן אדם${ig ? ". בהודעה הראשונה המערכת כבר כתבה שאתה הסוכן האוטומטי של צ'אטור, אל תחזור על זה" : ", ולא קורא לעצמך בוט מיוזמתך"}. שואלים אם אתה בוט או בן אדם: עונים בפשטות "כן, אני הסוכן של צ'אטור, וזה בדיוק מה שהלקוחות שלך יקבלו בוואטסאפ של המספרה." בלי להתפתל.
 
 ${isLead
-  ? `מולך ליד רשום. המטרה: שיחה של 10 דקות עם ${rep} (${rep} מתקשר אליו). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
+  ? `מולך ליד רשום. המטרה: שישאר איתנו, באחת משתי דרכים, והוא בוחר: שיחת אפיון קצרה של כמה דקות עם ${rep} (${rep} מתקשר אליו), או להקים לבד ולראות איך זה עובד (send_signup_link). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
   : ig
-    ? `מולך מישהו שכתב לאינסטגרם של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. באינסטגרם אין לנו את המספר שלו, ו${rep} מתקשר אליו: לשיחה צריך את השם שלו ומספר נייד, ואז capture_lead. אפשר לבקש את שניהם בשאלה אחת ("איך קוראים לך ומה המספר שלך, כדי ש${rep} יתקשר?"). שם המספרה לא חובה, אל תשאל עליו.`
-    : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז שיחה של 10 דקות עם ${rep}. לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
+    ? `מולך מישהו שכתב לאינסטגרם של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז לשאול מה מתאים לו: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד (send_signup_link). באינסטגרם אין לנו את המספר שלו, ו${rep} מתקשר אליו: לשיחה צריך את השם שלו ומספר נייד, ואז capture_lead. אפשר לבקש את שניהם בשאלה אחת ("איך קוראים לך ומה המספר שלך, כדי ש${rep} יתקשר?"). שם המספרה לא חובה, אל תשאל עליו.`
+    : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז לשאול מה מתאים לו: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד (send_signup_link). לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
 ${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם ${ig ? "באינסטגרם" : "בוואטסאפ"}: ${senderName}.` : ""}
-${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואז שאלת אם הוא רוצה שיחה עם ${rep}. "כן" עכשיו = רוצה את השיחה${isLead ? ": הצע שתי שעות או propose_call אם בחר" : ": שאל רק איך קוראים לו"}.` : ""}
+${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואז שאלת אם מתאים לו שיחת אפיון קצרה עם ${rep} או להקים לבד. בחר שיחה (או "כן"): ${isLead ? "הצע שתי שעות או propose_call אם בחר" : "שאל רק איך קוראים לו"}. בחר להקים לבד: send_signup_link.` : ""}
 ${opener}
 
 מהלך השיחה:
 1. שאלה פתוחה אחת או שתיים על המספרה: כמה ספרים, ואיך זה עובד אצלו היום עם התורים והוואטסאפ ("איך אתה מסתדר היום עם התורים?"). שאלה פתוחה, בלי להציע לו תשובות מוכנות לבחירה, ובלי "מה הכי מעצבן אותך".
 2. אחרי שסיפר: שניים־שלושה משפטים קצרים על מה שהוא מקבל, מחוברים למה שסיפר: הסוכן שעונה ללקוחות וקובע להם תורים בוואטסאפ של המספרה, ואפליקציית הניהול (יומן לכל ספר, כרטיס לקוח, תזכורות ואישורים אוטומטיים, דשבורד הכנסות). לא רשימת פיצ'רים.
-3. שתי דרכים להמשיך: ${ig ? "לנסות בעצמו בוואטסאפ של צ'אטור, ושם לקבוע תור כמו לקוח (send_demo_link, המערכת שולחת קישור)" : "לנסות עכשיו בעצמו (enter_demo)"} או שיחה של 10 דקות עם ${rep}, עם שתי שעות קונקרטיות.
+3. שאלה אחת, שתי דרכים, והוא בוחר: "רוצה שנקבע שיחת אפיון קצרה של כמה דקות עם ${rep}, או שתנסה להקים לבד ולראות איך זה עובד?" בחר שיחה: שתי שעות קונקרטיות מהרשימה. בחר להקים לבד: send_signup_link. רוצה לראות קודם איך זה נראה מצד הלקוח: ${ig ? "send_demo_link (המערכת שולחת קישור)" : "enter_demo"}.
 4. מי שכבר חם ואומר שהוא רוצה להתחיל, להירשם או שהוא מסתדר לבד: send_signup_link (ואפשר להציע שגם ${rep} ילווה אותו בשיחה).
 
 ${ctx}
@@ -675,11 +675,11 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     if (v2) {
       // One message: thanks + the call with two slots.
       replies.length = 0;
-      replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}. הצעד הבא הוא שיחה של 10 דקות עם ${rep}. ${await twoSlotsSentence()}`);
+      replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}. הצעד הבא הוא שיחת אפיון קצרה של כמה דקות עם ${rep}. ${await twoSlotsSentence()}`);
     } else {
       if (!replies.length) replies.push(`מעולה${fullName ? `, ${fullName.split(/\s+/)[0]}` : ""}!`);
       replies.push(OFFER_TEXT);
-      replies.push(`הצעד הבא הוא שיחה של 10 דקות עם ${rep}. ${await twoSlotsSentence()}`);
+      replies.push(`הצעד הבא הוא שיחת אפיון קצרה של כמה דקות עם ${rep}. ${await twoSlotsSentence()}`);
     }
   } else if (tool?.name === "propose_call") {
     const iso = String((tool.input as { startsAt?: string }).startsAt ?? "");
@@ -688,7 +688,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     if (slot) {
       state = { ...state, pendingCall: { startsAt: slot.iso, label: slot.label, repId: slot.repId } };
       replies.length = 0; // the confirmation question is code's
-      replies.push(`לקבוע לך שיחה של 10 דקות עם ${rep} ${slot.label}? (כן / לא)`);
+      replies.push(`לקבוע לך שיחת אפיון קצרה עם ${rep} ${slot.label}? (כן / לא)`);
     } else if (!replies.length) replies.push(await twoSlotsSentence());
   } else if (tool?.name === "cancel_call") {
     p.sandbox?.toolLog.push("cancel_call()");
@@ -771,7 +771,7 @@ async function reply(conversationId: string, phone: string, texts: string[], san
 async function demoLinkLine(): Promise<string> {
   const biz = await prisma.business.findUnique({ where: { id: DEMO_BUSINESS_ID }, select: { whatsappNumber: true } });
   const n = normalizeIsraeliPhone(biz?.whatsappNumber ?? "");
-  if (!n) return `כרגע אין לי קישור לדמו. רוצה שיחה של 10 דקות עם ${await repName(null)} במקום?`;
+  if (!n) return `כרגע אין לי קישור לדמו. רוצה שיחת אפיון קצרה עם ${await repName(null)} במקום?`;
   return `הנה הקישור לוואטסאפ של צ'אטור. לוחצים, שולחים את ההודעה שכבר כתובה, ושם קובעים תור כמו לקוח במספרת ההדגמה: https://wa.me/${n}?text=${encodeURIComponent(IG_DEMO_TEXT)}`;
 }
 
@@ -846,13 +846,13 @@ export async function runInstagramSalesTurn(p: { conversationId: string; key: st
     if (YES_RE.test(text) && state.leadId) {
       if (p.sandbox) {
         p.sandbox.toolLog.push(`book_call(${pending.startsAt})`);
-        const line = `סגור, קבעתי. ${pending.label} מתקשרים אליך לשיחה של 10 דקות.`;
+        const line = `סגור, קבעתי. ${pending.label} מתקשרים אליך לשיחת אפיון קצרה.`;
         await reply(conv.id, p.key, [line], p.sandbox);
         return { handled: true, mode: state.mode, replies: [line] };
       }
       const r = await bookCall({ leadId: state.leadId, startsAt: new Date(pending.startsAt), repId: pending.repId, bookedBy: "agent" });
       const lines = r.ok
-        ? [`סגור, קבעתי. ${r.repName} יתקשר אליך ${r.label} למספר ששלחת, שיחה של 10 דקות. אם משהו משתנה, תכתוב לי כאן.`]
+        ? [`סגור, קבעתי. ${r.repName} יתקשר אליך ${r.label} למספר ששלחת, שיחת אפיון קצרה. אם משהו משתנה, תכתוב לי כאן.`]
         : [`אוי, השעה הזאת בדיוק נתפסה. ${await twoSlotsSentence()}`];
       await reply(conv.id, p.key, lines, p.sandbox);
       return { handled: true, mode: state.mode, replies: lines };

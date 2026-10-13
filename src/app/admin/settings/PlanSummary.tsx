@@ -15,7 +15,7 @@ export default function PlanSummary() {
   if (!d) return null;
   const plan = d.plans.find(p => p.key === d.planKey) ?? null;
   const u = d.usage;
-  const line = plan ? `${plan.name} · ${plan.priceIls} ₪ לחודש` : d.trialEndsAt ? `תקופת ניסיון עד ${shortDate(d.trialEndsAt)}` : "עוד לא נבחר מסלול";
+  const line = plan ? `${plan.name} · ${plan.priceIls} ₪ לחודש` : d.trialEndsAt ? `תקופת ניסיון עד ${shortDate(d.trialEndsAt)}` : d.activated === false ? "החודש החינמי מתחיל כשתפעיל את המערכת" : "עוד לא נבחר מסלול";
   // Only messages are limited; appointments show as a plain count.
   const meters = u && plan ? [
     { label: "הודעות", text: `${n(u.messages.used)} / ${n(u.messages.cap)}`, pct: u.messages.pct },

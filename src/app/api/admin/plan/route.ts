@@ -24,7 +24,7 @@ const parse = (raw: string | null | undefined): Record<string, unknown> => { try
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true });
+  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true, activatedAt: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
   const [plans, usage, cs, packs, invoices, referral] = await Promise.all([
     getPlans(),
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
     invoices: invoices.map(i => ({ id: i.id, number: i.number, issuedAt: i.issuedAt, amountIls: i.amountIls, status: i.status, pdfUrl: i.pdfUrl })),
     trialEndsAt: biz.paidAt ? null : biz.trialEndsAt,
     paying: !!biz.paidAt,
+    activated: !!biz.activatedAt,
     monthlyPrice: biz.monthlyPrice,
     requested: requests,
     payUrl: biz.paidAt ? null : payLinkFor(biz),

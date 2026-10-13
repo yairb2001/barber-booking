@@ -9,6 +9,7 @@ export type PlanData = {
   invoices: { id: string; number: string | null; issuedAt: string; amountIls: number; status: string; pdfUrl: string | null }[];
   trialEndsAt: string | null;
   paying: boolean;
+  activated?: boolean;
   monthlyPrice: number | null;
   requested: Record<string, string>;
   payUrl: string | null;

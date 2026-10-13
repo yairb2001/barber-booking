@@ -5,7 +5,6 @@ import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { getPlans } from "@/lib/crm/plans";
-import { FREE_FIRST_MONTH_DAYS } from "@/lib/leads";
 import { findReferrer, recordReferral } from "@/lib/chator-referral";
 
 /**
@@ -38,9 +37,6 @@ function phoneMatches(input: string, stored: string | null | undefined): boolean
   return a === b || a.endsWith(b) || b.endsWith(a);
 }
 
-// A free first month for everyone (Yair, 10.10.2026: "30 ניסיון ללא עלות"),
-// same rule as a business opened from the CRM (src/lib/leads.ts).
-const TRIAL_DAYS = FREE_FIRST_MONTH_DAYS;
 
 export async function POST(req: NextRequest) {
   try {
@@ -87,7 +83,6 @@ export async function POST(req: NextRequest) {
     const name = typeof businessName === "string" && businessName.trim().length >= 2 ? businessName.trim() : "המספרה שלי";
     const slug = await generateSlug(name);
     const passwordHash = await hashPassword(password);
-    const trialEndsAt = new Date(Date.now() + TRIAL_DAYS * 24 * 60 * 60 * 1000);
     // The plan picked at signup (10.10.2026): a WhatsApp message quota that
     // fits his estimated appointments. Billing starts after the trial.
     const plan = typeof planKey === "string" ? (await getPlans()).find(p => p.key === planKey && p.active) ?? null : null;
@@ -100,7 +95,8 @@ export async function POST(req: NextRequest) {
         passwordHash,
         businessType,
         tier: "basic",
-        trialEndsAt,
+        // The free month starts at "הפעל", not now (src/lib/activation.ts, 13.10.2026).
+        trialEndsAt: null,
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
         settings: JSON.stringify({ ownerLoginPhone: phone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}) }),

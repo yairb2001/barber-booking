@@ -121,6 +121,7 @@ export default function SignupPage() {
           <div>
             <label className="block text-sm text-slate-600 mb-1.5">נייד של המספרה (לכניסה ולוואטסאפ)</label>
             <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="050-0000000" dir="ltr" className={input} />
+            <p className="text-[11px] text-slate-500 mt-1">המספר של המספרה, לא הפרטי שלך: הסוכן יענה לכל מי שכותב אליו.</p>
           </div>
           <div>
             <label className="block text-sm text-slate-600 mb-1.5">סיסמה (לפחות 6 תווים)</label>
@@ -153,7 +154,7 @@ export default function SignupPage() {
             <Link href="/admin/login" className="font-medium" style={{ color: C.petrol }}>כניסה</Link>
           </p>
         </form>
-        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם, בוואטסאפ הרגיל של המספרה. ההקמה בליווי, ביחד איתנו.</p>
+        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם, שמתחיל רק כשמסיימים להקים ולוחצים "הפעל". ההקמה בליווי, ביחד איתנו.</p>
       </div>
     </div>
   );

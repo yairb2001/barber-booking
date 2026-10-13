@@ -273,6 +273,7 @@ export async function scanTimeTriggers(now = new Date()): Promise<void> {
   try { const { scanStuckSetups } = await import("@/lib/crm/setup-progress"); await scanStuckSetups(); } catch (e) { console.error("[crm] stuck setups", e); }
   try { const { scanQuotas } = await import("@/lib/crm/plans"); await scanQuotas(now); } catch (e) { console.error("[crm] quotas", e); }
   try { const { scanTrialEnding } = await import("@/lib/crm/trial"); await scanTrialEnding(now); } catch (e) { console.error("[crm] trial ending", e); }
+  try { const { scanUnactivatedWithBookings } = await import("@/lib/activation"); await scanUnactivatedWithBookings(); } catch (e) { console.error("[crm] activation scan", e); }
   const autos = await prisma.crmAutomation.findMany({ where: { enabled: true, key: { in: ["trial_ending", "followup", "churn_risk"] } }, select: { id: true, key: true } });
   const has = (k: string) => autos.find(a => a.key === k);
   const already = async (automationId: string, where: { leadId?: string; businessId?: string }, sinceDays: number) =>

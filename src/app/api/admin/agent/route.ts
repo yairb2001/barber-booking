@@ -91,6 +91,8 @@ export async function PATCH(req: NextRequest) {
     lateArrivalNoShowMessage,
     setupConfig, restoreSetupId,
   } = body;
+  // Turning the agent on is going live: the free month starts here (13.10.2026).
+  if (isEnabled === true) { const { activateBusiness } = await import("@/lib/activation"); await activateBusiness(biz.id, "agent"); }
   // A shop never writes the raw prompt or the platform's notes; stray fields are ignored.
   const staff = await isPlatformStaff(req);
   const systemPrompt = staff ? body.systemPrompt : undefined;

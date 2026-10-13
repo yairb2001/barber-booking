@@ -119,6 +119,19 @@ function Steps({ items }: { items: string[] }) {
  * phone links (a moment of "מחובר!" first). Kept in a ref so a new callback on
  * every render can't restart anything.
  */
+/**
+ * The number you connect is the one the agent answers on (13.10.2026, Yair: "חשוב
+ * לשים דגש בהקמה שהוואטסאפ חייב להיות של המספרה ולא הפרטי שלך").
+ */
+export function BusinessNumberNote() {
+  return (
+    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-[13px] leading-relaxed text-amber-900">
+      <p className="font-bold">מחברים את הוואטסאפ של המספרה, לא את הוואטסאפ הפרטי שלך.</p>
+      <p className="mt-0.5">הסוכן עונה לכל מי שכותב למספר שמחברים. אלא אם אתה רוצה שהסוכן יענה לאמא שלך ולחברים שלך ויקבע להם תור 😄</p>
+    </div>
+  );
+}
+
 export function ConnectBox({ onLinked }: { onLinked?: () => void }) {
   const { data, loading, resume } = useWhatsAppQr(true);
   const [mode, setMode] = useState<"qr" | "code">("qr");
@@ -193,6 +206,7 @@ export function ConnectBox({ onLinked }: { onLinked?: () => void }) {
 
   return (
     <div className="space-y-4">
+      <BusinessNumberNote />
       {ours && (
         <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl text-sm">
           <button type="button" onClick={() => { shared.pairingUntil = 0; setMode("qr"); }} className={`h-9 rounded-lg font-medium ${mode === "qr" ? "bg-white shadow-sm text-slate-900" : "text-slate-500"}`}>סריקת קוד</button>

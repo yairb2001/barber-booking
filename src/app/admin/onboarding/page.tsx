@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
 import { setupFieldsFor, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
-import { ConnectBox, startOurServerConnection } from "@/components/WhatsAppQrPanel";
+import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
 /**
  * Setup wizard — stage 1 (docs/PLAN-MASTER.md, spec "אפיון שלב 1" §3).
@@ -419,6 +419,7 @@ export default function OnboardingPage() {
           ) : (
             // Regular or official, chosen right here at the connection step (10.10.2026).
             <div className="space-y-3">
+              <BusinessNumberNote />
               <div className="rounded-2xl border border-slate-200 p-4">
                 <p className="text-sm font-semibold text-slate-800">וואטסאפ רגיל</p>
                 <p className="text-xs text-slate-500 mt-1 mb-3">סורקים קוד מהוואטסאפ בטלפון של העסק ומתחברים מיד. פחות מדקה.</p>
@@ -443,7 +444,7 @@ export default function OnboardingPage() {
       )}
 
       {step === 6 && (
-        <Card title="הפעלה" sub="רגע לפני שהסוכן מתחיל לענות ללקוחות.">
+        <Card title="הפעלה" sub="ברגע שתלחץ הפעל מתחיל החודש החינמי שלך, ואפשר לשתף עם הלקוחות את הקישור לקביעת תורים. עד אז אפשר לערוך הכל בלי לחץ.">
           <ul className="space-y-2 text-sm">
             {[
               ["העסק ושעות הפעילות", done.includes("business")],
@@ -458,7 +459,7 @@ export default function OnboardingPage() {
           {!(waStatus === "connected" || waLinked) && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4">בלי וואטסאפ מחובר הסוכן לא יכול לענות ללקוחות. אפשר להפעיל עכשיו ולחבר אחר כך מההגדרות.</p>}
           {agentEnabled && <p className="text-xs text-emerald-700 mt-3">הסוכן כבר פעיל.</p>}
           <Primary onClick={activate} busy={busy}>{agentEnabled ? "סיים והיכנס למערכת" : "הפעל את הסוכן"}</Primary>
-          <p className="text-xs text-slate-500 text-center mt-3">אחרי ההפעלה: שלח לעצמך בוואטסאפ של העסק "יש תור מחר?" ותראה אותו עונה.</p>
+          <p className="text-xs text-slate-500 text-center mt-3">אחרי ההפעלה: שלח לעצמך בוואטסאפ של העסק &quot;יש תור מחר?&quot; ותראה אותו עונה.</p>
         </Card>
       )}
     </Shell>

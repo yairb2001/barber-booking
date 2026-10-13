@@ -49,7 +49,7 @@ export async function createBusinessFromLead(leadId: string): Promise<{ business
         businessType: isBusinessType(lead.businessType) ? lead.businessType : DEFAULT_BUSINESS_TYPE,
         tier: "premium",
         monthlyPrice: LAUNCH_MONTHLY_PRICE,
-        trialEndsAt: new Date(Date.now() + FREE_FIRST_MONTH_DAYS * 86400_000),
+        trialEndsAt: null, // starts at "הפעל" (src/lib/activation.ts)
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
         settings: JSON.stringify({ ownerLoginPhone: phone, leadId: lead.id }),

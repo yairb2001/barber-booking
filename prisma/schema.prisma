@@ -95,6 +95,9 @@ model Business {
   // ── SaaS / multi-tenant subscription ──
   tier                  String    @default("basic")        @map("tier")            // basic | pro | premium
   trialEndsAt           DateTime?                           @map("trial_ends_at")
+  // Pressed "הפעל" (or turned the agent on): the free month starts here (13.10.2026).
+  // null = still setting up; trialEndsAt stays null until then.
+  activatedAt           DateTime?                           @map("activated_at")
   onboardingCompletedAt DateTime?                           @map("onboarding_completed_at")
   whatsappStatus        String    @default("not_requested") @map("whatsapp_status") // not_requested | requested | connected
   // ── Business niche (v1: barbershops only; keeps the door open for
