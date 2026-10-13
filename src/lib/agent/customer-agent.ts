@@ -17,6 +17,7 @@ import { dayDistance } from "@/lib/day-distance";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicFor } from "@/lib/anthropic-clients";
 import { prisma } from "@/lib/prisma";
+import { isNightWindow, nightContextLine, nightVerificationNeeded } from "@/lib/agent/night-window";
 import { holderKeyForPhone, releaseHolds } from "@/lib/slot-holds";
 import { computeCustomerInsights } from "@/lib/customer-insights";
 import { recentNudgeContext } from "@/lib/automations/rhythm-nudge";
@@ -999,6 +1000,18 @@ export async function execTool(
         if (!service && svIn) service = await prisma.service.findFirst({ where: { businessId: bizId, isVisible: true, name: { contains: svIn, mode: "insensitive" } }, select: { id: true, name: true } });
         if (!staff || !service) return "שגיאה: לא זיהיתי את הספר או השירות. השתמש במזהים בדיוק כפי שהם כתובים בהנחיות ונסה שוב.";
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || !/^\d{1,2}:\d{2}$/.test(startTime ?? "")) return "שגיאה: date חייב להיות YYYY-MM-DD ו-startTime HH:MM.";
+        // After midnight a bare "מחר"/"היום" must be verified with the customer
+        // before anything is booked (owner, 13.10.2026) — enforced here, not by the prompt.
+        if (isNightWindow()) {
+          const nowB = getBusinessNow();
+          const since = new Date(Date.now() - (nowB.minutes + 1) * 60_000);
+          const recent = await prisma.conversationMessage.findMany({
+            where: { conversationId, createdAt: { gte: since }, role: { in: ["user", "assistant"] } },
+            orderBy: { createdAt: "asc" }, take: 30, select: { role: true, content: true },
+          }).catch(() => [] as { role: string; content: string }[]);
+          const ask = nightVerificationNeeded(recent, nowB);
+          if (ask) return `שגיאה: עכשיו אחרי חצות והלקוח אמר "מחר"/"היום" בלי תאריך, אז עוד לא ברור לאיזה יום הוא מתכוון. אל תקבע. שלח לו עכשיו בדיוק את השאלה הזו, בלי להוסיף שעות: "${ask}". אחרי שיענה — קרא שוב ל-propose_booking עם התאריך שבחר.`;
+        }
         const customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true, name: true } });
         const words = (t: string | null | undefined) => (t ?? "").trim().split(/\s+/).filter(Boolean).length;
         const registeredName = !!customer && words(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
@@ -2331,6 +2344,8 @@ export async function runCustomerAgent(opts: {
     else if (outcome.context) customerContext += `\n${outcome.context}`;
     else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }
   } catch (e) { console.error("[agent] proposal handling failed", e); }
+  // After midnight: which date "מחר"/"היום" mean, and the verification rule.
+  { const night = nightContextLine(); if (night) customerContext += `\n${night}`; }
   // Prompt v2 ("cartridges done right"): the rarely-needed procedures — group
   // bookings, continuing a barber's manual offer — live OUTSIDE the cached
   // prefix and are injected only when the conversation actually needs them.

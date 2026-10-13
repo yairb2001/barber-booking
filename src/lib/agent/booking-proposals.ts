@@ -25,6 +25,7 @@ import { holdSlot, releaseHolds, holderKeyForPhone } from "@/lib/slot-holds";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { resolvePick } from "@/lib/closures/reply";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
+import { isNightWindow, weekdayDate } from "@/lib/agent/night-window";
 import { maybeStartMoveFlow, handleMoveReply } from "@/lib/agent/move-flow";
 
 export const CONFIRM_TTL_MS = 2 * 3600_000;
@@ -36,6 +37,7 @@ export type ExecTool = (name: string, input: Record<string, string>) => Promise<
 /** "היום" / "מחר" / "ביום שלישי 22.9" — the owner's wording for the confirmation line. */
 export function dayLabelHe(iso: string): string {
   const today = getBusinessNow().date;
+  if (isNightWindow()) return `ב${weekdayDate(iso)}${iso === today ? " (היום, אחרי שתקום)" : ""}`;
   if (iso === today) return "היום";
   if (iso === addDaysISO(today, 1)) return "מחר";
   const d = new Date(iso + "T00:00:00.000Z");
@@ -47,6 +49,8 @@ export function dayLabelHe(iso: string): string {
 export function dayLabelWithDistance(iso: string): string {
   const today = getBusinessNow().date;
   const d = dayDistance(iso, today);
+  // After midnight "היום"/"מחר"/"מחרתיים" alone are exactly what gets misread.
+  if (isNightWindow() && d.days <= 2) return `ב${weekdayDate(iso)}${d.days === 0 ? " (היום, אחרי שתקום)" : ""}`;
   if (d.days <= 2) return d.label;
   const dt = new Date(iso + "T00:00:00.000Z");
   const dm = `${dt.getUTCDate()}.${dt.getUTCMonth() + 1}`;

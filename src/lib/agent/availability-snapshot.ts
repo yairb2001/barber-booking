@@ -15,6 +15,7 @@
  */
 import { dayDistance } from "@/lib/day-distance";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
+import { isNightWindow } from "@/lib/agent/night-window";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
 
@@ -73,7 +74,9 @@ export async function buildAvailabilitySnapshot(p: {
     const iso = addDaysISO(today, d);
     // "הבא" on next week's days — a customer offered "רביעי" on Thursday plans
     // for the wrong Wednesday otherwise (see day-distance.ts).
-    const dayName = d === 0 ? "היום" : d === 1 ? "מחר" : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
+    const night = isNightWindow();
+    const dayName = night && d <= 1 ? `${DAY[getDayOfWeekISO(iso)]} ${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}${d === 0 ? " (היום)" : ""}`
+      : d === 0 ? "היום" : d === 1 ? "מחר" : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
     const dd = new Date(iso + "T00:00:00.000Z");
     const parts: string[] = [];
     for (const s of index.staff) {
