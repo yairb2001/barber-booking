@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { NOT_TEST_USAGE } from "@/lib/agent/usage";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { tierQuota, tierLabel } from "@/lib/tier";
 import { budgetOf, currentMonth, USD_ILS } from "@/lib/agent/token-budget";
@@ -23,19 +24,20 @@ export async function GET(req: NextRequest) {
   const [allTime, monthCost, convoRows, broadcastRows, businesses] = await Promise.all([
     prisma.agentUsage.groupBy({
       by: ["businessId"],
+      where: NOT_TEST_USAGE,
       _sum: { inputTokens: true, outputTokens: true, costUsd: true },
       _count: { _all: true },
     }),
     prisma.agentUsage.groupBy({
       by: ["businessId"],
-      where: { createdAt: { gte: monthStart } },
+      where: { createdAt: { gte: monthStart }, ...NOT_TEST_USAGE },
       _sum: { costUsd: true },
     }),
     // One row per (business, conversation) this month → count rows per business
     // = distinct conversations the agent handled.
     prisma.agentUsage.groupBy({
       by: ["businessId", "conversationId"],
-      where: { createdAt: { gte: monthStart }, conversationId: { not: null } },
+      where: { createdAt: { gte: monthStart }, conversationId: { not: null }, ...NOT_TEST_USAGE },
     }),
     prisma.messageLog.groupBy({
       by: ["businessId"],

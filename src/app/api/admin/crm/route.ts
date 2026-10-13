@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { NOT_TEST_USAGE } from "@/lib/agent/usage";
 import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { sendMessage, mirrorToConversation } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -54,7 +55,7 @@ async function customers(settings: CrmSettings) {
   const ids = bizs.map(b => b.id);
   const [appts, usage, leads] = await Promise.all([
     prisma.appointment.groupBy({ by: ["businessId"], where: { businessId: { in: ids }, createdAt: { gte: week } }, _count: { _all: true } }),
-    prisma.agentUsage.groupBy({ by: ["businessId"], where: { businessId: { in: ids }, createdAt: { gte: since }, kind: { not: "sandbox" } }, _sum: { costUsd: true } }),
+    prisma.agentUsage.groupBy({ by: ["businessId"], where: { businessId: { in: ids }, createdAt: { gte: since }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } }),
     prisma.lead.findMany({ where: { businessId: { in: ids } }, select: { businessId: true, repId: true } }),
   ]);
   const reps = await prisma.salesRep.findMany({ select: { id: true, name: true } });
@@ -117,7 +118,7 @@ async function home() {
   const callLeads = await prisma.lead.findMany({ where: { id: { in: callsToday.map(c => c.leadId) } }, select: { id: true, name: true, businessName: true, phone: true } });
   const freeToday = owner ? (await freeCallSlots({ repId: owner.id, fromISO: today, days: 1, limit: 20 })) : [];
   const staleLeads = await prisma.lead.findMany({ where: { stage: { in: ["new", "chatting"] }, optedOut: false, createdAt: { lte: new Date(Date.now() - 24 * 3600_000) }, OR: [{ lastInboundAt: null }, { lastInboundAt: { lte: new Date(Date.now() - 24 * 3600_000) } }] }, select: { id: true, name: true, phone: true, createdAt: true }, take: 5, orderBy: { createdAt: "asc" } });
-  const usage = await prisma.agentUsage.aggregate({ where: { createdAt: { gte: since }, kind: { not: "sandbox" } }, _sum: { costUsd: true } });
+  const usage = await prisma.agentUsage.aggregate({ where: { createdAt: { gte: since }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } });
   const tokensIls = Math.round((usage._sum.costUsd ?? 0) * s.usdIls);
 
   // What Chator's own number costs (Yair, 10.10.2026: "כמה עלה לי הדמו, כולל
@@ -127,7 +128,7 @@ async function home() {
   const todayStart = appointmentInstant(new Date(getBusinessNow().date + "T00:00:00Z"), "00:00");
   const [demoUse, demoToday, demoConvs, waLeads, agentCalls] = await Promise.all([
     prisma.agentUsage.groupBy({ by: ["kind"], where: { businessId: DEMO, createdAt: { gte: since } }, _sum: { costUsd: true } }),
-    prisma.agentUsage.aggregate({ where: { businessId: DEMO, createdAt: { gte: todayStart }, kind: { not: "sandbox" } }, _sum: { costUsd: true } }),
+    prisma.agentUsage.aggregate({ where: { businessId: DEMO, createdAt: { gte: todayStart }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } }),
     prisma.conversation.count({ where: { businessId: DEMO, lastMessageAt: { gte: since }, NOT: { phone: { startsWith: "972000" } }, messages: { some: { role: "assistant", createdAt: { gte: since } } } } }),
     prisma.lead.count({ where: { createdAt: { gte: since }, source: { startsWith: "whatsapp" } } }),
     prisma.salesCall.count({ where: { createdAt: { gte: since }, bookedBy: "agent" } }),

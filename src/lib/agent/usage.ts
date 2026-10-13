@@ -47,6 +47,12 @@ export type AgentUsageInput = {
   usage: ProviderUsage | null | undefined;
 };
 
+/** Usage that is OUR testing, not the shop's real traffic: sandbox/replay runs and
+ *  QA reviews. Never counted in a business's cost (owner, 13.10.2026: "I want to
+ *  see what I really spend a month"). */
+export const TEST_USAGE_KINDS = ["sandbox", "review"];
+export const NOT_TEST_USAGE = { NOT: { kind: { in: TEST_USAGE_KINDS } } };
+
 export async function recordAgentUsage(u: AgentUsageInput): Promise<void> {
   try {
     if (!u.usage || !u.businessId) return;
