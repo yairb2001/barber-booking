@@ -13,7 +13,7 @@ import { bumpBell } from "../HomeParts";
  * agent answers there only when settings.instagram.agent allows this person.
  */
 type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string };
-type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
+type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; handledAt?: string | null; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
 const time = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 
 export default function ChatThread({ id }: { id: string }) {
@@ -39,6 +39,12 @@ export default function ChatThread({ id }: { id: string }) {
     setBusy(false);
     if (r.ok) { setText(""); await reload(); } else setNote(r.error ?? "לא נשלח");
   }
+  async function handled() {
+    setBusy(true);
+    await crmAction({ action: "chat.handled", id });
+    setBusy(false);
+    await reload();
+  }
   async function agent(on: boolean) {
     setBusy(true);
     await crmAction({ action: "chat.agent", id, on });
@@ -50,6 +56,9 @@ export default function ChatThread({ id }: { id: string }) {
   if (!data) return <p style={{ color: C.muted }}>טוען…</p>;
   const { chat, messages } = data;
   const ig = chat.channel === "instagram";
+  // Waiting = he wrote last and it wasn't marked "טופל" since (13.10.2026).
+  const lastMsg = messages[messages.length - 1];
+  const waiting = lastMsg?.role === "user" && !(chat.handledAt && new Date(lastMsg.createdAt) <= new Date(chat.handledAt));
   return (
     <div className="flex flex-col gap-3">
       <header className="flex flex-wrap items-center justify-between gap-2">
@@ -62,6 +71,7 @@ export default function ChatThread({ id }: { id: string }) {
           {chat.lead && <Link href={`/admin/crm/leads/${chat.lead.id}`} className="text-sm font-semibold" style={{ color: C.petrol }}>כרטיס המכירה</Link>}
           {chat.lead?.businessId && <Link href={`/admin/crm/customers/${chat.lead.businessId}`} className="text-sm font-semibold" style={{ color: C.petrol }}>כרטיס הלקוח</Link>}
           {!ig && <a href={`tel:${chat.phone}`} className="text-sm font-semibold" style={{ color: C.petrol }}>חייג</a>}
+          {waiting && <button type="button" disabled={busy} onClick={() => void handled()} className="text-[13px] font-semibold px-3 py-1.5 rounded-full" style={{ background: "#E3F7EF", color: "#0F6B4F", border: "1px solid #BFE8D6" }} title="מסיר את הסימון האדום בלי לענות">✓ סמן טופל</button>}
         </div>
       </header>
 

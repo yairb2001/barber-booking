@@ -18,7 +18,8 @@ import ChatThread from "./chats/ChatThread";
  * routes: those crashed every screen change on the live site in Safari
  * ("undefined is not an object (evaluating '[u,a]')", 10.10.2026).
  */
-const CARD_RE = /^\/admin\/crm\/(leads|customers|chats)\/([0-9a-f-]{36})\/?$/i;
+// Chats are not cards: they open full screen (Yair, 13.10.2026).
+const CARD_RE = /^\/admin\/crm\/(leads|customers)\/([0-9a-f-]{36})\/?$/i;
 const KIND: Record<string, string> = { leads: "lead", customers: "customer", chats: "chat" };
 const PUSHED = "crm-card-pushed";
 

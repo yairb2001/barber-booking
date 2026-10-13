@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { POST as greenWebhook } from "@/app/api/webhook/whatsapp/route";
 import { fetchAsDataUrl } from "@/lib/messaging/evolution";
+import { phoneVariants } from "@/lib/messaging/phone";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -43,6 +44,20 @@ function verify(raw: string, header: string | null): boolean {
   try { return given.length === want.length && timingSafeEqual(Buffer.from(given, "hex"), Buffer.from(want, "hex")); } catch { return false; }
 }
 
+const squash = (t: string) => t.replace(/[*_~\s]/g, "");
+
+/** Did our app send this (a message_logs row for this chat in the last few minutes)? */
+async function sentByUs(instance: string, phone: string, p: { id?: string; body?: string }): Promise<boolean> {
+  const biz = await prisma.business.findFirst({ where: { evolutionInstance: instance }, select: { id: true } });
+  if (!biz) return true; // unknown business: keep the old behavior
+  const logs = await prisma.messageLog.findMany({
+    where: { businessId: biz.id, customerPhone: { in: phoneVariants(phone) }, createdAt: { gte: new Date(Date.now() - 5 * 60_000) } },
+    orderBy: { createdAt: "desc" }, take: 20, select: { providerId: true, body: true },
+  });
+  const t = squash(p.body || "").slice(0, 60);
+  return logs.some(l => l.providerId === p.id || (t ? squash(l.body || "").includes(t) : true));
+}
+
 export async function GET() { return NextResponse.json({ ok: true }); }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -69,10 +84,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const phone = chat.replace(/@.*$/, "").replace(/:\d+$/, "");
     if (!/^\d{8,15}$/.test(phone) || phone === ownNumber) return NextResponse.json({ ok: true, skipped: "no-phone" });
 
-    // Outgoing: only what a human typed on the phone counts as "took over the chat".
-    // Messages sent by a linked companion (ours, through the API) carry web-style
-    // ids ("3EB0…"); the phone app's ids don't.
-    if (p.is_from_me && /^3EB0/i.test(p.id)) return NextResponse.json({ ok: true, skipped: "api-sent" });
+    // Outgoing: only what a human typed counts as "took over the chat". Ours (through
+    // the API) carry web-style ids ("3EB0…") — but so do messages typed in WhatsApp
+    // Web / Desktop, which were dropped as ours (Yair, 13.10.2026: "הוא לא רואה הודעות
+    // שאני שולח דרך הווצאפ"). Every send of ours is logged BEFORE it goes out, so a
+    // web-style id is ours only when a matching log exists for this chat.
+    if (p.is_from_me && /^3EB0/i.test(p.id) && (await sentByUs(instance, phone, p))) return NextResponse.json({ ok: true, skipped: "api-sent" });
 
     const kinds: [string, Media][] = [["imageMessage", p.image], ["videoMessage", p.video], ["audioMessage", p.audio], ["documentMessage", p.document], ["stickerMessage", p.sticker]];
     const media = kinds.find(([, m]) => !!pathOf(m));

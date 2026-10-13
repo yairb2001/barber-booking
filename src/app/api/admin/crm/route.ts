@@ -416,7 +416,7 @@ export async function GET(req: NextRequest) {
         const convs = await prisma.conversation.findMany({
           where: { businessId: DEMO, agentType: { not: "owner" }, NOT: { phone: { startsWith: "972000" } }, lastMessageAt: { not: null } },
           orderBy: { lastMessageAt: "desc" }, take: 150,
-          select: { id: true, phone: true, whatsappName: true, lastMessageAt: true, escalatedAt: true, salesState: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, source: true } } },
+          select: { id: true, phone: true, whatsappName: true, lastMessageAt: true, escalatedAt: true, handledAt: true, salesState: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, source: true, createdAt: true } } },
         });
         // WhatsApp numbers and Instagram DMs ("ig:<IGSID>", 12.10); no groups, no channels.
         const isIg = (p: string) => p.startsWith("ig:");
@@ -430,10 +430,10 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user", paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
-      const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, salesState: true } });
+      const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, handledAt: true, salesState: true } });
       if (!conv) return NextResponse.json({ error: "not_found" }, { status: 404 });
       const ig = conv.phone.startsWith("ig:");
       // Opening the chat = you saw it: its alerts ("הודעה חדשה באינסטגרם") stop showing in the bell (12.10.2026).
@@ -450,7 +450,7 @@ export async function GET(req: NextRequest) {
         const account = instagramAccountOf(demo?.settings);
         agent = !!account && instagramAgentAnswers(account, igsidOf(conv.phone));
       }
-      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
     if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });
@@ -711,6 +711,13 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: instagramSendError(r.error) }, { status: 502 });
         }
         return NextResponse.json({ error: "ההודעה לא יצאה. בדוק את חיבור הוואטסאפ של צ'אטור." }, { status: 502 });
+      }
+      // "✓ טופל" (13.10.2026, like the shop's chats): the red "waiting" goes away until he
+      // writes again; the agent stays where it was.
+      case "chat.handled": {
+        const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+        await prisma.conversation.updateMany({ where: { id: str("id"), businessId: DEMO }, data: b.handled === false ? { handledAt: null } : { handledAt: new Date(), lastReadAt: new Date() } });
+        return NextResponse.json({ ok: true });
       }
       case "chat.agent": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
