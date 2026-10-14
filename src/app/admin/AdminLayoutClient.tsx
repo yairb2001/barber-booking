@@ -74,7 +74,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null } | null>(null);
+  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null; setupTasks?: { key: string; text: string; action: string; href: string; external?: boolean }[] } | null>(null);
   // Header title = the logged-in business (each shop sees its own name — this was
   // hard-coded "DOMINANT" for everyone); the product name until /me answers.
   const bizTitle = me?.businessName?.trim() || "Chator";
@@ -392,6 +392,24 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
             }} className="shrink-0 font-semibold rounded-lg bg-teal-600 text-white px-3 py-1.5">הפעל</button>
           </div>
         )}
+
+        {/* Setup steps he skipped (15.10.2026, Yair: "כמו וואטסאפ מנותק רק לא אדום"):
+            one task at a time, the next one shows once it's done (src/lib/setup-tasks.ts). */}
+        {me?.isOwner && !me.isSuperAdmin && !!me.setupTasks?.length && (() => {
+          const t = me.setupTasks[0];
+          const more = me.setupTasks.length - 1;
+          if (!t.external && pathname.startsWith(t.href)) return null;
+          const body = (
+            <>
+              <span className="leading-snug">{t.text}{more > 0 ? <span className="text-sky-700"> · עוד {more} {more === 1 ? "משימה" : "משימות"}</span> : null}</span>
+              <span className="shrink-0 font-semibold rounded-lg bg-white border border-sky-300 px-3 py-1.5">{t.action} ←</span>
+            </>
+          );
+          const cls = "shrink-0 bg-sky-50 border-b border-sky-200 text-sky-900 px-4 py-2 flex items-center justify-between gap-3 text-sm";
+          return t.external
+            ? <a href={t.href} target="_blank" rel="noopener noreferrer" className={cls}>{body}</a>
+            : <Link href={t.href} className={cls}>{body}</Link>;
+        })()}
 
         {/* The free month's last 7 days (10.10.2026): what continues after it. */}
         {me?.trialEnding && !pathname.startsWith("/admin/settings/plan") && (() => {

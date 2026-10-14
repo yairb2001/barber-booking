@@ -146,8 +146,14 @@ export async function GET(req: NextRequest) {
     trialEnding = { endsAt: business.trialEndsAt!, planName: plan?.name ?? null, priceIls: plan?.priceIls ?? business.monthlyPrice ?? null };
   }
 
+  // Setup steps he skipped (15.10.2026): a calm task strip at the top, one at a time.
+  const setupTasks = session.isOwner && session.businessId !== SUPER_ADMIN_BUSINESS_ID
+    ? await (await import("@/lib/setup-tasks")).setupTasksFor(session.businessId).catch(() => [])
+    : [];
+
   return NextResponse.json({
     trialEnding,
+    setupTasks,
     businessId: session.businessId,
     businessName: business?.name ?? null,
     isRootBusiness,

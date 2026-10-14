@@ -14,7 +14,7 @@ import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 /** Said after a test turn that "did" something, so nobody looks for it in the calendar. */
-const TEST_NOTE = "(בדיקה: שום דבר לא נשמר ביומן. אחרי הפעלת המערכת זה יהיה אמיתי.)";
+export const TEST_NOTE = "(בדיקה: שום דבר לא נשמר ביומן. אחרי הפעלת המערכת זה יהיה אמיתי.)";
 
 export function testerPhones(settings: string | null | undefined): string[] {
   try {
