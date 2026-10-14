@@ -40,7 +40,7 @@ import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
-import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookedMessage } from "@/lib/agent/booking-proposals";
+import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
@@ -449,6 +449,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
         customerConfirmed: { type: "boolean", description: "true רק כשהלקוח כבר ענה בחיוב, במילים שלו, לשאלת האישור שהמערכת שלחה על בדיוק התור הזה — אז המערכת קובעת מיד בלי לשאול שוב." },
         note: { type: "string", description: "אופציונלי — הערה לספר: התור עבור מישהו אחר ('התור בפועל עבור: <שם>') או העדפה שהלקוח ציין ('רק תספורת בלי זקן')." },
+        others: { type: "array", description: "כשמבקש כמה תורים באותו יום (לו ולאח/בן): התורים הנוספים — כולם באותה קריאה, אישור אחד.", items: { type: "object", properties: { startTime: { type: "string" }, staffId: { type: "string", description: "ריק = אותו ספר" }, forName: { type: "string", description: "שם האדם" } }, required: ["startTime", "forName"] } },
       },
       required: ["staffId", "serviceId", "date", "startTime"],
     },
@@ -1053,6 +1054,35 @@ export async function execTool(
         if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
           return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
         }
+        // Several appointments the same day (him + brother/son): all verified now,
+        // confirmed by ONE question and booked together (owner, 14.10.2026).
+        const group: GroupItem[] = [];
+        const othersIn = (input as Record<string, unknown>).others;
+        if (Array.isArray(othersIn) && othersIn.length) {
+          const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+          const durOf = async (sid: string) => (await prisma.staffService.findFirst({ where: { staffId: sid, serviceId: service.id }, select: { customDuration: true } }))?.customDuration
+            ?? (await prisma.service.findUnique({ where: { id: service.id }, select: { durationMinutes: true } }))?.durationMinutes ?? 30;
+          const taken: { staffId: string; start: number; dur: number }[] = [{ staffId: staff.id, start: toMin(startTime), dur: await durOf(staff.id) }];
+          for (const o of othersIn.slice(0, 4) as { startTime?: string; staffId?: string; forName?: string }[]) {
+            const t = String(o?.startTime ?? ""), who = String(o?.forName ?? "").trim();
+            if (!/^\d{1,2}:\d{2}$/.test(t) || !who) return "שגיאה: בכל תור נוסף צריך startTime (HH:MM) ו-forName.";
+            let gStaff: { id: string; name: string } | null = staff;
+            if (o.staffId && o.staffId !== staff.id) {
+              gStaff = await prisma.staff.findFirst({ where: { businessId: bizId, OR: [{ id: o.staffId }, { name: { contains: o.staffId, mode: "insensitive" } }] }, select: { id: true, name: true } });
+              if (!gStaff) return `שגיאה: לא זיהיתי את הספר של התור של ${who}.`;
+            }
+            const dur = await durOf(gStaff.id);
+            if (taken.some(x => x.staffId === gStaff!.id && toMin(t) < x.start + x.dur && x.start < toMin(t) + dur)) {
+              return `שגיאה: התור של ${who} ב-${t} חופף לתור אחר באותה בקשה אצל ${gStaff.name}. בחר שעה עוקבת שחזרה מהכלי.`;
+            }
+            const gAvail = gStaff.id === staff.id ? avail : await computeDayAvailabilityRetrying(bizId, date, gStaff.id, service.id, callerPhone);
+            if (!(gAvail.find(a => a.staffId === gStaff!.id)?.slots ?? []).includes(t)) {
+              return `שגיאה: ${t} ב-${date} לא פנוי אצל ${gStaff.name} (התור של ${who}). בדוק עם get_available_slots והצע את כל התורים יחד שוב.`;
+            }
+            taken.push({ staffId: gStaff.id, start: toMin(t), dur });
+            group.push({ staffId: gStaff.id, staffName: gStaff.name, startTime: t, forName: who });
+          }
+        }
         // New customer without a full name: the system asks for it (fixed text),
         // reads the answer and moves on to the confirmation — no model call for
         // the name turn (owner's decision after the 2–20.9 data, 20.9.2026).
@@ -1060,7 +1090,7 @@ export async function execTool(
           const question = await createConfirmProposal({
             businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
             date, startTime, customerName: null, note: note || null, mentionStaff, originalRequest: originalRequest || null,
-            awaitingName: true, partialName: words(customerName) === 1 ? String(customerName).trim() : null, hold: !sandbox,
+            awaitingName: true, partialName: words(customerName) === 1 ? String(customerName).trim() : null, hold: !sandbox, group,
           });
           return "PROPOSED\n" + question;
         }
@@ -1070,20 +1100,21 @@ export async function execTool(
           const pending = await findPendingProposal(bizId, proposalPhone);
           const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
           if (same) {
-            const meta = (() => { try { return JSON.parse(pending!.note ?? "{}") as { note?: string | null; originalRequest?: string | null }; } catch { return {}; } })();
-            const noteOut = (note && String(note).trim()) || meta.note;
-            const result = await execTool("book_appointment", { staffId: staff.id, serviceId: service.id, date, startTime, customerName: registeredName ? customer!.name : customerName, ...(noteOut ? { note: noteOut } : {}) }, bizId, conversationId, callerPhone, sandbox);
-            const ok = !!sandbox || result.startsWith("✅");
-            await prisma.bookingProposal.update({ where: { id: pending!.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
-            await releaseHolds({ proposalId: pending!.id });
-            if (ok) return "BOOKED\n" + bookedMessage({ staffName: staff.name, date, startTime, originalRequest: meta.originalRequest });
-            return `שגיאה: הקביעה נכשלה — ${result.slice(0, 200)}`;
+            // Same path as the code-handled "כן": the whole group, exact message, no partial "סגור".
+            const r = await bookConfirmedProposal({
+              pending: { ...pending!, customerName: pending!.customerName ?? (registeredName ? customer!.name : customerName) ?? null },
+              noteOverride: (note && String(note).trim()) || null,
+              execTool: (n, i) => execTool(n, i, bizId, conversationId, callerPhone, sandbox),
+              sandbox: !!sandbox, fallbackName: registeredName ? customer!.name : null,
+            });
+            if (r.reply) return "BOOKED\n" + r.reply;
+            return `שגיאה: ${r.context}`;
           }
         }
         const question = await createConfirmProposal({
           businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
           date, startTime, customerName: registeredName ? customer!.name : customerName, note: note || null, mentionStaff,
-          originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName), hold: !sandbox,
+          originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName), hold: !sandbox, group,
         });
         return "PROPOSED\n" + question;
       }
