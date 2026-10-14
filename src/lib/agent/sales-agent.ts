@@ -714,6 +714,14 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   }
 
   const rep = await repName(p.lead?.repId ?? null);
+  // After a demo booking the next two steps are fixed (14.10.2026, Yair). Left to
+  // the general flow the model drifted back to "כמה ספרים אתם?".
+  const lastAgent = [...history].reverse().find(m => m.role === "assistant")?.content ?? "";
+  let stepNote = "";
+  if (v2 && state.afterDemoAt) {
+    if (lastAgent.includes("איך אתה מתנהל היום")) stepNote = `הוא ענה על השאלה איך הוא מתנהל היום. כתוב משפט קצר אחד שמתחבר למה שענה, ואז שאל בדיוק: "${AI_QUESTION}". בלי שאלות אחרות (לא כמה ספרים ולא איזו מערכת).`;
+    else if (lastAgent.includes(AI_QUESTION)) stepNote = `הוא ענה על השאלה אם היה רוצה שסוכן AI ינהל לו את הוואטסאפ. ענה כן או משהו חיובי: שאל בדיוק "${CHOICE_QUESTION(rep)}". אמר לא או מתלבט: שאל בעדינות מה מפריע לו, בלי להציע שיחה.`;
+  }
   const ctx = await salesContext(state, p.lead);
   const isLead = state.mode === "lead";
   const ig = state.channel === "instagram";
@@ -721,7 +729,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ig ? DEMO_LINK_TOOL : ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
   if (v2 && ctx.callBooked) tools.push(PREP_NOTE_TOOL);
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
-  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
+  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") + (stepNote ? `\n\nעכשיו: ${stepNote}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
   void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
   const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
