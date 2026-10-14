@@ -107,8 +107,13 @@ export async function scanStuckSetups(): Promise<void> {
   const states = await computeSetup({ persist: true });
   const autos = await prisma.crmAutomation.findMany({ where: { key: { in: ["setup_stuck", "setup_stuck_rep"] }, enabled: true }, select: { id: true, key: true } });
   if (!autos.length) return;
+  // After the wizard the journey's own alerts take over (src/lib/crm/journey.ts):
+  // not live yet → not_activated_rep, live → quiet_start_rep. While those are off, this one still covers.
+  const journeyOn = new Set((await prisma.crmAutomation.findMany({ where: { enabled: true, key: { in: ["not_activated_rep", "quiet_start_rep"] } }, select: { key: true } })).map(a => a.key));
+  const finished = journeyOn.size ? await prisma.business.findMany({ where: { onboardingCompletedAt: { not: null } }, select: { id: true, activatedAt: true } }) : [];
+  const handedOver = new Set(finished.filter(b => journeyOn.has(b.activatedAt ? "quiet_start_rep" : "not_activated_rep")).map(b => b.id));
   for (const st of states) {
-    if (!st.current || st.isLive) continue;
+    if (!st.current || st.isLive || handedOver.has(st.businessId)) continue;
     for (const a of autos) {
       const threshold = a.key === "setup_stuck" ? 24 : 48;
       if (st.stuckHours < threshold) continue;

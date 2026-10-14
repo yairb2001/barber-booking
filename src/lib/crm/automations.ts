@@ -15,7 +15,7 @@
 import { prisma } from "@/lib/prisma";
 import { enqueueMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
-import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
+import { CHATOR_LINE_BUSINESS_ID } from "@/lib/chator-line";
 import { freeCallSlots, slotLabel } from "@/lib/crm/core";
 import { onboardingLinkFor } from "@/lib/leads";
 import { signOnboardingToken } from "@/lib/auth";
@@ -23,8 +23,9 @@ import { getPlans, planKeyOf } from "@/lib/crm/plans";
 import { payLinkFor } from "@/lib/billing/pay-link";
 
 export type AutoStep = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
-export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid";
-export type AutomationKey = "lead_new" | "call_booked" | "call_no_answer" | "call_won" | "followup" | "trial_ending" | "churn_risk" | "setup_stuck" | "setup_stuck_rep";
+export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid" | "activated" | "booked";
+export type AutomationKey = "lead_new" | "call_booked" | "call_no_answer" | "call_won" | "followup" | "trial_ending" | "churn_risk" | "setup_stuck" | "setup_stuck_rep"
+  | "signup_welcome" | "not_activated" | "not_activated_rep" | "quiet_start" | "quiet_start_rep" | "free_used_up" | "trial_ended" | "trial_ended_rep";
 
 export const STOP_LABELS: Record<StopReason, string> = {
   replied: "הליד ענה",
@@ -34,12 +35,14 @@ export const STOP_LABELS: Record<StopReason, string> = {
   call_cancelled: "השיחה בוטלה",
   onboarding_done: "סיים את ההקמה",
   paid: "עבר לתשלום",
+  activated: "לחץ הפעל",
+  booked: "לקוח קבע תור",
 };
 
 // 10.10.2026 (Yair): no rep unless he asks; the link is where he enters his card.
 export const TRIAL_ENDING_TEXT = "היי {שם}, החודש החינמי של {שם העסק} בצ'אטור מסתיים ב{תאריך סיום}. כדי שהכל ימשיך לעבוד בלי הפסקה, ממשיכים במסלול {מסלול}, {מחיר} ₪ לחודש. להזנת כרטיס האשראי: {קישור לתשלום}\nרוצה לדבר עם נציג? תכתוב לי כאן ונארגן.";
 
-export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}", "{תאריך סיום}", "{מסלול}", "{מחיר}", "{קישור לתשלום}"];
+export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}", "{תאריך סיום}", "{מסלול}", "{מחיר}", "{קישור לתשלום}", "{קישור לקביעת תור}"];
 
 const DAY = 24 * 60;
 
@@ -111,6 +114,64 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
       { delayMinutes: 0, text: "סיכון עזיבה: {שם העסק} בלי תורים כבר 7 ימים. שווה להתקשר." },
     ],
   },
+  // The joined shop's journey (14.10.2026, Yair approved: signup → setup →
+  // "הפעל" → free month → package → end of the month). Scans: src/lib/crm/journey.ts.
+  {
+    key: "signup_welcome", name: "נרשם: ברוך הבא", trigger: "מיד בהרשמה", audience: "lead",
+    stopOn: ["opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, איזה כיף שנרשמת לצ'אטור! אני כאן בשבילך בכל תהליך ההקמה. משהו לא ברור או נתקעת? פשוט תכתוב לי כאן." },
+    ],
+  },
+  {
+    key: "not_activated", name: "סיים הקמה ולא הפעיל: תזכורת לבעל העסק", trigger: "24 שעות אחרי שסיים את האשף בלי ללחוץ \"הפעל\"", audience: "lead",
+    stopOn: ["activated", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, ראיתי שסיימת להקים את {שם העסק} ועוד לא לחצת \"הפעל\". עד שמפעילים זה מצב בדיקה: לקוחות עוד לא יכולים לקבוע תור, והסוכן עונה רק למספר הבדיקה. החודש החינמי מתחיל רק מההפעלה, אז לא מפסידים כלום. להפעלה: {קישור הקמה}\nמשהו מעכב אותך? תכתוב לי כאן." },
+    ],
+  },
+  {
+    key: "not_activated_rep", name: "סיים הקמה ולא הפעיל: התראה לנציג", trigger: "72 שעות אחרי שסיים את האשף בלי ללחוץ \"הפעל\"", audience: "rep",
+    stopOn: [],
+    steps: [
+      { delayMinutes: 0, text: "{שם העסק} סיים הקמה ולא הפעיל כבר 3 ימים. שווה להתקשר." },
+    ],
+  },
+  {
+    key: "quiet_start", name: "הפעיל ואין תורים: טיפ לבעל העסק", trigger: "4 ימים אחרי ההפעלה בלי אף תור מלקוח", audience: "lead",
+    stopOn: ["booked", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, {שם העסק} פעיל כבר 4 ימים ועוד לא נקבע תור דרך המערכת. הכי מהיר: לשים את הקישור לקביעת תור בביו באינסטגרם ובסטטוס בוואטסאפ, ולשלוח אותו ללקוחות הקבועים. הקישור שלך: {קישור לקביעת תור}\nרוצה שנעבור על זה יחד? תכתוב לי כאן." },
+    ],
+  },
+  {
+    key: "quiet_start_rep", name: "הפעיל ואין תורים: התראה לנציג", trigger: "5 ימים אחרי ההפעלה בלי אף תור מלקוח", audience: "rep",
+    stopOn: [],
+    steps: [
+      { delayMinutes: 0, text: "{שם העסק} הפעיל לפני 5 ימים ועוד אין אף תור מלקוח. שווה להתקשר." },
+    ],
+  },
+  {
+    key: "free_used_up", name: "החבילה החינמית נגמרה", trigger: "החבילה החינמית נוצלה עד הסוף (הסוכן שלו מפסיק לענות)", audience: "lead",
+    stopOn: ["paid", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, החבילה החינמית של {שם העסק} נגמרה, ולכן הסוכן כרגע לא עונה ללקוחות. תזכורות ואישורים ממשיכים. כדי שהסוכן יחזור לענות, מצטרפים למסלול {מסלול}, {מחיר} ₪ לחודש: {קישור לתשלום}\nרוצה לדבר עם נציג? תכתוב לי כאן." },
+    ],
+  },
+  {
+    key: "trial_ended", name: "החודש החינמי נגמר ולא שילם", trigger: "יום אחרי סוף החודש החינמי, בלי תשלום", audience: "lead",
+    stopOn: ["paid", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, החודש החינמי של {שם העסק} בצ'אטור הסתיים. כדי להמשיך להשתמש במערכת מזינים כרטיס, וכל ההגדרות, הלקוחות והתורים נשארים כמו שהם: {קישור לתשלום}\nרוצה לדבר עם נציג? תכתוב לי כאן." },
+    ],
+  },
+  {
+    key: "trial_ended_rep", name: "החודש החינמי נגמר: התראה לנציג", trigger: "יום אחרי סוף החודש החינמי, בלי תשלום", audience: "rep",
+    stopOn: ["paid"],
+    steps: [
+      { delayMinutes: 0, text: "{שם העסק} סיים את החודש החינמי ולא שילם. שווה להתקשר." },
+    ],
+  },
 ];
 
 export function parseSteps(raw: string): AutoStep[] {
@@ -167,7 +228,7 @@ async function stepTime(step: AutoStep, from: Date, ctx?: RunContext): Promise<D
   return new Date(from.getTime() + (step.delayMinutes ?? 0) * 60_000);
 }
 
-async function shouldStop(stopOn: StopReason[], run: { leadId: string | null; businessId: string | null; startedAt: Date; context: string | null }): Promise<StopReason | null> {
+export async function shouldStop(stopOn: StopReason[], run: { leadId: string | null; businessId: string | null; startedAt: Date; context: string | null }): Promise<StopReason | null> {
   if (!stopOn.length) return null;
   const lead = run.leadId ? await prisma.lead.findUnique({ where: { id: run.leadId }, select: { optedOut: true, stage: true, lastInboundAt: true, businessId: true } }) : null;
   const ctx: RunContext = run.context ? JSON.parse(run.context) : {};
@@ -181,10 +242,13 @@ async function shouldStop(stopOn: StopReason[], run: { leadId: string | null; bu
       if (!c || c.status !== "booked") return r;
     }
     const bizId = run.businessId ?? lead?.businessId ?? null;
-    if ((r === "onboarding_done" || r === "paid") && bizId) {
-      const b = await prisma.business.findUnique({ where: { id: bizId }, select: { onboardingCompletedAt: true, paidAt: true } });
+    if ((r === "onboarding_done" || r === "paid" || r === "activated" || r === "booked") && bizId) {
+      const b = await prisma.business.findUnique({ where: { id: bizId }, select: { onboardingCompletedAt: true, paidAt: true, activatedAt: true } });
       if (r === "onboarding_done" && b?.onboardingCompletedAt) return r;
       if (r === "paid" && b?.paidAt) return r;
+      if (r === "activated" && b?.activatedAt) return r;
+      // A customer booked (site or agent) since going live; the owner's own tries don't count.
+      if (r === "booked" && b?.activatedAt && await prisma.appointment.count({ where: { businessId: bizId, source: { in: ["customer", "agent"] }, createdAt: { gte: b.activatedAt } } })) return r;
     }
   }
   return null;
@@ -207,6 +271,7 @@ export async function renderText(text: string, target: { leadId?: string | null;
   const needPlan = /\{(מסלול|מחיר)\}/.test(text) && biz;
   const plan = needPlan ? (await getPlans()).find(p => p.key === planKeyOf(biz!.settings)) ?? null : null;
   const payLink = /\{קישור לתשלום\}/.test(text) && biz ? payLinkFor(biz) : "";
+  const bookingLink = /\{קישור לקביעת תור\}/.test(text) && biz ? await (await import("@/lib/link-first")).buildBookingLink(biz) : "";
   const endsLabel = biz?.trialEndsAt ? biz.trialEndsAt.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" }) : "";
   let ownerName = "";
   if (!lead && biz) { try { const s = biz.settings ? JSON.parse(biz.settings) : {}; ownerName = typeof s.ownerName === "string" ? s.ownerName : ""; } catch { /* ignore */ } }
@@ -225,6 +290,7 @@ export async function renderText(text: string, target: { leadId?: string | null;
     "{מסלול}": plan?.name ?? "בסיס",
     "{מחיר}": String(plan?.priceIls ?? biz?.monthlyPrice ?? 287),
     "{קישור לתשלום}": payLink,
+    "{קישור לקביעת תור}": bookingLink,
   };
   let body = text;
   for (const [k, v] of Object.entries(vars)) body = body.split(k).join(v);
@@ -258,7 +324,7 @@ export async function tickAutomations(now = new Date()): Promise<{ sent: number;
     const { body, phone, repPhone } = await renderText(step.text, { leadId: run.leadId, businessId: run.businessId, context: ctx });
     const to = a.audience === "rep" ? repPhone : phone;
     if (to && body) {
-      await enqueueMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: normalizeIsraeliPhone(to), kind: a.audience === "rep" ? "crm_rep_alert" : "crm_message", body, scheduledFor: now });
+      await enqueueMessage({ businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: normalizeIsraeliPhone(to), kind: a.audience === "rep" ? "crm_rep_alert" : "crm_message", body, scheduledFor: now });
       sent++;
     }
     const next = steps[run.stepIndex + 1];
@@ -274,6 +340,7 @@ export async function scanTimeTriggers(now = new Date()): Promise<void> {
   try { const { scanQuotas } = await import("@/lib/crm/plans"); await scanQuotas(now); } catch (e) { console.error("[crm] quotas", e); }
   try { const { scanTrialEnding } = await import("@/lib/crm/trial"); await scanTrialEnding(now); } catch (e) { console.error("[crm] trial ending", e); }
   try { const { scanUnactivatedWithBookings } = await import("@/lib/activation"); await scanUnactivatedWithBookings(); } catch (e) { console.error("[crm] activation scan", e); }
+  try { const { scanJourney } = await import("@/lib/crm/journey"); await scanJourney(now); } catch (e) { console.error("[crm] journey scan", e); }
   const autos = await prisma.crmAutomation.findMany({ where: { enabled: true, key: { in: ["trial_ending", "followup", "churn_risk"] } }, select: { id: true, key: true } });
   const has = (k: string) => autos.find(a => a.key === k);
   const already = async (automationId: string, where: { leadId?: string; businessId?: string }, sinceDays: number) =>

@@ -129,6 +129,8 @@ async function alertOnce(businessId: string, kind: AlertKind, month: string, bod
   if (channel !== "screen") pushToOwner(businessId, { title: `${full ? "⛔" : "⚠️"} ${ALERT_TITLE[kind]}`, body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
   // The free package running out is a sales moment: Yair hears about it right away.
   notifyPlatformOwner(kind.startsWith("free_") ? `${full ? "⛔ החבילה החינמית נגמרה" : "⚠️ 80% מהחבילה החינמית"}: ${owner.name}${full ? ". זמן להתקשר ולצרף למסלול" : ""}` : `${full ? "⛔ 100%" : "⚠️ 80%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: full }).catch(() => {});
+  // And from Chator's number, his personal card link (CRM automation "free_used_up", 14.10.2026).
+  if (kind === "free_alert_100") { const { startAutomation } = await import("@/lib/crm/automations"); await startAutomation("free_used_up", { businessId }); }
   return true;
 }
 
