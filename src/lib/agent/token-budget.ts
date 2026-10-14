@@ -90,7 +90,10 @@ export async function tokenBudgetState(businessId: string, now = new Date()): Pr
     return { month: key, budgetIls: free.aiIls.cap, baseBudgetIls: free.aiIls.cap, topupIls: 0, usedUsd, usedIls: free.aiIls.used, usedTokens: weightedTokens(usedUsd), packageTokens: weightedTokens(free.aiIls.cap / USD_ILS), pct: free.pct, level: free.level, free };
   }
   const b = budgetOf(biz ?? { tier: "basic", settings: null }, key);
-  const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: start }, NOT: { kind: { in: ["sandbox", "review"] } } }, _sum: { costUsd: true } });
+  // The month he starts paying counts from the payment (15.10.2026): the free package he used up
+  // earlier this month must not keep the agent stopped after he paid.
+  const from = biz?.paidAt && biz.paidAt > start ? biz.paidAt : start;
+  const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: from }, NOT: { kind: { in: ["sandbox", "review"] } } }, _sum: { costUsd: true } });
   const usedUsd = agg._sum.costUsd ?? 0;
   const usedIls = usedUsd * USD_ILS;
   const pct = b.total > 0 ? Math.round((usedIls / b.total) * 1000) / 10 : 0;

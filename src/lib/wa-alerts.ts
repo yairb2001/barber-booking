@@ -22,6 +22,7 @@ import { sendMessage } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyPlatformOwner, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
+import { CHATOR_LINE_BUSINESS_ID } from "@/lib/chator-line";
 
 type Kind = "wa_down_alert" | "wa_up_alert" | "wa_link_stuck";
 
@@ -47,10 +48,12 @@ async function tellOwner(biz: NonNullable<Awaited<ReturnType<typeof ownerOf>>>, 
   const { channel } = await centerNotify({ businessId: biz.id, kind: "system", title, body, href: "/admin/settings/whatsapp", noPush: true });
   if (channel !== "screen") pushToOwner(biz.id, { title, body: body.split("\n")[0], data: { type: "whatsapp", kind } }).catch(() => {});
   if (channel !== "whatsapp") return "skipped";
-  // A WhatsApp from Chator's number — unless this IS Chator's number (then the push has to do).
-  if (!biz.ownerPhone || biz.id === SUPER_ADMIN_BUSINESS_ID) return "skipped";
+  // A WhatsApp from Chator's line, where an owner who answers gets the support agent
+  // (15.10.2026; it went out from DOMINANT's number, whose booking agent answered him).
+  // Not to our own two numbers: the push has to do.
+  if (!biz.ownerPhone || biz.id === SUPER_ADMIN_BUSINESS_ID || biz.id === CHATOR_LINE_BUSINESS_ID) return "skipped";
   try {
-    await sendMessage({ businessId: SUPER_ADMIN_BUSINESS_ID, customerPhone: biz.ownerPhone, kind, body });
+    await sendMessage({ businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: biz.ownerPhone, kind, body });
     return "sent";
   } catch (e) { console.error("[wa-alerts] owner message failed", e); return "skipped"; }
 }

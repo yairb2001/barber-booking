@@ -116,6 +116,10 @@ export async function POST(req: NextRequest) {
 
     await notifyPlatformOwner(`\u{1F389} \u05d4\u05e8\u05e9\u05de\u05d4 \u05d7\u05d3\u05e9\u05d4!\n\u05e2\u05e1\u05e7: ${name}\n\u05d8\u05dc\u05e4\u05d5\u05df: ${phone}${plan ? `\n\u05de\u05e1\u05dc\u05d5\u05dc: ${plan.name}` : ""}${referrer ? `\nבהמלצה של: ${referrer.name}` : ""}`, { kind: "customer", businessId: business.id, push: false });
 
+    // Already a lead in the CRM → that lead is now this business (15.10.2026).
+    const { linkSignupToLead } = await import("@/lib/leads");
+    await linkSignupToLead(business.id, ownerPhone).catch(e => console.error("[signup] link lead", e));
+
     // "איזה כיף שנרשמת, אני כאן בשבילך בהקמה" from Chator's number (CRM automation, 14.10.2026).
     const { startAutomation } = await import("@/lib/crm/automations");
     await startAutomation("signup_welcome", { businessId: business.id });

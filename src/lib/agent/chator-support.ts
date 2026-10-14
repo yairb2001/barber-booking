@@ -97,6 +97,8 @@ async function contextBlock(biz: ChatorCustomer): Promise<{ stage: "setup" | "ac
     if (s) {
       lines.push(`שלבי ההקמה: ${s.steps.map(x => `${x.label} ${x.done ? "✓" : "✗"}`).join(" · ")}.`);
       if (s.current) lines.push(`עצר ב: ${s.current.label}. קישור ישיר: ${ORIGIN}${STEP_LINK[s.current.key as StepKey] ?? "/admin/onboarding"}`);
+      // What the agent still doesn't know about his shop, so the help is exact (15.10.2026).
+      if (s.missingAgentLabels.length) lines.push(`חסר בהגדרות הסוכן שלו: ${s.missingAgentLabels.join(", ")}. עונים על זה ב-${ORIGIN}/admin/agent`);
     }
     lines.push(`עוד לא לחץ "הפעל", אז החודש החינמי עוד לא התחיל.`);
   } else {

@@ -21,11 +21,12 @@ import { onboardingLinkFor } from "@/lib/leads";
 import { signOnboardingToken } from "@/lib/auth";
 import { getPlans, planKeyOf } from "@/lib/crm/plans";
 import { payLinkFor } from "@/lib/billing/pay-link";
+import { recordCrmNotification } from "@/lib/crm/notify";
 
 export type AutoStep = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
-export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid" | "activated" | "booked";
+export type StopReason = "replied" | "call_booked" | "opted_out" | "not_relevant" | "call_cancelled" | "onboarding_done" | "paid" | "activated" | "booked" | "charged";
 export type AutomationKey = "lead_new" | "call_booked" | "call_no_answer" | "call_won" | "followup" | "trial_ending" | "churn_risk" | "setup_stuck" | "setup_stuck_rep"
-  | "signup_welcome" | "not_activated" | "not_activated_rep" | "quiet_start" | "quiet_start_rep" | "free_used_up" | "trial_ended" | "trial_ended_rep";
+  | "signup_welcome" | "not_activated" | "not_activated_rep" | "quiet_start" | "quiet_start_rep" | "free_used_up" | "trial_ended" | "trial_ended_rep" | "payment_failed";
 
 export const STOP_LABELS: Record<StopReason, string> = {
   replied: "הליד ענה",
@@ -37,12 +38,13 @@ export const STOP_LABELS: Record<StopReason, string> = {
   paid: "עבר לתשלום",
   activated: "לחץ הפעל",
   booked: "לקוח קבע תור",
+  charged: "החיוב עבר",
 };
 
 // 10.10.2026 (Yair): no rep unless he asks; the link is where he enters his card.
 export const TRIAL_ENDING_TEXT = "היי {שם}, החודש החינמי של {שם העסק} בצ'אטור מסתיים ב{תאריך סיום}. כדי שהכל ימשיך לעבוד בלי הפסקה, ממשיכים במסלול {מסלול}, {מחיר} ₪ לחודש. להזנת כרטיס האשראי: {קישור לתשלום}\nרוצה לדבר עם נציג? תכתוב לי כאן ונארגן.";
 
-export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}", "{תאריך סיום}", "{מסלול}", "{מחיר}", "{קישור לתשלום}", "{קישור לקביעת תור}"];
+export const VARIABLES = ["{שם}", "{שם העסק}", "{שעת השיחה}", "{שם הנציג}", "{שעה פנויה ראשונה}", "{שעה פנויה שנייה}", "{קישור הקמה}", "{השלב שנתקע}", "{תאריך סיום}", "{מסלול}", "{מחיר}", "{קישור לתשלום}", "{קישור לקביעת תור}", "{מה חסר}"];
 
 const DAY = 24 * 60;
 
@@ -97,7 +99,7 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
     key: "setup_stuck", name: "הקמה תקועה: עזרה לבעל העסק", trigger: "24 שעות בלי התקדמות בהקמה", audience: "lead",
     stopOn: ["onboarding_done", "opted_out"],
     steps: [
-      { delayMinutes: 0, text: "היי {שם}, ראיתי שעצרת בשלב \"{השלב שנתקע}\" בהקמה של {שם העסק}. במה נתקעת? מה קרה? תכתוב לי כאן ואעזור לך, או שתמשיך מהקישור: {קישור הקמה}" },
+      { delayMinutes: 0, text: "היי {שם}, ראיתי שעצרת בשלב \"{השלב שנתקע}\" בהקמה של {שם העסק}. {מה חסר} במה נתקעת? מה קרה? תכתוב לי כאן ואעזור לך, או שתמשיך מהקישור: {קישור הקמה}" },
     ],
   },
   {
@@ -172,6 +174,14 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
       { delayMinutes: 0, text: "{שם העסק} סיים את החודש החינמי ולא שילם. שווה להתקשר." },
     ],
   },
+  {
+    // 15.10.2026: the /pay link is for a first card only, so this one asks him to write.
+    key: "payment_failed", name: "חיוב נכשל", trigger: "החיוב החודשי לא עבר", audience: "lead",
+    stopOn: ["charged", "opted_out"],
+    steps: [
+      { delayMinutes: 0, text: "היי {שם}, החיוב החודשי של {שם העסק} בצ'אטור לא עבר. כדי שהכל ימשיך לעבוד בלי הפסקה צריך לעדכן כרטיס. תכתוב לי כאן ונעדכן יחד." },
+    ],
+  },
 ];
 
 /**
@@ -184,7 +194,7 @@ export const AUTOMATION_GROUPS: { key: "ops" | "sales"; label: string; sections:
   { key: "ops", label: "תפעול", sections: [
     { label: "הרשמה והקמה", keys: ["call_won", "signup_welcome", "setup_stuck", "setup_stuck_rep"] },
     { label: "הפעלה", keys: ["not_activated", "not_activated_rep", "quiet_start", "quiet_start_rep"] },
-    { label: "החודש החינמי ותשלום", keys: ["free_used_up", "trial_ending", "trial_ended", "trial_ended_rep"] },
+    { label: "החודש החינמי ותשלום", keys: ["free_used_up", "trial_ending", "trial_ended", "trial_ended_rep", "payment_failed"] },
     { label: "לקוח משלם", keys: ["churn_risk"] },
   ] },
   { key: "sales", label: "שיווק ומכירות", sections: [
@@ -206,7 +216,7 @@ export function parseStopOn(raw: string): StopReason[] {
   try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter((x): x is StopReason => typeof x === "string" && x in STOP_LABELS) : []; } catch { return []; }
 }
 
-type RunContext = { callId?: string; stepLabel?: string };
+type RunContext = { callId?: string; stepLabel?: string; missing?: string };
 
 /** Start (or restart) an automation for a lead / business. Silently does nothing when it is OFF. */
 export async function startAutomation(key: AutomationKey, target: { leadId?: string; businessId?: string; context?: RunContext }): Promise<void> {
@@ -261,6 +271,7 @@ export async function shouldStop(stopOn: StopReason[], run: { leadId: string | n
       if (!c || c.status !== "booked") return r;
     }
     const bizId = run.businessId ?? lead?.businessId ?? null;
+    if (r === "charged" && bizId && await prisma.crmInvoice.count({ where: { businessId: bizId, status: "paid", createdAt: { gt: run.startedAt } } })) return r;
     if ((r === "onboarding_done" || r === "paid" || r === "activated" || r === "booked") && bizId) {
       const b = await prisma.business.findUnique({ where: { id: bizId }, select: { onboardingCompletedAt: true, paidAt: true, activatedAt: true } });
       if (r === "onboarding_done" && b?.onboardingCompletedAt) return r;
@@ -305,6 +316,7 @@ export async function renderText(text: string, target: { leadId?: string | null;
     "{שעה פנויה שנייה}": slots[1] ? slotLabel(slots[1].startsAt) : "בשעה שנוחה לך",
     "{קישור הקמה}": link,
     "{השלב שנתקע}": target.context?.stepLabel ?? "",
+    "{מה חסר}": target.context?.missing ?? "",
     "{תאריך סיום}": endsLabel,
     "{מסלול}": plan?.name ?? "בסיס",
     "{מחיר}": String(plan?.priceIls ?? biz?.monthlyPrice ?? 287),
@@ -315,6 +327,38 @@ export async function renderText(text: string, target: { leadId?: string | null;
   for (const [k, v] of Object.entries(vars)) body = body.split(k).join(v);
   body = body.replace(/היי ,/g, "היי,").replace(/ {2,}/g, " ").trim();
   return { body, phone: lead?.phone ?? ownerPhone, repPhone: rep?.phone ?? null };
+}
+
+/** Sent the moment they're due: a call reminder, a reply to his own action, the agent stopping. */
+const UNPACED = new Set<string>(["call_booked", "call_no_answer", "signup_welcome", "free_used_up", "payment_failed"]);
+const DAY_MS = 86400_000;
+
+/** When this nudge may go out: 24h after our last message to him, and 24h after he last wrote to us. Null = now. */
+export async function paceUntil(run: { leadId: string | null; businessId: string | null }, now: Date): Promise<Date | null> {
+  let phone: string | null = null;
+  if (run.leadId) phone = (await prisma.lead.findUnique({ where: { id: run.leadId }, select: { phone: true } }))?.phone ?? null;
+  else if (run.businessId) {
+    const b = await prisma.business.findUnique({ where: { id: run.businessId }, select: { phone: true, settings: true } });
+    try { phone = (b?.settings ? JSON.parse(b.settings).ownerLoginPhone : null) || b?.phone || null; } catch { phone = b?.phone ?? null; }
+  }
+  const to = phone ? normalizeIsraeliPhone(phone) : "";
+  if (!to) return null;
+  const since = new Date(now.getTime() - DAY_MS);
+  const [ours, his] = await Promise.all([
+    prisma.messageLog.findFirst({ where: { businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: to, kind: "crm_message", status: { notIn: ["failed", "cancelled"] }, createdAt: { gte: since } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+    prisma.conversationMessage.findFirst({ where: { role: "user", createdAt: { gte: since }, conversation: { businessId: CHATOR_LINE_BUSINESS_ID, phone: to } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+  ]);
+  const last = Math.max(ours?.createdAt.getTime() ?? 0, his?.createdAt.getTime() ?? 0);
+  return last ? new Date(last + DAY_MS) : null;
+}
+
+/** A rep alert becomes an open task on the CRM home (once while open) and a CRM push. */
+async function repTask(body: string, run: { leadId: string | null; businessId: string | null }): Promise<void> {
+  const title = body.slice(0, 300);
+  const open = await prisma.crmTask.findFirst({ where: { title, doneAt: null, businessId: run.businessId, leadId: run.leadId }, select: { id: true } });
+  if (open) return;
+  await prisma.crmTask.create({ data: { title, businessId: run.businessId, leadId: run.leadId } });
+  await recordCrmNotification(body, { kind: run.leadId ? "lead" : "customer", businessId: run.businessId, leadId: run.leadId, push: true });
 }
 
 /** Advance due runs. Called every minute from the drip-queue piggyback. */
@@ -331,6 +375,11 @@ export async function tickAutomations(now = new Date()): Promise<{ sent: number;
     if (reason) { await prisma.crmAutomationRun.update({ where: { id: run.id }, data: { status: "stopped", stopReason: reason } }); stopped++; continue; }
     const step = steps[run.stepIndex];
     if (!step) { await prisma.crmAutomationRun.update({ where: { id: run.id }, data: { status: "done", nextAt: null } }); continue; }
+    // Not flooded (15.10.2026, Yair): one nudge a day, and none while he is talking with us.
+    if (a.audience !== "rep" && !UNPACED.has(a.key)) {
+      const wait = await paceUntil(run, now);
+      if (wait) { await prisma.crmAutomationRun.update({ where: { id: run.id }, data: { nextAt: wait } }); continue; }
+    }
     // Claim the step first so two overlapping ticks can never send it twice.
     const claim = await prisma.crmAutomationRun.updateMany({ where: { id: run.id, stepIndex: run.stepIndex, status: "active" }, data: { stepIndex: run.stepIndex + 1, nextAt: null } });
     if (!claim.count) continue;
@@ -340,10 +389,13 @@ export async function tickAutomations(now = new Date()): Promise<{ sent: number;
     if (run.businessId && !(await prisma.business.findUnique({ where: { id: run.businessId }, select: { id: true } }))) {
       await prisma.crmAutomationRun.update({ where: { id: run.id }, data: { status: "stopped", stopReason: "business_gone" } }); stopped++; continue;
     }
-    const { body, phone, repPhone } = await renderText(step.text, { leadId: run.leadId, businessId: run.businessId, context: ctx });
-    const to = a.audience === "rep" ? repPhone : phone;
-    if (to && body) {
-      await enqueueMessage({ businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: normalizeIsraeliPhone(to), kind: a.audience === "rep" ? "crm_rep_alert" : "crm_message", body, scheduledFor: now });
+    const { body, phone } = await renderText(step.text, { leadId: run.leadId, businessId: run.businessId, context: ctx });
+    if (a.audience === "rep" && body) {
+      // To the rep: a task on the CRM home with a push, not a WhatsApp (15.10.2026, Yair).
+      await repTask(body, run);
+      sent++;
+    } else if (phone && body) {
+      await enqueueMessage({ businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: normalizeIsraeliPhone(phone), kind: "crm_message", body, scheduledFor: now });
       sent++;
     }
     const next = steps[run.stepIndex + 1];

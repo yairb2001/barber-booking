@@ -89,7 +89,7 @@ export default function AutomationsPage() {
                     <span className="font-bold text-[15px]">{x.name}</span>
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={x.enabled ? { background: "#E3F7EF", color: "#0F6B4F" } : { background: C.soft, color: C.muted }}>{x.enabled ? "פעילה" : "כבויה"}</span>
                   </span>
-                  <span className="text-xs" style={{ color: C.muted }}>כש: {x.trigger}{x.audience === "rep" ? ` · הודעה לנציג, לא ${tab === "ops" ? "לבעל העסק" : "לליד"}` : ""}</span>
+                  <span className="text-xs" style={{ color: C.muted }}>כש: {x.trigger}{x.audience === "rep" ? " · משימה אליך במסך הבית, לא הודעה אליו" : ""}</span>
                   <span className="text-xs" style={{ color: "#3E5A5B" }}>החודש: {x.stats.started} התחילו · {x.stats.active} רצות עכשיו{x.audience === "lead" && tab === "sales" ? ` · ${x.stats.replied} ענו או קבעו` : ""}</span>
                 </button>
               ))}

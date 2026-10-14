@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { generateSlug } from "@/lib/tenant";
 import { signOnboardingToken } from "@/lib/auth";
 import { sendMessage } from "@/lib/messaging";
-import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
@@ -22,6 +22,20 @@ export const LAUNCH_MONTHLY_PRICE = 287;
 export const FREE_FIRST_MONTH_DAYS = 30;
 
 const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+
+/**
+ * A lead who signs up by himself (15.10.2026, Yair: "ליד נרשם כעסק"): his lead
+ * becomes this business in the CRM. His sales automations stop, the operations
+ * ones (setup, "הפעל", the free month) take over, and his name fills them.
+ */
+export async function linkSignupToLead(businessId: string, phone: string): Promise<string | null> {
+  const lead = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) }, businessId: null }, orderBy: { createdAt: "desc" }, select: { id: true } });
+  if (!lead) return null;
+  await prisma.lead.update({ where: { id: lead.id }, data: { businessId, status: "won", stage: "trial" } });
+  const { stopLeadAutomations } = await import("@/lib/crm/automations");
+  await stopLeadAutomations(lead.id, "signed_up");
+  return lead.id;
+}
 
 export function onboardingLinkFor(token: string): string {
   return `${APP_URL}/api/onboarding-link?t=${encodeURIComponent(token)}`;

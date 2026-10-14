@@ -8,7 +8,7 @@ import { saveSetupAnswers, type SetupAuthor } from "@/lib/agent/setup-save";
 import { centerNotify } from "@/lib/notify/center";
 import { sendMessage, sendProactiveMessage } from "@/lib/messaging";
 import { phoneVariants } from "@/lib/messaging/phone";
-import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
+import { CHATOR_LINE_BUSINESS_ID } from "@/lib/chator-line";
 
 export async function addFaq(businessId: string, question: string, answer: string): Promise<string> {
   const cfg = await prisma.agentConfig.upsert({ where: { businessId }, create: { businessId }, update: {}, select: { id: true } });
@@ -46,7 +46,8 @@ export async function askOwner(p: { businessId: string; conversationId: string |
     let owner = biz?.phone ?? null;
     try { const st = biz?.settings ? JSON.parse(biz.settings) : {}; if (typeof st.ownerLoginPhone === "string" && st.ownerLoginPhone) owner = st.ownerLoginPhone; } catch { /* ignore */ }
     const origin = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
-    if (owner) await sendMessage({ businessId: SUPER_ADMIN_BUSINESS_ID, customerPhone: owner, kind: "agent_question", body: `❓ ${who} שאל את הסוכן: "${p.question.slice(0, 300)}"\nמה לענות? עונים כאן, והתשובה נשלחת אליו ונשמרת לפעם הבאה:\n${origin}${href}` }).catch(() => {});
+    // From Chator's line, not DOMINANT's: an owner who answers there gets our support agent, not a booking agent (15.10.2026).
+    if (owner && p.businessId !== CHATOR_LINE_BUSINESS_ID) await sendMessage({ businessId: CHATOR_LINE_BUSINESS_ID, customerPhone: owner, kind: "agent_question", body: `❓ ${who} שאל את הסוכן: "${p.question.slice(0, 300)}"\nמה לענות? עונים כאן, והתשובה נשלחת אליו ונשמרת לפעם הבאה:\n${origin}${href}` }).catch(() => {});
   }
 }
 

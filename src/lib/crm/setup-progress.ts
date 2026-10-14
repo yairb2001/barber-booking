@@ -36,6 +36,7 @@ export type SetupState = {
   stuckHours: number; // 0 when done or moving
   isLive: boolean;
   missingAgentFields: string[];
+  missingAgentLabels: string[];
 };
 
 const parse = (raw: string | null | undefined): Record<string, unknown> => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
@@ -64,7 +65,8 @@ export async function computeSetup(opts: { businessIds?: string[]; persist?: boo
     const stored = (s.setupProgress ?? {}) as Record<string, string>;
     const agent = agents.find(a => a.businessId === b.id);
     const setup = parse(agent?.setupConfig) as SetupConfig;
-    const missing = missingCoreFields(setup, b.businessType).map(f => f.key);
+    const missingFields = missingCoreFields(setup, b.businessType);
+    const missing = missingFields.map(f => f.key);
     const firstAgentAppt = agentAppts.find(a => a.businessId === b.id)?._min.createdAt ?? null;
     const done: Record<SetupStepKey, boolean> = {
       password: !!b.passwordHash,
@@ -95,10 +97,27 @@ export async function computeSetup(opts: { businessIds?: string[]; persist?: boo
       businessId: b.id, steps, doneCount, current: current ? { key: current.key, label: current.label } : null,
       lastProgressAt: new Date(last).toISOString(),
       stuckHours: isLive || !current ? 0 : Math.floor((now - last) / 3600_000),
-      isLive, missingAgentFields: missing,
+      isLive, missingAgentFields: missing, missingAgentLabels: missingFields.map(f => f.label),
     });
   }
   return out;
+}
+
+/**
+ * One line on what's left at the step he stopped at (15.10.2026, Yair: "בדיוק
+ * בשלב שלו ואם חסר לו ידע בסוכן ייתן לו"): the {מה חסר} of the stuck reminder.
+ */
+export function whatsMissing(st: SetupState): string {
+  switch (st.current?.key) {
+    case "password": return "נשאר להיכנס ולבחור סיסמה.";
+    case "business": return "נשאר להגדיר את שעות הפתיחה.";
+    case "team": return "נשאר להוסיף את הספרים.";
+    case "services": return "נשאר להוסיף שירותים ומחירים.";
+    case "agent": return st.missingAgentLabels.length ? `חסר לסוכן: ${st.missingAgentLabels.join(", ")}.` : "נשאר לנסות את הסוכן בבדיקה.";
+    case "whatsapp": return "נשאר לחבר את הוואטסאפ של העסק.";
+    case "agent_on": return "נשאר ללחוץ \"הפעל\".";
+    default: return "";
+  }
 }
 
 /** Hourly: persist progress and start the stuck-setup automations (each once per stuck episode). */
@@ -120,7 +139,7 @@ export async function scanStuckSetups(): Promise<void> {
       // Once per episode: no run of this automation since the last progress.
       const ran = await prisma.crmAutomationRun.count({ where: { automationId: a.id, businessId: st.businessId, startedAt: { gte: new Date(st.lastProgressAt) } } });
       if (ran) continue;
-      await startAutomation(a.key as "setup_stuck" | "setup_stuck_rep", { businessId: st.businessId, context: { stepLabel: st.current.label } });
+      await startAutomation(a.key as "setup_stuck" | "setup_stuck_rep", { businessId: st.businessId, context: { stepLabel: st.current.label, missing: whatsMissing(st) } });
     }
   }
 }

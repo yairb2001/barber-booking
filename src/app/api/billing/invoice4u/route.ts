@@ -35,6 +35,10 @@ async function handle(req: NextRequest) {
   } else if (r.ok === false) {
     await prisma.crmInvoice.create({ data: { businessId: b, issuedAt: new Date(), amountIls: r.amount ?? 0, status: "failed", provider: "invoice4u" } });
     await recordCrmNotification(`💳 חיוב נכשל: ${biz.name}${r.error ? `\n${r.error}` : ""}`, { kind: "customer", businessId: b, push: true });
+    // He hears it too, before anything stops, and it's a task until the card is updated (15.10.2026).
+    await prisma.crmTask.create({ data: { title: `חיוב נכשל: ${biz.name}. לעדכן איתו כרטיס`, businessId: b } }).catch(() => {});
+    const { startAutomation } = await import("@/lib/crm/automations");
+    await startAutomation("payment_failed", { businessId: b });
   }
   await prisma.crmBillingEvent.update({ where: { id: ev.id }, data: { handled: r.ok !== null } });
   return NextResponse.json({ ok: true });
