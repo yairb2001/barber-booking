@@ -32,7 +32,7 @@ import { SALES_KNOWLEDGE, FORBIDDEN_CLAIMS, OFFER_TEXT, PRICE_TEXT, SALES_KNOWLE
 import { ensureCrmSeed, freeCallSlots, slotLabel, stageLabel, getCrmText } from "@/lib/crm/core";
 import { bookCall, cancelCall, alertRep, setLeadStage } from "@/lib/crm/calls";
 import { stopLeadAutomations } from "@/lib/crm/automations";
-import { findChatorCustomer, loadChatorCustomer, runSupportTurn } from "@/lib/agent/chator-support";
+import { findChatorCustomer, loadChatorCustomer, runSupportTurn, tidy } from "@/lib/agent/chator-support";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -790,7 +790,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     const first = (state.fullName ?? "").trim().split(/\s+/)[0];
     joined = ig ? `${IG_HELLO} ${joined}` : `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
   }
-  const out = v2 ? [guardPriceV2(joined)] : guardPrice(replies);
+  const out = v2 ? [tidy(guardPriceV2(joined))] : guardPrice(replies);
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };
 }

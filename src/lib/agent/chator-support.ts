@@ -114,6 +114,11 @@ ${block}
 ${rules ? `כללים שיאיר כבר ענה עליהם (הכי עדכני, גובר על המדריך):\n${rules}\n\n` : ""}${knowledge}`;
 }
 
+/** No long dashes in Yair's voice; screen paths as full, tappable links. */
+export function tidy(text: string): string {
+  return text.replace(/\s*[—–]\s*/g, ", ").replace(/,\s*,/g, ",").replace(/(^|[\s(:״"])\/admin\//g, `$1${ORIGIN}/admin/`).replace(/־\/admin\//g, `־ ${ORIGIN}/admin/`);
+}
+
 async function say(conversationId: string, phone: string, texts: string[], sandbox?: SupportSandbox): Promise<void> {
   for (const body of texts) {
     await prisma.conversationMessage.create({ data: { conversationId, role: "assistant", content: body, source: "agent" } });
@@ -170,6 +175,7 @@ export async function runSupportTurn(p: { conversationId: string; phone: string;
     text = `${text ? `${text}\n` : ""}ביקשתי מיאיר לחזור אליך, הוא יתקשר אליך בהקדם.`;
   }
   if (!text) text = "רגע, בודק ומיד חוזר אליך.";
+  text = tidy(text);
   await say(p.conversationId, p.phone, [text], p.sandbox);
   return { replies: [text], stage };
 }
