@@ -6,6 +6,7 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { getPlans } from "@/lib/crm/plans";
 import { findReferrer, recordReferral } from "@/lib/chator-referral";
+import { sanitizePhoneInput } from "@/lib/messaging/phone";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -80,6 +81,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Hidden direction marks from a pasted contact ("‭050…‬") broke matching his number later (14.10.2026).
+    const ownerPhone = sanitizePhoneInput(phone);
     const name = typeof businessName === "string" && businessName.trim().length >= 2 ? businessName.trim() : "המספרה שלי";
     const slug = await generateSlug(name);
     const passwordHash = await hashPassword(password);
@@ -91,7 +94,7 @@ export async function POST(req: NextRequest) {
       data: {
         name,
         slug,
-        phone,
+        phone: ownerPhone,
         passwordHash,
         businessType,
         // Every Chator plan includes the agent (plans are WhatsApp quotas), so the
@@ -101,7 +104,7 @@ export async function POST(req: NextRequest) {
         trialEndsAt: null,
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
-        settings: JSON.stringify({ ownerLoginPhone: phone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}) }),
+        settings: JSON.stringify({ ownerLoginPhone: ownerPhone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}) }),
         ...(plan ? { monthlyPrice: plan.priceIls } : {}),
       },
       select: { id: true, slug: true },

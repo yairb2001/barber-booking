@@ -25,6 +25,7 @@ import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
 import { runDemoTurn } from "@/lib/agent/sales-agent";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
+import { CHATOR_LINE_BUSINESS_ID, isChatorLine } from "@/lib/chator-line";
 import { handleConfirmReply } from "@/lib/confirmations";
 import { runOwnerAgent } from "@/lib/agent/owner-agent";
 import {
@@ -473,6 +474,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // rule, 21.9.2026: "חסום — אין מענה"). Booking was already blocked; the agent wasn't.
   const blockedCustomer = await prisma.customer.findFirst({ where: { businessId: biz.id, phone: { in: phoneVariants(phone) }, isBlocked: true, deletedAt: null }, select: { id: true } }).catch(() => null);
   if (blockedCustomer) return NextResponse.json({ ok: true, blocked: true, saved: true });
+
+  // Chator's own line wrote to this shop (a CRM message to the owner, whose
+  // number is the one this agent answers from): saved, nothing answers, so
+  // two agents never talk to each other (src/lib/chator-line.ts).
+  if (biz.id !== CHATOR_LINE_BUSINESS_ID && await isChatorLine(phone)) return NextResponse.json({ ok: true, chatorLine: true, saved: true });
 
   // ── 1b. Agent move/swap reply routing ───────────────────────────────────────
   // Now that the reply is saved to the chat, check whether THIS message is a

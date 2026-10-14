@@ -13,7 +13,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
-import { phoneVariants } from "@/lib/messaging/phone";
+import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { MODEL_SMART } from "@/lib/agent/customer-agent";
@@ -31,18 +31,33 @@ export type SupportSandbox = { replies: string[]; toolLog: string[] };
 export type ChatorCustomer = { id: string; name: string; slug: string; activatedAt: Date | null; paidAt: Date | null; trialEndsAt: Date | null; monthlyPrice: number | null; settings: string | null; whatsappStatus: string; createdAt: Date };
 const CUSTOMER_SELECT = { id: true, name: true, slug: true, activatedAt: true, paidAt: true, trialEndsAt: true, monthlyPrice: true, settings: true, whatsappStatus: true, createdAt: true } as const;
 
-/** The shop this number owns (its own phone or its owner login), if any. */
+/**
+ * The shop this number owns, if any: the shop's own phone, the owner's login,
+ * or the owner's own barber profile (14.10.2026, Yair: "מהווצאפ של המספרה או
+ * של עצמו... רק עוזר תפעול של המערכת עונה לו"). Compared normalized: a phone
+ * saved with hidden direction marks ("‭050…‬", pasted from contacts) never
+ * matched the exact lookup, and that owner got the demo shop.
+ */
 export async function findChatorCustomer(phone: string): Promise<ChatorCustomer | null> {
-  const vs = phoneVariants(phone);
-  if (!vs.length) return null;
-  return prisma.business.findFirst({
-    where: {
-      id: { notIn: [DEMO_BUSINESS_ID, SUPER_ADMIN_BUSINESS_ID] },
-      OR: [{ phone: { in: vs } }, ...vs.map(v => ({ settings: { contains: `"ownerLoginPhone":"${v}"` } }))],
-    },
+  const want = normalizeIsraeliPhone(phone);
+  if (!want) return null;
+  const same = (p: unknown) => typeof p === "string" && normalizeIsraeliPhone(p) === want;
+  const bizs = await prisma.business.findMany({
+    where: { id: { notIn: [DEMO_BUSINESS_ID, SUPER_ADMIN_BUSINESS_ID] } },
     orderBy: { createdAt: "desc" },
-    select: CUSTOMER_SELECT,
+    select: { ...CUSTOMER_SELECT, phone: true, staff: { where: { isActive: true }, orderBy: { createdAt: "asc" }, select: { phone: true, role: true } } },
   });
+  for (const b of bizs) {
+    let login: unknown = null;
+    try { login = b.settings ? JSON.parse(b.settings).ownerLoginPhone : null; } catch { /* ignore */ }
+    // His own barber profile: the one marked owner, or the first (the wizard has the owner set himself up first).
+    const own = b.staff.filter((s, i) => s.role === "owner" || i === 0);
+    if (same(b.phone) || same(login) || own.some(s => same(s.phone))) {
+      const { phone: _phone, staff: _staff, ...customer } = b;
+      return customer;
+    }
+  }
+  return null;
 }
 export async function loadChatorCustomer(id: string): Promise<ChatorCustomer | null> {
   return prisma.business.findUnique({ where: { id }, select: CUSTOMER_SELECT });
