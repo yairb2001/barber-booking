@@ -686,6 +686,20 @@ ${SALES_KNOWLEDGE}
 ${FORBIDDEN_CLAIMS}`;
 }
 
+/** One short sentence that shows we heard how he works today; no question (the caller adds it). */
+async function bridgeSentence(answer: string, sandbox?: DemoSandbox): Promise<string> {
+  try {
+    const res = await anthropicFor(sandbox ? "test" : "prod").messages.create({
+      model: "claude-haiku-4-5", max_tokens: 80,
+      system: "אתה צ'אטור, מתכתב בוואטסאפ עם בעל מספרה. הוא סיפר עכשיו איך הוא מתנהל היום עם התורים. כתוב משפט אחד קצר (עד 15 מילים), טבעי ובגובה העיניים, שמראה שהבנת ומתחבר למה שסיפר. בלי שאלה ובלי סימן שאלה, בלי מקף ארוך, בלי אימוג'י, בלי לפנות בשם. החזר רק את המשפט.",
+      messages: [{ role: "user", content: answer }],
+    });
+    void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: "claude-haiku-4-5", kind: sandbox ? "sandbox" : "sales", usage: res.usage });
+    const t = res.content.map(b => (b.type === "text" ? b.text : "")).join("").trim().replace(/\s*[—–]\s*/g, ", ").split("\n")[0];
+    return t && !t.includes("?") && t.length <= 140 ? t : "";
+  } catch { return ""; }
+}
+
 async function runSalesTurn(p: { conversationId: string; phone: string; text: string; state: SalesState; senderName: string | null; sandbox?: DemoSandbox; lead: LeadRow | null; v2?: boolean; note?: string }): Promise<{ replies: string[]; state: SalesState }> {
   let state = p.state;
   const v2 = !!p.v2;
@@ -717,6 +731,17 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   // After a demo booking the next two steps are fixed (14.10.2026, Yair). Left to
   // the general flow the model drifted back to "כמה ספרים אתם?".
   const lastAgent = [...history].reverse().find(m => m.role === "assistant")?.content ?? "";
+  // His answer to "איך אתה מתנהל היום?" (not a question of his own): one short
+  // sentence that connects to it, then the AI question, always (the model alone
+  // sometimes asked "איזו מערכת?" instead).
+  if (v2 && state.afterDemoAt && lastAgent.includes("איך אתה מתנהל היום") && !p.text.includes("?")) {
+    const bridge = await bridgeSentence(p.text, p.sandbox);
+    const out = [bridge ? `${bridge} ${AI_QUESTION}` : AI_QUESTION];
+    state = { ...state, afterDemoNudged: true };
+    await saveState(p.conversationId, state);
+    await reply(p.conversationId, p.phone, out, p.sandbox);
+    return { replies: out, state };
+  }
   let stepNote = "";
   if (v2 && state.afterDemoAt) {
     if (lastAgent.includes("איך אתה מתנהל היום")) stepNote = `הוא ענה על השאלה איך הוא מתנהל היום. כתוב משפט קצר אחד שמתחבר למה שענה, ואז שאל בדיוק: "${AI_QUESTION}". בלי שאלות אחרות (לא כמה ספרים ולא איזו מערכת).`;
