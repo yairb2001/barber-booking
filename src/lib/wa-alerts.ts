@@ -28,7 +28,7 @@ type Kind = "wa_down_alert" | "wa_up_alert" | "wa_link_stuck";
 const fmtIL = (d: Date) => d.toLocaleString("he-IL", { timeZone: "Asia/Jerusalem", weekday: "short", hour: "2-digit", minute: "2-digit" });
 
 async function ownerOf(businessId: string) {
-  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { id: true, name: true, slug: true, phone: true, whatsappNumber: true, settings: true } });
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { id: true, name: true, slug: true, phone: true, whatsappNumber: true, settings: true, whatsappStatus: true } });
   if (!biz) return null;
   let s: { ownerLoginPhone?: unknown } = {};
   try { s = biz.settings ? JSON.parse(biz.settings) : {}; } catch { /* ignore */ }
@@ -65,6 +65,11 @@ export async function alertWhatsAppDown(businessId: string): Promise<void> {
     if (await recently(businessId, "wa_down_alert", 2 * 3600_000)) return;
     const biz = await ownerOf(businessId);
     if (!biz) return;
+    // A number that was never linked can't "disconnect" (14.10.2026): every new
+    // signup has a device name on our server from day one, and its state reads
+    // "not authorized" until the owner scans. That sent new shops a "your
+    // WhatsApp disconnected" message right after signup.
+    if (biz.whatsappStatus !== "connected") return;
     const body = `🔴 הוואטסאפ של ${biz.name} התנתק מהמערכת. הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.\nלחיבור מחדש: במערכת → הגדרות → וואטסאפ → "חבר את הטלפון" (סריקה אחת, פחות מדקה).`;
     const status = await tellOwner(biz, "wa_down_alert", "🔴 הוואטסאפ של העסק התנתק", body);
     await ledger(businessId, "wa_down_alert", body, status);

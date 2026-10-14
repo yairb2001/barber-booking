@@ -21,10 +21,10 @@ import { findReferrer, recordReferral } from "@/lib/chator-referral";
  * are configured in the flow, not silently hardcoded. The wizard pre-fills
  * sensible defaults so it's mostly a confirm-and-continue.
  *
- * New businesses start on the BASIC tier with a 14-day trial and no WhatsApp
- * connected (whatsappStatus = "not_requested"). They can take bookings once the
- * wizard's barber+service steps are done; WhatsApp reminders stay muted until
- * GreenAPI is provisioned.
+ * New businesses start on the premium tier (the agent is in every plan), not
+ * activated and with no WhatsApp connected (whatsappStatus = "not_requested").
+ * Until "הפעל" they are in test mode: the booking page saves nothing and the
+ * agent answers only the testers (src/lib/agent/test-mode.ts).
  */
 
 function digits(s: string | null | undefined): string {
@@ -94,7 +94,9 @@ export async function POST(req: NextRequest) {
         phone,
         passwordHash,
         businessType,
-        tier: "basic",
+        // Every Chator plan includes the agent (plans are WhatsApp quotas), so the
+        // tier that unlocks it. "basic" blocked the agent for every self-signup (14.10.2026).
+        tier: "premium",
         // The free month starts at "הפעל", not now (src/lib/activation.ts, 13.10.2026).
         trialEndsAt: null,
         whatsappStatus: "not_requested",

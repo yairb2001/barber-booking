@@ -96,7 +96,8 @@ export async function GET(req: NextRequest) {
       }
     }
   }
-  const whatsappDown = waState === "notAuthorized" || waState === "blocked" || waState === "yellowCard";
+  // Down = a number that was linked and isn't any more. Never linked is "not connected yet", not down.
+  const whatsappDown = business?.whatsappStatus === "connected" && (waState === "notAuthorized" || waState === "blocked" || waState === "yellowCard");
 
   // An OWNER login carries no staffId — signSession() for role:"owner" never
   // sets one, since it's a business-level login, not tied to any Staff row.
