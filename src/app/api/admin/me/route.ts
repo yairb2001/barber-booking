@@ -48,6 +48,7 @@ export async function GET(req: NextRequest) {
       greenApiToken: true, evolutionInstance: true,
       onboardingCompletedAt: true,
       activatedAt: true,
+      passwordHash: true,
       trialEndsAt: true,
       paidAt: true,
       monthlyPrice: true,
@@ -164,6 +165,9 @@ export async function GET(req: NextRequest) {
     whatsappDown,
     onboardingCompletedAt: business?.onboardingCompletedAt ?? null,
     activatedAt: business?.activatedAt ?? null,
+    trialEndsAt: business?.trialEndsAt ?? null,
+    // The wizard asks for a password only when there is none yet (signup sets one).
+    hasPassword: !!business?.passwordHash,
     // Effective per-user permissions (the values the UI should gate on).
     canViewAllCalendars: perms.canViewAllCalendars,
     canViewAllChats: perms.canViewAllChats,

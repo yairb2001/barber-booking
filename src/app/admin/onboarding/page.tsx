@@ -26,10 +26,30 @@ const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", 
 type Hours = { on: boolean; start: string; end: string }[];
 const DEFAULT_HOURS: Hours = [0, 1, 2, 3, 4].map(() => ({ on: true, start: "09:00", end: "19:00" })).concat([{ on: true, start: "09:00", end: "14:00" }, { on: false, start: "09:00", end: "14:00" }]);
 
+/** What signup names a shop when no name was given: the wizard asks for the real one. */
+const SIGNUP_DEFAULT_NAME = "המספרה שלי";
+
 type Member = { id?: string; name: string; phone: string };
 type Svc = { id?: string; name: string; price: string; duration: string };
 
+/** First setup asks only what shapes most chats: the must-answer ones and the tone. */
+const isMainQuestion = (f: SetupField) => f.core || f.key === "tone";
+
+/** The interview question made short for a screen: no "X / Y" option list (the
+ *  chips show them), no long dash, its "(למשל: …)" / "(ברירת מחדל: …)" moved
+ *  out as a hint (13.10.2026, Yair: "לדייק את האשף"). */
+function ask(f: SetupField): { q: string; hint: string } {
+  let q = f.question.replace(/\?\s*[^?]*\/[^?]*$/, "?").replace(/\s*\(walk-in\)/i, "");
+  let hint = "";
+  const m = /\s*\(([^()]*)\)\s*$/.exec(q);
+  if (m) { q = q.slice(0, m.index); hint = /^ברירת מחדל/.test(m[1]) ? "" : m[1].includes("למשל:") ? m[1].slice(m[1].indexOf("למשל:")) : m[1]; }
+  q = q.replace(/\s*—\s*/g, ", ").replace(/\s+([?,])/g, "$1").trim();
+  if (!/[?.]$/.test(q) && f.type !== "text") q += "?";
+  return { q, hint };
+}
+
 const input = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4FE3B1]";
+const num = "w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[14px] text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#4FE3B1]";
 const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm border transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-600"}`;
 
 export default function OnboardingPage() {
@@ -50,6 +70,10 @@ export default function OnboardingPage() {
   const [hours, setHours] = useState<Hours>(DEFAULT_HOURS);
   const [slug, setSlug] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  const [hasPassword, setHasPassword] = useState(false); // signup already set one
+  const [moreQs, setMoreQs] = useState(false);            // the agent questions that can wait
+  const [live, setLive] = useState<{ endsAt: string | null } | null>(null); // activated just now
+  const [copied, setCopied] = useState(false);
   // team & services
   const [members, setMembers] = useState<Member[]>([{ name: "", phone: "" }]);
   const [services, setServices] = useState<Svc[]>([]);
@@ -79,7 +103,7 @@ export default function OnboardingPage() {
         ]);
         if (bizRes.ok) {
           const b = await bizRes.json();
-          setName(b.name || ""); setPhone(b.phone || ""); setAddress(b.address || ""); setLogoUrl(b.logoUrl || null);
+          setName(b.name && b.name !== SIGNUP_DEFAULT_NAME ? b.name : ""); setPhone(b.phone || ""); setAddress(b.address || ""); setLogoUrl(b.logoUrl || null);
           if (b.businessType) setBizType(b.businessType);
           const s = b.settings || {};
           if (typeof s.agentUnavailableMessage === "string" && s.agentUnavailableMessage.trim()) setUnavailableMsg(s.agentUnavailableMessage);
@@ -88,9 +112,8 @@ export default function OnboardingPage() {
             if (Array.isArray(s.onboarding.doneSteps)) setDone(s.onboarding.doneSteps);
             if (Array.isArray(s.onboarding.hours) && s.onboarding.hours.length === 7) setHours(s.onboarding.hours);
           }
-          setMembers(m => m[0]?.name ? m : [{ name: "", phone: b.phone || "" }]);
         }
-        if (meRes.ok) { const me = await meRes.json(); if (me?.slug) setSlug(me.slug); if (me?.whatsappStatus) setWaStatus(me.whatsappStatus); }
+        if (meRes.ok) { const me = await meRes.json(); if (me?.slug) setSlug(me.slug); if (me?.whatsappStatus) setWaStatus(me.whatsappStatus); if (me?.hasPassword) setHasPassword(true); }
         if (staffRes.ok) { const st = await staffRes.json(); if (Array.isArray(st) && st.length) setMembers(st.map((x: { id: string; name: string; phone: string | null }) => ({ id: x.id, name: x.name, phone: x.phone || "" }))); }
         if (svcRes.ok) { const sv = await svcRes.json(); if (Array.isArray(sv) && sv.length) setServices(sv.map((x: { id: string; name: string; price: number; durationMinutes: number }) => ({ id: x.id, name: x.name, price: String(x.price), duration: String(x.durationMinutes) }))); }
         if (agentRes.ok) {
@@ -225,7 +248,7 @@ export default function OnboardingPage() {
       const r = await fetch("/api/admin/agent/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: [previewText.trim()] }) });
       const j = await r.json();
       const t = Array.isArray(j.transcript) ? j.transcript : [];
-      setPreview(t.length ? t : [{ role: "assistant", text: j.error || "לא התקבלה תשובה — נסה שוב" }]);
+      setPreview(t.length ? t : [{ role: "assistant", text: j.error || "לא התקבלה תשובה, נסה שוב" }]);
     } catch { setPreview([{ role: "assistant", text: "שגיאת רשת" }]); }
     setPreviewing(false);
   };
@@ -267,11 +290,18 @@ export default function OnboardingPage() {
   const activate = async () => {
     setBusy(true); setError("");
     try {
+      const wasOn = agentEnabled;
       const r = await fetch("/api/admin/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isEnabled: true }) });
       if (!r.ok) { setError("הפעלת הסוכן נכשלה"); setBusy(false); return; }
       await fetch("/api/admin/onboarding/complete", { method: "POST" });
-      router.push("/admin"); router.refresh();
-    } catch { setError("שגיאה בהפעלה"); setBusy(false); }
+      if (wasOn) { router.push("/admin"); router.refresh(); return; }
+      // Just went live: the link to share and when the free month ends.
+      const me = await fetch("/api/admin/me").then(x => (x.ok ? x.json() : null)).catch(() => null);
+      setAgentEnabled(true);
+      setLive({ endsAt: me?.trialEndsAt ?? null });
+      window.scrollTo({ top: 0 });
+    } catch { setError("שגיאה בהפעלה"); }
+    setBusy(false);
   };
 
   const finishLater = async () => {
@@ -279,19 +309,84 @@ export default function OnboardingPage() {
     router.push("/admin"); router.refresh();
   };
 
+  // One agent question: chips for a choice, a box for words (the question without its option list).
+  const renderField = (f: SetupField) => {
+    const { q, hint } = ask(f);
+    return (
+      <Field key={f.key} label={q} help={f.help || (f.type !== "text" ? hint : "")}>
+        {f.type === "choice" && f.options ? (
+          <div className="flex flex-wrap gap-1.5">
+            {f.options.map(o => { const on = (setup[f.key] ?? f.default) === o; return <button key={o} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: o }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{o}</button>; })}
+          </div>
+        ) : f.type === "bool" ? (
+          <div className="flex gap-1.5">
+            {[true, false].map(v => { const on = (setup[f.key] ?? f.default) === v; return <button key={String(v)} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: v }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{v ? "כן" : "לא"}</button>; })}
+          </div>
+        ) : f.multiline ? (
+          <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : hint || "כמה מילים בסגנון שלך"} />
+        ) : typeof f.default === "string" && f.default.length > 32 ? (
+          // A long default (who gets escalated) shows whole, not cut off on a phone.
+          <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={2} placeholder={f.default} />
+        ) : (
+          <input value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={typeof f.default === "string" ? f.default : hint} />
+        )}
+      </Field>
+    );
+  };
+
   if (loading) return <Shell step={0}><div className="text-center text-slate-500 py-10">טוען…</div></Shell>;
+
+  // Activated: the shop is live. What to do now, not a jump into the admin (13.10.2026).
+  if (live) {
+    const link = slug ? `${window.location.origin}/${slug}` : "";
+    const ends = live.endsAt ? new Date(live.endsAt).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", year: "numeric", timeZone: "Asia/Jerusalem" }) : null;
+    const waOn = waStatus === "connected" || waLinked;
+    const share = `היי, מעכשיו אפשר לקבוע תור אצלנו ישר מכאן: ${link}`;
+    const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* no clipboard */ } };
+    return (
+      <Shell step={STEPS.length - 1}>
+        <Card title="המערכת פעילה" sub={ends ? `החודש החינמי שלך רץ עד ${ends}.` : undefined}>
+          <div className="w-14 h-14 mx-auto rounded-full flex items-center justify-center text-2xl my-2" style={{ background: C.turquoise, color: C.ink }}>✓</div>
+          {link && (
+            <Field label="הקישור לקביעת תורים, לשתף עם הלקוחות">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-[14px] break-all text-slate-700" dir="ltr">{link}</div>
+              <div className="flex gap-2 mt-2">
+                <button type="button" onClick={() => void copy()} className="flex-1 rounded-xl border py-2.5 text-sm font-semibold" style={{ borderColor: C.petrol, color: C.petrol }}>{copied ? "הועתק ✓" : "העתק"}</button>
+                <a href={`https://wa.me/?text=${encodeURIComponent(share)}`} target="_blank" rel="noopener noreferrer" className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-white text-center bg-[#25D366]">שלח בוואטסאפ</a>
+              </div>
+            </Field>
+          )}
+          {waOn ? (
+            <p className="text-sm rounded-xl px-3 py-2.5 mt-5 leading-relaxed" style={{ background: C.mist, color: C.petrol }}>נסה עכשיו: מטלפון אחר, שלח לוואטסאפ של {vocab.placeDef} &quot;יש תור מחר?&quot;</p>
+          ) : (
+            <div className="text-sm rounded-xl px-3 py-2.5 mt-5 leading-relaxed bg-amber-50 border border-amber-200 text-amber-800">
+              הוואטסאפ לא מחובר, אז הסוכן עוד לא עונה.{" "}
+              <button type="button" onClick={() => router.push("/admin/settings/whatsapp")} className="font-semibold underline">לחבר עכשיו</button>
+            </div>
+          )}
+          <Primary onClick={() => { router.push("/admin"); router.refresh(); }}>כניסה למערכת</Primary>
+        </Card>
+      </Shell>
+    );
+  }
 
   return (
     <Shell step={step} onSkipAll={finishLater}>
       {error && <div className="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{error}</div>}
 
       {step === 0 && (
-        <Card title={`בוא נקים את Chator ל${vocab.place} שלך`} sub="עשר דקות, מהנייד. כל שלב נשמר — אפשר לעצור ולחזור.">
+        <Card title={`בוא נקים את צ׳אטור ל${vocab.place} שלך`} sub="עשר דקות, מהנייד. כל שלב נשמר, אפשר לעצור ולחזור.">
           <ul className="text-sm text-slate-600 space-y-1.5 mb-5">
             {["פרטי העסק ושעות הפעילות", `${vocab.staffPluralDef} והשירותים`, "איך הסוכן מדבר עם הלקוחות", "חיבור הוואטסאפ של העסק"].map(t => <li key={t} className="flex gap-2"><span style={{ color: C.turquoise }}>●</span>{t}</li>)}
           </ul>
-          <label className="block text-sm text-slate-600 mb-1">סיסמה לכניסה בפעם הבאה <span className="text-slate-400">(לא חובה עכשיו)</span></label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={input} placeholder="לפחות 6 תווים" dir="ltr" />
+          <p className="text-sm rounded-xl px-3 py-2.5 mb-1" style={{ background: C.mist, color: C.petrol }}>החודש החינמי מתחיל רק כשתלחץ &quot;הפעל&quot; בסוף.</p>
+          {/* Signup already set a password; only someone who came in through a personal link has none. */}
+          {!hasPassword && (
+            <div className="mt-4">
+              <label className="block text-sm text-slate-600 mb-1">סיסמה לכניסה בפעם הבאה <span className="text-slate-400">(לא חובה עכשיו)</span></label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={input} placeholder="לפחות 6 תווים" dir="ltr" />
+            </div>
+          )}
           <Primary onClick={saveWelcome} busy={busy}>מתחילים</Primary>
         </Card>
       )}
@@ -299,7 +394,7 @@ export default function OnboardingPage() {
       {step === 1 && (
         <Card title="העסק" sub="אפשר לשנות הכל אחר כך בהגדרות.">
           <Field label={`שם ${vocab.placeDef}`}><input value={name} onChange={e => setName(e.target.value)} className={input} placeholder={vocab.type === "barber_men" ? "המספרה של דני" : vocab.placeDef} /></Field>
-          <Field label="טלפון העסק"><input value={phone} onChange={e => setPhone(e.target.value)} className={input} dir="ltr" placeholder="050-0000000" /></Field>
+          <Field label="טלפון העסק" help="המספר שהלקוחות רואים בעמוד קביעת התור. כדאי שזה יהיה המספר של הוואטסאפ של העסק."><input value={phone} onChange={e => setPhone(e.target.value)} className={input} dir="ltr" placeholder="050-0000000" /></Field>
           <Field label="כתובת"><input value={address} onChange={e => setAddress(e.target.value)} className={input} placeholder="רחוב ומספר, עיר" /></Field>
           <Field label="לוגו (לא חובה)">
             <div className="flex items-center gap-3">
@@ -307,7 +402,7 @@ export default function OnboardingPage() {
               <label className="text-sm px-3 py-2 rounded-xl border border-slate-200 bg-white cursor-pointer">בחר תמונה<input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const u = await uploadImage(f); if (u) setLogoUrl(u); } }} /></label>
             </div>
           </Field>
-          <Field label="שעות פעילות">
+          <Field label="שעות פעילות" help={`השעות שבהן אפשר לקבוע תורים. כל ${vocab.staffPluralDef} מקבלים אותן, ואפשר לשנות לכל אחד אחר כך.`}>
             <div className="space-y-1.5">
               {DAYS.map((d, i) => (
                 <div key={d} className="flex items-center gap-2 text-sm">
@@ -328,64 +423,70 @@ export default function OnboardingPage() {
       )}
 
       {step === 2 && (
-        <Card title="הצוות" sub={`מי ${vocab.works} אצלכם. הטלפון משמש להתראות ולכניסה אישית ליומן.`}>
+        <Card title="הצוות" sub={`מי ${vocab.works} אצלכם, כולל אתה.`}>
           <div className="space-y-2">
             {members.map((m, i) => (
               <div key={i} className="flex gap-2">
                 <input value={m.name} onChange={e => setMembers(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} placeholder={i === 0 ? "השם שלך" : `שם ${vocab.staff}`} disabled={!!m.id} />
-                <input value={m.phone} onChange={e => setMembers(a => a.map((x, j) => j === i ? { ...x, phone: e.target.value } : x))} className={input} dir="ltr" placeholder="טלפון" disabled={!!m.id} />
+                <input value={m.phone} onChange={e => setMembers(a => a.map((x, j) => j === i ? { ...x, phone: e.target.value } : x))} className={input} dir="ltr" placeholder={i === 0 ? "הנייד שלך" : "נייד"} inputMode="tel" disabled={!!m.id} />
                 {!m.id && members.length > 1 && <button type="button" onClick={() => setMembers(a => a.filter((_, j) => j !== i))} className="text-slate-400 px-1">✕</button>}
               </div>
             ))}
           </div>
           <button type="button" onClick={() => setMembers(a => [...a, { name: "", phone: "" }])} className="mt-3 text-sm font-medium" style={{ color: C.petrol }}>+ עוד {vocab.staff}</button>
-          <p className="text-xs text-slate-400 mt-3">ברירת מחדל: כולם עושים את כל השירותים, בשעות הפעילות שהגדרת. אפשר לדייק לכל אחד אחר כך.</p>
+          <Help label="למה צריך נייד?">
+            <Bubble>הנייד האישי של כל אחד, לא של העסק. אליו מגיעות ההתראות, ואיתו נכנסים ליומן. כולם מקבלים את כל השירותים ואת שעות הפעילות, ואפשר לדייק לכל אחד אחר כך.</Bubble>
+          </Help>
           <Primary onClick={saveTeam} busy={busy}>המשך</Primary>
         </Card>
       )}
 
       {step === 3 && (
         <Card title="השירותים" sub="הכנו רשימה במחירי שוק. שנה, מחק, הוסף.">
+          {/* The name gets the full width (it was cut off on a phone), price and minutes under it. */}
           <div className="space-y-2">
-            <div className="grid grid-cols-[1fr_72px_72px_24px] gap-2 text-[11px] text-slate-400 px-1"><span>שירות</span><span>מחיר ₪</span><span>דקות</span><span /></div>
             {services.map((s, i) => (
-              <div key={i} className="grid grid-cols-[1fr_72px_72px_24px] gap-2 items-center">
-                <input value={s.name} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} disabled={!!s.id} />
-                <input value={s.price} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} className={input} type="number" dir="ltr" disabled={!!s.id} />
-                <input value={s.duration} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, duration: e.target.value } : x))} className={input} type="number" dir="ltr" disabled={!!s.id} />
-                {!s.id ? <button type="button" onClick={() => setServices(a => a.filter((_, j) => j !== i))} className="text-slate-400">✕</button> : <span className="text-emerald-500 text-sm">✓</span>}
+              <div key={i} className="rounded-2xl border border-slate-200 p-2">
+                <div className="flex items-center gap-2">
+                  <input value={s.name} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} placeholder="שם השירות" disabled={!!s.id} />
+                  {!s.id ? <button type="button" onClick={() => setServices(a => a.filter((_, j) => j !== i))} className="shrink-0 w-8 text-slate-400" aria-label="מחק שירות">✕</button> : <span className="shrink-0 w-8 text-center text-emerald-500 text-sm">✓</span>}
+                </div>
+                <div className="flex items-center gap-1.5 mt-1.5 text-[13px] text-slate-500">
+                  <input value={s.price} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} className={num} type="number" inputMode="numeric" dir="ltr" disabled={!!s.id} aria-label="מחיר" />
+                  <span>₪</span>
+                  <input value={s.duration} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, duration: e.target.value } : x))} className={`${num} ms-3`} type="number" inputMode="numeric" dir="ltr" disabled={!!s.id} aria-label="דקות" />
+                  <span>דקות</span>
+                </div>
               </div>
             ))}
           </div>
           <button type="button" onClick={() => setServices(a => [...a, { name: "", price: "", duration: "30" }])} className="mt-3 text-sm font-medium" style={{ color: C.petrol }}>+ שירות</button>
+          <Help label="מה משנים המחיר והדקות?">
+            <Bubble>המחיר מופיע ללקוחות בעמוד קביעת התור, והסוכן אומר אותו כששואלים. הדקות קובעות כמה זמן התור תופס ביומן, אז מציעים ללקוח רק זמנים שהשירות נכנס בהם.</Bubble>
+          </Help>
           <Primary onClick={saveServices} busy={busy}>המשך</Primary>
         </Card>
       )}
 
       {step === 4 && (
-        <Card title="הסוכן" sub="איך הוא מדבר עם הלקוחות שלך. הבסיס כבר מוכן — כאן רק הדברים שמשתנים מעסק לעסק.">
-          <Field label="איך לקוחות יקראו לו"><input value={agentName} onChange={e => setAgentName(e.target.value)} className={input} placeholder="הסוכן" /></Field>
-          {fields.map(f => (
-            <Field key={f.key} label={f.question.replace(/\s*\(.*?\)\s*$/, "")}>
-              {f.type === "choice" && f.options ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {f.options.map(o => { const on = (setup[f.key] ?? f.default) === o; return <button key={o} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: o }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{o}</button>; })}
-                </div>
-              ) : f.type === "bool" ? (
-                <div className="flex gap-1.5">
-                  {[true, false].map(v => { const on = (setup[f.key] ?? f.default) === v; return <button key={String(v)} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: v }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{v ? "כן" : "לא"}</button>; })}
-                </div>
-              ) : f.multiline ? (
-                <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : f.key === "businessRules" || f.key === "staffRules" ? "שורה לכל כלל" : "כמה מילים בסגנון שלך"} />
-              ) : (
-                <input value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={typeof f.default === "string" ? f.default : ""} />
-              )}
-            </Field>
-          ))}
-          <Field label="ההודעה שלקוח מקבל כשהסוכן לא זמין (למשל כשחבילת החודש נגמרה)">
-            <textarea value={unavailableMsg} onChange={e => setUnavailableMsg(e.target.value)} className={input} rows={3} />
-            <div className="text-[11px] text-slate-400 mt-1">{"{{name}}"} = שם הלקוח, {"{{link}}"} = קישור ההזמנה</div>
-          </Field>
+        <Card title="הסוכן" sub="הבסיס מוכן. כאן רק מה שמיוחד אצלך.">
+          <Field label="איך לקוחות יקראו לו" help="השם של הסוכן. אם לקוח שואל עם מי הוא מדבר, זה השם שהסוכן יגיד."><input value={agentName} onChange={e => setAgentName(e.target.value)} className={input} placeholder="הסוכן" /></Field>
+          {fields.filter(isMainQuestion).map(renderField)}
+
+          {/* The rest can wait: folded, so the first setup stays short (13.10.2026). */}
+          <button type="button" onClick={() => setMoreQs(v => !v)} className="mt-5 w-full flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold" style={{ color: C.petrol }} aria-expanded={moreQs}>
+            <span>עוד שאלות <span className="font-normal text-slate-400">(אפשר גם אחר כך)</span></span>
+            <span aria-hidden="true">{moreQs ? "▲" : "▼"}</span>
+          </button>
+          {moreQs && (
+            <div className="border-s-2 ps-3 mt-1" style={{ borderColor: C.mist }}>
+              {fields.filter(f => !isMainQuestion(f)).map(renderField)}
+              <Field label="ההודעה שלקוח מקבל כשהסוכן לא זמין" help="נשלחת לבד כשהסוכן לא יכול לענות, למשל כשנגמרו ההודעות של החודש, כדי שאף לקוח לא יישאר בלי תשובה.">
+                <textarea value={unavailableMsg} onChange={e => setUnavailableMsg(e.target.value)} className={input} rows={3} />
+                <div className="text-[11px] text-slate-400 mt-1">{"{{name}}"} יוחלף בשם הלקוח, {"{{link}}"} בקישור לקביעת תור</div>
+              </Field>
+            </div>
+          )}
 
           <div className="mt-5 rounded-2xl p-4" style={{ background: C.mist }}>
             <div className="text-sm font-semibold mb-2" style={{ color: C.petrol }}>נסה אותו</div>
@@ -400,14 +501,14 @@ export default function OnboardingPage() {
                 ))}
               </div>
             )}
-            <div className="text-[11px] text-slate-500 mt-2">ארגז חול: כלום לא נשלח ולא נשמר ביומן.</div>
+            <div className="text-[11px] text-slate-500 mt-2">רק ניסיון, שום דבר לא נשלח.</div>
           </div>
           <Primary onClick={() => saveAgent(true)} busy={busy}>המשך</Primary>
         </Card>
       )}
 
       {step === 5 && (
-        <Card title="הוואטסאפ של העסק" sub="הסוכן עונה מהמספר של העסק — הלקוחות ממשיכים לכתוב לאותו מספר שהם מכירים.">
+        <Card title="הוואטסאפ של העסק" sub="הסוכן עונה מהמספר שהלקוחות כבר מכירים.">
           {waStatus === "connected" || waLinked ? (
             <div className="rounded-2xl px-4 py-5 text-center" style={{ background: C.mist }}>
               <div className="w-12 h-12 mx-auto rounded-full inline-flex items-center justify-center text-2xl mb-1" style={{ background: C.turquoise, color: C.ink }}>✓</div>
@@ -420,9 +521,20 @@ export default function OnboardingPage() {
             // Regular or official, chosen right here at the connection step (10.10.2026).
             <div className="space-y-3">
               <BusinessNumberNote />
+              {/* Yair, 14.10.2026: a small "what's the difference", very short. */}
+              <Help label="רגיל או רשמי? מה ההבדל">
+                <Bubble title="וואטסאפ רגיל">
+                  <Pro ok>שולחים כל הודעה, מתי שרוצים, כמה שרוצים.</Pro>
+                  <Pro ok={false}>יש סיכון לחסימה. <span className="opacity-75">(עבדנו עם הרבה {vocab.type.startsWith("barber") ? "מספרות" : "עסקים"} ויודעים איך לעבוד בלי להיחסם. עד היום {vocab.type.startsWith("barber") ? "אף מספרה לא נחסמה" : "אף עסק לא נחסם"}.)</span></Pro>
+                </Bubble>
+                <Bubble title="וואטסאפ רשמי של מטא">
+                  <Pro ok>בלי סיכון לחסימה.</Pro>
+                  <Pro ok={false}>אי אפשר לשלוח מה שרוצים מתי שרוצים. הודעה ראשונה ללקוח רק בתבנית שמטא אישרה. רק אחרי שהוא עונה כותבים לו חופשי, עד 24 שעות.</Pro>
+                </Bubble>
+              </Help>
               <div className="rounded-2xl border border-slate-200 p-4">
                 <p className="text-sm font-semibold text-slate-800">וואטסאפ רגיל</p>
-                <p className="text-xs text-slate-500 mt-1 mb-3">סורקים קוד מהוואטסאפ בטלפון של העסק ומתחברים מיד. פחות מדקה.</p>
+                <p className="text-xs text-slate-500 mt-1 mb-3">סורקים קוד מהטלפון של העסק. פחות מדקה.</p>
                 <Primary onClick={connectWhatsApp} busy={busy}>חבר את הטלפון</Primary>
               </div>
               <div className="rounded-2xl border p-4" style={{ borderColor: waOfficial ? C.turquoise : "#E2E8F0", background: waOfficial ? C.mist : "#fff" }}>
@@ -430,9 +542,8 @@ export default function OnboardingPage() {
                   <p className="text-sm font-semibold text-slate-800">וואטסאפ רשמי של מטא</p>
                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#FFF1D6", color: "#7A4A00" }}>אחרי החודש החינמי</span>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">חיבור מאושר על ידי מטא, בלי סיכון לחסימה. וואטסאפ ביזנס ממשיך לעבוד אצלך בטלפון. החודש החינמי עובד בוואטסאפ הרגיל, והרשמי נפתח אחרי ההצטרפות למסלול.</p>
                 {waOfficial
-                  ? <p className="text-xs mt-3 leading-relaxed" style={{ color: C.petrol }}>רשמנו שאתה רוצה רשמי. בחודש החינמי מתחברים ברגיל, ואחרי ההצטרפות למסלול נעביר אותך לרשמי.</p>
+                  ? <p className="text-xs mt-3 leading-relaxed" style={{ color: C.petrol }}>רשמנו. בחודש החינמי מתחברים ברגיל, ואחריו נעביר אותך לרשמי.</p>
                   : <button type="button" onClick={chooseOfficial} disabled={busy} className="mt-3 w-full rounded-xl py-2.5 text-sm font-semibold border disabled:opacity-50" style={{ borderColor: C.petrol, color: C.petrol }}>אני רוצה רשמי</button>}
               </div>
             </div>
@@ -444,7 +555,7 @@ export default function OnboardingPage() {
       )}
 
       {step === 6 && (
-        <Card title="הפעלה" sub="ברגע שתלחץ הפעל מתחיל החודש החינמי שלך, ואפשר לשתף עם הלקוחות את הקישור לקביעת תורים. עד אז אפשר לערוך הכל בלי לחץ.">
+        <Card title="הפעלה" sub="בדיקה אחרונה, ומפעילים.">
           <ul className="space-y-2 text-sm">
             {[
               ["העסק ושעות הפעילות", done.includes("business")],
@@ -456,10 +567,20 @@ export default function OnboardingPage() {
               <li key={String(label)} className="flex items-center gap-2"><span className={`w-5 h-5 rounded-full text-[11px] flex items-center justify-center text-white ${ok ? "" : "bg-slate-300"}`} style={ok ? { background: C.turquoise, color: C.ink } : {}}>{ok ? "✓" : "·"}</span><span className={ok ? "text-slate-800" : "text-slate-500"}>{label as string}</span></li>
             ))}
           </ul>
-          {!(waStatus === "connected" || waLinked) && <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4">בלי וואטסאפ מחובר הסוכן לא יכול לענות ללקוחות. אפשר להפעיל עכשיו ולחבר אחר כך מההגדרות.</p>}
+          <Help label="מה קורה כשלוחצים הפעל?">
+            <Bubble>הסוכן מתחיל לענות ללקוחות, ומתחיל החודש החינמי. בסופו ממשיכים רק אם מזינים כרטיס. בלי כרטיס זה פשוט נעצר, בלי שום חיוב.</Bubble>
+          </Help>
           {agentEnabled && <p className="text-xs text-emerald-700 mt-3">הסוכן כבר פעיל.</p>}
-          <Primary onClick={activate} busy={busy}>{agentEnabled ? "סיים והיכנס למערכת" : "הפעל את הסוכן"}</Primary>
-          <p className="text-xs text-slate-500 text-center mt-3">אחרי ההפעלה: שלח לעצמך בוואטסאפ של העסק &quot;יש תור מחר?&quot; ותראה אותו עונה.</p>
+          {waStatus === "connected" || waLinked || agentEnabled ? (
+            <Primary onClick={activate} busy={busy}>{agentEnabled ? "סיים והיכנס למערכת" : "הפעל"}</Primary>
+          ) : (
+            // Without WhatsApp the free month would run while the agent answers no one: connect first.
+            <>
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4 leading-relaxed">הוואטסאפ לא מחובר: הסוכן לא יענה, והחודש החינמי ירוץ בכל זאת. כדאי לחבר קודם, פחות מדקה.</p>
+              <Primary onClick={() => goTo(5)} busy={busy}>לחבר את הוואטסאפ</Primary>
+              <button type="button" onClick={activate} disabled={busy} className="mt-3 w-full text-sm text-slate-500 underline disabled:opacity-50">להפעיל בכל זאת</button>
+            </>
+          )}
         </Card>
       )}
     </Shell>
@@ -501,8 +622,48 @@ function Card({ title, sub, children }: { title: string; sub?: string; children:
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="mt-4"><label className="block text-sm text-slate-600 mb-1.5">{label}</label>{children}</div>;
+// Explanations (14.10.2026, Yair: "כפתור שאתה פותח אותו ואז הוא מסביר לך"):
+// a small "?" next to a question, or a short link for a whole step. Closed by default.
+function Field({ label, help, children }: { label: string; help?: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <label className="block text-sm text-slate-600">{label}</label>
+        {help && (
+          <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} aria-label="הסבר" className="shrink-0 w-6 h-6 rounded-full text-[12px] font-bold inline-flex items-center justify-center" style={open ? { background: C.petrol, color: "#fff" } : { background: C.mist, color: C.petrol }}>?</button>
+        )}
+      </div>
+      {help && open && <Bubble>{help}</Bubble>}
+      {children}
+    </div>
+  );
+}
+
+function Help({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-3">
+      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: C.petrol }}>
+        <span className="w-5 h-5 rounded-full inline-flex items-center justify-center text-[11px]" style={open ? { background: C.petrol, color: "#fff" } : { background: C.mist }}>?</span>{label}
+      </button>
+      {open && <div className="mt-2 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
+function Bubble({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-2 rounded-2xl px-3 py-2.5 text-[13px] leading-relaxed" style={{ background: C.mist, color: C.petrol }}>
+      {title && <div className="font-bold mb-1">{title}</div>}
+      {children}
+    </div>
+  );
+}
+
+/** One line of a comparison: ✓ for what you get, ✗ for what you give up. */
+function Pro({ ok, children }: { ok: boolean; children: React.ReactNode }) {
+  return <div className="flex gap-1.5"><span className="shrink-0 font-bold" style={{ color: ok ? "#0F8A63" : "#C2410C" }}>{ok ? "✓" : "✗"}</span><span>{children}</span></div>;
 }
 
 function Primary({ onClick, busy, children }: { onClick: () => void; busy?: boolean; children: React.ReactNode }) {

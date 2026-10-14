@@ -11,6 +11,8 @@ import { prisma } from "@/lib/prisma";
 // and gives it a distinct iOS home-screen title, instead of inheriting the
 // customer-oriented ones from the root layout.
 export const metadata: Metadata = {
+  // Not the root "DOMINANT Barbershop": every shop's admin (and setup) is Chator.
+  title: "Chator",
   manifest: "/admin/manifest.webmanifest",
   appleWebApp: {
     capable: true,

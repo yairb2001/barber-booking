@@ -58,6 +58,8 @@ export type SetupField = {
   core: boolean;
   /** Free text that deserves a big box (style notes, sample messages). */
   multiline?: boolean;
+  /** A short plain explanation for screens: what this changes in the agent's answers. */
+  help?: string;
   /**
    * Renders this field's stored value into one prompt line. Return "" to omit
    * (e.g. a bool that's false and needs no mention). `v` is the stored value.
@@ -227,6 +229,35 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
   },
 ];
 
+/**
+ * What each question changes, in plain words, for the "?" next to it on the
+ * setup screens (14.10.2026, Yair: "שיהיה הסברים על כל דבר"). Only what the
+ * field really does: most of them are lines the agent reads, not rules the
+ * system enforces.
+ */
+const FIELD_HELP: Record<string, (v: Vocab) => string> = {
+  tone: () => "איך הסוכן נשמע. רשמי: \"שלום, איך אפשר לעזור?\". חברי: \"היי, מתי נוח לך?\". קליל-רחוב: \"מה המצב? בוא נסגור לך תור\".",
+  emojis: () => "כמה סמיילים בהודעות של הסוכן. מעט זה אחד פה ושם, כמו שבן אדם כותב.",
+  address: v => `איך הסוכן פונה ל${v.customer} בהודעה. בשם פרטי: \"היי יוסי\". ניטרלי: בלי פנייה בכלל.`,
+  defaultService: v => `כש${v.customer} ${v.customerFem ? "כותבת" : "כותב"} רק \"רוצה תור\" בלי לפרט, זה השירות שהסוכן יקבע. מזה נקבע גם אורך התור ביומן.`,
+  barberAssign: v => `הכי ${v.free}: הסוכן קובע אצל מי שפנוי, בלי לשאול. לשאול: הסוכן שואל אצל מי נוח. ${v.staff} ${v.staffFem ? "קבועה" : "קבוע"}: אצל מי שעשה לו בפעם הקודמת, בלי לשאול.`,
+  priceNote: v => `רק אם כל ${v.staff} גובה מחיר אחר. מה הסוכן אומר כששואלים \"כמה עולה\" לפני שבחרו אצל מי.`,
+  cancelPolicy: v => `מה הסוכן עונה ל${v.customer} ${v.customerFem ? "ששואלת" : "ששואל"} עד מתי אפשר לבטל תור.`,
+  deposit: () => "אם כן, הסוכן יגיד ללקוח שיש מקדמה כשהוא קובע תור.",
+  walkin: () => "מה הסוכן עונה למי ששואל אם אפשר לבוא בלי לקבוע מראש.",
+  location: () => "הסוכן שולח את זה למי ששואל איך מגיעים או איפה חונים.",
+  payment: () => "מה הסוכן עונה למי ששואל איך משלמים.",
+  kids: () => "מה הסוכן עונה כששואלים על תספורת לילד: מאיזה גיל ובכמה.",
+  groupBooking: () => "למשל אבא וילד: האם הסוכן קובע להם תורים צמודים, אחד אחרי השני.",
+  staffFull: v => `מה הסוכן עושה כש${v.staffDef} ש${v.customer} ${v.customerFem ? "ביקשה תפוס בזמן שהיא רוצה" : "ביקש תפוס בזמן שהוא רוצה"}.`,
+  lateTolerance: v => `מה הסוכן עונה ל${v.customer} ${v.customerFem ? "שכותבת שהיא מאחרת" : "שכותב שהוא מאחר"}: עד כמה זה בסדר.`,
+  staffRules: v => `דברים שנכונים רק ל${v.staff} אחד, כדי שהסוכן לא יקבע טעות. שורה לכל ${v.staff}.`,
+  businessRules: () => "כל דבר קטן שאתה היית עונה ללקוח, והסוכן לא יכול לנחש לבד.",
+  styleNotes: () => "כמה מילים חופשיות על האווירה אצלכם. הסוכן מתאים את עצמו אליה.",
+  styleSamples: () => "הודעות אמיתיות שכתבת ללקוחות. הסוכן לומד מהן איך אתה כותב.",
+  escalateWhen: () => "מתי הסוכן מפסיק לענות ומעביר את השיחה אליך. אתה מקבל התראה וממשיך משם בעצמך.",
+};
+
 /** The interview for one business type: the specs that apply to it, with the
  *  vocabulary folded into questions, options, defaults and compiled lines. */
 export function setupFieldsFor(type: BusinessType | string | null | undefined, vocab?: Vocab): SetupField[] {
@@ -238,6 +269,7 @@ export function setupFieldsFor(type: BusinessType | string | null | undefined, v
       question: f.questionByType?.[v.type] ?? f.question(v),
       options: f.options?.(v),
       multiline: f.multiline,
+      help: FIELD_HELP[f.key]?.(v),
       default: f.default?.(v),
       compile: (value: string | boolean) => f.compile(value, v),
     }));
