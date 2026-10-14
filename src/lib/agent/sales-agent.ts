@@ -460,20 +460,21 @@ async function runDemoBooking(convId: string, phone: string, text: string, state
   return { handled: true, mode: next.mode, replies: PITCH_BUBBLES };
 }
 
+/** After a booking in the demo (14.10.2026, Yair): the line in bold, then a
+ *  question about him, not a call yet ("לשאול אותו שאלה ולא ישר לדחוף לו שיחה"). */
+const AFTER_DEMO_LINE = "*ככה הלקוחות של המספרה שלך יוכלו לקבוע תור אצלנו בצ'אטור*\nאיך אתה מתנהל היום? יש לך מערכת תורים?";
+
 /**
  * v2, after each demo message: a booking ends the demo with ONE message back
  * to the sale ("the moment after 'wow, it booked me'"); three messages without
  * a booking bring one gentle line on how to stop.
  */
 async function demoAfterTurnV2(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean, booked: boolean): Promise<DemoTurnResult> {
-  const rep = await repName(null);
   if (booked) {
     if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
     const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined };
     await saveState(convId, next);
-    const line = isLead
-      ? `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד אצלך?`
-      : `ככה הלקוחות שלך יקבעו, גם בשתיים בלילה. מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד אצלך?`;
+    const line = AFTER_DEMO_LINE;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
   }
@@ -585,7 +586,11 @@ ${isLead
     ? `מולך מישהו שכתב לאינסטגרם של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז לשאול מה מתאים לו: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד (send_signup_link). באינסטגרם אין לנו את המספר שלו, ו${rep} מתקשר אליו: לשיחה צריך את השם שלו ומספר נייד, ואז capture_lead. אפשר לבקש את שניהם בשאלה אחת ("איך קוראים לך ומה המספר שלך, כדי ש${rep} יתקשר?"). שם המספרה לא חובה, אל תשאל עליו.`
     : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז לשאול מה מתאים לו: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד (send_signup_link). לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
 ${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם ${ig ? "באינסטגרם" : "בוואטסאפ"}: ${senderName}.` : ""}
-${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואז שאלת אם מתאים לו שיחת אפיון קצרה עם ${rep} או להקים לבד. בחר שיחה (או "כן"): ${isLead ? "הצע שתי שעות או propose_call אם בחר" : "שאל רק איך קוראים לו"}. בחר להקים לבד: send_signup_link.` : ""}
+${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואחרי זה שאלת אותו איך הוא מתנהל היום ואם יש לו מערכת תורים. מכאן, במקום שלבים 1 עד 3 למטה, שאלה אחת בכל הודעה ורק מה שעוד לא נשאל:
+(א) על מה שענה: משפט קצר אחד שמתחבר לזה, ואז "היית רוצה שסוכן AI ינהל לך את הוואטסאפ במקומך?"
+(ב) ענה כן: "מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד?"
+(ג) בחר שיחה (או "כן"): ${isLead ? "הצע שתי שעות או propose_call אם בחר" : "שאל רק איך קוראים לו"}. בחר להקים לבד: send_signup_link.
+מתלבט או אומר לא: שאל בעדינות מה מפריע לו, בלי לדחוף שיחה.` : ""}
 ${opener}
 
 מהלך השיחה:
