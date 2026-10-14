@@ -93,6 +93,10 @@ export async function PATCH(req: NextRequest) {
   } = body;
   // Turning the agent on is going live: the free month starts here (13.10.2026).
   if (isEnabled === true) { const { activateBusiness } = await import("@/lib/activation"); await activateBusiness(biz.id, "agent"); }
+  // On = really on: the agent is in every Chator plan, so a shop left on a tier
+  // without it (Oria, 14.10.2026: signup made "basic") would only ever answer
+  // "אחד מהצוות יחזור אליך".
+  if (isEnabled === true) await prisma.business.updateMany({ where: { id: biz.id, tier: { not: "premium" } }, data: { tier: "premium" } });
   // A shop never writes the raw prompt or the platform's notes; stray fields are ignored.
   const staff = await isPlatformStaff(req);
   const systemPrompt = staff ? body.systemPrompt : undefined;

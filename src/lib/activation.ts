@@ -24,6 +24,10 @@ export async function activateBusiness(businessId: string, reason: ActivationRea
   const trialEndsAt = b.paidAt ? b.trialEndsAt : new Date(at.getTime() + FREE_FIRST_MONTH_DAYS * 86400_000);
   const done = await prisma.business.updateMany({ where: { id: businessId, activatedAt: null }, data: { activatedAt: at, ...(b.paidAt ? {} : { trialEndsAt }) } });
   if (!done.count) return { activated: false, trialEndsAt: b.trialEndsAt };
+  // Chats that came in before "הפעל" were marked for a person only because no
+  // agent was on yet; left marked, the agent would stay silent with those
+  // customers for up to 24 hours after going live.
+  await prisma.conversation.updateMany({ where: { businessId, escalatedAt: { not: null } }, data: { escalatedAt: null } }).catch(() => {});
   const until = trialEndsAt ? trialEndsAt.toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" }) : null;
   await recordCrmNotification(`${b.name} הפעיל את המערכת (${WHY[reason]})${until ? `\nהחודש החינמי עד ${until}` : ""}`, { kind: "customer", businessId, push: false }).catch(() => {});
   return { activated: true, trialEndsAt };
