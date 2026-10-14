@@ -690,11 +690,11 @@ ${FORBIDDEN_CLAIMS}`;
 async function bridgeSentence(answer: string, sandbox?: DemoSandbox): Promise<string> {
   try {
     const res = await anthropicFor(sandbox ? "test" : "prod").messages.create({
-      model: "claude-haiku-4-5", max_tokens: 80,
-      system: "אתה צ'אטור, מתכתב בוואטסאפ עם בעל מספרה. הוא סיפר עכשיו איך הוא מתנהל היום עם התורים. כתוב משפט אחד קצר (עד 15 מילים), טבעי ובגובה העיניים, שמראה שהבנת ומתחבר למה שסיפר. בלי שאלה ובלי סימן שאלה, בלי מקף ארוך, בלי אימוג'י, בלי לפנות בשם. החזר רק את המשפט.",
+      model: MODEL_SMART, max_tokens: 80,
+      system: "אתה צ'אטור, מתכתב בוואטסאפ עם בעל מספרה. הוא סיפר עכשיו איך הוא מתנהל היום עם התורים. כתוב משפט אחד קצר (עד 15 מילים) בעברית מדוברת ופשוטה, בגובה העיניים, שמראה שהבנת ומתחבר למה שסיפר. למשל: 'מכיר את זה, הוואטסאפ לא מפסיק אפילו באמצע תספורת.' בלי שאלה ובלי סימן שאלה, בלי מקף ארוך, בלי אימוג'י, בלי לפנות בשם, בלי ביטויים מליציים. החזר רק את המשפט.",
       messages: [{ role: "user", content: answer }],
     });
-    void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: "claude-haiku-4-5", kind: sandbox ? "sandbox" : "sales", usage: res.usage });
+    void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: sandbox ? "sandbox" : "sales", usage: res.usage });
     const t = res.content.map(b => (b.type === "text" ? b.text : "")).join("").trim().replace(/\s*[—–]\s*/g, ", ").split("\n")[0];
     return t && !t.includes("?") && t.length <= 140 ? t : "";
   } catch { return ""; }
