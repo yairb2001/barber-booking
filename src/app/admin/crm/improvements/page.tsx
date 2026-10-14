@@ -14,8 +14,14 @@ type Fb = { id: string; businessId: string; businessName: string; author: string
 const KIND: Record<Item["kind"], [string, Tone]> = { rule: ["כלל של העסק", "info"], faq: ["שאלה ותשובה", "ok"], setup: ["הגדרת הסוכן", "warn"], base: ["בסיס, לכל הסוכנים", "bad"] };
 const FB_STATUS: Record<string, string> = { new: "חדש", in_review: "בבדיקה", applied: "טופל", dismissed: "נסגר" };
 
+// Questions Chator's own agent couldn't answer a customer (14.10.2026).
+type CQ = { id: string; question: string; stage: string; createdAt: string; businessId: string | null; businessName: string | null; phone: string; conversationId: string };
+const STAGE_NAME: Record<string, string> = { setup: "בהקמה", active: "לקוח פעיל", link: "קיבל קישור", lead: "ליד" };
+
 export default function ImprovementsPage() {
-  const { data, error, reload } = useCrm<{ items: Item[]; feedback: Fb[] }>("view=improvements");
+  const { data, error, reload } = useCrm<{ items: Item[]; feedback: Fb[]; chatorQuestions: CQ[]; supportRules: string[] }>("view=improvements");
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [keep, setKeep] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
@@ -40,6 +46,40 @@ export default function ImprovementsPage() {
         actions={<Btn kind="outline" disabled={!!busy} onClick={() => act("run", { action: "review.runNow" }, "הבדיקה רצה. הצעות חדשות יופיעו כאן.")}>{busy === "run" ? "בודק…" : "הרץ בדיקה עכשיו"}</Btn>} />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
       <p className="m-0 text-xs" style={{ color: C.muted }}>כל בוקר הבדיקה עוברת על שיחות היממה של כל עסק, על ההערות של בעלי העסקים ועל שאלות שהסוכן לא ידע. אישור מחיל את השינוי על הסוכן של אותו עסק בלבד. הצעה מסוג &quot;בסיס&quot; היא לכל הסוכנים, ואני מבצע אותה בקוד.</p>
+
+      {data.chatorQuestions.length > 0 && (
+        <Card title="שאלות מהסוכן של צ׳אטור" aside={`${data.chatorQuestions.length} מחכות`}>
+          <div className="flex flex-col gap-3">
+            <p className="m-0 text-xs" style={{ color: C.muted }}>לקוח שאל משהו שהסוכן לא ידע. התשובה שלך נשלחת אליו מהמספר של צ׳אטור, ואם תשאיר את הסימון היא נשמרת ככלל, והסוכן יענה עליה לבד בפעם הבאה.</p>
+            {data.chatorQuestions.map(q => (
+              <div key={q.id} className="rounded-xl p-3 flex flex-col gap-2" style={{ border: `1px solid ${C.line}` }}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Tag tone="warn">{STAGE_NAME[q.stage] ?? q.stage}</Tag>
+                  <b className="text-sm">{q.businessName ?? q.phone}</b>
+                  <span className="text-xs" style={{ color: C.muted }}>{ago(q.createdAt)}</span>
+                  <Link href={`/admin/crm/chats/${q.conversationId}`} className="text-xs ms-auto" style={{ color: C.petrol }}>לצ׳אט</Link>
+                </div>
+                <p className="m-0 text-sm font-semibold">״{q.question}״</p>
+                <textarea value={answers[q.id] ?? ""} onChange={e => setAnswers(s => ({ ...s, [q.id]: e.target.value }))} rows={2} placeholder="מה לענות לו?" className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} />
+                <label className="flex items-center gap-2 text-xs" style={{ color: C.muted }}>
+                  <input type="checkbox" checked={keep[q.id] ?? true} onChange={e => setKeep(s => ({ ...s, [q.id]: e.target.checked }))} style={{ accentColor: C.petrol }} />
+                  לשמור ככלל, כדי שהסוכן יענה על זה לבד בפעם הבאה
+                </label>
+                <div className="flex gap-2">
+                  <Btn kind="dark" disabled={!!busy || !(answers[q.id] ?? "").trim()} onClick={() => act(q.id, { action: "chatorQuestion.answer", id: q.id, answer: answers[q.id], save: keep[q.id] ?? true }, "נשלח ללקוח")}>{busy === q.id ? "שולח…" : "שלח ללקוח"}</Btn>
+                  <Btn kind="ghost" disabled={!!busy} onClick={() => act(q.id, { action: "chatorQuestion.dismiss", id: q.id }, "סומן כלא רלוונטי")}>לא רלוונטי</Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {data.supportRules.length > 0 && (
+        <details className="rounded-2xl bg-white px-4 py-3" style={{ border: `1px solid ${C.line}` }}>
+          <summary className="text-sm font-semibold cursor-pointer">מה הסוכן של צ׳אטור כבר למד ממך ({data.supportRules.length})</summary>
+          <ul className="m-0 mt-2 ps-5 text-xs flex flex-col gap-1" style={{ color: C.muted }}>{data.supportRules.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        </details>
+      )}
 
       {byBiz.map(bid => (
         <Card key={bid} title={pending.find(i => i.businessId === bid)!.businessName} aside={<Link href={`/admin/crm/customers/${bid}`} style={{ color: C.petrol }}>לכרטיס</Link>}>

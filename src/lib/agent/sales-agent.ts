@@ -32,6 +32,7 @@ import { SALES_KNOWLEDGE, FORBIDDEN_CLAIMS, OFFER_TEXT, PRICE_TEXT, SALES_KNOWLE
 import { ensureCrmSeed, freeCallSlots, slotLabel, stageLabel, getCrmText } from "@/lib/crm/core";
 import { bookCall, cancelCall, alertRep, setLeadStage } from "@/lib/crm/calls";
 import { stopLeadAutomations } from "@/lib/crm/automations";
+import { findChatorCustomer, loadChatorCustomer, runSupportTurn } from "@/lib/agent/chator-support";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -47,6 +48,11 @@ export type SalesState = {
   demoNudged?: boolean;   // v2: the one "write 'סיימתי' to stop" line was sent
   channel?: "instagram";  // a DM on @chator.il (runInstagramSalesTurn)
   contactPhone?: string;  // Instagram: the mobile he gave for the call (972…)
+  // Stage 4 (14.10.2026): the signup link was sent; two reminders at most.
+  signupLinkAt?: string;
+  signupReminders?: number;
+  // Stage 3: the one prep question before the call was already asked.
+  prepAsked?: boolean;
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
@@ -95,6 +101,13 @@ const HANDOFF_WAIT = "השיחה אצל טיפול אנושי, יחזרו אלי
 const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/signup`;
 const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
 const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
+// A first message that sounds like a customer booking a haircut opens the demo
+// shop right away; one about the product starts the getting-to-know questions
+// (Yair, 14.10.2026: "אם ההקשר הוא היי אני רוצה לקבוע תור לתספורת, זה מפעיל את
+// הסוכן של המספרה של דני").
+const BOOKING_INTENT_RE = /תור|תספורת|להסתפר|זקן|יש מקום|פנוי|פנויה/;
+const ABOUT_SYSTEM_RE = /מערכת|צ['׳]אטור|chator|סוכן|בוט|פרטים|מחיר|עולה|לעסק|יש לי מספרה|המספרה שלי|אני ספר(?![א-ת])|בעל מספרה/i;
+const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור. התור לא אמיתי, וככה בדיוק הלקוחות שלך יקבלו מענה.";
 const V2_OPEN_STRANGER = "היי, כאן צ'אטור. יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.";
 const V2_SIGNUP = `אפשר להקים לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול, עוברים על ההגדרות בקצב שלך, והחודש החינמי מתחיל רק כשאתה לוחץ "הפעל". אם תיתקע באמצע, תכתוב לי כאן.`;
 const v2Opener = (state: SalesState): string | null => {
@@ -137,7 +150,7 @@ export function looksLikeProspect(text: string, mode: SalesMode): boolean {
 }
 
 export type DemoTurnResult = { handled: boolean; mode?: SalesMode; replies?: string[] };
-export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean; v2?: boolean };
+export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean; v2?: boolean; asCustomerId?: string };
 
 type LeadRow = { id: string; name: string | null; businessName: string | null; stage: string; repId: string | null; optedOut: boolean };
 
@@ -234,6 +247,21 @@ export async function runDemoTurn(p: {
     }
   }
 
+  // ── Stages 5–6 (14.10.2026): a number that owns a shop is a customer: setup help
+  // or support, never sales. Wins over a lead and over any sales state.
+  if (await salesV2On(p.sandbox)) {
+    const customer = p.sandbox ? (p.sandbox.asCustomerId ? await loadChatorCustomer(p.sandbox.asCustomerId) : null) : await findChatorCustomer(phone);
+    if (customer) {
+      conv = conv ?? await createConv(phone);
+      if (!p.alreadyPersisted) {
+        await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
+        await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
+      }
+      const out = await runSupportTurn({ conversationId: conv.id, phone, text, biz: customer, sandbox: p.sandbox });
+      return { handled: true, mode: state?.mode, replies: out.replies };
+    }
+  }
+
   // ── A Chator customer: not a sales conversation ──
   if (!lead && !state && !p.sandbox && await isChatorCustomer(phone)) {
     conv = conv ?? await createConv(phone);
@@ -258,6 +286,17 @@ export async function runDemoTurn(p: {
         if (!p.alreadyPersisted) await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
         await reply(conv.id, phone, [V2_ENTRY_LANDING], p.sandbox);
         return { handled: true, mode: state.mode, replies: [V2_ENTRY_LANDING] };
+      }
+      if (BOOKING_INTENT_RE.test(text) && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text)) {
+        state = { mode: "demo", taggedAt: new Date().toISOString(), source: "intent", demoTurns: 0 };
+        await saveState(conv.id, state);
+        if (!p.alreadyPersisted) {
+          await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
+          await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
+        }
+        await reply(conv.id, phone, [V2_ENTRY_INTENT], p.sandbox);
+        const out = await runDemoBooking(conv.id, phone, text, state, p, false, v2, lead);
+        return { handled: true, mode: out.mode ?? state.mode, replies: [V2_ENTRY_INTENT, ...(out.replies ?? [])] };
       }
       state = { mode: "sales", taggedAt: new Date().toISOString(), source: opener.source ?? "open" };
     } else {
@@ -515,6 +554,11 @@ const DEMO_LINK_TOOL: Anthropic.Tool = {
   description: "הוא רוצה לנסות בעצמו. המערכת שולחת לו קישור לוואטסאפ של צ'אטור, ושם הוא קובע תור כמו לקוח במספרת ההדגמה. אל תכתוב בעצמך קישור.",
   input_schema: { type: "object", properties: {} },
 };
+const PREP_NOTE_TOOL: Anthropic.Tool = {
+  name: "save_prep_note",
+  description: "שמירת תשובה שלו לשאלת הכנה לשיחה (כמה ספרים, מערכת נוכחית, איזה מספר וואטסאפ), בכרטיס הליד ליאיר.",
+  input_schema: { type: "object", properties: { note: { type: "string", description: "התשובה, קצר" } }, required: ["note"] },
+};
 const SIGNUP_TOOL: Anthropic.Tool = {
   name: "send_signup_link",
   description: "הוא כבר חם ורוצה להתחיל או להירשם לבד, בלי שיחה. המערכת שולחת לו את קישור ההרשמה (בחירת מסלול, חודש ראשון חינם). אל תכתוב בעצמך קישור.",
@@ -545,8 +589,8 @@ ${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, 
 ${opener}
 
 מהלך השיחה:
-1. שאלה פתוחה אחת או שתיים על המספרה: כמה ספרים, ואיך זה עובד אצלו היום עם התורים והוואטסאפ ("איך אתה מסתדר היום עם התורים?"). שאלה פתוחה, בלי להציע לו תשובות מוכנות לבחירה, ובלי "מה הכי מעצבן אותך".
-2. אחרי שסיפר: שניים־שלושה משפטים קצרים על מה שהוא מקבל, מחוברים למה שסיפר: הסוכן שעונה ללקוחות וקובע להם תורים בוואטסאפ של המספרה, ואפליקציית הניהול (יומן לכל ספר, כרטיס לקוח, תזכורות ואישורים אוטומטיים, דשבורד הכנסות). לא רשימת פיצ'רים.
+1. שאלות היכרות, שאלה אחת בכל הודעה, לפי הסדר ורק מה שעוד לא ידוע: כמה ספרים אתם; באיזו מערכת אתה עובד היום; מה לא מסתדר לך בה (ואם אין מערכת: איך אתה עובד היום עם התורים והוואטסאפ). שאלות פתוחות, בלי תשובות מוכנות לבחירה.
+2. אחרי שסיפר: שניים־שלושה משפטים קצרים על מה שצ'אטור פותרת בדיוק לו, מחוברים למה שסיפר (למשל מה שלא מסתדר לו היום): הסוכן שעונה ללקוחות וקובע להם תורים בוואטסאפ של המספרה, ואפליקציית הניהול (יומן לכל ספר, כרטיס לקוח, תזכורות ואישורים אוטומטיים, דשבורד הכנסות). לא רשימת פיצ'רים.
 3. שאלה אחת, שתי דרכים, והוא בוחר: "רוצה שנקבע שיחת אפיון קצרה של כמה דקות עם ${rep}, או שתנסה להקים לבד ולראות איך זה עובד?" בחר שיחה: שתי שעות קונקרטיות מהרשימה. בחר להקים לבד: send_signup_link. רוצה לראות קודם איך זה נראה מצד הלקוח: ${ig ? "send_demo_link (המערכת שולחת קישור)" : "enter_demo"}.
 4. מי שכבר חם ואומר שהוא רוצה להתחיל, להירשם או שהוא מסתדר לבד: send_signup_link (ואפשר להציע שגם ${rep} ילווה אותו בשיחה).
 
@@ -577,7 +621,7 @@ ${knowledge}
 ${FORBIDDEN_CLAIMS_V2}`;
 }
 
-async function salesContext(state: SalesState, lead: LeadRow | null): Promise<{ block: string; slots: { iso: string; label: string; repId: string }[] }> {
+async function salesContext(state: SalesState, lead: LeadRow | null): Promise<{ block: string; slots: { iso: string; label: string; repId: string }[]; callBooked: boolean }> {
   const slots = (await freeCallSlots({ limit: 6 })).map(s => ({ iso: s.startsAt.toISOString(), label: slotLabel(s.startsAt), repId: s.repId }));
   const leadId = state.leadId ?? lead?.id;
   const call = leadId ? await prisma.salesCall.findFirst({ where: { leadId, status: "booked" }, orderBy: { startsAt: "asc" } }) : null;
@@ -586,7 +630,13 @@ async function salesContext(state: SalesState, lead: LeadRow | null): Promise<{ 
     call ? `שיחה קבועה: ${slotLabel(call.startsAt)}` : "אין שיחה קבועה.",
     slots.length ? `שעות פנויות לשיחה (startsAt | איך לומר):\n${slots.map(s => `${s.iso} | ${s.label}`).join("\n")}` : "אין כרגע שעות פנויות לשיחה. הצע שהצוות יחזור אליו (handoff_to_rep).",
   ].filter(Boolean);
-  return { block: lines.join("\n"), slots };
+  // Stage 3: a booked call → every message is about the call (14.10.2026).
+  if (call) lines.push(state.prepAsked
+    ? "יש לו שיחת אפיון קבועה. אל תמכור ואל תציע שיחה חדשה: עזור להזיז או לבטל, ענה בקצרה על שאלות (\"נרחיב בשיחה\"). אם ענה על שאלת הכנה, שמור את התשובה (save_prep_note) ואל תשאל עוד."
+    : "יש לו שיחת אפיון קבועה. אל תמכור ואל תציע שיחה חדשה. בסוף התשובה שאל שאלת הכנה אחת שעוד לא ידועה: כמה ספרים ומי עונה היום בוואטסאפ, באיזו מערכת הוא היום, או איזה מספר וואטסאפ יחבר (של המספרה, לא הפרטי). אם כבר ענה: save_prep_note.");
+  // Stage 4: the signup link was sent and he hasn't signed up yet.
+  if (state.signupLinkAt) lines.push(`שלחת לו קישור הרשמה (${new Date(state.signupLinkAt).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" })}) והוא עוד לא נרשם. עזור לו להתחיל: ענה על שאלות על ההרשמה וההקמה, שלח שוב את הקישור אם צריך (send_signup_link), ואם הוא מתלבט הצע שיחת אפיון קצרה.`);
+  return { block: lines.join("\n"), slots, callBooked: !!call };
 }
 
 function salesSystem(state: SalesState, senderName: string | null, rep: string, ctx: string): string {
@@ -651,6 +701,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   const ig = state.channel === "instagram";
   const tools = isLead ? [PROPOSE_CALL_TOOL, CANCEL_CALL_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL] : [ig ? CAPTURE_TOOL_IG : CAPTURE_TOOL, HANDOFF_TOOL, NOT_INTERESTED_TOOL];
   if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ig ? DEMO_LINK_TOOL : ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
+  if (v2 && ctx.callBooked) tools.push(PREP_NOTE_TOOL);
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
   const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
@@ -716,6 +767,12 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     p.sandbox?.toolLog.push("send_signup_link()");
     replies.length = 0;
     replies.push(V2_SIGNUP);
+    // Stage 4: two reminders if he doesn't sign up (remindSignupLinks).
+    state = { ...state, signupLinkAt: new Date().toISOString(), signupReminders: 0 };
+  } else if (v2 && tool?.name === "save_prep_note") {
+    const note = String((tool.input as { note?: string }).note ?? "").trim();
+    p.sandbox?.toolLog.push(`save_prep_note(${note})`);
+    if (note && state.leadId && !p.sandbox) await prisma.leadNote.create({ data: { leadId: state.leadId, author: "הסוכן", body: `הכנה לשיחה: ${note}` } }).catch(() => {});
   } else if (tool?.name === "not_interested") {
     p.sandbox?.toolLog.push("not_interested()");
     state = { ...state, mode: isLead ? "lead" : "declined" };
@@ -723,6 +780,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     if (!replies.length) replies.push(declineReply(state));
   }
   if (!replies.length) replies.push("רגע, בודק ומיד חוזר אליך.");
+  if (v2 && ctx.callBooked && !state.prepAsked) state = { ...state, prepAsked: true };
 
   await saveState(p.conversationId, state);
   // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
@@ -916,4 +974,57 @@ export async function remindStaleLeads(now: Date = new Date()): Promise<number> 
     notifyPlatformOwner(`⏰ ליד מחכה כבר יום: ${l.name || "—"} (${l.businessName || "מספרה"}) · ${l.phone}\nCRM: /admin/crm`, { kind: "lead", leadId: l.id, push: false }).catch(() => {});
   }
   return stale.length;
+}
+
+// ─── Stage 4 (14.10.2026): the signup link was sent and not used ─────────────
+// Yair: after 3 hours, then the next day at 10:00, then stop. Never at night or
+// on Shabbat, and only while he hasn't written back (a reply means a live chat).
+const SIGNUP_R1 = (first: string) => `היי${first ? ` ${first}` : ""}, ראיתי שעוד לא התחלת להקים את צ'אטור. רוצה שנעבור על זה יחד? זה לוקח בערך 10 דקות, ואם משהו לא ברור פשוט תכתוב לי כאן.\n${SIGNUP_URL}`;
+const SIGNUP_R2 = "ואם נוח לך יותר, אפשר גם שיחת אפיון קצרה של כמה דקות עם יאיר, והוא יעשה את זה יחד איתך. רוצה שנקבע?";
+
+function israelClock(d: Date): { day: string; weekday: number; hour: number } {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false, weekday: "short" }).formatToParts(d).map(x => [x.type, x.value]));
+  const wd = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(String(parts.weekday));
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, weekday: wd, hour: Number(parts.hour) % 24 };
+}
+/** Sunday–Thursday 9:00–21:00, Friday until 14:00, never on Saturday. */
+function okToRemind(d: Date): boolean {
+  const c = israelClock(d);
+  if (c.weekday === 6) return false;
+  if (c.weekday === 5) return c.hour >= 9 && c.hour < 14;
+  return c.hour >= 9 && c.hour < 21;
+}
+
+export async function remindSignupLinks(now: Date = new Date()): Promise<number> {
+  if (!(await salesV2On()) || !okToRemind(now)) return 0;
+  const convs = await prisma.conversation.findMany({
+    where: { businessId: DEMO_BUSINESS_ID, salesState: { contains: "signupLinkAt" }, lastMessageAt: { gte: new Date(now.getTime() - 4 * 86400_000) } },
+    select: { id: true, phone: true, salesState: true, escalatedAt: true }, take: 50,
+  });
+  let sent = 0;
+  for (const c of convs) {
+    const st = parseSalesState(c.salesState);
+    if (!st?.signupLinkAt || c.phone.startsWith("972000")) continue;
+    const done = (n: number) => saveState(c.id, { ...st, signupReminders: n });
+    const n = st.signupReminders ?? 0;
+    if (n >= 2 || st.mode === "declined") continue;
+    if (c.escalatedAt && now.getTime() - c.escalatedAt.getTime() < 24 * 3600_000) continue;
+    // Signed up → stage 5 takes over; stop scanning this chat.
+    if (await findChatorCustomer(c.phone)) { await saveState(c.id, { ...st, signupLinkAt: undefined, signupReminders: undefined }); continue; }
+    const lead = c.phone.startsWith("ig:") ? null : await findLead(c.phone);
+    if (lead?.optedOut || lead?.stage === "not_relevant") { await done(2); continue; }
+    // He wrote since the link: a live chat, the agent is on it; no reminders.
+    const lastUser = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "user" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+    const lastAgent = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+    const linkAt = new Date(st.signupLinkAt);
+    if (lastUser && lastUser.createdAt > linkAt) continue;
+    let text: string | null = null;
+    if (n === 0 && now.getTime() - linkAt.getTime() >= 3 * 3600_000) text = SIGNUP_R1((st.fullName ?? lead?.name ?? "").trim().split(/\s+/)[0] ?? "");
+    else if (n === 1 && !c.phone.startsWith("ig:") && israelClock(now).day > israelClock(linkAt).day && israelClock(now).hour >= 10 && (!lastAgent || now.getTime() - lastAgent.createdAt.getTime() >= 3 * 3600_000)) text = SIGNUP_R2;
+    if (!text) continue;
+    await reply(c.id, c.phone, [text]);
+    await done(n + 1);
+    sent++;
+  }
+  return sent;
 }

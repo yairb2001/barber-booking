@@ -394,16 +394,21 @@ export async function GET(req: NextRequest) {
     }
     // The daily agent review's proposals + the owners' notes about their agents (10.10.2026).
     if (view === "improvements") {
-      const [items, feedback] = await Promise.all([
+      const [items, feedback, cq, rulesText] = await Promise.all([
         prisma.agentImprovement.findMany({ where: { OR: [{ status: "pending" }, { decidedAt: { gte: new Date(Date.now() - 14 * 86400_000) } }] }, orderBy: [{ status: "desc" }, { createdAt: "desc" }], take: 200 }),
         prisma.agentFeedback.findMany({ orderBy: { createdAt: "desc" }, take: 60 }),
+        // Chator's own agent asking Yair (14.10.2026).
+        prisma.chatorQuestion.findMany({ where: { status: "pending" }, orderBy: { createdAt: "asc" }, take: 50 }),
+        (await import("@/lib/crm/core")).getCrmText("supportRules"),
       ]);
-      const bizIds = Array.from(new Set([...items.map(i => i.businessId), ...feedback.map(f => f.businessId)]));
+      const bizIds = Array.from(new Set([...items.map(i => i.businessId), ...feedback.map(f => f.businessId), ...cq.map(q => q.businessId).filter((x): x is string => !!x)]));
       const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
       const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
       return NextResponse.json({
         items: items.map(i => ({ ...i, businessName: name(i.businessId) })),
         feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
+        chatorQuestions: cq.map(q => ({ id: q.id, question: q.question, stage: q.stage, createdAt: q.createdAt, businessId: q.businessId, businessName: q.businessId ? name(q.businessId) : null, phone: q.phone.replace(/^972/, "0"), conversationId: q.conversationId })),
+        supportRules: rulesText.text.split("\n").filter(Boolean).slice(-15),
       });
     }
     // Chator's own WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות").
@@ -679,6 +684,16 @@ export async function POST(req: NextRequest) {
       // Yair gave the referral's free month in Invoice4U (or takes it back).
       case "referral.applied": {
         await prisma.businessReferral.update({ where: { id: str("id") }, data: { appliedAt: b.applied === false ? null : new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      // Yair answers a question of Chator's agent: to the customer, and maybe a rule.
+      case "chatorQuestion.answer": {
+        const { answerChatorQuestion } = await import("@/lib/agent/chator-support");
+        const r = await answerChatorQuestion(str("id"), str("answer"), b.save !== false);
+        return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      case "chatorQuestion.dismiss": {
+        await prisma.chatorQuestion.updateMany({ where: { id: str("id"), status: "pending" }, data: { status: "dismissed", answeredAt: new Date() } });
         return NextResponse.json({ ok: true });
       }
       case "feedback.status": {

@@ -35,7 +35,7 @@ import { runAgentQuestionFollowup } from "@/lib/agent/question-followup";
 import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
-import { remindStaleLeads } from "@/lib/agent/sales-agent";
+import { remindStaleLeads, remindSignupLinks } from "@/lib/agent/sales-agent";
 import { runClosureSweep } from "@/lib/closures/status";
 import { keepAgentCachesWarm } from "@/lib/agent/cache-warm";
 import { sweepReminders } from "@/lib/reminders-sweep";
@@ -529,6 +529,7 @@ async function runPiggybackTasks(now: Date): Promise<void> {
     try {
       await runDemoSalesAgent(now);
       await remindStaleLeads(now).catch(e => console.error("[drip-queue] stale leads", e));
+      await remindSignupLinks(now).catch(e => console.error("[drip-queue] signup reminders", e));
     } catch (err) {
       console.error("[drip-queue] demo-sales-agent failed:", err);
     }

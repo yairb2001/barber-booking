@@ -94,7 +94,7 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
     key: "setup_stuck", name: "הקמה תקועה: עזרה לבעל העסק", trigger: "24 שעות בלי התקדמות בהקמה", audience: "lead",
     stopOn: ["onboarding_done", "opted_out"],
     steps: [
-      { delayMinutes: 0, text: "היי {שם}, ראיתי שעצרת בשלב \"{השלב שנתקע}\" בהקמה של {שם העסק}. משהו לא ברור? אפשר לענות לי כאן ונעזור, או להמשיך מהקישור: {קישור הקמה}" },
+      { delayMinutes: 0, text: "היי {שם}, ראיתי שעצרת בשלב \"{השלב שנתקע}\" בהקמה של {שם העסק}. במה נתקעת? מה קרה? תכתוב לי כאן ואעזור לך, או שתמשיך מהקישור: {קישור הקמה}" },
     ],
   },
   {

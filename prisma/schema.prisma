@@ -1362,3 +1362,23 @@ model BusinessReferral {
   @@index([referrerId])
   @@map("business_referrals")
 }
+
+/// A question Chator's own agent asked Yair because it did not know the answer
+/// (14.10.2026). Answered in the CRM: the answer goes to the customer and, when
+/// savedAsRule, joins crm_settings "supportRules" so the agent knows it next time.
+model ChatorQuestion {
+  id             String    @id @default(uuid())
+  conversationId String    @map("conversation_id")
+  phone          String
+  businessId     String?   @map("business_id")
+  stage          String    // setup | active | link | lead
+  question       String
+  answer         String?
+  savedAsRule    Boolean   @default(false) @map("saved_as_rule")
+  status         String    @default("pending") // pending | answered | dismissed
+  createdAt      DateTime  @default(now()) @map("created_at")
+  answeredAt     DateTime? @map("answered_at")
+
+  @@index([status, createdAt])
+  @@map("chator_questions")
+}
