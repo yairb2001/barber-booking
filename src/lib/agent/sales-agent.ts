@@ -720,7 +720,7 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   let stepNote = "";
   if (v2 && state.afterDemoAt) {
     if (lastAgent.includes("איך אתה מתנהל היום")) stepNote = `הוא ענה על השאלה איך הוא מתנהל היום. כתוב משפט קצר אחד שמתחבר למה שענה, ואז שאל בדיוק: "${AI_QUESTION}". בלי שאלות אחרות (לא כמה ספרים ולא איזו מערכת).`;
-    else if (lastAgent.includes(AI_QUESTION)) stepNote = `הוא ענה על השאלה אם היה רוצה שסוכן AI ינהל לו את הוואטסאפ. ענה כן או משהו חיובי: שאל בדיוק "${CHOICE_QUESTION(rep)}". אמר לא או מתלבט: שאל בעדינות מה מפריע לו, בלי להציע שיחה.`;
+    else if (lastAgent.includes(AI_QUESTION)) stepNote = `הוא ענה על השאלה אם היה רוצה שסוכן AI ינהל לו את הוואטסאפ. ענה כן או משהו חיובי: שאל בדיוק "${CHOICE_QUESTION(rep)}". אמר לא או מתלבט: שאל בעדינות ובפשטות מה גורם לו להתלבט (למשל "מה גורם לך להתלבט?"), בלי להציע שיחה.`;
   }
   const ctx = await salesContext(state, p.lead);
   const isLead = state.mode === "lead";
