@@ -81,7 +81,7 @@ export function groupConfirmationQuestion(p: { firstName?: string | null; mainNa
   const items = [`${nameOf(p.mainName) || "אתה"} ב-${p.startTime}${at(p.staffName)}`, ...p.group.map(g => `${nameOf(g.forName)} ב-${g.startTime}${at(g.staffName)}`)];
   const list = items.length === 2 ? items.join(" ו") : `${items.slice(0, -1).join(", ")} ו${items[items.length - 1]}`;
   const who = p.firstName ? `${p.firstName}, ` : "";
-  return `${who}רגע לפני שאני קובע סופית — ${items.length} תורים ל${p.serviceName}${sameStaff ? ` אצל ${p.staffName}` : ""} ${dayLabelWithDistance(p.date)}: ${list}\nמאשר?`;
+  return `${who}רגע לפני שאני קובע סופית: ${items.length} תורים ל${p.serviceName}${sameStaff ? ` אצל ${p.staffName}` : ""} ${dayLabelWithDistance(p.date)}: ${list}\nמאשר?`;
 }
 
 export function groupBookedMessage(p: { staffName: string; date: string; booked: { name: string; startTime: string; staffName: string }[] }): string {
@@ -94,7 +94,7 @@ export function groupBookedMessage(p: { staffName: string; date: string; booked:
 export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
   const at = p.mentionStaff ? ` אצל ${p.staffName}` : "";
-  return `${who}רגע לפני שאני קובע לך את זה סופית — ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
+  return `${who}רגע לפני שאני קובע לך את זה סופית: ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
 }
 
 // ── Reply classifier ────────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ const ACK_WINDOW_MS = 3 * 60 * 60 * 1000;
 // Real data (2–20.9.2026): 9 name questions, 8 answered with a full name in the
 // next message, 1 answered a previous question ("בוקר"). So: a 2–4 word answer
 // made of letters only, that is not a yes/no/greeting/time word, IS the name.
-export const NAME_QUESTION = "רגע לפני שאני סוגר את התור — מה השם המלא שלך?";
+export const NAME_QUESTION = "רגע לפני שאני סוגר את התור, מה השם המלא שלך?";
 export const FAMILY_NAME_QUESTION = "ושם המשפחה?";
 const NOT_NAME = new Set<string>([...YES_STEMS, ...NO_STEMS, ...FILLER, ...ACK_WORDS, ...CANCEL_VERBS,
   "היי", "הי", "הלו", "אהלן", "בוקר", "צהריים", "צהרים", "ערב", "לילה", "מחר", "היום", "מחרתיים", "שבוע", "הבא", "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת",

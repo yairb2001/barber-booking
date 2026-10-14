@@ -33,6 +33,7 @@ import { ensureCrmSeed, freeCallSlots, slotLabel, stageLabel, getCrmText } from 
 import { bookCall, cancelCall, alertRep, setLeadStage } from "@/lib/crm/calls";
 import { stopLeadAutomations } from "@/lib/crm/automations";
 import { findChatorCustomer, loadChatorCustomer, runSupportTurn, tidy } from "@/lib/agent/chator-support";
+import { generateFollowup, isPhoneLikeName } from "@/lib/agent/followup-shared";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -53,6 +54,12 @@ export type SalesState = {
   signupReminders?: number;
   // Stage 3: the one prep question before the call was already asked.
   prepAsked?: boolean;
+  // After a booking in the demo (14.10.2026): when the question about him went
+  // out, and whether the next one went out by itself after a few quiet minutes.
+  afterDemoAt?: string;
+  afterDemoNudged?: boolean;
+  // Started booking in the demo and stopped: the demo shop's follow-up was sent.
+  demoFollowedUp?: boolean;
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
@@ -463,6 +470,12 @@ async function runDemoBooking(convId: string, phone: string, text: string, state
 /** After a booking in the demo (14.10.2026, Yair): the line in bold, then a
  *  question about him, not a call yet ("לשאול אותו שאלה ולא ישר לדחוף לו שיחה"). */
 const AFTER_DEMO_LINE = "*ככה הלקוחות של המספרה שלך יוכלו לקבוע תור אצלנו בצ'אטור*\nאיך אתה מתנהל היום? יש לך מערכת תורים?";
+/** The next question, also sent by itself when the one above gets no answer for a few minutes. */
+const AI_QUESTION = "היית רוצה שסוכן AI ינהל לך את הוואטסאפ במקומך?";
+/** The choice comes with the offer (Yair, 14.10.2026: "לציין שיש לו חודש חינם והקמה בחינם"). */
+const CHOICE_QUESTION = (rep: string) => `מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד? החודש הראשון חינם, וגם ההקמה.`;
+/** After the demo shop's follow-up to someone who stopped mid-booking. */
+const ABANDON_LINE = "*ככה הלקוחות שלך יקבלו כשהם ינסו לקבוע ולא יסיימו*";
 
 /**
  * v2, after each demo message: a booking ends the demo with ONE message back
@@ -472,7 +485,7 @@ const AFTER_DEMO_LINE = "*ככה הלקוחות של המספרה שלך יוכ�
 async function demoAfterTurnV2(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean, booked: boolean): Promise<DemoTurnResult> {
   if (booked) {
     if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
-    const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined };
+    const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), afterDemoAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined, demoFollowedUp: undefined };
     await saveState(convId, next);
     const line = AFTER_DEMO_LINE;
     await reply(convId, phone, [line], p.sandbox);
@@ -587,8 +600,8 @@ ${isLead
     : `מולך מישהו שכתב למספר של צ'אטור. המטרה: להבין אם יש לו מספרה ואיך היא עובדת היום, ואז לשאול מה מתאים לו: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד (send_signup_link). לשיחה צריך רק את השם שלו, ואז capture_lead. שם המספרה לא חובה, אל תשאל עליו.`}
 ${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם ${ig ? "באינסטגרם" : "בוואטסאפ"}: ${senderName}.` : ""}
 ${state.pitchedAt ? `הוא כבר ניסה את הדמו וקבע בו תור, ואחרי זה שאלת אותו איך הוא מתנהל היום ואם יש לו מערכת תורים. מכאן, במקום שלבים 1 עד 3 למטה, שאלה אחת בכל הודעה ורק מה שעוד לא נשאל:
-(א) על מה שענה: משפט קצר אחד שמתחבר לזה, ואז "היית רוצה שסוכן AI ינהל לך את הוואטסאפ במקומך?"
-(ב) ענה כן: "מה מתאים לך: שיחת אפיון קצרה של כמה דקות עם ${rep}, או להקים לבד ולראות איך זה עובד?"
+(א) על מה שענה: משפט קצר אחד שמתחבר לזה, ואז "${AI_QUESTION}" (אם כבר נשאלה, אל תשאל שוב)
+(ב) ענה כן: "${CHOICE_QUESTION(rep)}"
 (ג) בחר שיחה (או "כן"): ${isLead ? "הצע שתי שעות או propose_call אם בחר" : "שאל רק איך קוראים לו"}. בחר להקים לבד: send_signup_link.
 מתלבט או אומר לא: שאל בעדינות מה מפריע לו, בלי לדחוף שיחה.` : ""}
 ${opener}
@@ -596,7 +609,7 @@ ${opener}
 מהלך השיחה:
 1. שאלות היכרות, שאלה אחת בכל הודעה, לפי הסדר ורק מה שעוד לא ידוע: כמה ספרים אתם; באיזו מערכת אתה עובד היום; מה לא מסתדר לך בה (ואם אין מערכת: איך אתה עובד היום עם התורים והוואטסאפ). שאלות פתוחות, בלי תשובות מוכנות לבחירה.
 2. אחרי שסיפר: שניים־שלושה משפטים קצרים על מה שצ'אטור פותרת בדיוק לו, מחוברים למה שסיפר (למשל מה שלא מסתדר לו היום): הסוכן שעונה ללקוחות וקובע להם תורים בוואטסאפ של המספרה, ואפליקציית הניהול (יומן לכל ספר, כרטיס לקוח, תזכורות ואישורים אוטומטיים, דשבורד הכנסות). לא רשימת פיצ'רים.
-3. שאלה אחת, שתי דרכים, והוא בוחר: "רוצה שנקבע שיחת אפיון קצרה של כמה דקות עם ${rep}, או שתנסה להקים לבד ולראות איך זה עובד?" בחר שיחה: שתי שעות קונקרטיות מהרשימה. בחר להקים לבד: send_signup_link. רוצה לראות קודם איך זה נראה מצד הלקוח: ${ig ? "send_demo_link (המערכת שולחת קישור)" : "enter_demo"}.
+3. שאלה אחת, שתי דרכים, והוא בוחר: "רוצה שנקבע שיחת אפיון קצרה של כמה דקות עם ${rep}, או שתנסה להקים לבד ולראות איך זה עובד? החודש הראשון חינם, וגם ההקמה." בחר שיחה: שתי שעות קונקרטיות מהרשימה. בחר להקים לבד: send_signup_link. רוצה לראות קודם איך זה נראה מצד הלקוח: ${ig ? "send_demo_link (המערכת שולחת קישור)" : "enter_demo"}.
 4. מי שכבר חם ואומר שהוא רוצה להתחיל, להירשם או שהוא מסתדר לבד: send_signup_link (ואפשר להציע שגם ${rep} ילווה אותו בשיחה).
 
 ${ctx}
@@ -998,6 +1011,60 @@ function okToRemind(d: Date): boolean {
   if (c.weekday === 6) return false;
   if (c.weekday === 5) return c.hour >= 9 && c.hour < 14;
   return c.hour >= 9 && c.hour < 21;
+}
+
+/**
+ * Demo follow-ups (14.10.2026, Yair), from the drip job every 5 minutes:
+ *  - Started booking in the demo and stopped: after 10 quiet minutes the demo
+ *    shop sends the same follow-up a real shop sends (generateFollowup), then
+ *    one bold line saying that's what his customers get.
+ *  - The question after a demo booking went unanswered for 5 minutes: the
+ *    next one goes out by itself ("היית רוצה שסוכן AI...").
+ * Once each per chat, only while the chat is fresh (under an hour), never on
+ * Saturday. Sandbox numbers (972000…) are skipped, except in a dry run (tests:
+ * nothing is sent or saved, the planned messages are returned).
+ */
+export async function followUpDemos(now: Date = new Date(), dryRun?: { phone: string; out: { phone: string; texts: string[] }[] }): Promise<number> {
+  if (!dryRun && (!(await salesV2On()) || israelClock(now).weekday === 6)) return 0;
+  const convs = await prisma.conversation.findMany({
+    where: { businessId: DEMO_BUSINESS_ID, lastMessageAt: { gte: new Date(now.getTime() - 3600_000), lte: new Date(now.getTime() - 5 * 60_000) }, salesState: { not: null }, ...(dryRun ? { phone: dryRun.phone } : {}) },
+    select: { id: true, phone: true, salesState: true, escalatedAt: true, whatsappName: true }, take: 50,
+  });
+  let sent = 0;
+  for (const c of convs) {
+    const st = parseSalesState(c.salesState);
+    if (!st || (!dryRun && c.phone.startsWith("972000")) || c.phone.startsWith("ig:")) continue;
+    const send = async (texts: string[], next: SalesState) => {
+      if (dryRun) { dryRun.out.push({ phone: c.phone, texts }); return; }
+      await saveState(c.id, next);
+      if (texts.length) await reply(c.id, c.phone, texts);
+    };
+    if (c.escalatedAt && now.getTime() - c.escalatedAt.getTime() < 24 * 3600_000) continue;
+    // Our turn only: he wrote last → the agent is on it.
+    const last = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, select: { role: true, createdAt: true } });
+    if (!last || last.role !== "assistant") continue;
+    const quiet = now.getTime() - last.createdAt.getTime();
+
+    if (st.afterDemoAt && !st.afterDemoNudged && (st.mode === "sales" || st.mode === "lead")) {
+      if (now.getTime() - new Date(st.afterDemoAt).getTime() < 5 * 60_000) continue;
+      const answered = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "user", createdAt: { gt: new Date(st.afterDemoAt) } }, select: { id: true } });
+      await send(answered ? [] : [AI_QUESTION], { ...st, afterDemoNudged: true });
+      if (!answered) sent++;
+      continue;
+    }
+
+    if ((st.mode === "demo" || st.mode === "lead_demo") && !st.demoFollowedUp && (st.demoTurns ?? 0) >= 1 && quiet >= 10 * 60_000) {
+      const msgs = await prisma.conversationMessage.findMany({ where: { conversationId: c.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 12, select: { role: true, content: true } });
+      const transcript = msgs.reverse().map(m => `${m.role === "user" ? "לקוח" : "סוכן"}: ${m.content}`).join("\n");
+      const raw = st.fullName || c.whatsappName || "";
+      const name = raw && !isPhoneLikeName(raw) ? raw.trim().split(/\s+/)[0] : null;
+      const nudge = await generateFollowup(transcript, name);
+      // He closed it himself ("לא צריך", "תודה"): mark it and send nothing.
+      await send(nudge ? [nudge, ABANDON_LINE] : [], { ...st, demoFollowedUp: true });
+      if (nudge) sent++;
+    }
+  }
+  return sent;
 }
 
 export async function remindSignupLinks(now: Date = new Date()): Promise<number> {

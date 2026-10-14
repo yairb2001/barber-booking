@@ -13,16 +13,13 @@
  * Secure with CRON_SECRET: GET /api/cron/conversation-followup?secret=<CRON_SECRET>
  */
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
-import { FOLLOWUP_HARD_RULES, nowLineIsrael, isPhoneLikeName, stripFollowupPreamble } from "@/lib/agent/followup-shared";
+import { isPhoneLikeName, generateFollowup } from "@/lib/agent/followup-shared";
 
 export const dynamic = "force-dynamic";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! });
 
 const MIN_QUIET_MS = 60 * 60 * 1000;        // wait at least 1h after the last message
 // Look back far enough to carry an evening/overnight abandon into the next
@@ -47,68 +44,6 @@ function israelHour(d: Date): number {
   }).formatToParts(d);
   const h = Number(parts.find(p => p.type === "hour")?.value ?? "0");
   return h === 24 ? 0 : h; // some engines render midnight as "24"
-}
-
-function fallbackFollowup(name: string | null): string {
-  const hi = name ? `היי ${name}, ` : "היי, ";
-  return `${hi}ראיתי שהתחלנו ולא סגרנו תור — רוצה שאמצא לך שעה טובה?`;
-}
-
-/**
- * Write one short, contextual nudge from the conversation so far — or decide to
- * send NOTHING (returns null). The model must skip when the customer explicitly
- * declined/closed ("יקר לי, אוותר", "לא מעוניין", "תודה" as a goodbye) — chasing
- * after a clear "no" burns goodwill. It also gets the current time so it never
- * treats a slot that already passed as still on the table (offer to REBOOK
- * instead), plus the hard no-invented-discounts rules.
- */
-async function generateFollowup(
-  transcript: string,
-  name: string | null,
-  opts?: { isThirdTouch?: boolean },
-): Promise<string | null> {
-  try {
-    const res = await anthropic.messages.create({
-      model: "claude-haiku-4-5",
-      max_tokens: 200,
-      system:
-        "אתה נציג מספרה שמתכתב בוואטסאפ. הלקוח התחיל שיחה ולא סגר תור, ואתה שוקל לשלוח לו הודעת פולואפ אחת קצרה. " +
-        nowLineIsrael() + " " +
-        "קודם כל תחליט אם בכלל נכון לשלוח: " +
-        "אם הלקוח סירב במפורש, ויתר, אמר שיקר לו וסגר, אמר שלא מעוניין, או שהשיחה הסתיימה בצורה מנומסת וסופית — החזר בדיוק את המילה SKIP ושום דבר אחר. " +
-        "אם השיחה כבר לא רלוונטית (למשל דובר על תור לזמן שכבר עבר מזמן והלקוח נעלם) והפולואפ ירגיש מנותק — החזר SKIP. " +
-        "אם כן נכון לשלוח: כתוב משפט אחד חם וטבעי שמחזיר אותו לקבוע תור, בלי לחץ ובלי להישמע כמו בוט. " +
-        "כתוב בשפה שבה הלקוח כותב: לקוח שכתב בעברית מקבל עברית; לקוח שכתב באנגלית או שפה אחרת מקבל את אותה שפה. " +
-        "שים לב לשעה הנוכחית: אם השעה או היום שדוברו בשיחה כבר עברו — אל תציע אותם שוב; הצע לקבוע מחדש לזמן שנוח לו. " +
-        (opts?.isThirdTouch
-          ? "דע שזו כבר הפנייה השלישית מצדנו בלי מענה — לכן תהיה עדין במיוחד, בלי שום תחושת רדיפה, נימה קלילה של 'כשנוח לך, אנחנו כאן'. "
-          : "") +
-        "בלי ירידות שורה, כמעט בלי אימוג'ים, ובלי לחזור מילה במילה על מה שכבר נאמר. " +
-        (name ? `פנה ללקוח בשמו (${name}). ` : "אין לך את שם הלקוח — אל תשתמש בשום כינוי ואל תפנה אליו במספר טלפון. ") +
-        FOLLOWUP_HARD_RULES + " " +
-        "החזר רק את ההודעה עצמה (או SKIP), בלי הקדמות. אל תתאר מה ההודעה עומדת " +
-        "להיות ואל תסביר את ההחלטה שלך — פשוט כתוב את המשפט הסופי, בלי שום " +
-        "טקסט לפניו ובלי שורות ריקות.",
-      messages: [
-        { role: "user", content: `זו השיחה עד עכשיו:\n\n${transcript}\n\nהחלט: SKIP או הודעת פולואפ אחת.` },
-      ],
-    });
-    let text = "";
-    for (const b of res.content) if (b.type === "text") text += b.text;
-    text = text.trim();
-    if (!text) return fallbackFollowup(name);
-    // The model decided a follow-up would do more harm than good.
-    if (/^SKIP\b/i.test(text)) return null;
-    const cleaned = stripFollowupPreamble(text);
-    if (!cleaned) {
-      console.error("[followup] suspected preamble leak, using fallback:", text);
-      return fallbackFollowup(name);
-    }
-    return cleaned;
-  } catch (e) {
-    console.error("[followup] LLM failed", e);
-    return fallbackFollowup(name);
-  }
 }
 
 export async function GET(req: NextRequest) {
