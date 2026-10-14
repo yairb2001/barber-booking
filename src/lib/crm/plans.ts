@@ -16,6 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { USD_ILS } from "@/lib/fx";
 import { budgetOf, currentMonth } from "@/lib/agent/token-budget";
 import { getCrmSettings } from "@/lib/crm/core";
+import { onFreePackage, freePackageState } from "@/lib/agent/free-package";
 
 export const DEFAULT_PLANS = [
   { key: "base", name: "בסיס", apptsCap: 300, messages: 1200, aiBudgetIls: 30, priceIls: 287, sort: 1 },
@@ -28,7 +29,8 @@ export const MARKETING_KINDS = ["rhythm_nudge", "rhythm_nudge_new", "reengage", 
 
 export type PackKind = "messages" | "ai" | "marketing";
 export type Meter = { used: number; cap: number; pct: number };
-export type Usage = { month: string; appts: Meter; messages: Meter; ai: Meter; marketing: Meter };
+/** free = not paying yet: messages and ai are the one-time free package, not this month. */
+export type Usage = { month: string; appts: Meter; messages: Meter; ai: Meter; marketing: Meter; free?: boolean };
 
 const parse = (raw: string | null | undefined): Record<string, unknown> => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
 const meter = (used: number, cap: number): Meter => ({ used, cap, pct: cap > 0 ? Math.round((used / cap) * 100) : used > 0 ? 100 : 0 });
@@ -56,7 +58,7 @@ export async function usageFor(businessIds: string[], now = new Date()): Promise
   const { key, start } = currentMonth(now);
   const [plans, bizs, appts, msgs, mkt, ai, packs] = await Promise.all([
     getPlans(),
-    prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, tier: true, settings: true, paidAt: true, trialEndsAt: true } }),
+    prisma.business.findMany({ where: { id: { in: businessIds } }, select: { id: true, createdAt: true, tier: true, settings: true, paidAt: true, trialEndsAt: true } }),
     prisma.appointment.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start } }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent" }, _count: { _all: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: businessIds }, createdAt: { gte: start }, status: "sent", kind: { in: MARKETING_KINDS } }, _count: { _all: true } }),
@@ -76,6 +78,11 @@ export async function usageFor(businessIds: string[], now = new Date()): Promise
       marketing: meter(mkt.find(x => x.businessId === b.id)?._count._all ?? 0, pack("marketing")),
     });
   }
+  await Promise.all(bizs.filter(onFreePackage).map(async b => {
+    const f = await freePackageState(b);
+    const u = out.get(b.id)!;
+    out.set(b.id, { ...u, messages: meter(f.messages.used, f.messages.cap), ai: meter(f.aiIls.used, f.aiIls.cap), free: true });
+  }));
   return out;
 }
 

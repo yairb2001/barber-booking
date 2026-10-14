@@ -73,7 +73,27 @@ export default function MyPlanPage() {
       </div>
 
       <div className="max-w-3xl space-y-4">
-        {/* This month */}
+        {/* Not paying yet: the free package, once (14.10.2026) */}
+        {d.free ? (
+        <section className="bg-white rounded-2xl border border-neutral-200 p-5">
+          <h2 className="font-semibold text-neutral-800">החבילה החינמית</h2>
+          <p className="text-xs text-neutral-500 mt-0.5 mb-4">
+            כמו מסלול {d.free.name}, פעם אחת, כולל הבדיקות. {d.trialEndsAt ? `נגמרת ב־${shortDate(d.trialEndsAt)} או כשהיא מתמלאת, מה שקודם.` : "החודש החינמי מתחיל כשלוחצים הפעל."}
+          </p>
+          <div className="space-y-3.5">
+            <Bar label="הודעות וואטסאפ" m={d.free.messages} text={`${n(d.free.messages.used)} מתוך ${n(d.free.messages.cap)}`} />
+            <Bar label="הסוכן" m={{ pct: d.free.aiPct }} text={`${d.free.aiPct}% מהחבילה`} />
+            {d.free.level === "blocked" ? <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">החבילה החינמית נגמרה, והסוכן לא עונה ללקוחות. כדי להמשיך מצטרפים למסלול.</p>
+              : d.free.level === "warn" ? <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">החבילה החינמית כמעט נגמרה. כשהיא תיגמר הסוכן יפסיק לענות עד שמצטרפים למסלול.</p> : null}
+          </div>
+          {d.payUrl && (plan || d.monthlyPrice) && (
+            <a href={d.payUrl} className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-teal-600 text-white px-4 py-3 hover:bg-teal-700 transition">
+              <span className="text-sm font-semibold">{d.free.level === "blocked" ? "להצטרפות למסלול" : "להזנת כרטיס אשראי"}</span>
+              <span className="text-xs text-white/80">{plan ? `מסלול ${plan.name}, ${plan.priceIls} ₪ לחודש` : "חיוב חודשי, חשבונית במייל"}</span>
+            </a>
+          )}
+        </section>
+        ) : (
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div>
@@ -103,6 +123,7 @@ export default function MyPlanPage() {
             </a>
           )}
         </section>
+        )}
 
         {/* Plans */}
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">

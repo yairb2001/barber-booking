@@ -74,6 +74,7 @@ export default function OnboardingPage() {
   const [moreQs, setMoreQs] = useState(false);            // the agent questions that can wait
   const [live, setLive] = useState<{ endsAt: string | null } | null>(null); // activated just now
   const [copied, setCopied] = useState(false);
+  const [tester, setTester] = useState(""); // test mode: the one number the agent answers before "הפעל"
   // team & services
   const [members, setMembers] = useState<Member[]>([{ name: "", phone: "" }]);
   const [services, setServices] = useState<Svc[]>([]);
@@ -107,6 +108,7 @@ export default function OnboardingPage() {
           if (b.businessType) setBizType(b.businessType);
           const s = b.settings || {};
           if (typeof s.agentUnavailableMessage === "string" && s.agentUnavailableMessage.trim()) setUnavailableMsg(s.agentUnavailableMessage);
+          if (Array.isArray(s.agentTesters) && typeof s.agentTesters[0] === "string") setTester(s.agentTesters[0]);
           if (s.onboarding) {
             if (typeof s.onboarding.step === "number") setStep(Math.min(Math.max(s.onboarding.step, 0), STEPS.length - 1));
             if (Array.isArray(s.onboarding.doneSteps)) setDone(s.onboarding.doneSteps);
@@ -270,6 +272,7 @@ export default function OnboardingPage() {
     if (r?.ok) setWaOfficial(true); else setError("לא הצלחנו לשמור, נסה שוב");
     setBusy(false);
   };
+  useEffect(() => { if (step === 6 && !tester && members[0]?.phone) setTester(members[0].phone); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (step !== 5) return;
     fetch("/api/admin/whatsapp/official").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.wanted) setWaOfficial(true); }).catch(() => {});
@@ -302,6 +305,18 @@ export default function OnboardingPage() {
       window.scrollTo({ top: 0 });
     } catch { setError("שגיאה בהפעלה"); }
     setBusy(false);
+  };
+
+  // Not now (14.10.2026, Yair: "בתחילת החודש ללחוץ על הפעל"): setup is done, the
+  // shop stays in test mode and the agent answers only the tester's number.
+  const finishWithoutActivating = async () => {
+    setBusy(true); setError("");
+    try {
+      const t = tester.trim();
+      await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agentTesters: t ? [t] : [] }) });
+      await fetch("/api/admin/onboarding/complete", { method: "POST" });
+      router.push("/admin"); router.refresh();
+    } catch { setError("שגיאת רשת"); setBusy(false); }
   };
 
   const finishLater = async () => {
@@ -568,7 +583,7 @@ export default function OnboardingPage() {
             ))}
           </ul>
           <Help label="מה קורה כשלוחצים הפעל?">
-            <Bubble>הסוכן מתחיל לענות ללקוחות, ומתחיל החודש החינמי. בסופו ממשיכים רק אם מזינים כרטיס. בלי כרטיס זה פשוט נעצר, בלי שום חיוב.</Bubble>
+            <Bubble>הסוכן מתחיל לענות ללקוחות, הלקוחות יכולים לקבוע, ומתחיל החודש החינמי. הוא כולל את החבילה של מסלול בסיס. אם היא נגמרת לפני סוף החודש, ממשיכים בהצטרפות למסלול. בלי כרטיס זה פשוט נעצר, בלי שום חיוב.</Bubble>
           </Help>
           {agentEnabled && <p className="text-xs text-emerald-700 mt-3">הסוכן כבר פעיל.</p>}
           {waStatus === "connected" || waLinked || agentEnabled ? (
@@ -580,6 +595,16 @@ export default function OnboardingPage() {
               <Primary onClick={() => goTo(5)} busy={busy}>לחבר את הוואטסאפ</Primary>
               <button type="button" onClick={activate} disabled={busy} className="mt-3 w-full text-sm text-slate-500 underline disabled:opacity-50">להפעיל בכל זאת</button>
             </>
+          )}
+          {!agentEnabled && (
+            <div className="mt-6 pt-5 border-t border-slate-100">
+              <p className="text-sm font-semibold text-slate-800">להפעיל אחר כך</p>
+              <p className="text-xs text-slate-500 mt-0.5">למשל בתחילת החודש. עד אז זה מצב בדיקה.</p>
+              <Field label="מספר לבדיקה" help="עד ההפעלה הסוכן עונה בוואטסאפ רק למספר הזה, כדי שתוכל לבדוק אותו. לקוחות לא קובעים, ותורים בבדיקה לא נשמרים. ההודעות יורדות מהחבילה החינמית.">
+                <input value={tester} onChange={e => setTester(e.target.value)} className={input} dir="ltr" inputMode="tel" placeholder={members[0]?.phone || "הנייד שלך"} />
+              </Field>
+              <button type="button" onClick={() => void finishWithoutActivating()} disabled={busy} className="mt-3 w-full rounded-2xl py-3 text-[15px] font-semibold border disabled:opacity-50" style={{ borderColor: C.petrol, color: C.petrol }}>סיים, אפעיל אחר כך</button>
+            </div>
           )}
         </Card>
       )}

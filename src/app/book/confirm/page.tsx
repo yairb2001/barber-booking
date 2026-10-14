@@ -358,6 +358,9 @@ function ConfirmPageContent() {
   const [otpSent,      setOtpSent]      = useState(false);
   const [otpCode,      setOtpCode]      = useState("");
   const [otpVerified,  setOtpVerified]  = useState(false);
+  // The shop hasn't pressed "הפעל": try the flow, nothing is saved, no code (14.10.2026).
+  const [testMode, setTestMode] = useState(false);
+  const [testDone, setTestDone] = useState(false);
   const [otpToken,     setOtpToken]     = useState("");
   const [otpSending,   setOtpSending]   = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
@@ -416,6 +419,7 @@ function ConfirmPageContent() {
     fetch(apiWithSlug("/api/referral-sources", slug)).then(r => r.json()).then(setReferralOptions).catch(() => {});
     fetch(apiWithSlug("/api/business", slug)).then(r => r.json()).then(biz => {
       if (biz?.id) setBusinessId(biz.id);
+      if (biz?.testMode) setTestMode(true);
       if (biz?.name) setBusinessName(biz.name);
       if (biz?.address) setBusinessAddress(biz.address);
       if (biz?.cancellationPolicyMessage) setPolicyMessage(biz.cancellationPolicyMessage);
@@ -578,7 +582,7 @@ function ConfirmPageContent() {
   async function handleSubmit(existingDecision?: "additional" | "cancel") {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
     if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
-    if (!otpVerified) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
+    if (!otpVerified && !testMode) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
     setSubmitting(true); setError(""); setExistingAppts(null);
     // Fold any selected products into the appointment note so the barber sees
     // the customer wants to buy them at the visit (paid in-shop).
@@ -621,6 +625,7 @@ function ConfirmPageContent() {
         return;
       }
       const appointment = await res.json();
+      if (appointment.test) { setTestDone(true); setSubmitting(false); return; }
       // Persist customer details for future bookings
       try { localStorage.setItem("bk_customer", JSON.stringify({ name, phone })); } catch { /* ignore */ }
       // On the waitlist for this same day? Ask whether to remove before moving on.
@@ -869,6 +874,12 @@ function ConfirmPageContent() {
           <SummaryRow label="מחיר" value={`₪${price}`} large compact />
         </div>
 
+        {testMode && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-center text-[13px] text-amber-800">
+            מצב בדיקה: אפשר לעבור על הכל, התור לא יישמר.
+          </div>
+        )}
+
         {/* Customer details */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -903,8 +914,8 @@ function ConfirmPageContent() {
             </div>
           </div>
 
-          {/* OTP section */}
-          <div className="mt-4 pt-4 border-t border-slate-100">
+          {/* OTP section (none in test mode) */}
+          {!testMode && <div className="mt-4 pt-4 border-t border-slate-100">
             {!otpVerified ? (
               <>
                 {!otpSent ? (
@@ -971,7 +982,7 @@ function ConfirmPageContent() {
                 )}
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
         {/* Referral source — hidden once we already know how the customer found us */}
@@ -1125,16 +1136,27 @@ function ConfirmPageContent() {
 
         {/* Submit */}
         <button onClick={() => handleSubmit()}
-          disabled={submitting || !phone || !nameValid || !otpVerified}
+          disabled={submitting || !phone || !nameValid || !(otpVerified || testMode)}
           className="w-full text-[14px] font-bold tracking-[0.15em] uppercase py-4 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
           style={{ background: "var(--brand)" }}>
           {submitting ? "קובע תור..." : "קביעת תור! ✓"}
         </button>
 
-        {!otpVerified && phone && name && (
+        {!otpVerified && !testMode && phone && name && (
           <p className="text-center text-[11px] text-slate-400">נדרש אימות טלפון לפני קביעת התור</p>
         )}
       </div>
+
+      {testDone && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-5">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl text-center">
+            <div className="text-3xl mb-2">✓</div>
+            <p className="text-[16px] font-bold text-slate-900">ככה לקוח יקבע תור</p>
+            <p className="text-[13px] text-slate-500 mt-2 leading-relaxed">זו בדיקה, התור לא נשמר. אחרי הפעלת המערכת זה יהיה אמיתי.</p>
+            <button onClick={() => router.push(publicHref(slug, "/"))} className="mt-5 w-full py-3 rounded-full text-white text-[14px] font-bold" style={{ background: "var(--brand)" }}>חזרה לעמוד הבית</button>
+          </div>
+        </div>
+      )}
 
       {/* Existing-appointment choice dialog */}
       {existingAppts && (

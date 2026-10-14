@@ -25,6 +25,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { buildBookingLink } from "@/lib/link-first";
+import { onFreePackage, freePackageState, type FreePackage } from "@/lib/agent/free-package";
 
 /** Raw-cost budget (₪ / month) by tier; the launch price (287 ₪) rides on premium. */
 export const TIER_TOKEN_BUDGET_ILS: Record<string, number> = { basic: 0, pro: 40, premium: 40 };
@@ -47,6 +48,8 @@ export type TokenBudgetState = {
   packageTokens: number;     // weighted
   pct: number;               // 0–100+ (100 = blocked)
   level: "ok" | "warn" | "blocked" | "none"; // none = no package (tier without agent)
+  /** Not paying yet: the one-time free package (free-package.ts) instead of a monthly one. */
+  free?: FreePackage;
 };
 
 type Settings = { tokenBudgetIls?: unknown; tokenTopups?: unknown; agentUnavailableMessage?: unknown; ownerLoginPhone?: unknown };
@@ -68,23 +71,24 @@ export function currentMonth(now = new Date()): { key: string; start: Date } {
 
 export const weightedTokens = (usd: number) => Math.round(usd / USD_PER_WEIGHTED_TOKEN);
 
-/** The free month's agent package (10.10.2026, Yair: "להגביל את הסוכן ל־10 ש״ח בערך"): a
- *  business in its trial and not paying gets at most this much; its plan's package starts when it pays. */
-export const TRIAL_AGENT_BUDGET_ILS = 10;
-export const inTrial = (biz: { paidAt?: Date | null; trialEndsAt?: Date | null }, now = new Date()) => !biz.paidAt && !!biz.trialEndsAt && biz.trialEndsAt > now;
-
+/** A paying business's monthly package. Before paying, the one-time free package
+ *  applies instead (free-package.ts, 14.10.2026; it replaced the 10 ₪ trial cap). */
 export function budgetOf(biz: { tier: string | null; settings: string | null; paidAt?: Date | null; trialEndsAt?: Date | null }, monthKey: string): { base: number; topup: number; total: number } {
   const s = parse(biz.settings);
-  let base = typeof s.tokenBudgetIls === "number" && s.tokenBudgetIls >= 0 ? s.tokenBudgetIls : (TIER_TOKEN_BUDGET_ILS[biz.tier ?? "basic"] ?? 0);
-  if (inTrial(biz)) base = Math.min(base, TRIAL_AGENT_BUDGET_ILS);
+  const base = typeof s.tokenBudgetIls === "number" && s.tokenBudgetIls >= 0 ? s.tokenBudgetIls : (TIER_TOKEN_BUDGET_ILS[biz.tier ?? "basic"] ?? 0);
   const topups = Array.isArray(s.tokenTopups) ? (s.tokenTopups as { month?: string; ils?: number }[]) : [];
   const topup = topups.filter(t => t.month === monthKey && typeof t.ils === "number").reduce((a, t) => a + (t.ils as number), 0);
   return { base, topup, total: base + topup };
 }
 
 export async function tokenBudgetState(businessId: string, now = new Date()): Promise<TokenBudgetState> {
-  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { tier: true, settings: true, paidAt: true, trialEndsAt: true } });
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { id: true, createdAt: true, tier: true, settings: true, paidAt: true, trialEndsAt: true } });
   const { key, start } = currentMonth(now);
+  if (biz && onFreePackage(biz)) {
+    const free = await freePackageState(biz);
+    const usedUsd = free.aiIls.used / USD_ILS;
+    return { month: key, budgetIls: free.aiIls.cap, baseBudgetIls: free.aiIls.cap, topupIls: 0, usedUsd, usedIls: free.aiIls.used, usedTokens: weightedTokens(usedUsd), packageTokens: weightedTokens(free.aiIls.cap / USD_ILS), pct: free.pct, level: free.level, free };
+  }
   const b = budgetOf(biz ?? { tier: "basic", settings: null }, key);
   const agg = await prisma.agentUsage.aggregate({ where: { businessId, createdAt: { gte: start }, NOT: { kind: { in: ["sandbox", "review"] } } }, _sum: { costUsd: true } });
   const usedUsd = agg._sum.costUsd ?? 0;
@@ -101,21 +105,30 @@ async function ownerPhoneOf(businessId: string): Promise<{ phone: string | null;
   return { phone: phone ? normalizeIsraeliPhone(phone) : null, name: biz?.name ?? "", settings: biz?.settings ?? null, slug: biz?.slug ?? "", id: biz?.id ?? businessId };
 }
 
-/** One alert per business per month per level, keyed on MessageLog (kind + month in body). */
-async function alertOnce(businessId: string, kind: "token_alert_80" | "token_alert_100", month: string, body: string): Promise<boolean> {
-  const dup = await prisma.messageLog.findFirst({ where: { businessId, kind, createdAt: { gte: currentMonth().start } }, select: { id: true } });
+type AlertKind = "token_alert_80" | "token_alert_100" | "free_alert_80" | "free_alert_100";
+const ALERT_TITLE: Record<AlertKind, string> = {
+  token_alert_80: "80% מחבילת הסוכן נוצלו", token_alert_100: "חבילת הסוכן נגמרה לחודש",
+  free_alert_80: "80% מהחבילה החינמית נוצלו", free_alert_100: "החבילה החינמית נגמרה",
+};
+
+/** One alert per business per level: per month for a plan, once ever for the free package. Keyed on MessageLog. */
+async function alertOnce(businessId: string, kind: AlertKind, month: string, body: string): Promise<boolean> {
+  const since = kind.startsWith("free_") ? new Date(0) : currentMonth().start;
+  const dup = await prisma.messageLog.findFirst({ where: { businessId, kind, createdAt: { gte: since } }, select: { id: true } });
   if (dup) return false;
   const owner = await ownerPhoneOf(businessId);
   // Notification center (10.10.2026): always there; WhatsApp as the owner chose for "תקלות" (default).
   const { centerNotify } = await import("@/lib/notify/center");
-  const { channel } = await centerNotify({ businessId, kind: "system", title: kind === "token_alert_80" ? "80% מחבילת הסוכן נוצלו" : "חבילת הסוכן נגמרה לחודש", body, href: "/admin/settings/plan", noPush: true });
+  const full = kind.endsWith("_100");
+  const { channel } = await centerNotify({ businessId, kind: "system", title: ALERT_TITLE[kind], body, href: "/admin/settings/plan", noPush: true });
   if (owner.phone && channel === "whatsapp") {
     await sendMessage({ businessId, customerPhone: owner.phone, kind, body }).catch(e => console.error("[token-budget] alert send failed", e));
   } else if (!owner.phone) {
     await prisma.messageLog.create({ data: { businessId, customerPhone: "-", kind, body, status: "skipped", error: "no owner phone" } }).catch(() => {});
   }
-  if (channel !== "screen") pushToOwner(businessId, { title: kind === "token_alert_80" ? "⚠️ 80% מחבילת הסוכן נוצלו" : "⛔ חבילת הסוכן נגמרה לחודש", body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
-  notifyPlatformOwner(`${kind === "token_alert_80" ? "⚠️ 80%" : "⛔ 100%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: kind === "token_alert_100" }).catch(() => {});
+  if (channel !== "screen") pushToOwner(businessId, { title: `${full ? "⛔" : "⚠️"} ${ALERT_TITLE[kind]}`, body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
+  // The free package running out is a sales moment: Yair hears about it right away.
+  notifyPlatformOwner(kind.startsWith("free_") ? `${full ? "⛔ החבילה החינמית נגמרה" : "⚠️ 80% מהחבילה החינמית"}: ${owner.name}${full ? ". זמן להתקשר ולצרף למסלול" : ""}` : `${full ? "⛔ 100%" : "⚠️ 80%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: full }).catch(() => {});
   return true;
 }
 
@@ -131,11 +144,16 @@ export async function tokenBudgetGate(businessId: string, phone: string): Promis
   const state = await tokenBudgetState(businessId);
   if (state.level === "none" || state.level === "ok") return { blocked: false, state };
   if (state.level === "warn") {
+    if (state.free) {
+      await alertOnce(businessId, "free_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מהחבילה החינמית. כשהיא תיגמר הסוכן יפסיק לענות ללקוחות עד שמצטרפים למסלול. להצטרפות: הגדרות ← המסלול שלי.`);
+      return { blocked: false, state };
+    }
     await alertOnce(businessId, "token_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מחבילת הסוכן החודש. כשהחבילה תיגמר הסוכן יפסיק לענות ללקוחות עד תחילת החודש; תזכורות ואישורים ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
     return { blocked: false, state };
   }
   // blocked
-  await alertOnce(businessId, "token_alert_100", state.month, `⛔ חבילת הסוכן נגמרה לחודש. הסוכן לא עונה ללקוחות חדשים עד תחילת החודש: כל לקוח שכותב מקבל את ההודעה הקבועה עם קישור ההזמנה, ומגיע אליך בפוש. תזכורות, אישורים והחלפות ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
+  if (state.free) await alertOnce(businessId, "free_alert_100", state.month, `⛔ החבילה החינמית נגמרה. הסוכן לא עונה ללקוחות עד שמצטרפים למסלול: כל לקוח שכותב מקבל את ההודעה הקבועה עם קישור ההזמנה. תזכורות ואישורים ממשיכים. להצטרפות: הגדרות ← המסלול שלי.`);
+  else await alertOnce(businessId, "token_alert_100", state.month, `⛔ חבילת הסוכן נגמרה לחודש. הסוכן לא עונה ללקוחות חדשים עד תחילת החודש: כל לקוח שכותב מקבל את ההודעה הקבועה עם קישור ההזמנה, ומגיע אליך בפוש. תזכורות, אישורים והחלפות ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
   const owner = await ownerPhoneOf(businessId);
   const s = parse(owner.settings);
   const link = await buildBookingLink({ id: owner.id, slug: owner.slug });

@@ -384,9 +384,9 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         {/* Not live yet (13.10.2026): the free month starts when he presses "הפעל". */}
         {me?.isOwner && me.onboardingCompletedAt && !me.activatedAt && !me.isSuperAdmin && (
           <div className="shrink-0 bg-teal-50 border-b border-teal-200 text-teal-900 px-4 py-2 flex items-center justify-between gap-3 text-sm">
-            <span className="leading-snug">המערכת עוד לא הופעלה. החודש החינמי שלך מתחיל רק כשתלחץ &quot;הפעל&quot;, ואז אפשר לשתף עם הלקוחות את הקישור לקביעת תורים.</span>
+            <span className="leading-snug">מצב בדיקה: לקוחות עוד לא קובעים, והסוכן עונה רק <Link href="/admin/agent" className="underline">למספר הבדיקה</Link>. החודש החינמי מתחיל כשלוחצים &quot;הפעל&quot;.</span>
             <button type="button" onClick={async () => {
-              if (!confirm("להפעיל עכשיו? מהרגע הזה מתחיל החודש החינמי, והלקוחות יכולים לקבוע דרך הקישור.")) return;
+              if (!confirm("להפעיל עכשיו? מהרגע הזה מתחיל החודש החינמי, הסוכן עונה ללקוחות והם יכולים לקבוע.")) return;
               const r = await fetch("/api/admin/activate", { method: "POST" }).catch(() => null);
               if (r?.ok) setMe(m => (m ? { ...m, activatedAt: new Date().toISOString() } : m));
             }} className="shrink-0 font-semibold rounded-lg bg-teal-600 text-white px-3 py-1.5">הפעל</button>

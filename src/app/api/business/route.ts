@@ -17,13 +17,13 @@ export async function GET(req: NextRequest) {
         id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
         phone: true, address: true, about: true, socialLinks: true,
         settings: true, bookingHorizonDays: true, facebookPixel: true,
-        minCancellationHours: true, cancellationPolicyText: true,
+        minCancellationHours: true, cancellationPolicyText: true, activatedAt: true,
       } })
     : businessId
       ? await prisma.business.findUnique({ where: { id: businessId }, select: {
           id: true, name: true, slug: true, logoUrl: true, coverImageUrl: true,
           phone: true, address: true, about: true, socialLinks: true,
-          settings: true, bookingHorizonDays: true, facebookPixel: true,
+          settings: true, bookingHorizonDays: true, facebookPixel: true, activatedAt: true,
         } })
       : await fallbackBusiness({
     select: {
@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
       facebookPixel: true,
       minCancellationHours: true,
       cancellationPolicyText: true,
+      activatedAt: true,
     },
   });
 
@@ -83,6 +84,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ...business,
     settings: undefined, // strip raw settings — theme is exposed instead
+    activatedAt: undefined,
+    // Not activated yet: the booking flow runs in test mode, nothing is saved (14.10.2026).
+    testMode: !business.activatedAt,
     cancellationPolicyText: undefined, // raw override — resolved message exposed instead
     cancellationPolicyMessage: formatCancellationPolicyMessage(business.minCancellationHours, business.cancellationPolicyText),
     referral,      // resolved referral config (enabled/goal/giftLabel/friendSource)

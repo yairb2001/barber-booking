@@ -6,6 +6,7 @@ import { getCrmSettings } from "@/lib/crm/core";
 import { recordCrmNotification } from "@/lib/crm/notify";
 import { payLinkFor } from "@/lib/billing/pay-link";
 import { referralStats } from "@/lib/chator-referral";
+import { onFreePackage, freePackageState } from "@/lib/agent/free-package";
 
 export const dynamic = "force-dynamic";
 
@@ -24,15 +25,16 @@ const parse = (raw: string | null | undefined): Record<string, unknown> => { try
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true, activatedAt: true });
+  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true, activatedAt: true, createdAt: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
-  const [plans, usage, cs, packs, invoices, referral] = await Promise.all([
+  const [plans, usage, cs, packs, invoices, referral, free] = await Promise.all([
     getPlans(),
     usageFor([biz.id]),
     getCrmSettings(),
     prisma.crmPack.findMany({ where: { businessId: biz.id }, orderBy: { createdAt: "desc" }, take: 12 }),
     prisma.crmInvoice.findMany({ where: { businessId: biz.id }, orderBy: { issuedAt: "desc" }, take: 24 }),
     referralStats(biz),
+    onFreePackage(biz) ? freePackageState(biz) : Promise.resolve(null),
   ]);
   const u = usage.get(biz.id) ?? null;
   const s = parse(biz.settings);
@@ -55,6 +57,13 @@ export async function GET(req: NextRequest) {
     requested: requests,
     payUrl: biz.paidAt ? null : payLinkFor(biz),
     referral,
+    // Not paying yet: the one-time free package (free-package.ts) is what counts.
+    free: free && {
+      name: free.name,
+      messages: { ...free.messages, pct: free.messages.cap > 0 ? Math.round((free.messages.used / free.messages.cap) * 100) : 0 },
+      aiPct: free.aiIls.cap > 0 ? Math.round((free.aiIls.used / free.aiIls.cap) * 100) : 0,
+      level: free.level,
+    },
   });
 }
 

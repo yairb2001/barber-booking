@@ -13,6 +13,8 @@ export type MessageKind =
   | "sales_reply"      // stage 1: the sales agent in the demo shop's WhatsApp (src/lib/agent/sales-agent.ts)
   | "token_alert_80"   // stage 1: token package at 80% — one alert to the owner per month (token-budget.ts)
   | "token_alert_100"  // stage 1: package used up — agent stops answering until next month
+  | "free_alert_80"    // the free package (free-package.ts) is 80% used
+  | "free_alert_100"   // the free package is used up — agent stops until he joins a plan
   | "wa_down_alert"    // the business's WhatsApp went down — owner (push + Chator's number) and Yair (wa-alerts.ts)
   | "wa_up_alert"      // …and it is linked again
   | "wa_link_stuck"    // owner stuck on the linking screen for minutes — Yair only

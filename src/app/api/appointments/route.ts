@@ -71,6 +71,15 @@ export async function POST(request: NextRequest) {
   // the DB free of phone-format duplicates going forward.
   const canonicalPhone = normalizeIsraeliPhone(customerPhone) || customerPhone;
 
+  // A shop that hasn't pressed "הפעל" is in test mode (14.10.2026, Yair: "עד
+  // שלא לוחצים הפעל, אף אחד לא יכול לקבוע באמת תור אמיתי"): the flow runs to
+  // the end, nothing is saved and nothing is sent, so no code is needed either.
+  const testOf = await prisma.staff.findUnique({ where: { id: staffId }, select: { name: true, business: { select: { activatedAt: true } } } });
+  if (testOf && !testOf.business.activatedAt) {
+    const svc = await prisma.service.findUnique({ where: { id: serviceId }, select: { name: true } });
+    return NextResponse.json({ id: "test", test: true, staff: { name: testOf.name }, service: { name: svc?.name ?? "" } });
+  }
+
   // Verify OTP token — required for all customer-facing bookings
   if (!otpToken) {
     return NextResponse.json({ error: "נדרש אימות זהות — שלח קוד אימות" }, { status: 401 });

@@ -41,6 +41,7 @@ import { getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { takeAgentTurn } from "@/lib/agent/agent-turn";
+import { isTester, runTesterTurn } from "@/lib/agent/test-mode";
 import { sendMessage } from "@/lib/messaging";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
@@ -303,14 +304,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const instanceId = body.instanceData?.idInstance;
   const instanceIdStr = instanceId != null ? String(instanceId) : null;
   let biz = instanceIdStr
-    ? await prisma.business.findFirst({ where: { OR: [{ greenApiInstanceId: instanceIdStr }, { evolutionInstance: instanceIdStr }] }, select: { id: true, tier: true, settings: true, slug: true } })
+    ? await prisma.business.findFirst({ where: { OR: [{ greenApiInstanceId: instanceIdStr }, { evolutionInstance: instanceIdStr }] }, select: { id: true, tier: true, settings: true, slug: true, activatedAt: true } })
     : null;
 
   // Fallback ONLY when no instance id was provided (legacy single-tenant webhook).
   // If an instance id WAS given but matched no business, do NOT guess — attaching
   // the message to an arbitrary tenant would mix data between businesses.
   if (!biz && !instanceIdStr) {
-    biz = await fallbackBusiness({ select: { id: true, tier: true, settings: true, slug: true } });
+    biz = await fallbackBusiness({ select: { id: true, tier: true, settings: true, slug: true, activatedAt: true } });
   }
   if (!biz) {
     console.error("[webhook] no business found");
@@ -556,6 +557,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // even if AgentConfig.isEnabled is left on (e.g. after a downgrade).
   const agentAllowedByTier = tierHas(biz.tier, "aiAgent");
 
+  // Before "הפעל": test mode (src/lib/agent/test-mode.ts, 14.10.2026). The
+  // agent answers only the numbers set as testers, nothing is booked for real.
+  if (!biz.activatedAt && agentAllowedByTier && !isNonText && text && isTester(biz.settings, phone)) {
+    const release = await takeAgentTurn(conv.id, savedUserMsg.createdAt);
+    if (!release) return NextResponse.json({ ok: true, coalesced: true });
+    try { await runTesterTurn({ businessId: biz.id, phone, text }); }
+    finally { await release(); }
+    return NextResponse.json({ ok: true, test: true });
+  }
+
   if (!agentConfig?.isEnabled || !agentAllowedByTier) {
     // Agent is off (or not included in the tier) → a human must reply.
     pushToOwner(biz.id, {
@@ -579,6 +590,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const alreadyFlagged = conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < 24 * 60 * 60 * 1000;
     if (!alreadyFlagged) {
       await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: new Date() } });
+    }
+    // Not live yet (no "הפעל"): the system doesn't talk to his customers at all.
+    if (!alreadyFlagged && biz.activatedAt) {
       const noAgentMsg = "תודה על ההודעה 🙏 אחד מהצוות יחזור אליך בהקדם.";
       await prisma.conversationMessage.create({
         data: { conversationId: conv.id, role: "assistant", content: noAgentMsg },

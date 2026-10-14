@@ -14,6 +14,7 @@ export type PlanData = {
   requested: Record<string, string>;
   payUrl: string | null;
   referral: { link: string; friends: { name: string; paying: boolean; at: string }[]; earned: number; applied: number };
+  free: { name: string; messages: Meter; aiPct: number; level: "ok" | "warn" | "blocked" } | null;
 };
 
 export const barColor = (pct: number) => (pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-400" : "bg-teal-500");

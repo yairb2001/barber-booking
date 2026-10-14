@@ -5,6 +5,7 @@ import AgentBehaviorSettings from "./AgentBehaviorSettings";
 import { WhatsAppConnectCard } from "@/components/WhatsAppQrPanel";
 import AgentSetupCard, { type Answers, type SetupFieldDTO, type SetupHistoryDTO } from "./AgentSetupCard";
 import AgentFeedbackCard from "./AgentFeedbackCard";
+import TesterCard from "./TesterCard";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
 type Config = {
@@ -223,6 +224,8 @@ export default function AdminAgentPage() {
           </button>
         </div>
       </div>
+
+      <TesterCard />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-neutral-100 rounded-xl p-1 w-fit">

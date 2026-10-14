@@ -154,7 +154,7 @@ export default function SignupPage() {
             <Link href="/admin/login" className="font-medium" style={{ color: C.petrol }}>כניסה</Link>
           </p>
         </form>
-        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם, שמתחיל רק כשמסיימים להקים ולוחצים "הפעל". ההקמה בליווי, ביחד איתנו.</p>
+        <p className="text-center text-[11px] mt-4" style={{ color: "rgba(255,255,255,0.55)" }}>חודש ראשון חינם בחבילה של מסלול בסיס, שמתחיל רק כשמסיימים להקים ולוחצים "הפעל". ההקמה בליווי, ביחד איתנו.</p>
       </div>
     </div>
   );
