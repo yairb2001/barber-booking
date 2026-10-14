@@ -222,7 +222,11 @@ async function triggerWaitlist(opts: {
   // "In turns" (settings.waitlistCascade): one person at a time in sign-up
   // order, N minutes apart, each with a link to this exact slot held for him.
   const cascade = cascadeSettings(business.settings);
-  const useCascade = cascade.enabled && triggerType === "cancellation" && !!startTime;
+  // Freed hours (a break removed, hours extended, a day reopened) go in turns
+  // too (owner, 14.10.2026 — they used to go to everyone at once): each person,
+  // in order, is offered the free slot that best fits what he asked for.
+  const isDayOpen = triggerType === "day_open";
+  const useCascade = cascade.enabled && ((triggerType === "cancellation" && !!startTime) || isDayOpen);
   const turns: { entry: (typeof entries)[number]; existingAppointment?: string }[] = [];
 
   for (const entry of entries) {
@@ -274,8 +278,33 @@ async function triggerWaitlist(opts: {
     // only after everyone there had a turn + 30 min (owner, 14.10.2026), again
     // one at a time so two people never chase the same slot.
     const byAge = (a: (typeof turns)[number], b: (typeof turns)[number]) => a.entry.createdAt.getTime() - b.entry.createdAt.getTime();
-    const explicitTurns = turns.filter(t => t.entry.source !== "declined_offer").sort(byAge);
-    const silentTurns = turns.filter(t => t.entry.source === "declined_offer").sort(byAge);
+    let pool: ((typeof turns)[number] & { slot: string })[];
+    if (isDayOpen) {
+      // Pick each person's slot now, in order: closest to the hour he wanted
+      // (earliest if he named none), a different slot per person when possible.
+      const ordered0 = [...turns.filter(t => t.entry.source !== "declined_offer").sort(byAge), ...turns.filter(t => t.entry.source === "declined_offer").sort(byAge)];
+      const freeBySvc = new Map<string, string[]>();
+      const taken = new Set<string>();
+      pool = [];
+      for (const t of ordered0) {
+        let free = freeBySvc.get(t.entry.service.id);
+        if (!free) {
+          free = (await computeDayAvailability(businessId, dateIso, staffId, t.entry.service.id).catch(() => [])).find(a => a.staffId === staffId)?.slots ?? [];
+          freeBySvc.set(t.entry.service.id, free);
+        }
+        const fits = free.filter(x => matchesEntryTime(x, t.entry));
+        if (!fits.length) continue;
+        const want = t.entry.preferredTime ? timeToMinutes(t.entry.preferredTime) : null;
+        const ranked = want === null ? fits : [...fits].sort((a, b) => Math.abs(timeToMinutes(a) - want) - Math.abs(timeToMinutes(b) - want));
+        const slot = ranked.find(x => !taken.has(x)) ?? ranked[0];
+        taken.add(slot);
+        pool.push({ ...t, slot });
+      }
+    } else {
+      pool = turns.map(t => ({ ...t, slot: startTime! }));
+    }
+    const explicitTurns = pool.filter(t => t.entry.source !== "declined_offer").sort(byAge);
+    const silentTurns = pool.filter(t => t.entry.source === "declined_offer").sort(byAge);
     const silentStart = explicitTurns.length ? explicitTurns.length * cascade.minutes + 30 : 0;
     const ordered = [
       ...explicitTurns.map((t, k) => ({ ...t, at: k * cascade.minutes, silent: false })),
@@ -284,24 +313,25 @@ async function triggerWaitlist(opts: {
     const cascadeId = newHoldToken();
     const now = Date.now();
     for (let i = 0; i < ordered.length; i++) {
-      const { entry, existingAppointment, at, silent } = ordered[i];
+      const { entry, existingAppointment, at, silent, slot } = ordered[i];
       const step: CascadeStep = {
-        cascadeId, entryId: entry.id, businessId, staffId, date: dateIso, startTime: startTime!,
+        cascadeId, entryId: entry.id, businessId, staffId, date: dateIso, startTime: slot,
         serviceId: entry.service.id, customerId: (entry as { customerId?: string }).customerId ?? null,
         holdToken: newHoldToken(), minutes: cascade.minutes, ...(silent ? { minLeadMin: 60 } : {}),
       };
       const common = {
-        freedTime: startTime, existingAppointment,
+        freedTime: slot, existingAppointment,
         slotLink: cascadeSlotLink(business.slug, step), holdMinutes: cascade.minutes,
       };
       if (at === 0) {
         // First in line: his turn starts now (hold + immediate send).
-        if (!(await startCascadeTurn(step).catch(() => false))) break;
-        tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, { ...common, immediate: true }));
+        if (!(await startCascadeTurn(step).catch(() => false))) { if (isDayOpen) continue; break; }
+        // A freed-hours turn is a specific slot now → worded like a cancellation.
+        tasks.push(sendWaitlistEntryNotification(business.name, entry, "cancellation", business.slug, business.waitlistNotifyTemplate, { ...common, immediate: true }));
       } else {
         // Later turns wait in the drip queue; the queue re-checks the slot and
         // moves the hold to this person right before sending (see drip-queue).
-        tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, {
+        tasks.push(sendWaitlistEntryNotification(business.name, entry, "cancellation", business.slug, business.waitlistNotifyTemplate, {
           ...common, immediate: false, scheduledFor: new Date(now + at * 60_000), meta: { wl: step },
         }));
       }
