@@ -174,6 +174,25 @@ export const DEFAULT_AUTOMATIONS: { key: AutomationKey; name: string; trigger: s
   },
 ];
 
+/**
+ * The screen's two tabs (15.10.2026, Yair: "אוטומציות תפעול, אוטומציות שיווק
+ * ומכירות"). Same rule as the routing on Chator's line: not a customer yet →
+ * marketing & sales; a shop that signed up → operations. In journey order; a
+ * key missing here shows under operations, last.
+ */
+export const AUTOMATION_GROUPS: { key: "ops" | "sales"; label: string; sections: { label: string; keys: AutomationKey[] }[] }[] = [
+  { key: "ops", label: "תפעול", sections: [
+    { label: "הרשמה והקמה", keys: ["call_won", "signup_welcome", "setup_stuck", "setup_stuck_rep"] },
+    { label: "הפעלה", keys: ["not_activated", "not_activated_rep", "quiet_start", "quiet_start_rep"] },
+    { label: "החודש החינמי ותשלום", keys: ["free_used_up", "trial_ending", "trial_ended", "trial_ended_rep"] },
+    { label: "לקוח משלם", keys: ["churn_risk"] },
+  ] },
+  { key: "sales", label: "שיווק ומכירות", sections: [
+    { label: "ליד", keys: ["lead_new", "followup"] },
+    { label: "שיחת מכירה", keys: ["call_booked", "call_no_answer"] },
+  ] },
+];
+
 export function parseSteps(raw: string): AutoStep[] {
   try {
     const v = JSON.parse(raw);

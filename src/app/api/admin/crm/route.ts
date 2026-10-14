@@ -9,7 +9,7 @@ import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
 import { hasTestKey } from "@/lib/anthropic-clients";
 import { ensureCrmSeed, getCrmSettings, setCrmSettings, freeCallSlots, slotLabel, isStage, STAGES, legacyStatusFor, type CrmSettings } from "@/lib/crm/core";
 import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/calls";
-import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, type AutoStep } from "@/lib/crm/automations";
+import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, AUTOMATION_GROUPS, type AutoStep } from "@/lib/crm/automations";
 import { computeSetup } from "@/lib/crm/setup-progress";
 import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
 import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
@@ -309,6 +309,7 @@ async function automationsView() {
   return {
     variables: VARIABLES,
     stopLabels: STOP_LABELS,
+    groups: AUTOMATION_GROUPS,
     automations: autos.map(a => ({
       id: a.id, key: a.key, name: a.name, trigger: a.trigger, enabled: a.enabled, audience: a.audience,
       steps: parseSteps(a.steps), stopOn: parseStopOn(a.stopOn),

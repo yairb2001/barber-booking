@@ -5,7 +5,22 @@ import { C, Btn, PageHead, useCrm, crmAction } from "../ui";
 
 type Step = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
 type Auto = { id: string; key: string; name: string; trigger: string; enabled: boolean; audience: string; steps: Step[]; stopOn: string[]; stats: { started: number; active: number; replied: number } };
-type Data = { variables: string[]; stopLabels: Record<string, string>; automations: Auto[] };
+type GroupKey = "ops" | "sales";
+type Group = { key: GroupKey; label: string; sections: { label: string; keys: string[] }[] };
+type Data = { variables: string[]; stopLabels: Record<string, string>; groups: Group[]; automations: Auto[] };
+
+/** One tab's automations, by section in journey order; anything ungrouped lands last under operations. */
+function sectionsOf(data: Data, tab: GroupKey): { label: string; items: Auto[] }[] {
+  const byKey = new Map(data.automations.map(a => [a.key, a]));
+  const g = data.groups.find(x => x.key === tab);
+  const out = (g?.sections ?? []).map(s => ({ label: s.label, items: s.keys.map(k => byKey.get(k)).filter((a): a is Auto => !!a) })).filter(s => s.items.length);
+  if (tab === "ops") {
+    const grouped = new Set(data.groups.flatMap(x => x.sections.flatMap(s => s.keys)));
+    const rest = data.automations.filter(a => !grouped.has(a.key));
+    if (rest.length) out.push({ label: "אחר", items: rest });
+  }
+  return out;
+}
 
 /** delayMinutes ↔ a value + unit the editor shows. */
 function toUnit(min: number): { n: number; unit: "min" | "hour" | "day" } {
@@ -17,6 +32,7 @@ const UNIT_MIN = { min: 1, hour: 60, day: 1440 } as const;
 
 export default function AutomationsPage() {
   const { data, error, reload } = useCrm<Data>("view=automations");
+  const [tab, setTab] = useState<GroupKey>("ops");
   const [sel, setSel] = useState<string>("");
   const [draft, setDraft] = useState<Step[] | null>(null);
   const [focus, setFocus] = useState(0);
@@ -24,7 +40,13 @@ export default function AutomationsPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [preview, setPreview] = useState<Record<number, string>>({});
 
-  useEffect(() => { if (data && !sel) setSel(data.automations[0]?.id ?? ""); }, [data, sel]);
+  const sections = data ? sectionsOf(data, tab) : [];
+  // The selection follows the tab: the first automation of the tab shown.
+  useEffect(() => {
+    if (!data) return;
+    const ids = sectionsOf(data, tab).flatMap(s => s.items.map(x => x.id));
+    if (!ids.includes(sel)) setSel(ids[0] ?? "");
+  }, [data, tab, sel]);
   const a = data?.automations.find(x => x.id === sel) ?? null;
   useEffect(() => { setDraft(a ? a.steps.map(s => ({ ...s })) : null); setPreview({}); setFocus(0); }, [a]);
   const dirty = !!a && !!draft && JSON.stringify(a.steps) !== JSON.stringify(draft);
@@ -46,17 +68,32 @@ export default function AutomationsPage() {
     <div className="flex flex-col gap-4">
       <PageHead title="אוטומציות" sub="כל ההודעות יוצאות מהמספר של צ׳אטור · לא בשבת ולא בין 21:30 ל-08:00 · כל אוטומציה כבויה עד שתדליק אותה" />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
+      <div role="tablist" aria-label="סוג אוטומציות" className="flex flex-wrap gap-2">
+        {data.groups.map(g => {
+          const items = sectionsOf(data, g.key).flatMap(s => s.items);
+          return (
+            <button key={g.key} type="button" role="tab" aria-selected={tab === g.key} onClick={() => setTab(g.key)} className="h-[38px] px-3.5 rounded-full text-sm font-semibold" style={tab === g.key ? { background: C.petrol, color: "#fff", border: `1px solid ${C.petrol}` } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" }}>
+              {g.label} ({items.filter(x => x.enabled).length} פעילות מתוך {items.length})
+            </button>
+          );
+        })}
+      </div>
       <div className="flex flex-wrap gap-4 items-start">
         <section aria-label="רשימת האוטומציות" className="flex-[1_1_300px] min-w-0 flex flex-col gap-2.5">
-          {data.automations.map(x => (
-            <button key={x.id} type="button" onClick={() => setSel(x.id)} className="text-right bg-white rounded-[14px] px-4 py-3.5 flex flex-col gap-1.5" style={{ border: x.id === sel ? `2px solid ${C.petrol}` : `1px solid ${C.line}` }}>
-              <span className="flex justify-between items-center gap-2 w-full">
-                <span className="font-bold text-[15px]">{x.name}</span>
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={x.enabled ? { background: "#E3F7EF", color: "#0F6B4F" } : { background: C.soft, color: C.muted }}>{x.enabled ? "פעילה" : "כבויה"}</span>
-              </span>
-              <span className="text-xs" style={{ color: C.muted }}>כש: {x.trigger}{x.audience === "rep" ? " · הודעה לנציג, לא לליד" : ""}</span>
-              <span className="text-xs" style={{ color: "#3E5A5B" }}>החודש: {x.stats.started} התחילו · {x.stats.active} רצות עכשיו{x.audience === "lead" ? ` · ${x.stats.replied} ענו או קבעו` : ""}</span>
-            </button>
+          {sections.map(s => (
+            <div key={s.label} className="flex flex-col gap-2.5">
+              <h3 className="m-0 mt-1 text-[13px] font-bold" style={{ color: C.muted }}>{s.label}</h3>
+              {s.items.map(x => (
+                <button key={x.id} type="button" onClick={() => setSel(x.id)} className="text-right bg-white rounded-[14px] px-4 py-3.5 flex flex-col gap-1.5" style={{ border: x.id === sel ? `2px solid ${C.petrol}` : `1px solid ${C.line}` }}>
+                  <span className="flex justify-between items-center gap-2 w-full">
+                    <span className="font-bold text-[15px]">{x.name}</span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={x.enabled ? { background: "#E3F7EF", color: "#0F6B4F" } : { background: C.soft, color: C.muted }}>{x.enabled ? "פעילה" : "כבויה"}</span>
+                  </span>
+                  <span className="text-xs" style={{ color: C.muted }}>כש: {x.trigger}{x.audience === "rep" ? ` · הודעה לנציג, לא ${tab === "ops" ? "לבעל העסק" : "לליד"}` : ""}</span>
+                  <span className="text-xs" style={{ color: "#3E5A5B" }}>החודש: {x.stats.started} התחילו · {x.stats.active} רצות עכשיו{x.audience === "lead" && tab === "sales" ? ` · ${x.stats.replied} ענו או קבעו` : ""}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </section>
 
