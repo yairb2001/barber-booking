@@ -30,6 +30,8 @@ export type CascadeStep = {
   customerId: string | null;
   holdToken: string;
   minutes: number;
+  /** Silent-list turns: don't offer a slot that starts sooner than this. */
+  minLeadMin?: number;
 };
 
 export function newHoldToken(): string {
@@ -50,6 +52,7 @@ export function cascadeSlotLink(slug: string | null | undefined, step: Pick<Casc
  */
 export async function startCascadeTurn(step: CascadeStep): Promise<boolean> {
   await releaseHolds({ proposalId: `wl:${step.cascadeId}` });
+  if (step.minLeadMin && new Date(`${step.date}T${step.startTime}:00+03:00`).getTime() - Date.now() < step.minLeadMin * 60_000) return false;
   const avail = await computeDayAvailability(step.businessId, step.date, step.staffId, step.serviceId).catch(() => []);
   if (!(avail.find(a => a.staffId === step.staffId)?.slots ?? []).includes(step.startTime)) return false;
   const [ss, svc] = await Promise.all([

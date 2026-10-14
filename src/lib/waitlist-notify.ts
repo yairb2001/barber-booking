@@ -78,7 +78,7 @@ export function matchesTimePreference(startTime: string, pref: string): boolean 
 }
 
 /** He named an hour ("יש ב-18:30?") — only ping him for slots near it. */
-export const PREFERRED_TIME_TOLERANCE_MIN = 75;
+export const PREFERRED_TIME_TOLERANCE_MIN = 90; // owner, 14.10.2026: "סביב השעה וחצי"
 export function matchesEntryTime(startTime: string, entry: { preferredTimeOfDay: string | null; preferredTime: string | null }): boolean {
   if (entry.preferredTime) {
     const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -238,6 +238,15 @@ async function triggerWaitlist(opts: {
     // freed slot is a SWAP offer ("רוצה שאחליף?"), never a second booking.
     let existingAppointment: string | undefined;
     if (entry.source === "declined_offer") {
+      // Silent list rules (owner, 14.10.2026): only ≥1h ahead, and not if he
+      // already booked himself within ±90 min of what he wanted on that day.
+      if (startTime && new Date(`${dateIso}T${startTime}:00+03:00`).getTime() - Date.now() < 60 * 60_000) continue;
+      const sameDay = await prisma.appointment.findMany({
+        where: { businessId, customerId: (entry as { customerId?: string }).customerId, date: dayStart, status: { in: ["pending", "confirmed"] } },
+        select: { startTime: true },
+      }).catch(() => [] as { startTime: string }[]);
+      const wantedMin = entry.preferredTime ? timeToMinutes(entry.preferredTime) : null;
+      if (sameDay.some(a => wantedMin === null || Math.abs(timeToMinutes(a.startTime) - wantedMin) <= PREFERRED_TIME_TOLERANCE_MIN)) continue;
       const upcoming = await prisma.appointment.findFirst({
         where: { businessId, customerId: (entry as { customerId?: string }).customerId, status: { in: ["pending", "confirmed"] }, date: { gte: new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z") } },
         orderBy: [{ date: "asc" }, { startTime: "asc" }],
@@ -261,21 +270,31 @@ async function triggerWaitlist(opts: {
   }
 
   if (useCascade && turns.length) {
-    turns.sort((a, b) => a.entry.createdAt.getTime() - b.entry.createdAt.getTime());
+    // Regular waitlist first (sign-up order, one every N min); the silent list
+    // only after everyone there had a turn + 30 min (owner, 14.10.2026), again
+    // one at a time so two people never chase the same slot.
+    const byAge = (a: (typeof turns)[number], b: (typeof turns)[number]) => a.entry.createdAt.getTime() - b.entry.createdAt.getTime();
+    const explicitTurns = turns.filter(t => t.entry.source !== "declined_offer").sort(byAge);
+    const silentTurns = turns.filter(t => t.entry.source === "declined_offer").sort(byAge);
+    const silentStart = explicitTurns.length ? explicitTurns.length * cascade.minutes + 30 : 0;
+    const ordered = [
+      ...explicitTurns.map((t, k) => ({ ...t, at: k * cascade.minutes, silent: false })),
+      ...silentTurns.map((t, j) => ({ ...t, at: silentStart + j * cascade.minutes, silent: true })),
+    ];
     const cascadeId = newHoldToken();
     const now = Date.now();
-    for (let i = 0; i < turns.length; i++) {
-      const { entry, existingAppointment } = turns[i];
+    for (let i = 0; i < ordered.length; i++) {
+      const { entry, existingAppointment, at, silent } = ordered[i];
       const step: CascadeStep = {
         cascadeId, entryId: entry.id, businessId, staffId, date: dateIso, startTime: startTime!,
         serviceId: entry.service.id, customerId: (entry as { customerId?: string }).customerId ?? null,
-        holdToken: newHoldToken(), minutes: cascade.minutes,
+        holdToken: newHoldToken(), minutes: cascade.minutes, ...(silent ? { minLeadMin: 60 } : {}),
       };
       const common = {
         freedTime: startTime, existingAppointment,
         slotLink: cascadeSlotLink(business.slug, step), holdMinutes: cascade.minutes,
       };
-      if (i === 0) {
+      if (at === 0) {
         // First in line: his turn starts now (hold + immediate send).
         if (!(await startCascadeTurn(step).catch(() => false))) break;
         tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, { ...common, immediate: true }));
@@ -283,7 +302,7 @@ async function triggerWaitlist(opts: {
         // Later turns wait in the drip queue; the queue re-checks the slot and
         // moves the hold to this person right before sending (see drip-queue).
         tasks.push(sendWaitlistEntryNotification(business.name, entry, triggerType, business.slug, business.waitlistNotifyTemplate, {
-          ...common, immediate: false, scheduledFor: new Date(now + i * cascade.minutes * 60_000), meta: { wl: step },
+          ...common, immediate: false, scheduledFor: new Date(now + at * 60_000), meta: { wl: step },
         }));
       }
     }
@@ -434,7 +453,7 @@ export function sendWaitlistEntryNotification(
     body = opts?.existingAppointment
       ? `היי ${firstName(entry.customer.name)}, שאלת על ${dateLabel}${staffLine} ולא היה מקום אז — ${openLabel}. ` +
         `יש לך תור ${opts.existingAppointment} — רוצה שאחליף לזה?`
-      : `היי ${firstName(entry.customer.name)}, שאלת אצלנו על ${entry.service.name}${staffLine} ב-${dateLabel} ולא היה מקום — ` +
+      : `היי ${firstName(entry.customer.name)}, שאלת אצלנו על ${entry.service.name}${staffLine} ב${dateLabel} ולא היה מקום — ` +
         `${openLabel}. רוצה שאתפוס לך?`;
   } else {
     // Render the owner's editable template (or the built-in default).
@@ -453,7 +472,7 @@ export function sendWaitlistEntryNotification(
   // Always guarantee a booking link. If the owner edited the template and
   // removed the link, append it so the customer can still tap through and grab
   // the slot — a waitlist message without a booking link is useless.
-  if (bookingLink && !body.includes(bookingLink)) {
+  if (bookingLink && !body.includes(bookingLink) && !opts?.existingAppointment) {
     body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
   }
   if (opts?.holdMinutes) {

@@ -31,6 +31,7 @@ import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
+import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
@@ -218,6 +219,39 @@ async function noteImplicitWaitlistInterest(opts: {
     // Best-effort — never let this break the actual availability answer.
     console.error("[agent] noteImplicitWaitlistInterest failed", err);
   }
+}
+
+/**
+ * Silent waitlist, wider net (owner, 14.10.2026): the customer asked for a
+ * specific day (+ hour / part of day) and THAT wasn't free — even when the day
+ * had other times and he took one of them or walked away. Decided in code from
+ * his own words, because the agent usually answers from the availability
+ * snapshot and never calls get_available_slots (where the old capture lived,
+ * and only for a completely full day). Barber: the one he named → his regular →
+ * anyone. Notification rules (±90 min, priority after the regular waitlist, ≥1h
+ * ahead, swap wording if he already booked) live in lib/waitlist-notify.ts.
+ */
+export async function captureMissedAsk(o: { bizId: string; callerPhone: string; text: string; serviceId: string | null; regularStaffId: string | null; customerId: string | null }): Promise<void> {
+  try {
+    if (!o.serviceId || !o.text) return;
+    const today = getBusinessNow().date;
+    const staff = await prisma.staff.findMany({ where: { businessId: o.bizId, isAvailable: true }, select: { id: true, name: true } });
+    const ask = parseAvailabilityAsk(o.text, today, 7, staff);
+    if (!ask || ask.days.length !== 1 || ask.pick) return; // one specific day only
+    const date = ask.days[0];
+    const want = parseRequestedTime(o.text);
+    const staffId = ask.staffHint || o.regularStaffId || undefined;
+    const avail = await computeDayAvailability(o.bizId, date, staffId, o.serviceId, o.customerId ? { exemptHoldsCustomerId: o.customerId } : {});
+    const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+    const free = avail.flatMap(a => a.slots).map(toMin);
+    const missed = want.time
+      ? !free.includes(toMin(want.time))
+      : ask.from !== undefined || ask.to !== undefined
+        ? !free.some(m => (ask.from === undefined || m >= ask.from) && (ask.to === undefined || m < ask.to))
+        : free.length === 0;
+    if (!missed) return;
+    await noteImplicitWaitlistInterest({ bizId: o.bizId, callerPhone: o.callerPhone, date, staffId, serviceId: o.serviceId, askText: o.text });
+  } catch (err) { console.error("[agent] captureMissedAsk failed", err); }
 }
 
 const anthropic = new Anthropic({
@@ -2393,6 +2427,9 @@ export async function runCustomerAgent(opts: {
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
         const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz) });
         customerContext += `\n${snap}`;
+        // Asked for a time that isn't free? Remember it quietly (not at night —
+        // "מחר" is ambiguous then, see night-window.ts).
+        if (!sandbox && !isNightWindow()) void captureMissedAsk({ bizId: businessId, callerPhone: phone, text: incomingText, serviceId, regularStaffId, customerId: cust?.id ?? null });
       }
     } catch (e) { console.error("[agent] availability snapshot failed", e); }
   }
