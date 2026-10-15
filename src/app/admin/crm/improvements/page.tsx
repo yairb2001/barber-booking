@@ -3,13 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { C, Btn, Card, PageHead, Tag, useCrm, crmAction, ago, type Tone } from "../ui";
+import ConversationSheet from "./ConversationSheet";
 
 /**
  * Agent improvements (10.10.2026): the daily review's proposals, per business,
  * and the owners' notes about their agents. Nothing reaches an agent before
  * Yair approves it here.
  */
-type Item = { id: string; businessId: string; businessName: string; source: string; kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string; evidence: string | null; targetKey: string | null; status: string; createdAt: string; decidedAt: string | null };
+type Item = { id: string; businessId: string; businessName: string; source: string; kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string; evidence: string | null; targetKey: string | null; conversationId: string | null; conversations: string[]; status: string; createdAt: string; decidedAt: string | null };
 type Fb = { id: string; businessId: string; businessName: string; author: string | null; conversationId: string | null; text: string; status: string; createdAt: string };
 const KIND: Record<Item["kind"], [string, Tone]> = { rule: ["כלל של העסק", "info"], faq: ["שאלה ותשובה", "ok"], setup: ["הגדרת הסוכן", "warn"], base: ["בסיס, לכל הסוכנים", "bad"] };
 const FB_STATUS: Record<string, string> = { new: "חדש", in_review: "בבדיקה", applied: "טופל", dismissed: "נסגר" };
@@ -25,6 +26,7 @@ export default function ImprovementsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState<string | null>(null);
+  const [conv, setConv] = useState<{ id: string; evidence: string | null } | null>(null);
 
   async function act(key: string, body: Record<string, unknown>, done: string) {
     setBusy(key);
@@ -92,7 +94,12 @@ export default function ImprovementsPage() {
                   <div className="flex items-center gap-2 flex-wrap"><Tag tone={tone}>{label}</Tag><b className="text-sm">{i.title}</b><span className="text-xs" style={{ color: C.muted }}>{ago(i.createdAt)}{i.source === "feedback" ? " · מהערה של בעל העסק" : ""}</span></div>
                   <textarea value={val} onChange={e => setEdit(s => ({ ...s, [i.id]: e.target.value }))} rows={Math.min(5, Math.max(2, Math.ceil(val.length / 60)))} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} />
                   {i.targetKey && <span className="text-xs" style={{ color: C.muted }}>שאלה: {i.targetKey}</span>}
-                  {i.evidence && <details><summary className="text-xs cursor-pointer" style={{ color: C.petrol }}>למה</summary><p className="m-0 mt-1 text-xs whitespace-pre-line" style={{ color: C.muted }}>{i.evidence}</p></details>}
+                  {(i.evidence || i.conversations.length > 0) && (
+                    <div className="flex flex-wrap items-start gap-3">
+                      {i.evidence && <details className="flex-1 min-w-0"><summary className="text-xs cursor-pointer" style={{ color: C.petrol }}>למה</summary><p className="m-0 mt-1 text-xs whitespace-pre-line" style={{ color: C.muted }}>{i.evidence}</p></details>}
+                      {i.conversations.map((cid, k) => <button key={cid} type="button" onClick={() => setConv({ id: cid, evidence: i.evidence })} className="text-xs font-semibold underline min-h-[32px]" style={{ color: C.petrol }}>{i.conversations.length > 1 ? `לשיחה ${k + 1}` : "לשיחה"}</button>)}
+                    </div>
+                  )}
                   <div className="flex gap-2">
                     <Btn kind="dark" disabled={!!busy} onClick={() => act(i.id, { action: "improvement.decide", id: i.id, approve: true, proposal: val }, i.kind === "base" ? "אושר. אבצע בבסיס." : "הוחל על הסוכן")}>{i.kind === "base" ? "אשר" : "אשר והחל"}</Btn>
                     <Btn kind="ghost" disabled={!!busy} onClick={() => act(i.id, { action: "improvement.decide", id: i.id, approve: false }, "נדחה")}>דחה</Btn>
@@ -110,7 +117,7 @@ export default function ImprovementsPage() {
           <div key={f.id} className="py-2.5 flex flex-col gap-1" style={{ borderTop: `1px solid ${C.soft}` }}>
             <div className="flex justify-between gap-2 text-xs" style={{ color: C.muted }}><span>{f.businessName}{f.author ? ` · ${f.author}` : ""} · {ago(f.createdAt)}</span><span>{FB_STATUS[f.status] ?? f.status}</span></div>
             <p className="m-0 text-sm whitespace-pre-line">{f.text}</p>
-            {f.conversationId && <span className="text-xs" style={{ color: C.muted }}>על שיחה מסוימת (מצורפת לבדיקה)</span>}
+            {f.conversationId && <button type="button" onClick={() => setConv({ id: f.conversationId!, evidence: null })} className="self-start text-xs font-semibold underline min-h-[32px]" style={{ color: C.petrol }}>לשיחה שעליה ההערה</button>}
             {(f.status === "new" || f.status === "in_review") && (
               <div className="flex gap-2">
                 <Btn kind="ghost" className="!px-0" disabled={!!busy} onClick={() => act(f.id, { action: "feedback.status", id: f.id, status: "applied" }, "סומן כטופל")}>סמן כטופל</Btn>
@@ -131,6 +138,7 @@ export default function ImprovementsPage() {
           ))}
         </Card>
       )}
+      {conv && <ConversationSheet id={conv.id} evidence={conv.evidence} onClose={() => setConv(null)} />}
     </div>
   );
 }

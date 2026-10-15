@@ -19,7 +19,7 @@ const MODEL = "claude-sonnet-4-6";
 const MAX_CONVS = 12;
 const MAX_MSGS = 16;
 
-type Proposal = { kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string; evidence?: string; targetKey?: string };
+type Proposal = { kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string; evidence?: string; targetKey?: string; conv?: string };
 
 const parse = (raw: string | null | undefined): Record<string, unknown> => { try { return raw ? JSON.parse(raw) : {}; } catch { return {}; } };
 
@@ -67,8 +67,8 @@ export async function reviewBusiness(businessId: string, now = new Date(), opts:
 - "setup": שינוי תשובה לשאלת הגדרה קיימת. targetKey = מפתח השאלה (tone, emojis, address, defaultService, barberAssign, priceNote, cancelPolicy, walkin, location, payment, escalateWhen), proposal = הערך החדש.
 - "base": בעיה כללית בהתנהגות הסוכן שלא קשורה לעסק הזה (תיקון בבסיס לכל העסקים). proposal = מה לשנות.
 
-כל הצעה: title קצר בעברית, proposal מדויק, evidence = ציטוט קצר מהשיחה או מההערה שמראה את הבעיה. אל תציע דבר שכבר קיים בכללים או ממתין.
-החזר JSON בלבד: {"proposals":[{"kind":"...","title":"...","proposal":"...","evidence":"...","targetKey":"..."}]}`;
+כל הצעה: title קצר בעברית, proposal מדויק, evidence = ציטוט קצר מהשיחה או מההערה שמראה את הבעיה, conv = 8 התווים של השיחה שממנה הציטוט (כמו בכותרת "### שיחה ..."). אל תציע דבר שכבר קיים בכללים או ממתין.
+החזר JSON בלבד: {"proposals":[{"kind":"...","title":"...","proposal":"...","evidence":"...","targetKey":"...","conv":"..."}]}`;
 
   const user = [
     known,
@@ -85,7 +85,7 @@ export async function reviewBusiness(businessId: string, now = new Date(), opts:
   proposals = proposals.filter(p => p && ["rule", "faq", "setup", "base"].includes(p.kind) && p.title && p.proposal).slice(0, 4);
 
   for (const p of proposals) {
-    await prisma.agentImprovement.create({ data: { businessId, source: feedback.length ? "feedback" : "daily_review", kind: p.kind, title: p.title.slice(0, 200), proposal: p.proposal.slice(0, 2000), evidence: p.evidence?.slice(0, 1000) ?? null, targetKey: p.kind === "setup" ? (p.targetKey ?? null) : null } });
+    await prisma.agentImprovement.create({ data: { businessId, source: feedback.length ? "feedback" : "daily_review", kind: p.kind, title: p.title.slice(0, 200), proposal: p.proposal.slice(0, 2000), evidence: p.evidence?.slice(0, 1000) ?? null, targetKey: p.kind === "setup" ? (p.targetKey ?? null) : null, conversationId: [p.conv, ...((p.evidence ?? "").match(/[0-9a-f]{8}/g) ?? [])].map(x => x && ids.find(id => id.startsWith(String(x).trim()))).find(Boolean) ?? null } });
   }
   if (feedback.length) await prisma.agentFeedback.updateMany({ where: { id: { in: feedback.map(f => f.id) } }, data: { status: "in_review", reviewedAt: now } });
   return proposals.length;

@@ -301,6 +301,17 @@ async function calendarView(weekISO: string | null) {
   };
 }
 
+/** Every conversation a proposal points at: the one stored, then any "שיחה 5a90d6b3" its evidence names (15.10.2026). */
+async function proposalConversations(i: { businessId: string; conversationId: string | null; evidence: string | null }): Promise<string[]> {
+  const out = i.conversationId ? [i.conversationId] : [];
+  for (const prefix of Array.from(new Set((i.evidence ?? "").match(/\b[0-9a-f]{8}\b/g) ?? []))) {
+    if (out.some(id => id.startsWith(prefix))) continue;
+    const c = await prisma.conversation.findFirst({ where: { businessId: i.businessId, id: { startsWith: prefix } }, select: { id: true } });
+    if (c) out.push(c.id);
+  }
+  return out;
+}
+
 async function automationsView() {
   const autos = await prisma.crmAutomation.findMany({ orderBy: { createdAt: "asc" } });
   const since = monthStart();
@@ -399,6 +410,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ unread, notifications: list.map(n => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, href: n.href, at: n.createdAt, read: !!n.readAt })) });
     }
     // The daily agent review's proposals + the owners' notes about their agents (10.10.2026).
+    // One conversation of a shop, read only, opened from an agent proposal or an owner's note (15.10.2026).
+    if (view === "conversation") {
+      const conv = await prisma.conversation.findUnique({ where: { id: sp.get("id") ?? "" }, select: { id: true, phone: true, whatsappName: true, businessId: true, escalatedAt: true, business: { select: { name: true } }, customer: { select: { name: true } } } });
+      if (!conv) return NextResponse.json({ error: "השיחה לא נמצאה" }, { status: 404 });
+      const messages = await prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "asc" }, take: 300, select: { id: true, role: true, content: true, source: true, createdAt: true } });
+      return NextResponse.json({ conversation: { id: conv.id, businessId: conv.businessId, businessName: conv.business.name, name: conv.customer?.name || conv.whatsappName || null, phone: conv.phone.replace(/^972/, "0") }, messages });
+    }
     if (view === "improvements") {
       const [items, feedback, cq, rulesText] = await Promise.all([
         prisma.agentImprovement.findMany({ where: { OR: [{ status: "pending" }, { decidedAt: { gte: new Date(Date.now() - 14 * 86400_000) } }] }, orderBy: [{ status: "desc" }, { createdAt: "desc" }], take: 200 }),
@@ -411,7 +429,7 @@ export async function GET(req: NextRequest) {
       const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
       const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
       return NextResponse.json({
-        items: items.map(i => ({ ...i, businessName: name(i.businessId) })),
+        items: await Promise.all(items.map(async i => ({ ...i, businessName: name(i.businessId), conversations: await proposalConversations(i) }))),
         feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
         chatorQuestions: cq.map(q => ({ id: q.id, question: q.question, stage: q.stage, createdAt: q.createdAt, businessId: q.businessId, businessName: q.businessId ? name(q.businessId) : null, phone: q.phone.replace(/^972/, "0"), conversationId: q.conversationId })),
         supportRules: rulesText.text.split("\n").filter(Boolean).slice(-15),

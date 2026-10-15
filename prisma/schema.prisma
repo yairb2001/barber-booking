@@ -1337,6 +1337,7 @@ model AgentImprovement {
   proposal   String
   evidence   String?
   targetKey  String?   @map("target_key")
+  conversationId String? @map("conversation_id") // the conversation it came from (15.10.2026)
   status     String    @default("pending") // pending | approved | rejected | applied
   createdAt  DateTime  @default(now()) @map("created_at")
   decidedAt  DateTime? @map("decided_at")
