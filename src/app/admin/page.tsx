@@ -6599,13 +6599,6 @@ export default function AdminCalendar() {
             </div>
           )}
 
-          {hideApptsOn && (
-            <button onClick={() => setShowHidden(v => !v)} title={showHidden ? "חזור ליומן הרגיל" : "הצג תורים מוסתרים"}
-              className={`shrink-0 px-2 py-1 rounded-lg text-xs font-medium border transition ${showHidden ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-white border-neutral-200 text-neutral-500 hover:bg-neutral-50"}`}>
-              {showHidden ? "👁 מוסתרים" : "👁"}
-            </button>
-          )}
-
           {isMobile && (
             <div className="flex bg-neutral-100 rounded-lg p-0.5 shrink-0">
               <button onClick={() => setNearestOpen(true)} title="הכי קרוב"
@@ -6615,13 +6608,15 @@ export default function AdminCalendar() {
             </div>
           )}
 
-          {/* Calendar display hours — personal, per-account preference */}
+          {/* Calendar display hours — personal, per-account preference. The 👁
+              (show hidden appointments) lives inside it (owner, 15.10.2026);
+              while it's on, the button turns amber so it's never forgotten. */}
           {view !== "month" && (
             <button
               onClick={() => { setLocalCalStart(calStart); setLocalCalEnd(calEnd); setShowHoursPicker(true); }}
-              title="שעות תצוגת יומן"
-              className="shrink-0 px-2 py-1 rounded-lg text-xs font-medium border bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50 transition">
-              🕐 {String(calStart).padStart(2,"0")}-{String(calEnd).padStart(2,"0")}
+              title={showHidden ? "מוצגים גם תורים מוסתרים — לחץ לשינוי" : "שעות תצוגת יומן"}
+              className={`shrink-0 px-2 py-1 rounded-lg text-xs font-medium border transition ${showHidden ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-white border-neutral-200 text-neutral-600 hover:bg-neutral-50"}`}>
+              {showHidden ? "👁 " : "🕐 "}{String(calStart).padStart(2,"0")}-{String(calEnd).padStart(2,"0")}
             </button>
           )}
 
@@ -6744,6 +6739,13 @@ export default function AdminCalendar() {
                 </select>
               </div>
             </div>
+            {hideApptsOn && (
+              <button onClick={() => { setShowHidden(v => !v); setShowHoursPicker(false); }}
+                className={`w-full mb-4 flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm font-medium transition ${showHidden ? "bg-amber-100 border-amber-300 text-amber-800" : "bg-white border-neutral-200 text-neutral-700 hover:bg-neutral-50"}`}>
+                <span>👁 {showHidden ? "מוצגים גם תורים מוסתרים" : "הצג תורים מוסתרים"}</span>
+                <span className="text-xs">{showHidden ? "חזור ליומן הרגיל" : "הפעל"}</span>
+              </button>
+            )}
             <div className="flex gap-2">
               <button onClick={() => setShowHoursPicker(false)} className="flex-1 py-2 rounded-lg border border-neutral-200 text-neutral-600 text-sm font-medium">ביטול</button>
               <button onClick={saveLocalHours} disabled={localCalEnd <= localCalStart}
