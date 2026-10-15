@@ -308,6 +308,10 @@ function ConfirmPageContent() {
   const [referralKnown, setReferralKnown] = useState(false);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState("");
+  // The chosen time was taken → the nearest free times with the same barber
+  // that day, one tap away (owner, 15.10.2026: a late waitlist click mustn't
+  // end on a dead "נתפס" screen).
+  const [altSlots, setAltSlots]       = useState<string[] | null>(null);
 
   // ── 5-minute hold on the chosen slot while this screen is open ─────────────
   // Two visitors (or a visitor and a WhatsApp customer) must not both reach
@@ -332,7 +336,15 @@ function ConfirmPageContent() {
     const url = apiWithSlug("/api/slots/hold", slug);
     let cancelled = false;
     const take = () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ staffId, serviceId, date, time, token }) })
-      .then(r => { if (!cancelled && r.status === 409) setError("השעה הזו נתפסה הרגע על ידי לקוח אחר. חזור אחורה ובחר שעה אחרת."); })
+      .then(async r => {
+        if (cancelled || r.status !== 409) return;
+        setError(from === "waitlist" ? "השעה הזו כבר נתפסה על ידי מישהו מהרשימה. אתה נשאר ברשימת ההמתנה." : "השעה הזו נתפסה הרגע על ידי לקוח אחר.");
+        const d = await fetch(apiWithSlug(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${date}`, slug)).then(x => x.json()).catch(() => null) as { slots?: string[] } | null;
+        if (cancelled) return;
+        const toM = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+        const near = (d?.slots ?? []).filter(t => t !== time).sort((a, b) => Math.abs(toM(a) - toM(time)) - Math.abs(toM(b) - toM(time))).slice(0, 4).sort((a, b) => toM(a) - toM(b));
+        setAltSlots(near);
+      })
       .catch(() => {});
     take();
     const renew = setInterval(() => { if (document.visibilityState === "visible") take(); }, 2 * 60_000);
@@ -1131,6 +1143,20 @@ function ConfirmPageContent() {
         {error && (
           <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-center">
             <p className="text-[13px] text-red-600 font-medium">{error}</p>
+            {altSlots && (altSlots.length ? (
+              <>
+                <p className="mt-3 text-[13px] font-semibold text-gray-800">השעות הפנויות הכי קרובות{staffInfo?.name ? ` אצל ${staffInfo.name}` : ""} באותו יום:</p>
+                <div className="mt-2 flex flex-wrap justify-center gap-2">
+                  {altSlots.map(t => (
+                    <button key={t} type="button"
+                      onClick={() => { const q = new URLSearchParams(searchParams.toString()); q.set("time", t); q.delete("hold"); setError(""); setAltSlots(null); router.replace(`${window.location.pathname}?${q.toString()}`); }}
+                      className="px-4 py-2 rounded-full bg-white border text-[14px] font-bold" style={{ borderColor: "var(--brand)", color: "var(--brand)" }}>{t}</button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <button type="button" onClick={onBack} className="mt-3 text-[13px] font-bold underline" style={{ color: "var(--brand)" }}>לבחירת שעה אחרת</button>
+            ))}
           </div>
         )}
 

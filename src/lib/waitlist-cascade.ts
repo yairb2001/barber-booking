@@ -4,9 +4,12 @@
 // it's someone's turn the slot is held for them (hidden from everyone else);
 // the next person is only messaged if the slot is still free when their turn
 // comes. Off by default; Business.settings.waitlistCascade turns it on.
+// A turn ADDS a person, it doesn't take the slot from the earlier ones
+// (owner, 15.10.2026): everyone messaged so far can still book until the
+// cascade ends; whoever books first stops it for everyone after him.
 import { prisma } from "@/lib/prisma";
 import { computeDayAvailability } from "@/lib/agent/availability";
-import { holdSlot, releaseHolds, holderKeyForWeb } from "@/lib/slot-holds";
+import { holdSlot, holderKeyForWeb } from "@/lib/slot-holds";
 
 export type CascadeSettings = { enabled: boolean; minutes: number };
 
@@ -46,14 +49,16 @@ export function cascadeSlotLink(slug: string | null | undefined, step: Pick<Casc
 }
 
 /**
- * Start someone's turn: drop the previous person's hold, make sure the slot is
- * still bookable (free, in the future, inside working hours) and hold it for
- * this person. false → the slot is gone; don't message him (nor anyone after).
+ * Start someone's turn: make sure the slot is still bookable (free — the
+ * cascade's own holds aside —, in the future, inside working hours), hold it
+ * for this person too and keep the earlier people's holds alive until this
+ * turn ends. false → the slot is gone; don't message him (nor anyone after).
  */
 export async function startCascadeTurn(step: CascadeStep): Promise<boolean> {
-  await releaseHolds({ proposalId: `wl:${step.cascadeId}` });
+  const group = `wl:${step.cascadeId}`;
   if (step.minLeadMin && new Date(`${step.date}T${step.startTime}:00+03:00`).getTime() - Date.now() < step.minLeadMin * 60_000) return false;
-  const avail = await computeDayAvailability(step.businessId, step.date, step.staffId, step.serviceId).catch(() => []);
+  const peer = await prisma.slotHold.findFirst({ where: { proposalId: group }, select: { holderKey: true } });
+  const avail = await computeDayAvailability(step.businessId, step.date, step.staffId, step.serviceId, peer ? { exemptHoldsHolderKey: peer.holderKey } : {}).catch(() => []);
   if (!(avail.find(a => a.staffId === step.staffId)?.slots ?? []).includes(step.startTime)) return false;
   const [ss, svc] = await Promise.all([
     prisma.staffService.findFirst({ where: { staffId: step.staffId, serviceId: step.serviceId }, select: { customDuration: true } }),
@@ -65,8 +70,9 @@ export async function startCascadeTurn(step: CascadeStep): Promise<boolean> {
   await holdSlot({
     businessId: step.businessId, staffId: step.staffId, dateISO: step.date, startTime: step.startTime,
     endTime: `${String(Math.floor(end / 60)).padStart(2, "0")}:${String(end % 60).padStart(2, "0")}`,
-    holderKey: holderKeyForWeb(step.holdToken), customerId: step.customerId, proposalId: `wl:${step.cascadeId}`, minutes: step.minutes,
+    holderKey: holderKeyForWeb(step.holdToken), customerId: step.customerId, proposalId: group, minutes: step.minutes,
   });
+  await prisma.slotHold.updateMany({ where: { proposalId: group }, data: { expiresAt: new Date(Date.now() + step.minutes * 60_000) } });
   return true;
 }
 

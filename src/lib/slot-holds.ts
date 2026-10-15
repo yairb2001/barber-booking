@@ -20,6 +20,8 @@ export type HoldRow = { staffId: string; date: Date; startTime: string; endTime:
 
 export const holderKeyForPhone = (phone: string) => `phone:${normalizeIsraeliPhone(phone)}`;
 export const holderKeyForWeb = (token: string) => `web:${token}`;
+/** SlotHold.proposalId of a waitlist cascade: "wl:<cascadeId>". */
+export const WL_PREFIX = "wl:";
 
 /** Unexpired holds for these barbers in [from, to] (UTC-midnight dates, inclusive),
  *  minus the ones that belong to the caller (his own holds must not block him). */
@@ -29,6 +31,16 @@ export async function activeHolds(scope: { staffIds: string[]; from: Date; to: D
   const not: Record<string, unknown>[] = [];
   if (scope.exemptCustomerId) not.push({ customerId: scope.exemptCustomerId });
   if (keys.length) not.push({ holderKey: { in: keys } });
+  // Waitlist in turns: everyone already messaged keeps his right after his turn
+  // (owner, 15.10.2026) — the holds of one cascade never block each other.
+  if (keys.length || scope.exemptCustomerId) {
+    const mine = await prisma.slotHold.findMany({
+      where: { proposalId: { startsWith: WL_PREFIX }, OR: [...(keys.length ? [{ holderKey: { in: keys } }] : []), ...(scope.exemptCustomerId ? [{ customerId: scope.exemptCustomerId }] : [])] },
+      select: { proposalId: true },
+    });
+    const groups = Array.from(new Set(mine.map(m => m.proposalId).filter((x): x is string => !!x)));
+    if (groups.length) not.push({ proposalId: { in: groups } });
+  }
   return prisma.slotHold.findMany({
     where: {
       staffId: { in: scope.staffIds },
@@ -51,7 +63,16 @@ export async function withActiveHolds<T>(appts: Promise<T[]>, scope: { staffIds:
 /** Hold one slot for one holder. A holder has at most one short hold at a time
  *  (a new proposal / a new confirm screen replaces the previous one). */
 export async function holdSlot(p: { businessId: string; staffId: string; dateISO: string; startTime: string; endTime: string; holderKey: string; customerId?: string | null; proposalId?: string | null; minutes?: number }): Promise<void> {
-  const expiresAt = new Date(Date.now() + (p.minutes ?? SHORT_HOLD_MINUTES) * 60_000);
+  let expiresAt = new Date(Date.now() + (p.minutes ?? SHORT_HOLD_MINUTES) * 60_000);
+  // The confirm screen renewing a waitlist hold (same token, same slot) must not
+  // strip its cascade link nor shorten it.
+  if (p.proposalId === undefined) {
+    const prev = await prisma.slotHold.findFirst({ where: { holderKey: p.holderKey, proposalId: { startsWith: WL_PREFIX }, staffId: p.staffId, startTime: p.startTime, date: new Date(p.dateISO + "T00:00:00.000Z") } });
+    if (prev) {
+      p = { ...p, proposalId: prev.proposalId, customerId: p.customerId ?? prev.customerId };
+      if (prev.expiresAt > expiresAt) expiresAt = prev.expiresAt;
+    }
+  }
   await prisma.slotHold.deleteMany({ where: { holderKey: p.holderKey } });
   await prisma.slotHold.create({
     data: {
@@ -60,6 +81,12 @@ export async function holdSlot(p: { businessId: string; staffId: string; dateISO
       holderKey: p.holderKey, expiresAt,
     },
   });
+}
+
+/** The confirm screen leaving: drop its hold — but a waitlist turn's hold stays
+ *  until the turn ends (leaving the screen mustn't open the slot to everyone). */
+export async function releaseScreenHold(holderKey: string): Promise<void> {
+  await prisma.slotHold.deleteMany({ where: { holderKey, OR: [{ proposalId: null }, { NOT: { proposalId: { startsWith: WL_PREFIX } } }] } }).catch(() => {});
 }
 
 export async function releaseHolds(p: { holderKey?: string | null; proposalId?: string | null }): Promise<void> {

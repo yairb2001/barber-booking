@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
-import { holdSlot, releaseHolds, slotIsFree, holderKeyForWeb, pruneExpiredHolds, SHORT_HOLD_MINUTES } from "@/lib/slot-holds";
+import { holdSlot, releaseScreenHold, slotIsFree, holderKeyForWeb, pruneExpiredHolds, SHORT_HOLD_MINUTES } from "@/lib/slot-holds";
 
 // The booking site's confirm screen holds the chosen slot for 5 minutes so two
 // visitors (or a visitor and a WhatsApp customer) can't both reach "קביעת תור"
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
   const holderKey = holderKeyForWeb(token);
 
   if (body.action === "release") {
-    await releaseHolds({ holderKey });
+    await releaseScreenHold(holderKey);
     return NextResponse.json({ ok: true });
   }
 
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   const endTime = toTime(toMin(time!) + (ss?.customDuration ?? service.durationMinutes));
 
   if (!(await slotIsFree({ staffId, dateISO: date!, startTime: time!, endTime, holderKey }))) {
-    await releaseHolds({ holderKey }); // whatever this visitor held before is moot now
+    await releaseScreenHold(holderKey); // whatever this visitor held before is moot now
     return NextResponse.json({ error: "taken" }, { status: 409 });
   }
   await holdSlot({ businessId: staff.businessId, staffId, dateISO: date!, startTime: time!, endTime, holderKey });

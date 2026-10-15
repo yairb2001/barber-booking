@@ -321,7 +321,7 @@ async function triggerWaitlist(opts: {
       };
       const common = {
         freedTime: slot, existingAppointment,
-        slotLink: cascadeSlotLink(business.slug, step), holdMinutes: cascade.minutes,
+        slotLink: cascadeSlotLink(business.slug, step),
       };
       if (at === 0) {
         // First in line: his turn starts now (hold + immediate send).
@@ -442,7 +442,6 @@ export function sendWaitlistEntryNotification(
     existingAppointment?: string;
     /** Waitlist in turns: link straight to the slot, and how long it's held for him. */
     slotLink?: string;
-    holdMinutes?: number;
     /** Queued turn: when to send, and the step the drip queue acts on. */
     scheduledFor?: Date;
     meta?: Record<string, unknown>;
@@ -504,9 +503,6 @@ export function sendWaitlistEntryNotification(
   // the slot — a waitlist message without a booking link is useless.
   if (bookingLink && !body.includes(bookingLink) && !opts?.existingAppointment) {
     body = `${body.trimEnd()}\n\n👇 קביעת תור:\n${bookingLink}`;
-  }
-  if (opts?.holdMinutes) {
-    body = `${body.trimEnd()}\n\n⏳ התור שמור לך ${opts.holdMinutes} דקות, אחר כך הוא עובר לבא ברשימה.`;
   }
 
   // Stamp notifiedAt (used to throttle repeat pings) but KEEP the entry
