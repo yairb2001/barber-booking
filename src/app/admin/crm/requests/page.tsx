@@ -56,6 +56,7 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [drafting, setDrafting] = useState(false);
   const end = useRef<HTMLDivElement | null>(null);
   // Opening it marked the shop's requests seen: refresh the counters.
   useEffect(() => { if (data) onChange(); }, [data?.business.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -67,6 +68,14 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
     const r = await crmAction({ action: "request.reply", businessId: id, body: text });
     setBusy(false);
     if (r.ok) { setText(""); await reload(); onChange(); } else setNote(r.error ?? "לא נשלח");
+  }
+  // A draft from the system guide (many requests already exist); edited before sending.
+  async function draft() {
+    setDrafting(true); setNote(null);
+    const r = await crmAction({ action: "request.draft", businessId: id });
+    setDrafting(false);
+    if (r.ok && typeof r.draft === "string") setText(t => (t.trim() ? `${t.trim()}\n\n${r.draft}` : (r.draft as string)));
+    else setNote(r.error ?? "לא הצלחתי לנסח");
   }
   async function done(itemId: string) {
     const r = await crmAction({ action: "request.done", id: itemId });
@@ -104,10 +113,13 @@ function ThreadView({ id, onBack, onChange }: { id: string; onBack: () => void; 
       <div className="px-3 py-2" style={{ borderTop: `1px solid ${C.line}` }}>
         {note && <p className="text-xs text-red-700 mb-1">{note}</p>}
         <div className="flex gap-2 items-end">
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={2} placeholder={`תשובה ל${data.business.name}`} className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[15px] resize-none" style={{ border: "1px solid #C7D8D5" }} />
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={text.length > 120 ? 6 : 2} placeholder={`תשובה ל${data.business.name}`} className="flex-1 min-w-0 rounded-xl px-3 py-2 text-[15px] resize-y" style={{ border: "1px solid #C7D8D5" }} />
           <button type="button" onClick={() => void reply()} disabled={busy || !text.trim()} className="shrink-0 h-10 px-4 rounded-full text-sm font-semibold text-white disabled:opacity-40" style={{ background: C.petrol }}>{busy ? "…" : "שלח"}</button>
         </div>
-        <p className="text-[11px] mt-1" style={{ color: C.muted }}>התשובה מופיעה לעסק בעמוד הבקשות, ומגיעה אליו כהתראה.</p>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <button type="button" onClick={() => void draft()} disabled={drafting} className="text-[13px] font-semibold rounded-full px-3 py-1.5 disabled:opacity-50" style={{ background: C.mist, color: C.petrol }}>{drafting ? "מנסח…" : "✨ הצע תשובה"}</button>
+          <span className="text-[11px]" style={{ color: C.muted }}>התשובה מגיעה לעסק כהתראה.</span>
+        </div>
       </div>
     </div>
   );

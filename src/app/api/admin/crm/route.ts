@@ -793,6 +793,11 @@ export async function POST(req: NextRequest) {
         centerNotify({ businessId, kind: "account", title: "צ׳אטור ענו על הבקשה שלך", body: body.slice(0, 140), href: "/admin/requests" }).catch(() => {});
         return NextResponse.json({ ok: true, item: { id: saved.id, fromChator: true, author: saved.authorName, body: saved.body, audioUrl: null, audioSecs: null, at: saved.createdAt, done: false } });
       }
+      case "request.draft": {
+        const { draftRequestReply } = await import("@/lib/agent/request-draft");
+        const r = await draftRequestReply(str("businessId"));
+        return r.ok ? NextResponse.json({ ok: true, draft: r.draft }) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
       case "request.done": {
         const r = await prisma.shopRequest.findUnique({ where: { id: str("id") }, select: { doneAt: true } });
         if (!r) return NextResponse.json({ error: "not_found" }, { status: 404 });
