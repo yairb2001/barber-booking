@@ -10,6 +10,7 @@
  * Both: knows → helps; doesn't know → asks Yair (ask_yair), Yair answers in the
  * CRM, the answer reaches the customer and can become a rule (supportRules).
  */
+import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
 import { sendMessage } from "@/lib/messaging";
@@ -124,6 +125,7 @@ function system(stage: "setup" | "active", block: string, knowledge: string, rul
 ${goal}
 
 הכלל: יודע, עוזר. לא בטוח או שזה לא כתוב במדריך, בכללים או בפרטים למטה: ask_yair, ואל תנחש.
+${SECRECY_RULE}
 גבולות: הודעה אחת קצרה, עד ארבעה משפטים. בלי רשימות ארוכות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים. לא ממציא מסכים, כפתורים, מחירים או מועדים. לא מבטיח תיקון או מועד בלי יאיר. תמונות והקלטות אתה לא רואה: אם שלח, בקש שיתאר במילים.
 
 פרטים עליו:
@@ -193,6 +195,8 @@ export async function runSupportTurn(p: { conversationId: string; phone: string;
     text = `${text ? `${text}\n` : ""}ביקשתי מיאיר לחזור אליך, הוא יתקשר אליך בהקדם.`;
   }
   if (!text) text = "רגע, בודק ומיד חוזר אליך.";
+  // Compared with the instructions alone (no guide, rules or his details): prompt-guard.ts.
+  text = guardReply(text, system(stage, "", "", ""), { agent: "support", label: who, businessId: p.biz.id });
   text = tidy(text);
   await say(p.conversationId, p.phone, [text], p.sandbox);
   return { replies: [text], stage };

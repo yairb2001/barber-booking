@@ -34,6 +34,7 @@ import { bookCall, cancelCall, alertRep, setLeadStage } from "@/lib/crm/calls";
 import { stopLeadAutomations } from "@/lib/crm/automations";
 import { findChatorCustomer, loadChatorCustomer, runSupportTurn, tidy } from "@/lib/agent/chator-support";
 import { generateFollowup, isPhoneLikeName } from "@/lib/agent/followup-shared";
+import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -754,7 +755,9 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (v2) { if (!state.pitchedAt || WANTS_TRY_RE.test(p.text)) tools.push(ig ? DEMO_LINK_TOOL : ENTER_DEMO_TOOL); tools.push(SIGNUP_TOOL); }
   if (v2 && ctx.callBooked) tools.push(PREP_NOTE_TOOL);
   const knowledge = v2 ? ((await getCrmText("salesKnowledge")).text.trim() || SALES_KNOWLEDGE_V2) : "";
-  const system = v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") + (stepNote ? `\n\nעכשיו: ${stepNote}` : "") : salesSystem(state, p.senderName, rep, ctx.block);
+  const system = (v2 ? salesSystemV2(state, p.senderName, rep, ctx.block, knowledge, firstTurn) + (p.note ? `\n\nעכשיו: ${p.note}` : "") + (stepNote ? `\n\nעכשיו: ${stepNote}` : "") : salesSystem(state, p.senderName, rep, ctx.block)) + `\n\n${SECRECY_RULE}`;
+  // The leak check compares with the instructions only, not the product guide or his details.
+  const instructions = system.replace(knowledge, "").replace(ctx.block, "");
   const res = await anthropicFor(p.sandbox ? "test" : "prod").messages.create({ model: MODEL_SMART, max_tokens: 500, system, tools, messages: msgs });
   void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: p.sandbox ? "sandbox" : "sales", usage: res.usage });
   const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
@@ -841,7 +844,8 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     const first = (state.fullName ?? "").trim().split(/\s+/)[0];
     joined = ig ? `${IG_HELLO} ${joined}` : `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
   }
-  const out = v2 ? [tidy(guardPriceV2(joined))] : guardPrice(replies);
+  const who = { agent: "sales" as const, label: `${ig ? "אינסטגרם" : p.phone}${state.fullName ? ` · ${state.fullName}` : ""}` };
+  const out = v2 ? [tidy(guardPriceV2(guardReply(joined, instructions, who)))] : guardPrice(replies.map(r => guardReply(r, instructions, who)));
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };
 }

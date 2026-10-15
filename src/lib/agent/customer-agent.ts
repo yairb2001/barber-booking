@@ -38,6 +38,7 @@ import { compactAgentBody } from "@/lib/agent/prompt-template";
 import { vocabFor, vocabOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
+import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, type GroupItem } from "@/lib/agent/booking-proposals";
@@ -1826,6 +1827,30 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   return { cacheRead: res.usage.cache_read_input_tokens ?? 0, cacheWrite: res.usage.cache_creation_input_tokens ?? 0 };
 }
 
+/** Hard guardrails — appended in CODE so they hold for EVERY business, even one
+ *  with a hand-tuned custom prompt. Born from a real incident where a follow-up
+ *  invented a "first-visit discount code" to win back a customer who declined
+ *  on price. The secrecy rule joined them on 15.10.2026 (prompt-guard.ts). */
+const HARD_RULES =
+  "\n\nחוקים קשיחים שאסור להפר בשום מצב: " +
+  "אסור להמציא או להציע הנחות, מבצעים, קודי קופון, מחירים מיוחדים או הטבות מכל סוג — גם אם הלקוח אומר שיקר לו. " +
+  "המחירים היחידים שקיימים הם אלה שמחזירים הכלים או שכתובים בהנחיות האלה. " +
+  "אם ללקוח יקר — הבן אותו בחום והשאר דלת פתוחה, בלי להציע שום פיצוי. " +
+  "אסור להבטיח דבר בשם העסק שלא כתוב בהנחיות או שלא חזר מהכלים. " +
+  SECRECY_RULE;
+
+/** Guidance about "today" is static — it used to ride in the per-turn block
+ *  and was paid at full price on every call (~450 tokens); now it is cached. */
+const TODAY_RULES =
+  "\n\nהיום ועכשיו: השעה שבהנחיות היא שעת האמת. אל תגיד ללקוח מדעתך \"היום כבר מאוחר\" או \"אין זמן היום\": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שעברו ולוקח בחשבון זמן הכנה. " +
+  "ביקש היום — בדוק עם get_available_slots; חזרו שעות — הצע אותן. לא חזרה אף שעה — find_next_available לתאריך הפנוי הקרוב באמת; אל תנחש יום (כמו \"מחר\"). find_next_available כבר סרק את כל הימים קדימה: אם הלקוח דוחה את התאריך שחזר, אל תציע יום מוקדם יותר (כולל \"מחר\") אלא אם ביקש שירות או ספר אחר; רוצה מאוחר יותר — קרא שוב עם afterDate=התאריך שנדחה.";
+
+/** The instructions alone (no shop data: setup answers, FAQ, catalog), for the leak check. */
+export function promptInstructions(params: { agentName: string; businessName: string; customSystemPrompt?: string | null; defaultBody?: string }): string {
+  const body = params.customSystemPrompt?.trim() || params.defaultBody?.trim() || defaultAgentBody(params.agentName, params.businessName);
+  return body + HARD_RULES + TODAY_RULES;
+}
+
 export function buildSystemPrompt(params: {
   agentName: string;
   businessName: string;
@@ -1864,22 +1889,8 @@ export function buildSystemPrompt(params: {
   // or a service, which costs one cold write and nothing more.
   if (params.catalogBlock) stable += `\n\n${params.catalogBlock}`;
 
-  // Hard guardrails — appended in CODE so they hold for EVERY business, even one
-  // with a hand-tuned custom prompt. Born from a real incident where a follow-up
-  // invented a "first-visit discount code" to win back a customer who declined
-  // on price.
-  stable +=
-    "\n\nחוקים קשיחים שאסור להפר בשום מצב: " +
-    "אסור להמציא או להציע הנחות, מבצעים, קודי קופון, מחירים מיוחדים או הטבות מכל סוג — גם אם הלקוח אומר שיקר לו. " +
-    "המחירים היחידים שקיימים הם אלה שמחזירים הכלים או שכתובים בהנחיות האלה. " +
-    "אם ללקוח יקר — הבן אותו בחום והשאר דלת פתוחה, בלי להציע שום פיצוי. " +
-    "אסור להבטיח דבר בשם העסק שלא כתוב בהנחיות או שלא חזר מהכלים.";
-
-  // Guidance about "today" is static — it used to ride in the per-turn block
-  // and was paid at full price on every call (~450 tokens); now it is cached.
-  stable +=
-    "\n\nהיום ועכשיו: השעה שבהנחיות היא שעת האמת. אל תגיד ללקוח מדעתך \"היום כבר מאוחר\" או \"אין זמן היום\": מקור האמת לזמינות היום הוא הכלי (get_available_slots / find_next_available), שכבר מסנן שעות שעברו ולוקח בחשבון זמן הכנה. " +
-    "ביקש היום — בדוק עם get_available_slots; חזרו שעות — הצע אותן. לא חזרה אף שעה — find_next_available לתאריך הפנוי הקרוב באמת; אל תנחש יום (כמו \"מחר\"). find_next_available כבר סרק את כל הימים קדימה: אם הלקוח דוחה את התאריך שחזר, אל תציע יום מוקדם יותר (כולל \"מחר\") אלא אם ביקש שירות או ספר אחר; רוצה מאוחר יותר — קרא שוב עם afterDate=התאריך שנדחה.";
+  stable += HARD_RULES;
+  stable += TODAY_RULES;
 
   // Per-turn chunk (current time + who's chatting). Changes every minute and
   // per customer, so it must stay OUTSIDE the cached prefix.
@@ -2474,8 +2485,9 @@ export async function runCustomerAgent(opts: {
     : sandbox?.setupOverride
       ? { agentName: agentConfig?.agentName ?? null, systemPrompt: agentConfig?.systemPrompt ?? null, setupConfig: setupForPrompt, faqs: agentConfig?.faqs ?? [] }
       : agentConfig;
+  const promptParams = stablePromptParams(biz, configForPrompt, catalogBlock, bookingLink);
   const systemPrompt = buildSystemPrompt({
-    ...stablePromptParams(biz, configForPrompt, catalogBlock, bookingLink),
+    ...promptParams,
     now: nowLabel(),
     customerContext,
   });
@@ -2647,6 +2659,8 @@ export async function runCustomerAgent(opts: {
   if (!assistantText.trim()) throw new Error("[agent] produced empty reply after all iterations + safety net");
 
   assistantText = correctHebrewWeekdayLabels(assistantText);
+  // A reply that copies its own instructions never goes out (prompt-guard.ts).
+  assistantText = guardReply(assistantText, promptInstructions(promptParams), { agent: "shop", label: `${biz.name} · ${phone}`, businessId });
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
