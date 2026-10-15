@@ -24,7 +24,8 @@ export async function GET(req: NextRequest) {
   if (!sc) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const countOnly = new URL(req.url).searchParams.get("count") === "1";
   const unread = await prisma.businessNotification.count({ where: { ...sc.where, readAt: null } });
-  if (countOnly) return NextResponse.json({ unread });
+  // Chator's replies in the requests thread not read yet (15.10.2026): the menu's "בקשות ושיפורים" badge.
+  if (countOnly) return NextResponse.json({ unread, requests: await prisma.shopRequest.count({ where: { businessId: sc.s.businessId, fromChator: true, seenAt: null } }) });
   const [rows, questions] = await Promise.all([
     prisma.businessNotification.findMany({ where: { ...sc.where, createdAt: { gte: new Date(Date.now() - 60 * 86400_000) } }, orderBy: { createdAt: "desc" }, take: 150 }),
     sc.owner ? prisma.agentQuestion.findMany({ where: { businessId: sc.s.businessId, status: "open" }, orderBy: { createdAt: "desc" }, take: 30 }) : Promise.resolve([]),

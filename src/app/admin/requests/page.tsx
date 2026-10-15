@@ -19,7 +19,8 @@ export default function RequestsPage() {
   const [error, setError] = useState("");
   const end = useRef<HTMLDivElement | null>(null);
 
-  const load = useCallback(() => fetch("/api/admin/requests", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j) setItems(j.items); }).catch(() => {}), []);
+  // Loading marks Chator's replies read: the menu badge refreshes now ("center:read").
+  const load = useCallback(() => fetch("/api/admin/requests", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j) { setItems(j.items); window.dispatchEvent(new Event("center:read")); } }).catch(() => {}), []);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }); }, [items?.length]);
 

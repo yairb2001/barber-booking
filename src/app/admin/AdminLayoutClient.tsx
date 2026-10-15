@@ -178,12 +178,13 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
 
   // The notification center's badge (10.10.2026): unread items, polled like the chats.
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [unreadRequests, setUnreadRequests] = useState(0); // Chator's replies in "בקשות ושיפורים"
   useEffect(() => {
     if (pathname === "/admin/login" || pathname.startsWith("/admin/crm") || pathname.startsWith("/admin/onboarding")) return;
     let cancelled = false;
     const tick = () => {
       if (cancelled || document.visibilityState !== "visible") return;
-      fetch("/api/admin/notification-center?count=1").then(r => (r.ok ? r.json() : null)).then(j => { if (!cancelled && j && typeof j.unread === "number") setUnreadNotifs(j.unread); }).catch(() => {});
+      fetch("/api/admin/notification-center?count=1").then(r => (r.ok ? r.json() : null)).then(j => { if (!cancelled && j && typeof j.unread === "number") setUnreadNotifs(j.unread); if (!cancelled && j && typeof j.requests === "number") setUnreadRequests(j.requests); }).catch(() => {});
     };
     tick();
     const id = setInterval(tick, 30000);
@@ -303,7 +304,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         <nav className="flex-1 py-3 space-y-0.5 px-2 overflow-y-auto">
           {visibleNav.map((item) => {
             const isChats = item.href === "/admin/chats";
-            const badgeCount = isChats ? unreadChats : item.href === "/admin/notifications" ? unreadNotifs : 0;
+            const badgeCount = isChats ? unreadChats : item.href === "/admin/notifications" ? unreadNotifs : item.href === "/admin/requests" ? unreadRequests : 0;
             const showBadge = badgeCount > 0;
             return (
               <Link
