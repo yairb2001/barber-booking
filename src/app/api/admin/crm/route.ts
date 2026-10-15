@@ -118,7 +118,8 @@ async function home() {
   const callsToday = owner ? await prisma.salesCall.findMany({ where: { repId: owner.id, status: "booked", startsAt: { gte: dayStart, lt: dayEnd } }, orderBy: { startsAt: "asc" } }) : [];
   const callLeads = await prisma.lead.findMany({ where: { id: { in: callsToday.map(c => c.leadId) } }, select: { id: true, name: true, businessName: true, phone: true } });
   const freeToday = owner ? (await freeCallSlots({ repId: owner.id, fromISO: today, days: 1, limit: 20 })) : [];
-  const staleLeads = await prisma.lead.findMany({ where: { stage: { in: ["new", "chatting"] }, optedOut: false, createdAt: { lte: new Date(Date.now() - 24 * 3600_000) }, OR: [{ lastInboundAt: null }, { lastInboundAt: { lte: new Date(Date.now() - 24 * 3600_000) } }] }, select: { id: true, name: true, phone: true, createdAt: true }, take: 5, orderBy: { createdAt: "asc" } });
+  // Only leads from the last 14 days: a dead lead from months ago doesn't nag every morning (16.10.2026).
+  const staleLeads = await prisma.lead.findMany({ where: { stage: { in: ["new", "chatting"] }, optedOut: false, createdAt: { lte: new Date(Date.now() - 24 * 3600_000), gte: new Date(Date.now() - 14 * 86400_000) }, OR: [{ lastInboundAt: null }, { lastInboundAt: { lte: new Date(Date.now() - 24 * 3600_000) } }] }, select: { id: true, name: true, phone: true, createdAt: true }, take: 5, orderBy: { createdAt: "asc" } });
   const usage = await prisma.agentUsage.aggregate({ where: { createdAt: { gte: since }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } });
   const tokensIls = Math.round((usage._sum.costUsd ?? 0) * s.usdIls);
 
@@ -145,7 +146,8 @@ async function home() {
   };
 
   const setup = await computeSetup({ persist: true });
-  const stuck = setup.filter(x => !x.isLive && x.current && x.stuckHours >= 48);
+  // A suspended (test) shop is not "stuck" (16.10.2026).
+  const stuck = setup.filter(x => !x.isLive && x.current && x.stuckHours >= 48 && cust.find(c => c.id === x.businessId)?.stage !== "suspended");
 
   // ── Tasks (10.10.2026: "משימות בנפרד"): what Yair has to DO, derived from the
   // data, plus the ones he wrote himself. Each one links to where it is done.
@@ -209,6 +211,100 @@ async function home() {
     money: { revenue: mrr, tokensIls, infraIls: s.infraCostIls, left: mrr - tokensIls - s.infraCostIls },
     chatorAgent,
   };
+}
+
+/**
+ * "היום" (16.10.2026, Yair picked it from the CRM review): the home is one list
+ * of what waits for him, each row with its action right there (call, WhatsApp,
+ * open, done, tomorrow). One row per person or shop: everything else about the
+ * same lead or business folds into it ("גם: ..."). Built on home()'s tasks plus
+ * waiting chats, agent fixes and shop requests. Hidden rows: crm_settings
+ * "todayHidden" ({ key: until }).
+ */
+type TodayRow = {
+  key: string; kind: string; title: string; detail: string; time: string | null; urgent: boolean; order: number;
+  href: string | null; phone: string | null; wa: string | null; also: string[];
+  done: { action: string; id: string } | null; canHide: boolean;
+};
+async function todayHidden(): Promise<Record<string, string>> {
+  const row = await prisma.crmSetting.findUnique({ where: { key: "todayHidden" } }).catch(() => null);
+  try { return row ? JSON.parse(row.value) : {}; } catch { return {}; }
+}
+async function todayView() {
+  const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+  const h = await home();
+  const now = Date.now();
+  const ORDER: Record<string, number> = { call: 0, outcome: 1, billing: 1, chat: 2, approve: 3, request: 3, setup: 4, customer: 4, followup: 5, lead: 5, manual: 6, calendar: 7, automations: 7 };
+  const entity = (href: string | null) => { const m = href?.match(/\/admin\/crm\/(leads|customers)\/([0-9a-f-]{36})/i); return m ? { kind: m[1] === "leads" ? "lead" : "biz", id: m[2] } : null; };
+  const open = h.tasks.filter(t => !t.done);
+  const leadIds = open.map(t => entity(t.href)).filter(e => e?.kind === "lead").map(e => e!.id);
+  const bizIds = open.map(t => entity(t.href)).filter(e => e?.kind === "biz").map(e => e!.id);
+  const [leads, bizs] = await Promise.all([
+    prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, phone: true } }),
+    prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, phone: true, settings: true } }),
+  ]);
+  const phoneOf = (e: { kind: string; id: string } | null) => {
+    if (!e) return null;
+    if (e.kind === "lead") return leads.find(l => l.id === e.id)?.phone ?? null;
+    const b = bizs.find(x => x.id === e.id); return b ? ownerPhoneOf(b) : null;
+  };
+  const rows: TodayRow[] = open.map(t => {
+    const e = entity(t.href);
+    return {
+      key: t.id, kind: t.kind, title: t.title, detail: t.detail, time: t.time ?? null, urgent: !!t.overdue, order: (ORDER[t.kind] ?? 6) - (t.overdue ? 0.5 : 0),
+      href: t.href, phone: phoneOf(e), wa: e ? `${t.href}?wa=1` : null, also: [],
+      done: t.kind === "manual" ? { action: "task.toggle", id: t.id } : null, canHide: t.kind !== "call",
+    };
+  });
+
+  // Chats on Chator's line waiting for a person (the last word is his, not yet handled).
+  const chats = await prisma.conversation.findMany({
+    where: { businessId: DEMO, agentType: { not: "owner" }, NOT: { phone: { startsWith: "972000" } }, lastMessageAt: { gte: new Date(now - 7 * 86400_000) } },
+    orderBy: { lastMessageAt: "desc" }, take: 60,
+    select: { id: true, phone: true, whatsappName: true, handledAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, createdAt: true } } },
+  });
+  const waitingChats = chats.filter(c => { const m = c.messages[0]; return m && m.role === "user" && m.createdAt.getTime() < now - 3 * 60_000 && !(c.handledAt && m.createdAt <= c.handledAt); }).slice(0, 10);
+  const local = (p: string) => p.replace(/^972/, "0");
+  const chatLeads = await prisma.lead.findMany({ where: { phone: { in: waitingChats.flatMap(c => [c.phone, local(c.phone)]) } }, select: { id: true, phone: true, name: true } });
+  for (const c of waitingChats) {
+    const l = chatLeads.find(x => local(x.phone) === local(c.phone));
+    rows.push({ key: `chat-${c.id}`, kind: "chat", title: `מחכה לתשובה: ${l?.name || c.whatsappName || local(c.phone)}`, detail: c.messages[0].content.replace(/\s+/g, " ").slice(0, 90), time: null, urgent: false, order: ORDER.chat,
+      href: `/admin/crm/chats/${c.id}`, phone: c.phone.startsWith("ig:") ? null : local(c.phone), wa: null, also: [], done: { action: "chat.handled", id: c.id }, canHide: true });
+  }
+
+  // Agent improvements and Chator's own agent asking him: one row.
+  const [review, question, fresh, cq] = await Promise.all([
+    prisma.agentImprovement.count({ where: { status: "review" } }),
+    prisma.agentImprovement.count({ where: { status: "question" } }),
+    prisma.agentImprovement.count({ where: { status: "pending" } }),
+    prisma.chatorQuestion.count({ where: { status: "pending" } }),
+  ]);
+  const parts = [review && `${review} תיקונים לאישור`, question + cq && `${question + cq} שאלות אליך`, fresh && `${fresh} הצעות חדשות`].filter(Boolean) as string[];
+  if (parts.length) rows.push({ key: `improve-${review}-${question + cq}-${fresh}`, kind: "approve", title: "שיפורי סוכן", detail: parts.join(" · "), time: null, urgent: review > 0, order: ORDER.approve, href: "/admin/crm/improvements", phone: null, wa: null, also: [], done: null, canHide: true });
+
+  // Shop requests he hasn't seen, one row per shop.
+  const reqs = await prisma.shopRequest.findMany({ where: { fromChator: false, seenAt: null }, orderBy: { createdAt: "desc" }, take: 50, select: { businessId: true, body: true, audioUrl: true } });
+  const reqNames = new Map((await prisma.business.findMany({ where: { id: { in: Array.from(new Set(reqs.map(r => r.businessId))) } }, select: { id: true, name: true, phone: true, settings: true } })).map(b => [b.id, b]));
+  for (const bid of Array.from(new Set(reqs.map(r => r.businessId)))) {
+    const mine = reqs.filter(r => r.businessId === bid); const b = reqNames.get(bid);
+    rows.push({ key: `request-${bid}-${mine.length}`, kind: "request", title: `בקשה מ${b?.name ?? "מספרה"}${mine.length > 1 ? ` (${mine.length})` : ""}`, detail: mine[0].body?.replace(/\s+/g, " ").slice(0, 90) || (mine[0].audioUrl ? "הודעה קולית" : ""), time: null, urgent: false, order: ORDER.request,
+      href: "/admin/crm/requests", phone: b ? ownerPhoneOf(b) : null, wa: `/admin/crm/customers/${bid}?wa=1`, also: [], done: null, canHide: true });
+  }
+
+  // One row per person or shop: the most pressing one leads, the rest fold into it.
+  const by = new Map<string, TodayRow>();
+  const out: TodayRow[] = [];
+  for (const r of rows.sort((a, b) => a.order - b.order || (a.time ?? "~").localeCompare(b.time ?? "~"))) {
+    const e = entity(r.href) ?? (r.kind === "request" ? { kind: "biz", id: r.wa!.split("/")[4].split("?")[0] } : null);
+    const k = e ? `${e.kind}:${e.id}` : null;
+    const first = k ? by.get(k) : undefined;
+    if (first) { first.also.push(r.title); first.urgent = first.urgent || r.urgent; continue; }
+    if (k) by.set(k, r);
+    out.push(r);
+  }
+  const hidden = await todayHidden();
+  const visible = out.filter(r => !(hidden[r.key] && new Date(hidden[r.key]).getTime() > now));
+  return { rows: visible, hiddenCount: out.length - visible.length, freeSlotsToday: h.callsToday.filter(c => !c.booked).length };
 }
 
 async function leadsView(q: string | null) {
@@ -487,6 +583,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
+    if (view === "today") return NextResponse.json(await todayView());
     if (view === "badge") {
       const [unread, requests] = await Promise.all([
         prisma.crmNotification.count({ where: { readAt: null } }),
@@ -743,6 +840,19 @@ export async function POST(req: NextRequest) {
       case "improvement.revise": {
         const { reviseFix } = await import("@/lib/agent/fix-queue");
         return (await reviseFix(str("id"), str("text"))) ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "צריך לכתוב מה לתקן" }, { status: 400 });
+      }
+      // "היום": a row he closed (7 days) or moved to tomorrow (until 06:00).
+      case "today.hide": {
+        const key = str("key");
+        if (!key) return NextResponse.json({ error: "חסר" }, { status: 400 });
+        const until = b.tomorrow === true
+          ? appointmentInstant(new Date(addDaysISO(getBusinessNow().date, 1) + "T00:00:00Z"), "06:00")
+          : new Date(Date.now() + 7 * 86400_000);
+        const cur = await todayHidden();
+        const keep = Object.fromEntries(Object.entries(cur).filter(([, v]) => new Date(v).getTime() > Date.now()));
+        keep[key] = until.toISOString();
+        await prisma.crmSetting.upsert({ where: { key: "todayHidden" }, create: { key: "todayHidden", value: JSON.stringify(keep) }, update: { value: JSON.stringify(keep) } });
+        return NextResponse.json({ ok: true });
       }
       case "improvement.reopen": {
         const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: "rejected" }, data: { status: "pending", decidedAt: null, decidedBy: null } });

@@ -23,9 +23,11 @@ const CARD_RE = /^\/admin\/crm\/(leads|customers)\/([0-9a-f-]{36})\/?$/i;
 const KIND: Record<string, string> = { leads: "lead", customers: "customer", chats: "chat" };
 const PUSHED = "crm-card-pushed";
 
-function urlWith(card: string | null): string {
+function urlWith(card: string | null, wa = false): string {
   const p = new URLSearchParams(window.location.search);
   if (card) p.set("card", card); else p.delete("card");
+  // "וואטסאפ" from "היום" opens the card with its chat already open (16.10.2026).
+  if (card && wa) p.set("wa", "1"); else p.delete("wa");
   const q = p.toString();
   return `${window.location.pathname}${q ? `?${q}` : ""}`;
 }
@@ -81,7 +83,7 @@ function Host() {
       if (!m || CARD_RE.test(window.location.pathname)) return;
       e.preventDefault();
       e.stopPropagation();
-      const next = urlWith(`${KIND[m[1].toLowerCase()]}:${m[2]}`);
+      const next = urlWith(`${KIND[m[1].toLowerCase()]}:${m[2]}`, u.searchParams.get("wa") === "1");
       if (new URLSearchParams(window.location.search).get("card")) {
         // Card to card (sale ↔ customer ↔ chat): swap in place, one step back still closes.
         try { if (sessionStorage.getItem(PUSHED)) sessionStorage.setItem(PUSHED, next); } catch { /* private mode */ }

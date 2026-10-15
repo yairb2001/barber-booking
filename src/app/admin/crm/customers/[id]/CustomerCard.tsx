@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
 import { PlanCard, InvoicesCard, type BillingData } from "./Billing";
 import { InModal } from "../../card-context";
@@ -29,6 +29,8 @@ export default function CustomerCard({ id }: { id: string }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [waOpen, setWaOpen] = useState(false);
+  // Opened from "היום" with ?wa=1: the chat is open already.
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("wa") === "1") setWaOpen(true); }, []);
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [val, setVal] = useState<string>("");

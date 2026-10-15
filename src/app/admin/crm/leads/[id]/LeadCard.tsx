@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { C, Btn, Card, useCrm, crmAction, STAGE_TONE, SOURCE_LABEL } from "../../ui";
 import { InModal } from "../../card-context";
 import { WaButton, WaPanel } from "../../WaPanel";
@@ -28,6 +28,8 @@ export default function LeadCard({ id }: { id: string }) {
   const inModal = useContext(InModal);
   const { data, error, reload } = useCrm<Data>(`view=lead&id=${id}`);
   const [waOpen, setWaOpen] = useState(false);
+  // Opened from "היום" with ?wa=1: the chat is open already.
+  useEffect(() => { if (new URLSearchParams(window.location.search).get("wa") === "1") setWaOpen(true); }, []);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);

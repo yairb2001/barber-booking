@@ -13,13 +13,14 @@ import { CardHost } from "./CardModal";
  */
 
 const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
-  { href: "/admin/crm", label: "בית", exact: true },
-  { href: "/admin/crm/tasks", label: "משימות" },
+  // The home is "היום": tasks folded into it, the numbers on their own screen (16.10.2026).
+  { href: "/admin/crm", label: "היום", exact: true, also: "/admin/crm/tasks" },
   { href: "/admin/crm/leads", label: "לידים" },
   { href: "/admin/crm/chats", label: "צ׳אטים" },
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
   { href: "/admin/crm/invoices", label: "חשבוניות" },
+  { href: "/admin/crm/numbers", label: "מספרים" },
   { href: "/admin/crm/requests", label: "בקשות מעסקים" },
   { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
   // Automations live under Settings (15.10.2026, Yair).
