@@ -51,6 +51,7 @@ const navItems: NavItem[] = [
   { href: "/admin/staff",             label: "הפרופיל",        icon: "👤", barberOnly: true },
   { href: "/admin/barber-settings",   label: "הגדרות שלי",     icon: "⚙️", barberOnly: true },
   { href: "/admin/settings",          label: "הגדרות עסק",     icon: "⚙️", ownerOnly: true },
+  { href: "/admin/requests",     label: "בקשות ושיפורים", icon: "💡" },
   { href: "/admin/preview",      label: "תצוגת לקוח",     icon: "👁️" },
   { href: "/admin/super",        label: "פלטפורמה",       icon: "🛰️", superOnly: true },
   { href: "/admin/crm",          label: "CRM צ'אטור",     icon: "📈", superOnly: true },

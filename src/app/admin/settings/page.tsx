@@ -67,6 +67,16 @@ export default function SettingsHubPage() {
 
       <PlanSummary />
 
+      {/* Requests to Chator (15.10.2026): what is missing or should change. */}
+      <Link href="/admin/requests" className="max-w-4xl mb-4 flex items-center gap-3 rounded-2xl border border-teal-100 bg-teal-50 px-4 py-3 hover:bg-teal-100/60 transition">
+        <span className="text-xl">💡</span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-sm font-semibold text-teal-900">בקשות ושיפורים</span>
+          <span className="block text-xs text-teal-800">מה חסר לך או מה היית רוצה לשנות? כתוב או הקלט, אנחנו עוברים על הכל כל יום.</span>
+        </span>
+        <span className="text-teal-700 text-sm">←</span>
+      </Link>
+
       <div className="max-w-4xl space-y-4">
         {GROUPS.map(group => (
           <section key={group.label} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">

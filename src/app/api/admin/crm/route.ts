@@ -482,7 +482,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
     }
     // The bell in the header: one cheap count.
-    if (view === "badge") return NextResponse.json({ unread: await prisma.crmNotification.count({ where: { readAt: null } }) });
+    if (view === "badge") {
+      const [unread, requests] = await Promise.all([
+        prisma.crmNotification.count({ where: { readAt: null } }),
+        prisma.shopRequest.count({ where: { fromChator: false, seenAt: null } }),
+      ]);
+      return NextResponse.json({ unread, requests });
+    }
+    // Shops' requests (15.10.2026): one thread per shop; unseen first, then the latest.
+    if (view === "requests") {
+      const rows = await prisma.shopRequest.findMany({ orderBy: { createdAt: "desc" }, take: 2000, select: { businessId: true, fromChator: true, body: true, audioUrl: true, createdAt: true, seenAt: true, doneAt: true } });
+      const by = new Map<string, { last: (typeof rows)[number]; unseen: number; open: number; total: number }>();
+      for (const r of rows) {
+        const t = by.get(r.businessId) ?? { last: r, unseen: 0, open: 0, total: 0 };
+        if (!r.fromChator) { t.total++; if (!r.seenAt) t.unseen++; if (!r.doneAt) t.open++; }
+        by.set(r.businessId, t);
+      }
+      const bizs = await prisma.business.findMany({ where: { id: { in: Array.from(by.keys()) } }, select: { id: true, name: true } });
+      const threads = Array.from(by.entries()).map(([id, t]) => ({
+        businessId: id, name: bizs.find(b => b.id === id)?.name ?? "—",
+        last: t.last.body ?? (t.last.audioUrl ? "🎤 הקלטה" : ""), lastFromChator: t.last.fromChator, at: t.last.createdAt,
+        unseen: t.unseen, open: t.open, total: t.total,
+      })).sort((a, b) => (b.unseen > 0 ? 1 : 0) - (a.unseen > 0 ? 1 : 0) || +new Date(b.at) - +new Date(a.at));
+      return NextResponse.json({ threads });
+    }
+    if (view === "requestThread") {
+      const id = sp.get("id") ?? "";
+      const biz = await prisma.business.findUnique({ where: { id }, select: { id: true, name: true } });
+      if (!biz) return NextResponse.json({ error: "not_found" }, { status: 404 });
+      const items = await prisma.shopRequest.findMany({ where: { businessId: id }, orderBy: { createdAt: "asc" }, take: 500 });
+      await prisma.shopRequest.updateMany({ where: { businessId: id, fromChator: false, seenAt: null }, data: { seenAt: new Date() } });
+      return NextResponse.json({ business: biz, items: items.map(r => ({ id: r.id, fromChator: r.fromChator, author: r.authorName, body: r.body, audioUrl: r.audioUrl, audioSecs: r.audioSecs, at: r.createdAt, done: !!r.doneAt })) });
+    }
     if (view === "leads") return NextResponse.json(await leadsView(sp.get("q")));
     if (view === "lead") { const v = await leadView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "calendar") return NextResponse.json(await calendarView(sp.get("week")));
@@ -753,6 +784,21 @@ export async function POST(req: NextRequest) {
       }
       // "✓ טופל" (13.10.2026, like the shop's chats): the red "waiting" goes away until he
       // writes again; the agent stays where it was.
+      // A reply in the shop's requests thread; the shop sees it on /admin/requests.
+      case "request.reply": {
+        const businessId = str("businessId"), body = str("body");
+        if (!businessId || !body) return NextResponse.json({ error: "missing" }, { status: 400 });
+        const saved = await prisma.shopRequest.create({ data: { businessId, fromChator: true, authorName: "צ׳אטור", body: body.slice(0, 4000) } });
+        const { centerNotify } = await import("@/lib/notify/center");
+        centerNotify({ businessId, kind: "account", title: "צ׳אטור ענו על הבקשה שלך", body: body.slice(0, 140), href: "/admin/requests" }).catch(() => {});
+        return NextResponse.json({ ok: true, item: { id: saved.id, fromChator: true, author: saved.authorName, body: saved.body, audioUrl: null, audioSecs: null, at: saved.createdAt, done: false } });
+      }
+      case "request.done": {
+        const r = await prisma.shopRequest.findUnique({ where: { id: str("id") }, select: { doneAt: true } });
+        if (!r) return NextResponse.json({ error: "not_found" }, { status: 404 });
+        await prisma.shopRequest.update({ where: { id: str("id") }, data: { doneAt: r.doneAt ? null : new Date() } });
+        return NextResponse.json({ ok: true, done: !r.doneAt });
+      }
       case "chat.handled": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
         await prisma.conversation.updateMany({ where: { id: str("id"), businessId: DEMO }, data: b.handled === false ? { handledAt: null } : { handledAt: new Date(), lastReadAt: new Date() } });

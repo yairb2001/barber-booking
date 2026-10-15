@@ -20,6 +20,7 @@ const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
   { href: "/admin/crm/invoices", label: "חשבוניות" },
+  { href: "/admin/crm/requests", label: "בקשות מעסקים" },
   { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
   // Automations live under Settings (15.10.2026, Yair).
   { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations" },
@@ -31,6 +32,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [requests, setRequests] = useState(0); // shops' requests not seen yet
 
   useEffect(() => {
     fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(me => {
@@ -44,7 +46,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   // The bell: unread notifications, refreshed on every screen change and when
   // a screen marks something read (bumpBell in HomeParts).
   useEffect(() => {
-    const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); }).catch(() => {});
+    const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); if (j && typeof j.requests === "number") setRequests(j.requests); }).catch(() => {});
     void load();
     window.addEventListener("crm:bell", load);
     return () => window.removeEventListener("crm:bell", load);
@@ -71,7 +73,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const links = (
     <>
       {NAV.map(n => (
-        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}</Link>
+        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}{n.href === "/admin/crm/requests" && requests > 0 && <span className="ms-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold" style={{ background: C.turquoise, color: C.ink }}>{requests}</span>}</Link>
       ))}
       <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
         <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>

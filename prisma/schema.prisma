@@ -1383,3 +1383,24 @@ model ChatorQuestion {
   @@index([status, createdAt])
   @@map("chator_questions")
 }
+
+/// A shop's request to Chator: what's missing or what to change, written or
+/// recorded (15.10.2026). One thread per business; Chator answers in the same
+/// thread (fromChator). seenAt = the other side saw it; doneAt = Chator handled it.
+model ShopRequest {
+  id         String    @id @default(uuid())
+  businessId String    @map("business_id")
+  fromChator Boolean   @default(false) @map("from_chator")
+  staffId    String?   @map("staff_id")
+  authorName String?   @map("author_name")
+  body       String?
+  audioUrl   String?   @map("audio_url")
+  audioSecs  Int?      @map("audio_secs")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  seenAt     DateTime? @map("seen_at")
+  doneAt     DateTime? @map("done_at")
+
+  @@index([businessId, createdAt])
+  @@index([fromChator, seenAt])
+  @@map("shop_requests")
+}
