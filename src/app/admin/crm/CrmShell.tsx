@@ -12,7 +12,7 @@ import { CardHost } from "./CardModal";
  * Design: claude.ai/artifact/SgzjBxsYrqHDE2HKJtEvDz.
  */
 
-const NAV = [
+const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
   { href: "/admin/crm", label: "בית", exact: true },
   { href: "/admin/crm/tasks", label: "משימות" },
   { href: "/admin/crm/leads", label: "לידים" },
@@ -20,9 +20,9 @@ const NAV = [
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
   { href: "/admin/crm/customers", label: "לקוחות" },
   { href: "/admin/crm/invoices", label: "חשבוניות" },
-  { href: "/admin/crm/automations", label: "אוטומציות" },
   { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
-  { href: "/admin/crm/settings", label: "הגדרות" },
+  // Automations live under Settings (15.10.2026, Yair).
+  { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations" },
 ];
 
 export default function CrmShell({ children }: { children: React.ReactNode }) {
@@ -67,11 +67,11 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (allowed === null) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-500 font-heebo" style={{ background: C.ground }}>טוען…</div>;
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
-  const active = (h: string, exact?: boolean) => (exact ? pathname === h : pathname.startsWith(h));
+  const active = (h: string, exact?: boolean, also?: string) => (exact ? pathname === h : pathname.startsWith(h) || (!!also && pathname.startsWith(also)));
   const links = (
     <>
       {NAV.map(n => (
-        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact) ? C.petrol2 : "transparent", color: active(n.href, n.exact) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact) ? 600 : 400, textDecoration: "none" }}>{n.label}</Link>
+        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}</Link>
       ))}
       <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
         <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
@@ -83,7 +83,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     <div dir="rtl" className="min-h-screen flex flex-col md:flex-row font-heebo" style={{ background: C.ground, color: C.ink }}>
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
-      <nav aria-label="תפריט CRM" className="md:w-[232px] md:shrink-0 md:min-h-screen flex flex-col" style={{ background: C.petrol, color: "#E8F4F1" }}>
+      <nav aria-label="תפריט CRM" className="sticky top-0 z-30 md:w-[232px] md:shrink-0 md:h-screen md:overflow-y-auto flex flex-col" style={{ background: C.petrol, color: "#E8F4F1" }}>
         {/* Phone: menu button on the right (start), logo on the left (Yair, 10.10.2026). */}
         <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-6">
           <div className="flex items-center gap-1">

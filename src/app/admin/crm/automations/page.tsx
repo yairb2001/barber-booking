@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { C, Btn, PageHead, useCrm, crmAction } from "../ui";
+import SettingsTabs from "../SettingsTabs";
 
 type Step = { delayMinutes?: number; beforeCallMinutes?: number; text: string };
 type Auto = { id: string; key: string; name: string; trigger: string; enabled: boolean; audience: string; steps: Step[]; stopOn: string[]; stats: { started: number; active: number; replied: number } };
@@ -66,7 +67,9 @@ export default function AutomationsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHead title="אוטומציות" sub="כל ההודעות יוצאות מהמספר של צ׳אטור · לא בשבת ולא בין 21:30 ל-08:00 · כל אוטומציה כבויה עד שתדליק אותה" />
+      <PageHead title="הגדרות" />
+      <SettingsTabs />
+      <p className="m-0 text-sm" style={{ color: C.muted }}>כל ההודעות יוצאות מהמספר של צ׳אטור · לא בשבת ולא בין 21:30 ל-08:00 · כל אוטומציה כבויה עד שתדליק אותה</p>
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
       <div role="tablist" aria-label="סוג אוטומציות" className="flex flex-wrap gap-2">
         {data.groups.map(g => {
