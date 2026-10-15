@@ -944,7 +944,8 @@ export async function POST(req: NextRequest) {
         if (!businessId || !body) return NextResponse.json({ error: "missing" }, { status: 400 });
         const saved = await prisma.shopRequest.create({ data: { businessId, fromChator: true, authorName: "צ׳אטור", body: body.slice(0, 4000) } });
         const { centerNotify } = await import("@/lib/notify/center");
-        centerNotify({ businessId, kind: "account", title: "צ׳אטור ענו על הבקשה שלך", body: body.slice(0, 140), href: "/admin/requests" }).catch(() => {});
+        // Awaited: a serverless function stops once it answers, and the notification was lost.
+        await centerNotify({ businessId, kind: "account", title: "צ׳אטור ענו על הבקשה שלך", body: body.slice(0, 140), href: "/admin/requests" }).catch(() => {});
         return NextResponse.json({ ok: true, item: { id: saved.id, fromChator: true, author: saved.authorName, body: saved.body, audioUrl: null, audioSecs: null, at: saved.createdAt, done: false } });
       }
       case "request.draft": {
