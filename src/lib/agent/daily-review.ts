@@ -14,6 +14,7 @@ import { anthropicFor } from "@/lib/anthropic-clients";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { recordCrmNotification } from "@/lib/crm/notify";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
+import { parseReports, type Report } from "@/lib/agent/fix-queue";
 
 const MODEL = "claude-sonnet-4-6";
 const MAX_CONVS = 12;
@@ -91,23 +92,69 @@ export async function reviewBusiness(businessId: string, now = new Date(), opts:
   return proposals.length;
 }
 
-/** Every business with its agent on (the demo shop is reviewed through Chator's own agent, not here). */
-export async function runDailyReview(now = new Date()): Promise<{ businesses: number; proposals: number; byBusiness: { name: string; n: number }[] }> {
-  const on = await prisma.agentConfig.findMany({ where: { isEnabled: true, businessId: { not: DEMO_BUSINESS_ID } }, select: { businessId: true } });
-  const byBusiness: { name: string; n: number }[] = [];
-  let total = 0;
-  for (const { businessId } of on) {
+const OPEN = ["pending", "queued", "question", "review", "publish"];
+
+/**
+ * Manual reports only, merged (15.10.2026, Yair: "אני רוצה לקבל בסך הכל תקלות
+ * שאנשים מדווחים עליהם בצורה ידנית, ואם הן דומות לתקלות שקיימות כבר, אז הן גם
+ * מתאחדות"). Each new owner note about the agent becomes a proposal, or joins
+ * an open one that is the same problem (from any shop: most are the base's).
+ * One small model call per report. The conversation scan (reviewBusiness)
+ * no longer runs by itself.
+ */
+type Decision = { same?: string; new?: Proposal } | null;
+
+/** File one report: into the open problem the model named, else a new proposal (in the owner's own words when the model gave nothing). */
+export async function fileReport(n: { id: string; businessId: string; text: string; conversationId: string | null }, report: Report, out: Decision, open: { id: string; title: string; reports: string | null }[], now = new Date()): Promise<"merged" | "created"> {
+  const into = out?.same ? open.find(o => o.id.startsWith(String(out.same).trim())) : undefined;
+  if (into) {
+    await prisma.agentImprovement.update({ where: { id: into.id }, data: { reports: JSON.stringify([...parseReports(into.reports), report]) } });
+    await prisma.agentFeedback.update({ where: { id: n.id }, data: { status: "in_review", reviewedAt: now, reviewNote: `התאחד עם: ${into.title}` } });
+    return "merged";
+  }
+  const p = out?.new && ["rule", "faq", "setup", "base"].includes(out.new.kind) && out.new.title ? out.new : { kind: "base" as const, title: n.text.split("\n")[0].slice(0, 80), proposal: n.text, evidence: undefined };
+  const row = await prisma.agentImprovement.create({ data: { businessId: n.businessId, source: "feedback", kind: p.kind, title: p.title.slice(0, 200), proposal: (p.proposal || n.text).slice(0, 2000), evidence: p.evidence?.slice(0, 1000) ?? null, conversationId: n.conversationId, reports: JSON.stringify([report]) } });
+  await prisma.agentFeedback.update({ where: { id: n.id }, data: { status: "in_review", reviewedAt: now, reviewNote: `הצעה חדשה: ${row.title}` } });
+  return "created";
+}
+
+export async function reviewReports(now = new Date(), opts: { notify?: boolean } = {}): Promise<{ reports: number; merged: number; created: number }> {
+  const notes = await prisma.agentFeedback.findMany({ where: { status: "new" }, orderBy: { createdAt: "asc" }, take: 30 });
+  if (!notes.length) return { reports: 0, merged: 0, created: 0 };
+  const names = new Map((await prisma.business.findMany({ where: { id: { in: Array.from(new Set(notes.map(n => n.businessId))) } }, select: { id: true, name: true } })).map(b => [b.id, b.name]));
+  let merged = 0, created = 0;
+  for (const n of notes) {
+    const open = await prisma.agentImprovement.findMany({ where: { status: { in: OPEN } }, orderBy: { createdAt: "desc" }, take: 60, select: { id: true, title: true, proposal: true, reports: true } });
+    let transcript = "";
+    if (n.conversationId) {
+      const msgs = await prisma.conversationMessage.findMany({ where: { conversationId: n.conversationId, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: MAX_MSGS, select: { role: true, content: true, source: true } });
+      transcript = msgs.reverse().map(m => `${m.role === "user" ? "לקוח" : m.source === "admin" ? "בעל העסק" : "סוכן"}: ${m.content.replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
+    }
+    const report: Report = { at: n.createdAt.toISOString(), source: "feedback", businessId: n.businessId, businessName: names.get(n.businessId) ?? "", author: n.author, text: n.text, conversationId: n.conversationId };
+    const system = `אתה ממיין דיווח ידני על הסוכן שעונה בוואטסאפ ללקוחות של מספרה. אם הוא אותה בעיה כמו אחת הפתוחות ברשימה (גם אם ממספרה אחרת ובמילים אחרות), החזר את המזהה שלה. אחרת, נסח הצעה חדשה.
+סוגים: "base" בעיה בהתנהגות הסוכן שחלה על כל העסקים, "rule" כלל של העסק הזה, "faq" שאלה ותשובה של העסק ("ש: ... ת: ..."), "setup" תשובה לשאלת הגדרה.
+כתוב בעברית פשוטה, בלי מקפים ארוכים. החזר JSON בלבד: {"same":"<8 התווים של המזהה>"} או {"new":{"kind":"...","title":"קצר בעברית","proposal":"מה לתקן","evidence":"ציטוט קצר"}}`;
+    const user = [
+      open.length ? `בעיות פתוחות:\n${open.map(o => `- ${o.id.slice(0, 8)}: ${o.title}: ${o.proposal.replace(/\s+/g, " ").slice(0, 200)}`).join("\n")}` : "אין בעיות פתוחות.",
+      `הדיווח (${report.businessName}${n.author ? `, ${n.author}` : ""}):\n${n.text}`,
+      transcript ? `השיחה שעליה הדיווח:\n${transcript}` : "",
+    ].filter(Boolean).join("\n\n");
+    let out: Decision = null;
     try {
-      const n = await reviewBusiness(businessId, now);
-      if (n) {
-        const b = await prisma.business.findUnique({ where: { id: businessId }, select: { name: true } });
-        byBusiness.push({ name: b?.name ?? businessId, n });
-        total += n;
-      }
-    } catch (e) { console.error("[daily-review]", businessId, e); }
+      const res = await anthropicFor("prod").messages.create({ model: MODEL, max_tokens: 600, system, messages: [{ role: "user", content: user.slice(0, 30000) }] });
+      void recordAgentUsage({ businessId: n.businessId, provider: "anthropic", model: MODEL, kind: "review", usage: res.usage });
+      const text = res.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("");
+      out = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    } catch (e) { console.error("[reports]", n.id, e); }
+    if ((await fileReport(n, report, out, open, now)) === "merged") merged++; else created++;
   }
-  if (total) {
-    await recordCrmNotification(`הבדיקה היומית של הסוכנים: ${total} הצעות לשיפור\n${byBusiness.map(b => `${b.name} ${b.n}`).join(" · ")}`, { kind: "customer", href: "/admin/crm/improvements", push: true });
+  if (opts.notify !== false && merged + created) {
+    await recordCrmNotification(`דיווחים חדשים על הסוכן: ${merged + created}${merged ? ` (${merged} התאחדו עם בעיות קיימות)` : ""}`, { kind: "customer", href: "/admin/crm/improvements", push: true });
   }
-  return { businesses: on.length, proposals: total, byBusiness };
+  return { reports: notes.length, merged, created };
+}
+
+/** The daily run: manual reports only (15.10.2026). Kept under its old name for the cron and the CRM button. */
+export async function runDailyReview(now = new Date()): Promise<{ reports: number; merged: number; created: number }> {
+  return reviewReports(now);
 }

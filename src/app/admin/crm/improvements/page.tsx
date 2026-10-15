@@ -20,10 +20,11 @@ type Fix = {
 };
 type Item = {
   id: string; businessId: string; businessName: string; source: string; kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string;
-  evidence: string | null; targetKey: string | null; conversationId: string | null; conversations: string[]; status: string; createdAt: string; decidedAt: string | null;
+  evidence: string | null; targetKey: string | null; conversationId: string | null; conversations: string[]; status: string; createdAt: string; decidedAt: string | null; decidedBy: string | null;
   fix: Fix | null; growth: number; growthNeedsOk: boolean;
+  reports: { at: string; source: string; businessName: string; author?: string | null; text: string; conversationId?: string | null }[];
 };
-type Fb = { id: string; businessId: string; businessName: string; author: string | null; conversationId: string | null; text: string; status: string; createdAt: string };
+type Fb = { id: string; businessId: string; businessName: string; author: string | null; conversationId: string | null; text: string; status: string; createdAt: string; reviewNote: string | null };
 const KIND: Record<Item["kind"], [string, Tone]> = { rule: ["כלל של העסק", "info"], faq: ["שאלה ותשובה", "ok"], setup: ["הגדרת הסוכן", "warn"], base: ["בסיס, לכל הסוכנים", "bad"] };
 const FB_STATUS: Record<string, string> = { new: "חדש", in_review: "בבדיקה", applied: "טופל", dismissed: "נסגר" };
 const SOURCE: Record<string, string> = { feedback: "מהערה של בעל העסק", yair: "רעיון שלך", daily_review: "מהבדיקה היומית", chator_question: "מהסוכן של צ׳אטור" };
@@ -58,7 +59,8 @@ export default function ImprovementsPage() {
   }
 
   const items = data?.items ?? [];
-  const pending = items.filter(i => i.status === "pending");
+  // The most reported first (15.10.2026: only manual reports reach Yair, merged).
+  const pending = items.filter(i => i.status === "pending").sort((a, b) => b.reports.length - a.reports.length);
   const atAgent = items.filter(i => AT_AGENT.includes(i.status));
   const review = items.filter(i => i.status === "review");
   const live = items.filter(i => i.status === "applied" || i.status === "approved");
@@ -85,10 +87,10 @@ export default function ImprovementsPage() {
       <PageHead title="שיפורי סוכן" sub={review.length ? `${review.length} תיקונים מחכים לאישור שלך` : pending.length ? `${pending.length} הצעות חדשות` : "אין משהו שמחכה לך"}
         actions={<div className="flex flex-wrap gap-2">
           <Btn kind="dark" onClick={() => setIdea(v => (v === null ? "" : null))}>שיפור חדש</Btn>
-          <Btn kind="outline" disabled={!!busy} onClick={() => act("run", { action: "review.runNow" }, "הבדיקה רצה. הצעות חדשות יופיעו כאן.")}>{busy === "run" ? "בודק…" : "הרץ בדיקה עכשיו"}</Btn>
+          <Btn kind="outline" disabled={!!busy} onClick={() => act("run", { action: "review.runNow" }, "המיון רץ. דיווחים חדשים מופיעים בחדשות.")}>{busy === "run" ? "ממיין…" : "מיין דיווחים עכשיו"}</Btn>
         </div>} />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
-      <p className="m-0 text-xs" style={{ color: C.muted }}>כל בוקר ב-06:30 סוכן התיקונים עובר על מה ששלחת לו, מתקן בלי לנפח את הפרומפט ובודק על השיחה האמיתית. התיקון חוזר לכאן, ושום דבר לא עולה לאוויר בלי האישור שלך. הגדלה של הפרומפט צריכה אישור נפרד עם הסבר.</p>
+      <p className="m-0 text-xs" style={{ color: C.muted }}>מגיעות לכאן רק תקלות שדווחו ידנית: הערות של בעלי עסקים על הסוכן ורעיונות שלך. דיווח שדומה לבעיה קיימת מתאחד איתה. כל בוקר ב-06:30 סוכן התיקונים עובר על מה ששלחת לו, מתקן בלי לנפח את הפרומפט ובודק על השיחה האמיתית. התיקון חוזר לכאן, ושום דבר לא עולה לאוויר בלי האישור שלך. הגדלה של הפרומפט צריכה אישור נפרד עם הסבר.</p>
 
       {idea !== null && (
         <Card title="שיפור חדש">
@@ -147,6 +149,20 @@ export default function ImprovementsPage() {
                 return (
                   <div key={i.id} className="rounded-xl p-3 flex flex-col gap-2" style={{ border: `1px solid ${C.line}` }}>
                     <div className="flex items-center gap-2 flex-wrap"><Tag tone={tone}>{label}</Tag><b className="text-sm">{i.title}</b><span className="text-xs" style={{ color: C.muted }}>{ago(i.createdAt)} · {SOURCE[i.source] ?? i.source}</span></div>
+                    {i.reports.length > 0 && (
+                      <details>
+                        <summary className="text-xs font-semibold cursor-pointer" style={{ color: C.petrol }}>{i.reports.length > 1 ? `דווח ${i.reports.length} פעמים` : "הדיווח"} · {Array.from(new Set(i.reports.map(r => r.businessName).filter(Boolean))).join(", ")}</summary>
+                        <div className="mt-1 flex flex-col gap-1.5">
+                          {i.reports.map((r, k) => (
+                            <div key={k} className="text-xs rounded-lg px-2.5 py-2" style={{ background: C.soft }}>
+                              <span style={{ color: C.muted }}>{r.businessName}{r.author ? ` · ${r.author}` : ""} · {ago(r.at)}{r.source === "daily_review" ? " · מהבדיקה האוטומטית" : ""}</span>
+                              <p className="m-0 mt-0.5 whitespace-pre-line">{r.text}</p>
+                              {r.conversationId && <button type="button" onClick={() => setConv({ id: r.conversationId!, evidence: null })} className="text-xs font-semibold underline" style={{ color: C.petrol }}>לשיחה</button>}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                     <label className="text-xs font-semibold" style={{ color: C.muted }} htmlFor={`p-${i.id}`}>מה אתה רוצה, במילים שלך</label>
                     <textarea id={`p-${i.id}`} value={val} onChange={e => setEdit(s => ({ ...s, [i.id]: e.target.value }))} rows={Math.min(6, Math.max(2, Math.ceil(val.length / 60)))} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} />
                     {i.targetKey && <span className="text-xs" style={{ color: C.muted }}>שאלה: {i.targetKey}</span>}
@@ -176,12 +192,13 @@ export default function ImprovementsPage() {
           </details>
         )}
 
-        <Card collapsible defaultOpen={data.feedback.some(f => f.status === "new")} title="הערות של בעלי עסקים על הסוכן" aside={`${openFb.length} פתוחות`}>
+        <Card collapsible defaultOpen={data.feedback.some(f => f.status === "new")} title="כל הדיווחים של בעלי עסקים" aside={`${openFb.length} פתוחים`}>
           {data.feedback.length === 0 && <p className="m-0 text-sm" style={{ color: C.muted }}>אין עדיין הערות.</p>}
           {data.feedback.map(f => (
             <div key={f.id} className="py-2.5 flex flex-col gap-1" style={{ borderTop: `1px solid ${C.soft}` }}>
               <div className="flex justify-between gap-2 text-xs" style={{ color: C.muted }}><span>{f.businessName}{f.author ? ` · ${f.author}` : ""} · {ago(f.createdAt)}</span><span>{FB_STATUS[f.status] ?? f.status}</span></div>
               <p className="m-0 text-sm whitespace-pre-line">{f.text}</p>
+              {f.reviewNote && <span className="text-xs" style={{ color: C.petrol }}>{f.reviewNote}</span>}
               {f.conversationId && <button type="button" onClick={() => setConv({ id: f.conversationId!, evidence: null })} className="self-start text-xs font-semibold underline min-h-[32px]" style={{ color: C.petrol }}>לשיחה שעליה ההערה</button>}
               {(f.status === "new" || f.status === "in_review") && (
                 <div className="flex gap-2">
@@ -287,7 +304,12 @@ export default function ImprovementsPage() {
         })}
         {closed.length > 0 && (
           <Card collapsible title="נסגרו" aside={`${closed.length}`}>
-            {closed.map(i => <div key={i.id} className="py-2 text-sm" style={{ borderTop: `1px solid ${C.soft}` }}>{i.businessName} · {i.title}</div>)}
+            {closed.map(i => (
+              <div key={i.id} className="py-2 text-sm flex items-center justify-between gap-2" style={{ borderTop: `1px solid ${C.soft}` }}>
+                <span>{i.businessName} · {i.title}{i.decidedBy === "מיון" ? <span className="text-xs" style={{ color: C.muted }}> · נסגר במיון, לא קריטי</span> : null}</span>
+                <Btn kind="ghost" disabled={!!busy} onClick={() => act(i.id, { action: "improvement.reopen", id: i.id }, "נפתח מחדש, בחדשות")}>פתח מחדש</Btn>
+              </div>
+            ))}
           </Card>
         )}
       </>)}

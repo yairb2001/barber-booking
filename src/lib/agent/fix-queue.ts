@@ -43,6 +43,10 @@ export type Fix = {
   history?: { at: string; who: "יאיר" | "סוכן"; text: string }[];
 };
 
+/** One manual report behind a proposal (15.10.2026: only manual reports, merged). */
+export type Report = { at: string; source: string; businessId: string; businessName: string; author?: string | null; text: string; evidence?: string | null; conversationId?: string | null };
+export const parseReports = (raw: string | null | undefined): Report[] => { try { const v = raw ? JSON.parse(raw) : []; return Array.isArray(v) ? v : []; } catch { return []; } };
+
 export const parseFix = (raw: string | null | undefined): Fix | null => { try { return raw ? JSON.parse(raw) as Fix : null; } catch { return null; } };
 export const growthOf = (f: Fix | null) => (f?.promptBefore != null && f?.promptAfter != null ? f.promptAfter - f.promptBefore : 0);
 export const needsGrowthOk = (f: Fix | null) => growthOf(f) > GROWTH_LIMIT;

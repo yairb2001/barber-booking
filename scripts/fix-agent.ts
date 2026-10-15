@@ -14,7 +14,7 @@
  */
 import fs from "node:fs";
 import { prisma } from "@/lib/prisma";
-import { parseFix, type Fix } from "@/lib/agent/fix-queue";
+import { parseFix, parseReports, type Fix } from "@/lib/agent/fix-queue";
 import { stablePromptParams, buildCatalogBlock, buildSystemPrompt } from "@/lib/agent/customer-agent";
 import { buildBookingLink } from "@/lib/link-first";
 import { getCrmText } from "@/lib/crm/core";
@@ -52,14 +52,15 @@ async function main() {
     const work = [];
     for (const i of items) {
       // Every conversation it points at: the stored one and any "שיחה 5a90d6b3" in the evidence.
-      const ids = new Set<string>(i.conversationId ? [i.conversationId] : []);
+      const reports = parseReports(i.reports);
+      const ids = new Set<string>([i.conversationId, ...reports.map(r => r.conversationId)].filter((x): x is string => !!x));
       for (const p of (i.evidence ?? "").match(/\b[0-9a-f]{8}\b/g) ?? []) {
         const c = await prisma.conversation.findFirst({ where: { businessId: i.businessId, id: { startsWith: p } }, select: { id: true } });
         if (c) ids.add(c.id);
       }
       work.push({
         id: i.id, status: i.status, businessId: i.businessId, businessName: names.get(i.businessId) ?? "", kind: i.kind, source: i.source,
-        title: i.title, yairWords: i.proposal, yairNotes: i.note, evidence: i.evidence, targetKey: i.targetKey, previousFix: parseFix(i.fix),
+        title: i.title, yairWords: i.proposal, yairNotes: i.note, evidence: i.evidence, reports, targetKey: i.targetKey, previousFix: parseFix(i.fix),
         conversations: await Promise.all(Array.from(ids).slice(0, 3).map(async id => ({ id, transcript: await transcript(id) }))),
       });
     }

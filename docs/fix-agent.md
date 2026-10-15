@@ -18,8 +18,9 @@ other sessions work in that checkout. Code work happens in a worktree per fix.
 
 1. `scripts/fix-agent.ts queue` → the work, as JSON: each item has `status`,
    `yairWords` (his words: they win over the original proposal), `yairNotes`
-   (his corrections after an earlier attempt), `evidence`, `previousFix`, and up
-   to 3 `conversations` with full transcripts.
+   (his corrections after an earlier attempt), `evidence`, `previousFix`,
+   `reports` (every manual report merged into it, from any shop: one fix should
+   answer all of them), and up to 3 `conversations` with full transcripts.
 2. **status `publish`** (he approved a code fix): in its worktree
    (`fix.plan.branch`): `git fetch -q origin && git rebase origin/main`,
    `npx tsc --noEmit`, then `git push origin HEAD:main`. Poll

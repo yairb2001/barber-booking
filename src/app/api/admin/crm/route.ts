@@ -9,7 +9,7 @@ import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
 import { hasTestKey } from "@/lib/anthropic-clients";
 import { ensureCrmSeed, getCrmSettings, setCrmSettings, freeCallSlots, slotLabel, isStage, STAGES, legacyStatusFor, type CrmSettings } from "@/lib/crm/core";
 import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/calls";
-import { parseFix, growthOf, needsGrowthOk, GROWTH_LIMIT } from "@/lib/agent/fix-queue";
+import { parseFix, parseReports, growthOf, needsGrowthOk, GROWTH_LIMIT } from "@/lib/agent/fix-queue";
 import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, AUTOMATION_GROUPS, type AutoStep } from "@/lib/crm/automations";
 import { computeSetup } from "@/lib/crm/setup-progress";
 import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -303,8 +303,10 @@ async function calendarView(weekISO: string | null) {
 }
 
 /** Every conversation a proposal points at: the one stored, then any "שיחה 5a90d6b3" its evidence names (15.10.2026). */
-async function proposalConversations(i: { businessId: string; conversationId: string | null; evidence: string | null }): Promise<string[]> {
+async function proposalConversations(i: { businessId: string; conversationId: string | null; evidence: string | null; reports?: string | null }): Promise<string[]> {
   const out = i.conversationId ? [i.conversationId] : [];
+  // Every merged report's conversation too (15.10.2026).
+  for (const r of parseReports(i.reports)) if (r.conversationId && !out.includes(r.conversationId)) out.push(r.conversationId);
   for (const prefix of Array.from(new Set((i.evidence ?? "").match(/\b[0-9a-f]{8}\b/g) ?? []))) {
     if (out.some(id => id.startsWith(prefix))) continue;
     const c = await prisma.conversation.findFirst({ where: { businessId: i.businessId, id: { startsWith: prefix } }, select: { id: true } });
@@ -431,7 +433,7 @@ export async function GET(req: NextRequest) {
       const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
       const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
       return NextResponse.json({
-        items: await Promise.all(items.map(async i => { const fx = parseFix(i.fix); return { ...i, fix: fx, growth: growthOf(fx), growthNeedsOk: needsGrowthOk(fx), businessName: name(i.businessId), conversations: await proposalConversations(i) }; })),
+        items: await Promise.all(items.map(async i => { const fx = parseFix(i.fix); return { ...i, fix: fx, reports: parseReports(i.reports), growth: growthOf(fx), growthNeedsOk: needsGrowthOk(fx), businessName: name(i.businessId), conversations: (await proposalConversations(i)).slice(0, 6) }; })),
         growthLimit: GROWTH_LIMIT,
         feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
         chatorQuestions: cq.map(q => ({ id: q.id, question: q.question, stage: q.stage, createdAt: q.createdAt, businessId: q.businessId, businessName: q.businessId ? name(q.businessId) : null, phone: q.phone.replace(/^972/, "0"), conversationId: q.conversationId })),
@@ -741,6 +743,10 @@ export async function POST(req: NextRequest) {
       case "improvement.revise": {
         const { reviseFix } = await import("@/lib/agent/fix-queue");
         return (await reviseFix(str("id"), str("text"))) ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "צריך לכתוב מה לתקן" }, { status: 400 });
+      }
+      case "improvement.reopen": {
+        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: "rejected" }, data: { status: "pending", decidedAt: null, decidedBy: null } });
+        return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "כבר פתוח" }, { status: 400 });
       }
       case "improvement.reject": {
         const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: { in: ["pending", "queued", "question", "review"] } }, data: { status: "rejected", decidedAt: new Date(), decidedBy: "יאיר" } });
