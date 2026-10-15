@@ -4071,7 +4071,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               {dayApptCount > 0 && !openClosureId && !wizard && (
                 <button onClick={openWizard} disabled={saving}
                   className="w-full text-center text-[13px] font-semibold text-teal-700 py-1 disabled:opacity-50">
-                  🧙 לטפל ב-{dayApptCount} הלקוחות דרך האשף ›
+                  🧙 {dayApptCount === 1 ? "לטפל בלקוח" : `לטפל ב-${dayApptCount} הלקוחות`} דרך האשף ›
                 </button>
               )}
             </div>
