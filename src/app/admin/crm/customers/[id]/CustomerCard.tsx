@@ -5,6 +5,7 @@ import { useState, useContext } from "react";
 import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
 import { PlanCard, InvoicesCard, type BillingData } from "./Billing";
 import { InModal } from "../../card-context";
+import { WaButton, WaPanel, type WaMsg } from "../../WaPanel";
 
 type Field = { key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
 type Data = {
@@ -15,6 +16,7 @@ type Data = {
   quality: { conversationsWeek: number; escalatedWeek: number; agentBookingsWeek: number };
   notes: { id: string; author: string; body: string; createdAt: string }[];
   lead: { id: string; name: string | null; phone: string; createdAt: string } | null;
+  messages: WaMsg[];
   referral: { referredBy: { id: string; name: string; source: string } | null; brought: { id: string; businessId: string; name: string; at: string; rewardedAt: string | null; appliedAt: string | null }[] };
   billing: BillingData;
 };
@@ -26,7 +28,7 @@ export default function CustomerCard({ id }: { id: string }) {
   const { data, error, reload } = useCrm<Data>(`view=customer&id=${id}`);
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
-  const [msg, setMsg] = useState("");
+  const [waOpen, setWaOpen] = useState(false);
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [val, setVal] = useState<string>("");
@@ -69,6 +71,7 @@ export default function CustomerCard({ id }: { id: string }) {
           <Btn kind="dark" disabled={busy === "imp"} onClick={impersonate}>{busy === "imp" ? "נכנס…" : "היכנס כמנהל"}</Btn>
           <Btn disabled={!!busy || !c.ownerPhone} onClick={() => act("link", { action: "customer.resendLink", id }, "קישור ההקמה נשלח לו בוואטסאפ")}>שלח קישור הקמה</Btn>
           {data.lead && <Link href={`/admin/crm/leads/${data.lead.id}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס המכירה</Link>}
+          <WaButton open={waOpen} onClick={() => setWaOpen(o => !o)} count={data.messages.length} waiting={data.messages[data.messages.length - 1]?.role === "user"} />
           {c.ownerPhone && <a href={`tel:${c.ownerPhone}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>חייג</a>}
         </div>
       </header>
@@ -77,6 +80,15 @@ export default function CustomerCard({ id }: { id: string }) {
 
       <div className="flex flex-wrap gap-4 items-start">
         <div className="flex-[999_1_480px] min-w-0 flex flex-col gap-4">
+          {waOpen && (
+            <WaPanel
+              messages={data.messages}
+              who={m => (m.role === "user" ? "בעל העסק" : m.source === "admin" ? "נציג" : "עוזר התפעול")}
+              placeholder={c.ownerPhone ? "נשלח מהמספר של צ׳אטור" : "אין טלפון לבעל העסק"}
+              status={<span className="text-xs" style={{ color: "#3E5A5B" }}>עוזר התפעול עונה לו כאן</span>}
+              onSend={async body => (await act("msg", { action: "customer.message", id, body }, "נשלח")).ok}
+            />
+          )}
           <Card collapsible title="שלבי ההקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.current ? ` · ${st.current.label}` : ""}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
             <ol className="m-0 p-0 list-none flex flex-col gap-2">
               {st.steps.map((s, i) => {
@@ -198,13 +210,6 @@ export default function CustomerCard({ id }: { id: string }) {
             </Card>
           )}
 
-          <Card collapsible title="וואטסאפ לבעל העסק">
-            <div className="flex gap-2">
-              <label className="sr-only" htmlFor="own-msg">הודעה</label>
-              <input id="own-msg" value={msg} onChange={e => setMsg(e.target.value)} placeholder="נשלח מהמספר של צ׳אטור" className="flex-1 h-11 rounded-xl px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
-              <Btn kind="dark" disabled={!msg.trim() || !!busy || !c.ownerPhone} onClick={async () => { const r = await act("msg", { action: "customer.message", id, body: msg }, "נשלח"); if (r.ok) setMsg(""); }}>שלח</Btn>
-            </div>
-          </Card>
 
           <Card collapsible title="הערות וציר זמן" aside={data.notes.length ? `${data.notes.length} הערות` : undefined}>
             <div className="flex gap-2 mb-3">

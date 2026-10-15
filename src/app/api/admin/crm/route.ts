@@ -323,7 +323,7 @@ async function customerView(id: string) {
   const all = await customers(s);
   const c = all.find(x => x.id === id);
   if (!c) return null;
-  const biz = await prisma.business.findUnique({ where: { id }, select: { id: true, name: true, slug: true, businessType: true, monthlyPrice: true, paidAt: true, trialEndsAt: true, suspendedAt: true, createdAt: true, settings: true, tier: true } });
+  const biz = await prisma.business.findUnique({ where: { id }, select: { id: true, name: true, slug: true, phone: true, businessType: true, monthlyPrice: true, paidAt: true, trialEndsAt: true, suspendedAt: true, createdAt: true, settings: true, tier: true } });
   const [setup] = await computeSetup({ businessIds: [id], persist: true });
   const agent = await prisma.agentConfig.findUnique({ where: { businessId: id }, select: { isEnabled: true, setupConfig: true, systemPrompt: true, agentName: true, faqs: { select: { id: true, question: true, answer: true } } } });
   let cfg: SetupConfig = {};
@@ -348,11 +348,16 @@ async function customerView(id: string) {
   };
   let budget = 40;
   try { const st = biz?.settings ? JSON.parse(biz.settings) : {}; if (Number(st.tokenBudgetIls) > 0) budget = Number(st.tokenBudgetIls); } catch { /* ignore */ }
+  // His WhatsApp with Chator's line, opened from the card (15.10.2026): his login, the shop's number and his lead's.
+  const waPhones = Array.from(new Set([biz ? ownerPhoneOf(biz) : null, biz?.phone, lead?.phone]
+    .map(p => (p ? normalizeIsraeliPhone(p) : "")).filter(p => p.startsWith("972")).flatMap(p => [p, "0" + p.slice(3)])));
+  const waConvs = waPhones.length ? await prisma.conversation.findMany({ where: { businessId: DEMO_BUSINESS_ID, phone: { in: waPhones }, agentType: { not: "owner" } }, select: { id: true } }) : [];
+  const messages = waConvs.length ? (await prisma.conversationMessage.findMany({ where: { conversationId: { in: waConvs.map(x => x.id) }, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } })).reverse() : [];
   return {
-    customer: c, business: biz && { ...biz, settings: undefined, tokenBudgetIls: budget }, setup,
+    customer: c, business: biz && { ...biz, settings: undefined, phone: undefined, tokenBudgetIls: budget }, setup,
     agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
     quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
-    notes, lead, referral,
+    notes, lead, referral, messages,
     billing: await billingOf(id, biz?.settings ?? null),
   };
 }

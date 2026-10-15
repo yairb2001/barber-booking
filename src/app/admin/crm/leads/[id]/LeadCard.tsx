@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState, useContext } from "react";
 import { C, Btn, Card, useCrm, crmAction, STAGE_TONE, SOURCE_LABEL } from "../../ui";
 import { InModal } from "../../card-context";
+import { WaButton, WaPanel } from "../../WaPanel";
 
 type Msg = { id: string; role: string; content: string; source: string | null; createdAt: string };
 type Call = { id: string; startsAt: string; status: string; outcome: string | null; label: string; rep: string };
@@ -26,7 +27,7 @@ const who = (m: Msg) => (m.role === "user" ? "הליד" : m.source === "admin" ?
 export default function LeadCard({ id }: { id: string }) {
   const inModal = useContext(InModal);
   const { data, error, reload } = useCrm<Data>(`view=lead&id=${id}`);
-  const [text, setText] = useState("");
+  const [waOpen, setWaOpen] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
@@ -54,12 +55,13 @@ export default function LeadCard({ id }: { id: string }) {
       {!inModal && <Link href="/admin/crm/leads" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללידים</Link>}
 
       <header className="flex flex-wrap items-center justify-between gap-3.5">
-        <div className="flex items-center gap-3.5">
+        <div className="flex flex-wrap items-center gap-3.5">
           <span className="w-[52px] h-[52px] rounded-full inline-flex items-center justify-center font-extrabold text-xl" style={{ background: C.mist, color: C.petrol }}>{initials}</span>
           <div>
             <h1 className="m-0 text-2xl font-extrabold">{l.name || l.phone}</h1>
             <span className="text-sm" style={{ color: C.muted }}>{[l.businessName, l.shopSize, l.phone, SOURCE_LABEL[l.source] ?? l.source].filter(Boolean).join(" · ")}</span>
           </div>
+          <WaButton open={waOpen} onClick={() => setWaOpen(o => !o)} count={data.messages.length} waiting={data.messages[data.messages.length - 1]?.role === "user"} />
         </div>
         <div role="group" aria-label="שלב" className="flex flex-wrap gap-1.5">
           {data.stages.map(s => {
@@ -72,34 +74,19 @@ export default function LeadCard({ id }: { id: string }) {
       {l.optedOut && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: "#FDECEA", color: "#B42318" }}>הליד ביקש להסיר. אוטומציות לא יישלחו אליו.</p>}
 
       <div className="flex flex-wrap gap-4 items-start">
-        <section aria-label="שיחת וואטסאפ" className="flex-[999_1_440px] min-w-0 rounded-[18px] p-4 flex flex-col gap-2.5" style={{ background: "#EFE9E1" }}>
-          <div className="flex flex-wrap justify-between items-center gap-2">
-            <h2 className="m-0 text-base font-bold">וואטסאפ · המספר של צ׳אטור</h2>
-            {data.agentPausedUntil
-              ? <span className="text-xs flex items-center gap-2" style={{ color: "#7A4A00" }}>הסוכן שותק עד {time(data.agentPausedUntil)}<button type="button" className="underline min-h-[32px]" onClick={() => act("resume", { action: "lead.resumeAgent", id: l.id }, "הסוכן חזר לענות")}>החזר את הסוכן</button></span>
-              : <span className="text-xs" style={{ color: "#3E5A5B" }}>הסוכן מטפל · הודעה שלך משתיקה אותו ל-24 שעות</span>}
+        {waOpen && (
+          <div className="flex-[999_1_440px] min-w-0">
+            <WaPanel
+              messages={data.messages}
+              who={who}
+              placeholder="לכתוב לו בעצמך"
+              status={data.agentPausedUntil
+                ? <span className="text-xs flex items-center gap-2" style={{ color: "#7A4A00" }}>הסוכן שותק עד {time(data.agentPausedUntil)}<button type="button" className="underline min-h-[32px]" onClick={() => act("resume", { action: "lead.resumeAgent", id: l.id }, "הסוכן חזר לענות")}>החזר את הסוכן</button></span>
+                : <span className="text-xs" style={{ color: "#3E5A5B" }}>הסוכן מטפל · הודעה שלך משתיקה אותו ל-24 שעות</span>}
+              onSend={async body => (await act("msg", { action: "lead.message", id: l.id, body }, "נשלח")).ok}
+            />
           </div>
-          <div className="flex flex-col gap-2 max-h-[560px] overflow-y-auto">
-            {data.messages.length === 0 && <p className="m-0 text-sm text-center py-6" style={{ color: "#6B7F80" }}>עוד אין הודעות בשיחה הזאת.</p>}
-            {data.messages.map(m => {
-              const mine = m.role !== "user";
-              return (
-                <div key={m.id} className="flex" style={{ justifyContent: mine ? "flex-start" : "flex-end" }}>
-                  <div className="max-w-[78%] rounded-[14px] px-3 py-2 flex flex-col gap-0.5" style={{ background: mine ? "#D9FDD3" : "#fff", boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
-                    <span className="text-[11px] font-bold" style={{ color: mine ? "#0F6B4F" : "#7A4A00" }}>{who(m)}</span>
-                    <span className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</span>
-                    <span className="text-[11px] self-end" style={{ color: "#6B7F80" }}>{time(m.createdAt)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="flex gap-2 items-center bg-white rounded-full ps-4 pe-1.5 py-1">
-            <label className="sr-only" htmlFor="crm-msg">הודעה לליד</label>
-            <input id="crm-msg" value={text} onChange={e => setText(e.target.value)} placeholder="לכתוב לו בעצמך" className="flex-1 h-10 bg-transparent outline-none text-sm" />
-            <Btn kind="dark" className="rounded-full" disabled={!text.trim() || busy === "msg"} onClick={async () => { const r = await act("msg", { action: "lead.message", id: l.id, body: text }, "נשלח"); if (r.ok) setText(""); }}>{busy === "msg" ? "שולח…" : "שלח"}</Btn>
-          </div>
-        </section>
+        )}
 
         <aside className="flex-[1_1_320px] min-w-0 flex flex-col gap-4">
           <Card dark>
