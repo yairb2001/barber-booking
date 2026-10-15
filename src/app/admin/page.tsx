@@ -3826,10 +3826,13 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
     }
   }
 
-  async function saveHours() {
-    // Cutting hours on a day that has appointments → the wizard handles the
-    // displaced ones (it closes only the part outside the new hours).
-    if (dayApptCount > 0 && hours.isWorking) {
+  // The closure wizard is a CHOICE, not a gate (owner, 15.10.2026): "שמור" and
+  // "סגור יום" do exactly what they say; a small link under them opens the
+  // wizard when the day has customers. Closing without it leaves their
+  // appointments in the calendar, untouched.
+  async function openWizard() {
+    // Cutting hours → the wizard closes only the part outside the new hours.
+    if (hours.isWorking) {
       const res = await fetch("/api/admin/closures/preview", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ staffId, date, fromTime: "00:00", toTime: hours.start }) }).catch(() => null);
       const before = res && res.ok ? (await res.json()).displaced?.length ?? 0 : 0;
@@ -3839,13 +3842,15 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
       if (before > 0) { setWizard({ fromTime: "00:00", toTime: hours.start }); return; }
       if (after > 0)  { setWizard({ fromTime: hours.end, toTime: "23:59" }); return; }
     }
+    // Closing the day (or hours that don't cut anyone) → the whole day.
+    setWizard({ fromTime: null, toTime: null });
+  }
+
+  async function saveHours() {
     await doSave({ date, isWorking: hours.isWorking, slots: [{ start: hours.start, end: hours.end }], breaks });
   }
 
   async function closeDay() {
-    // A day with appointments never closes silently — the wizard makes sure
-    // every customer has somewhere to go first (specs/calendar-closure.md).
-    if (dayApptCount > 0) { setWizard({ fromTime: null, toTime: null }); return; }
     setHours(p => ({ ...p, isWorking: false }));
     await doSave({ date, isWorking: false });
   }
@@ -3992,7 +3997,7 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
               <p className="text-xs font-semibold text-amber-600 mt-0.5">🕎 {israeliHoliday(date)} — שימו לב לפני פתיחת שעות</p>
             )}
             {dayApptCount > 0 && !openClosureId && (
-              <p className="text-xs font-semibold text-teal-700 mt-0.5">ביום הזה יש {dayApptCount} תורים — סגירה או קיצור שעות יעברו דרך אשף הסגירה, הלקוחות לא ייעלמו.</p>
+              <p className="text-xs font-semibold text-teal-700 mt-0.5">ביום הזה יש {dayApptCount} תורים</p>
             )}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">✕</button>
@@ -4063,6 +4068,12 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
                   🔒 סגור יום
                 </button>
               </div>
+              {dayApptCount > 0 && !openClosureId && !wizard && (
+                <button onClick={openWizard} disabled={saving}
+                  className="w-full text-center text-[13px] font-semibold text-teal-700 py-1 disabled:opacity-50">
+                  🧙 לטפל ב-{dayApptCount} הלקוחות דרך האשף ›
+                </button>
+              )}
             </div>
           )}
 
