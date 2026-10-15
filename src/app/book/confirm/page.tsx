@@ -312,6 +312,9 @@ function ConfirmPageContent() {
   // that day, one tap away (owner, 15.10.2026: a late waitlist click mustn't
   // end on a dead "נתפס" screen).
   const [altSlots, setAltSlots]       = useState<string[] | null>(null);
+  // It's found on load, at the bottom of a long form — bring it into view.
+  const takenRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (altSlots) takenRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [altSlots]);
 
   // ── 5-minute hold on the chosen slot while this screen is open ─────────────
   // Two visitors (or a visitor and a WhatsApp customer) must not both reach
@@ -1141,7 +1144,7 @@ function ConfirmPageContent() {
         )}
 
         {error && (
-          <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-center">
+          <div ref={takenRef} className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-center">
             <p className="text-[13px] text-red-600 font-medium">{error}</p>
             {altSlots && (altSlots.length ? (
               <>
