@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { VoiceBubble, VoiceComposer } from "@/components/Voice";
+import { screenFor } from "@/lib/admin-screens";
 
 /**
  * Requests and improvements (15.10.2026, Yair: "צאט של בקשות מה חסר לך או מה
@@ -10,6 +12,39 @@ import { VoiceBubble, VoiceComposer } from "@/components/Voice";
  */
 type Item = { id: string; fromChator: boolean; author: string | null; body: string | null; audioUrl: string | null; audioSecs: number | null; at: string; done: boolean };
 const when = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
+
+// A screen of the system (with or without the site's address) → a button to it;
+// any other web address → a link (15.10.2026, Yair: "קישורים לא עובדים... לחצן קיצור דרך").
+const SCREEN_RE = /(?:https?:\/\/[^\s/]+)?(\/admin(?:\/[^\s,)"'״]*)?)/g;
+const URL_RE = /(https?:\/\/[^\s]+)/g;
+
+function Body({ text, mine }: { text: string; mine: boolean }) {
+  const paths: string[] = [];
+  const rest = text
+    .replace(SCREEN_RE, (_m, path: string) => { const p = path.replace(/[.:]+$/, ""); if (!paths.includes(p)) paths.push(p); return ""; })
+    .split("\n").map(l => l.replace(/[ \t]+$/, "").replace(/:\s*$/, ":")).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trim();
+  return (
+    <>
+      {rest && (
+        <p className="whitespace-pre-line [overflow-wrap:anywhere]">
+          {rest.split(URL_RE).map((part, i) => (i % 2 === 1
+            ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline">{part}</a>
+            : <span key={i}>{part}</span>))}
+        </p>
+      )}
+      {paths.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-2">
+          {paths.map(p => (
+            <Link key={p} href={p} className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold ${mine ? "bg-white/20 text-white" : "bg-teal-600 text-white"}`}>
+              {screenFor(p)?.name ?? "פתח את המסך"} ←
+            </Link>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function RequestsPage() {
   const [items, setItems] = useState<Item[] | null>(null);
@@ -63,7 +98,7 @@ export default function RequestsPage() {
               <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-[14px] shadow-sm ${m.fromChator ? "bg-white border border-slate-200 text-slate-800" : "bg-teal-600 text-white"}`}>
                 <div className={`text-[11px] font-semibold mb-0.5 ${m.fromChator ? "text-teal-700" : "text-white/80"}`}>{m.fromChator ? "צ׳אטור" : m.author || "אתה"}</div>
                 {m.audioUrl && <div className="min-w-[210px]"><VoiceBubble src={m.audioUrl} mine={!m.fromChator} /></div>}
-                {m.body && <p className="whitespace-pre-line [overflow-wrap:anywhere]">{m.body}</p>}
+                {m.body && <Body text={m.body} mine={!m.fromChator} />}
                 <div className={`text-[10px] mt-1 ${m.fromChator ? "text-slate-400" : "text-white/70"}`}>{when(m.at)}{!m.fromChator && m.done ? " · ✓ טופל" : ""}</div>
               </div>
             </div>

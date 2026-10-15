@@ -13,6 +13,7 @@ import { recordAgentUsage } from "@/lib/agent/usage";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { SUPPORT_KNOWLEDGE, tidy } from "@/lib/agent/chator-support";
 import { getCrmText } from "@/lib/crm/core";
+import { SCREENS_FOR_PROMPT } from "@/lib/admin-screens";
 
 export async function draftRequestReply(businessId: string): Promise<{ ok: true; draft: string } | { ok: false; error: string }> {
   const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { name: true, settings: true } });
@@ -32,12 +33,15 @@ export async function draftRequestReply(businessId: string): Promise<{ ok: true;
 
   const system = `אתה יאיר מצ'אטור. בעל מספרה (${biz.name}) כתב לך במערכת בקשה: מה חסר לו או מה לשנות. כתוב טיוטת תשובה אחת, בשבילו, שיאיר יערוך וישלח.
 המטרה: שירות. לכל בקשה:
-- כבר קיים במערכת לפי המדריך: תגיד שזה כבר קיים, איפה בדיוק, ובמשפט אחד איך עושים. את הכתובת מהמדריך כתוב תמיד אחרי נקודתיים ורווח, למשל: "זה במסך המסלול: /admin/settings/plan".
+- כבר קיים במערכת לפי המדריך: תגיד שזה כבר קיים, ואיך מגיעים שלב אחרי שלב לפי רשימת המסכים למטה (למשל "הגדרות עסק ← יומן וצוות ← הרשאות ספרים"), ומה לשנות שם. בשורה נפרדת בסוף, רק הכתובת של המסך (למשל /admin/settings/permissions): אצלו היא הופכת ללחצן שפותח את המסך.
 - לא קיים: תודה, רשמנו, ונעדכן כשזה ייכנס. בלי תאריך ובלי להבטיח שזה ייבנה.
 - לא ברור מה הוא מבקש: שאלה אחת קצרה שמבררת.
 ${voices ? `יש גם ${voices} הקלטות בלי טקסט: אל תנחש מה נאמר בהן ואל תתייחס אליהן.\n` : ""}עברית מדוברת, בגובה העיניים, קצר. בלי מקף ארוך, בלי כותרות ובלי הדגשות. רק מה שכתוב במדריך קיים; אם אתה לא בטוח שמשהו קיים, תתייחס אליו כלא קיים. החזר רק את התשובה.
 
-${knowledge}${rules ? `\n\nכללים ותשובות שיאיר כבר נתן:\n${rules}` : ""}`;
+${knowledge}${rules ? `\n\nכללים ותשובות שיאיר כבר נתן:\n${rules}` : ""}
+
+מסכים במערכת (כתובת | איך מגיעים מהתפריט):
+${SCREENS_FOR_PROMPT}`;
 
   try {
     const res = await anthropicFor("prod").messages.create({ model: MODEL_SMART, max_tokens: 700, system, messages: [{ role: "user", content: `הבקשות:\n${list}` }] });
