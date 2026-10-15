@@ -2929,13 +2929,12 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
         {moreOpen && (<>
         {hideApptsOn && (apptStarted || isHidden) && (
           <div className="px-4 py-2 border-b border-neutral-100">
+            {/* Icon only (owner, 15.10.2026): 🙈 hides, 👁 (amber) brings it back. */}
             <button onClick={toggleHidden} disabled={hiding}
-              className={`w-full text-right py-2 px-3 rounded-lg border text-xs font-medium transition disabled:opacity-50 ${isHidden ? "border-amber-300 bg-amber-50 text-amber-800" : "border-neutral-200 text-neutral-700 hover:bg-neutral-50"}`}>
-              {hiding ? "רגע…" : isHidden ? "👁 בטל הסתרה — התור יחזור ליומן" : "🙈 הסתר מהיומן"}
+              title={isHidden ? "בטל הסתרה" : "הסתר מהיומן"} aria-label={isHidden ? "בטל הסתרה" : "הסתר מהיומן"}
+              className={`w-10 h-10 flex items-center justify-center rounded-lg border text-lg transition disabled:opacity-50 ${isHidden ? "border-amber-300 bg-amber-50" : "border-neutral-200 hover:bg-neutral-50"}`}>
+              {hiding ? "…" : isHidden ? "👁" : "🙈"}
             </button>
-            <p className="text-[10.5px] text-neutral-400 mt-1">
-              {isHidden ? "התור מוסתר מהיומן של כל הצוות. הנתונים בדשבורד לא הושפעו." : "מעלים את התור מהיומן של כל הצוות. ההכנסות, ההיסטוריה והסטטיסטיקות נשארות כמו שהן."}
-            </p>
           </div>
         )}
         <div className="px-4 py-2 border-b border-neutral-100">
