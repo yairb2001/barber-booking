@@ -205,9 +205,15 @@ export async function answerChatorQuestion(id: string, answer: string, saveAsRul
   const body = answer.trim();
   if (!body) return { ok: false, error: "חסרה תשובה" };
   await say(q.conversationId, q.phone, [body]);
+  // Kept for next time through the fix agent, merged into what the support agent
+  // already knows instead of one more line each time (15.10.2026, Yair: "אסור לנפח פרומטים").
   if (saveAsRule) {
-    const cur = (await getCrmText("supportRules")).text.trim();
-    await setCrmText("supportRules", `${cur ? `${cur}\n` : ""}ש: ${q.question.replace(/\s+/g, " ")} ת: ${body.replace(/\s+/g, " ")}`);
+    await prisma.agentImprovement.create({ data: {
+      businessId: q.businessId ?? DEMO_BUSINESS_ID, source: "chator_question", kind: "rule", status: "queued",
+      title: `עוזר התפעול: ${q.question.replace(/\s+/g, " ").slice(0, 70)}`,
+      proposal: `שעוזר התפעול של צ'אטור ידע לענות על זה לבד.\nש: ${q.question.replace(/\s+/g, " ")}\nת: ${body.replace(/\s+/g, " ")}`,
+      conversationId: q.conversationId,
+    } });
   }
   await prisma.chatorQuestion.update({ where: { id }, data: { answer: body, savedAsRule: saveAsRule, status: "answered", answeredAt: new Date() } });
   return { ok: true };

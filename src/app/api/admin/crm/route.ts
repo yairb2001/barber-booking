@@ -9,6 +9,7 @@ import { getBusinessNow, addDaysISO, appointmentInstant } from "@/lib/utils";
 import { hasTestKey } from "@/lib/anthropic-clients";
 import { ensureCrmSeed, getCrmSettings, setCrmSettings, freeCallSlots, slotLabel, isStage, STAGES, legacyStatusFor, type CrmSettings } from "@/lib/crm/core";
 import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/calls";
+import { parseFix, growthOf, needsGrowthOk, GROWTH_LIMIT } from "@/lib/agent/fix-queue";
 import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, AUTOMATION_GROUPS, type AutoStep } from "@/lib/crm/automations";
 import { computeSetup } from "@/lib/crm/setup-progress";
 import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -419,7 +420,8 @@ export async function GET(req: NextRequest) {
     }
     if (view === "improvements") {
       const [items, feedback, cq, rulesText] = await Promise.all([
-        prisma.agentImprovement.findMany({ where: { OR: [{ status: "pending" }, { decidedAt: { gte: new Date(Date.now() - 14 * 86400_000) } }] }, orderBy: [{ status: "desc" }, { createdAt: "desc" }], take: 200 }),
+        // Open at every stage of the fix agent, plus what went live or closed in the last 30 days (15.10.2026).
+        prisma.agentImprovement.findMany({ where: { OR: [{ status: { in: ["pending", "queued", "question", "review", "publish", "revert"] } }, { decidedAt: { gte: new Date(Date.now() - 30 * 86400_000) } }] }, orderBy: [{ createdAt: "desc" }], take: 300 }),
         prisma.agentFeedback.findMany({ orderBy: { createdAt: "desc" }, take: 60 }),
         // Chator's own agent asking Yair (14.10.2026).
         prisma.chatorQuestion.findMany({ where: { status: "pending" }, orderBy: { createdAt: "asc" }, take: 50 }),
@@ -429,7 +431,8 @@ export async function GET(req: NextRequest) {
       const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
       const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
       return NextResponse.json({
-        items: await Promise.all(items.map(async i => ({ ...i, businessName: name(i.businessId), conversations: await proposalConversations(i) }))),
+        items: await Promise.all(items.map(async i => { const fx = parseFix(i.fix); return { ...i, fix: fx, growth: growthOf(fx), growthNeedsOk: needsGrowthOk(fx), businessName: name(i.businessId), conversations: await proposalConversations(i) }; })),
+        growthLimit: GROWTH_LIMIT,
         feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
         chatorQuestions: cq.map(q => ({ id: q.id, question: q.question, stage: q.stage, createdAt: q.createdAt, businessId: q.businessId, businessName: q.businessId ? name(q.businessId) : null, phone: q.phone.replace(/^972/, "0"), conversationId: q.conversationId })),
         supportRules: rulesText.text.split("\n").filter(Boolean).slice(-15),
@@ -713,6 +716,41 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, ...(await setCrmText("salesAgentV2", b.on === true ? "1" : "0")) });
       }
       // Approve a proposal = apply it to that business's agent; "base" is a change for every agent, done by hand.
+      // The fix agent's queue (src/lib/agent/fix-queue.ts, 15.10.2026).
+      case "improvement.queue": {
+        const text = str("proposal").trim();
+        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: { in: ["pending", "approved"] } }, data: { status: "queued", ...(text ? { proposal: text } : {}) } });
+        return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "כבר טופל" }, { status: 400 });
+      }
+      case "improvement.unqueue": {
+        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: "queued" }, data: { status: "pending" } });
+        return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "הסוכן כבר התחיל" }, { status: 400 });
+      }
+      case "improvement.new": {
+        const text = str("text").trim();
+        if (!text) return NextResponse.json({ error: "מה לשפר?" }, { status: 400 });
+        const { SUPER_ADMIN_BUSINESS_ID } = await import("@/lib/super-admin");
+        await prisma.agentImprovement.create({ data: { businessId: str("businessId") || SUPER_ADMIN_BUSINESS_ID, source: "yair", kind: "base", title: text.split("\n")[0].slice(0, 80), proposal: text.slice(0, 4000), conversationId: str("conversationId") || null, status: "queued" } });
+        return NextResponse.json({ ok: true });
+      }
+      case "improvement.publish": {
+        const { publishFix } = await import("@/lib/agent/fix-queue");
+        const r = await publishFix(str("id"), b.growthOk === true);
+        return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      case "improvement.revise": {
+        const { reviseFix } = await import("@/lib/agent/fix-queue");
+        return (await reviseFix(str("id"), str("text"))) ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "צריך לכתוב מה לתקן" }, { status: 400 });
+      }
+      case "improvement.reject": {
+        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: { in: ["pending", "queued", "question", "review"] } }, data: { status: "rejected", decidedAt: new Date(), decidedBy: "יאיר" } });
+        return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "כבר טופל" }, { status: 400 });
+      }
+      case "improvement.revert": {
+        const { revertFix } = await import("@/lib/agent/fix-queue");
+        const r = await revertFix(str("id"));
+        return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
       case "improvement.decide": {
         const imp = await prisma.agentImprovement.findUnique({ where: { id: str("id") } });
         if (!imp || imp.status !== "pending") return NextResponse.json({ error: "כבר טופל" }, { status: 400 });
