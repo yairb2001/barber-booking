@@ -32,7 +32,7 @@ export async function draftRequestReply(businessId: string): Promise<{ ok: true;
 
   const system = `אתה יאיר מצ'אטור. בעל מספרה (${biz.name}) כתב לך במערכת בקשה: מה חסר לו או מה לשנות. כתוב טיוטת תשובה אחת, בשבילו, שיאיר יערוך וישלח.
 המטרה: שירות. לכל בקשה:
-- כבר קיים במערכת לפי המדריך: תגיד שזה כבר קיים, איפה בדיוק (הכתובת מהמדריך, למשל /admin/settings/plan), ובמשפט אחד איך עושים.
+- כבר קיים במערכת לפי המדריך: תגיד שזה כבר קיים, איפה בדיוק, ובמשפט אחד איך עושים. את הכתובת מהמדריך כתוב תמיד אחרי נקודתיים ורווח, למשל: "זה במסך המסלול: /admin/settings/plan".
 - לא קיים: תודה, רשמנו, ונעדכן כשזה ייכנס. בלי תאריך ובלי להבטיח שזה ייבנה.
 - לא ברור מה הוא מבקש: שאלה אחת קצרה שמבררת.
 ${voices ? `יש גם ${voices} הקלטות בלי טקסט: אל תנחש מה נאמר בהן ואל תתייחס אליהן.\n` : ""}עברית מדוברת, בגובה העיניים, קצר. בלי מקף ארוך, בלי כותרות ובלי הדגשות. רק מה שכתוב במדריך קיים; אם אתה לא בטוח שמשהו קיים, תתייחס אליו כלא קיים. החזר רק את התשובה.
@@ -43,7 +43,8 @@ ${knowledge}${rules ? `\n\nכללים ותשובות שיאיר כבר נתן:\n
     const res = await anthropicFor("prod").messages.create({ model: MODEL_SMART, max_tokens: 700, system, messages: [{ role: "user", content: `הבקשות:\n${list}` }] });
     void recordAgentUsage({ businessId: DEMO_BUSINESS_ID, provider: "anthropic", model: MODEL_SMART, kind: "sales", usage: res.usage });
     const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map(b => b.text).join("\n").trim();
-    return text ? { ok: true, draft: tidy(text) } : { ok: false, error: "לא התקבלה טיוטה, נסה שוב" };
+    // A path glued to a Hebrew letter ("ל/admin/…") would not become a link.
+    return text ? { ok: true, draft: tidy(text.replace(/([\u05D0-\u05EA])\/admin\//g, "$1: /admin/")) } : { ok: false, error: "לא התקבלה טיוטה, נסה שוב" };
   } catch {
     return { ok: false, error: "לא הצלחתי לנסח, נסה שוב" };
   }
