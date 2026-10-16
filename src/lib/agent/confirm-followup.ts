@@ -17,7 +17,7 @@ import { getBusinessNow, timeToMinutes } from "@/lib/utils";
 const HEB_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 export function parseFinalConfirm(text: string, todayISO: string): { dateISO: string; time: string } | null {
-  if (!/מאשר\s*\??\s*$/.test(text.trim())) return null;
+  if (!/(מאשר|confirm)\s*\??\s*$/i.test(text.trim())) return null;
   const dm = text.match(/\b(\d{1,2})\.(\d{1,2})\b/);
   const hm = text.match(/\b(\d{1,2}):(\d{2})\b/);
   if (!dm || !hm) return null;
@@ -51,10 +51,14 @@ export async function buildConfirmFollowup(opts: {
   const { dateISO, time } = parsed;
   const hi = opts.name ? `${opts.name}, ` : "";
   const dayName = `יום ${HEB_DAYS[new Date(dateISO + "T00:00:00Z").getUTCDay()]}`;
+  // The question went out in English → so does the follow-up (16.10.2026).
+  const en = /confirm\s*\??\s*$/i.test(opts.lastAgentText.trim());
+  const dayEn = new Date(dateISO + "T00:00:00Z").toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
 
   // Slot already in the past → nothing sensible to confirm; offer to re-find.
   if (dateISO < todayISO || (dateISO === todayISO && timeToMinutes(time) <= nowMin)) {
-    return `${hi}שים לב שהתור ל${dayName} בשעה ${time} לא נקבע בסוף (לא אישרת בזמן) והשעה כבר עברה. רוצה שאמצא לך שעה אחרת?`;
+    return en ? `${hi}heads up, the appointment on ${dayEn} at ${time} wasn't booked in the end (no confirmation in time) and the time has passed. Want me to find you another time?`
+      : `${hi}שים לב שהתור ל${dayName} בשעה ${time} לא נקבע בסוף (לא אישרת בזמן) והשעה כבר עברה. רוצה שאמצא לך שעה אחרת?`;
   }
 
   // Which barber was it? The last availability tool result lists who had that time.
@@ -67,7 +71,8 @@ export async function buildConfirmFollowup(opts: {
   const stillFree = rows.some(r => r.slots.includes(time));
 
   if (stillFree) {
-    return `${hi}שים לב שהתור ל${dayName} בשעה ${time} עדיין לא נקבע — רק תגיד "מאשר" ואני סוגר לך אותו.`;
+    return en ? `${hi}heads up, the appointment on ${dayEn} at ${time} isn't booked yet. Just say "confirm" and I'll lock it in.`
+      : `${hi}שים לב שהתור ל${dayName} בשעה ${time} עדיין לא נקבע — רק תגיד "מאשר" ואני סוגר לך אותו.`;
   }
 
   // Taken meanwhile → the closest times that day (same barber(s) first, then anyone).
@@ -76,7 +81,9 @@ export async function buildConfirmFollowup(opts: {
   const nearest = pool.sort((a, b) => Math.abs(timeToMinutes(a) - want) - Math.abs(timeToMinutes(b) - want)).slice(0, 2).sort();
   if (nearest.length) {
     const opts2 = nearest.length === 2 ? `${nearest[0]} או ${nearest[1]}` : nearest[0];
-    return `${hi}לא הספקנו לסגור והשעה ${time} ב${dayName} נתפסה בינתיים. הכי קרוב שיש באותו יום: ${opts2} — לסגור לך?`;
+    return en ? `${hi}we didn't get to lock it in and ${time} on ${dayEn} was taken meanwhile. The closest that day: ${nearest.join(" or ")}. Book one?`
+      : `${hi}לא הספקנו לסגור והשעה ${time} ב${dayName} נתפסה בינתיים. הכי קרוב שיש באותו יום: ${opts2} — לסגור לך?`;
   }
-  return `${hi}לא הספקנו לסגור והשעה ${time} ב${dayName} נתפסה בינתיים, וכבר אין פנוי באותו יום. רוצה שאמצא לך יום אחר?`;
+  return en ? `${hi}we didn't get to lock it in and ${time} on ${dayEn} was taken meanwhile, and nothing is free that day anymore. Want me to find another day?`
+    : `${hi}לא הספקנו לסגור והשעה ${time} ב${dayName} נתפסה בינתיים, וכבר אין פנוי באותו יום. רוצה שאמצא לך יום אחר?`;
 }

@@ -59,13 +59,44 @@ export function dayLabelWithDistance(iso: string): string {
   return `ביום ${d.weekday}${d.isNext ? " *הבא*" : ""}, ${dm} (${d.label})`;
 }
 
+// ── The customer's language (16.10.2026, Yair: "לענות בשפה שהלקוח מדבר בה, גם לגבי
+// האישור בסוף"). Every fixed line the code sends has an English twin; the model's own
+// replies already follow the customer's language (prompt-template, סגנון).
+export type Lang = "he" | "en";
+export const langOf = (text?: string | null): Lang => (text && /[A-Za-z]{2,}/.test(text) && !/[א-ת]/.test(text) ? "en" : "he");
+/** The language of the customer's latest message in this conversation. */
+export async function convLang(conversationId?: string | null): Promise<Lang> {
+  if (!conversationId) return "he";
+  const m = await prisma.conversationMessage.findFirst({ where: { conversationId, role: "user" }, orderBy: { createdAt: "desc" }, select: { content: true } });
+  return langOf(m?.content);
+}
+/** "today" / "tomorrow" / "on Thursday 22.10 (in 8 days)". */
+export function dayLabelEn(iso: string): string {
+  const today = getBusinessNow().date;
+  const dt = new Date(iso + "T00:00:00.000Z");
+  const wd = dt.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" });
+  const dm = `${dt.getUTCDate()}.${dt.getUTCMonth() + 1}`;
+  const d = dayDistance(iso, today);
+  if (isNightWindow() && d.days <= 2) return `on ${wd} ${dm}${d.days === 0 ? " (today, after you wake up)" : ""}`;
+  if (d.days === 0) return "today";
+  if (d.days === 1) return "tomorrow";
+  return `on ${wd} ${dm}${d.days > 2 ? ` (in ${d.days} days)` : ""}`;
+}
+const dayIn = (iso: string, lang: Lang) => (lang === "en" ? dayLabelEn(iso) : dayLabelWithDistance(iso));
+const andList = (items: string[], lang: Lang) => items.length < 2 ? items.join("") : lang === "en" ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.length === 2 ? items.join(" ו") : `${items.slice(0, -1).join(", ")} ו${items[items.length - 1]}`;
+
 export function firstNameOf(name: string | null | undefined): string {
   // WhatsApp names sometimes carry bidi control marks (\u202a…) — never echo them.
   return (name ?? "").replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "").trim().split(/\s+/)[0] || "";
 }
 
 /** The fixed closing line after a code-confirmed booking. */
-export function bookedMessage(p: { staffName: string; date: string; startTime: string; originalRequest?: string | null }): string {
+export function bookedMessage(p: { staffName: string; date: string; startTime: string; originalRequest?: string | null; lang?: Lang }): string {
+  if (p.lang === "en") {
+    let en = `Done, you're booked with ${p.staffName} ${dayLabelEn(p.date)} at ${p.startTime}. See you 💈`;
+    if (p.originalRequest) en += `\n\nBy the way, want me to let you know if ${p.originalRequest} opens up?`;
+    return en;
+  }
   let reply = `סגור, קבעתי לך אצל ${p.staffName} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}. נתראה 💈`;
   if (p.originalRequest) reply += `\n\nדרך אגב, רוצה שאעדכן אותך אם יתפנה ${p.originalRequest}?`;
   return reply;
@@ -82,20 +113,27 @@ export type GroupItem = {
 const isVisit = (g?: GroupItem[]) => !!g?.some(x => x.serviceId);
 
 /** One question for the whole visit: "לייזר ב-10:00 אצל דנה, ואחריו לק ג'ל ב-10:40 אצל שירן". */
-export function visitConfirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[] }): string {
+export function visitConfirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[]; lang?: Lang }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
+  if (p.lang === "en") return `${who}${who ? "just" : "Just"} before I lock it in, ${dayLabelEn(p.date)}: ${p.serviceName} at ${p.startTime} with ${p.staffName}, then ${p.group.map(g => `${g.serviceName} at ${g.startTime} with ${g.staffName}`).join(", then ")}\nConfirm?`;
   const rest = p.group.map(g => `${g.serviceName} ב-${g.startTime} אצל ${g.staffName}`);
   return `${who}רגע לפני שאני קובע סופית, ${dayLabelWithDistance(p.date)}: ${p.serviceName} ב-${p.startTime} אצל ${p.staffName}, ואחריו ${rest.join(", ואחריו ")}\nמאשר?`;
 }
 
-export function visitBookedMessage(p: { date: string; items: { serviceName: string; startTime: string; staffName: string }[] }): string {
+export function visitBookedMessage(p: { date: string; items: { serviceName: string; startTime: string; staffName: string }[]; lang?: Lang }): string {
+  if (p.lang === "en") return `Done, you're booked ${dayLabelEn(p.date)}: ${p.items.map(i => `${i.serviceName} at ${i.startTime} with ${i.staffName}`).join(", then ")}. See you 💈`;
   return `סגור, קבעתי לך ${dayLabelWithDistance(p.date)}: ${p.items.map(i => `${i.serviceName} ב-${i.startTime} אצל ${i.staffName}`).join(", ואחריו ")}. נתראה 💈`;
 }
 
 const nameOf = (full?: string | null) => (full ?? "").trim().split(/\s+/)[0] || "";
 /** One question for ALL the appointments, so one "כן" books all of them. */
-export function groupConfirmationQuestion(p: { firstName?: string | null; mainName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[] }): string {
+export function groupConfirmationQuestion(p: { firstName?: string | null; mainName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[]; lang?: Lang }): string {
   const sameStaff = p.group.every(g => g.staffId && g.staffName === p.staffName);
+  if (p.lang === "en") {
+    const atEn = (staff: string) => (sameStaff ? "" : ` with ${staff}`);
+    const itemsEn = [`${nameOf(p.mainName) || "you"} at ${p.startTime}${atEn(p.staffName)}`, ...p.group.map(g => `${nameOf(g.forName)} at ${g.startTime}${atEn(g.staffName)}`)];
+    return `${p.firstName ? `${p.firstName}, just` : "Just"} before I lock it in: ${itemsEn.length} appointments for ${p.serviceName}${sameStaff ? ` with ${p.staffName}` : ""} ${dayLabelEn(p.date)}: ${andList(itemsEn, "en")}\nConfirm?`;
+  }
   const at = (staff: string) => (sameStaff ? "" : ` אצל ${staff}`);
   const items = [`${nameOf(p.mainName) || "אתה"} ב-${p.startTime}${at(p.staffName)}`, ...p.group.map(g => `${nameOf(g.forName)} ב-${g.startTime}${at(g.staffName)}`)];
   const list = items.length === 2 ? items.join(" ו") : `${items.slice(0, -1).join(", ")} ו${items[items.length - 1]}`;
@@ -103,15 +141,17 @@ export function groupConfirmationQuestion(p: { firstName?: string | null; mainNa
   return `${who}רגע לפני שאני קובע סופית: ${items.length} תורים ל${p.serviceName}${sameStaff ? ` אצל ${p.staffName}` : ""} ${dayLabelWithDistance(p.date)}: ${list}\nמאשר?`;
 }
 
-export function groupBookedMessage(p: { staffName: string; date: string; booked: { name: string; startTime: string; staffName: string }[] }): string {
+export function groupBookedMessage(p: { staffName: string; date: string; booked: { name: string; startTime: string; staffName: string }[]; lang?: Lang }): string {
   const sameStaff = p.booked.every(b => b.staffName === p.staffName);
+  if (p.lang === "en") return `Done, booked ${p.booked.length} appointments${sameStaff ? ` with ${p.staffName}` : ""} ${dayLabelEn(p.date)}: ${p.booked.map(b => `${b.name === "אתה" ? "you" : b.name} at ${b.startTime}${sameStaff ? "" : ` with ${b.staffName}`}`).join(", ")}. See you 💈`;
   const list = p.booked.map(b => `${b.name} ב-${b.startTime}${sameStaff ? "" : ` אצל ${b.staffName}`}`).join(", ");
   return `סגור, קבעתי ${p.booked.length} תורים${sameStaff ? ` אצל ${p.staffName}` : ""} ${dayLabelWithDistance(p.date)}: ${list}. נתראה 💈`;
 }
 
 /** The fixed final-confirmation question (owner's mandated phrasing). */
-export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string }): string {
+export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string; lang?: Lang }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
+  if (p.lang === "en") return `${who}${who ? "just" : "Just"} before I lock it in: ${p.serviceName}${p.mentionStaff ? ` with ${p.staffName}` : ""} ${dayLabelEn(p.date)} at ${p.startTime}\nConfirm?`;
   const at = p.mentionStaff ? ` אצל ${p.staffName}` : "";
   return `${who}רגע לפני שאני קובע לך את זה סופית: ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
 }
@@ -202,7 +242,9 @@ export async function maybeStartCancelFlow(p: { businessId: string; phone: strin
   await prisma.bookingProposal.create({
     data: { businessId: p.businessId, phone, conversationId: p.conversationId, kind: "cancel", date: a.date, startTime: a.startTime, note: JSON.stringify({ appointmentId: a.id, staffName: a.staff.name, serviceName: a.service.name }), expiresAt: new Date(Date.now() + CONFIRM_TTL_MS) },
   });
-  return { reply: `${firstNameOf(p.customer.name) ? firstNameOf(p.customer.name) + ", " : ""}לבטל את התור ${dayLabelHe(dateISO)} בשעה ${a.startTime} אצל ${a.staff.name}?` };
+  const who = firstNameOf(p.customer.name) ? firstNameOf(p.customer.name) + ", " : "";
+  if (langOf(text) === "en") return { reply: `${who}Cancel your appointment ${dayLabelEn(dateISO)} at ${a.startTime} with ${a.staff.name}?` };
+  return { reply: `${who}לבטל את התור ${dayLabelHe(dateISO)} בשעה ${a.startTime} אצל ${a.staff.name}?` };
 }
 
 export async function findPendingProposal(businessId: string, phone: string) {
@@ -266,11 +308,12 @@ export async function createConfirmProposal(p: {
       }
     } catch (err) { console.error("[proposal] hold failed", err); }
   }
-  if (p.awaitingName) return p.partialName ? FAMILY_NAME_QUESTION : NAME_QUESTION;
+  const lang = await convLang(p.conversationId);
+  if (p.awaitingName) return nameQuestion(lang, !!p.partialName);
   if (p.question) return p.question;
-  if (isVisit(p.group)) return visitConfirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group! });
-  if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group });
-  return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime });
+  if (isVisit(p.group)) return visitConfirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group!, lang });
+  if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group, lang });
+  return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime, lang });
 }
 
 // A single booking in a conversation that talked about more than one person →
@@ -312,9 +355,10 @@ export async function bookConfirmedProposal(p: {
   if (failed.length) {
     return { booked: booked.length, context: `⚠️ הלקוח אישר ${jobs.length > 1 ? `${jobs.length} תורים` : "את התור"} ${dayLabelHe(dateISO)}. ${booked.length ? `נקבעו: ${booked.map(what).join(", ")}. ` : ""}לא נקבעו (השעה נתפסה ברגע האחרון): ${failed.map(f => what(f.job)).join(", ")}. אמור לו בדיוק מה נקבע ומה לא — אף פעם לא "סגור" כללי — והצע מיד חלופה פנויה למה שלא נקבע (בדוק עם הכלי), ואז propose_booking.` };
   }
-  if (visit) return { booked: booked.length, reply: visitBookedMessage({ date: dateISO, items: booked }) };
-  if (jobs.length > 1) return { booked: booked.length, reply: groupBookedMessage({ staffName: meta.staffName ?? "", date: dateISO, booked: booked.map(b => ({ name: b.name, startTime: b.startTime, staffName: b.staffName })) }) };
-  let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest });
+  const lang = await convLang(pending.conversationId);
+  if (visit) return { booked: booked.length, reply: visitBookedMessage({ date: dateISO, items: booked, lang }) };
+  if (jobs.length > 1) return { booked: booked.length, reply: groupBookedMessage({ staffName: meta.staffName ?? "", date: dateISO, booked: booked.map(b => ({ name: b.name, startTime: b.startTime, staffName: b.staffName })), lang }) };
+  let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest, lang });
   // The extra treatment right after it (16.10.2026), never after an offer that was itself extra.
   if (!meta.upsell && !meta.originalRequest) {
     const q = await offerUpsell({ proposalId: pending.id, dateISO, mainName, sandbox: !!p.sandbox }).catch(e => { console.error("[upsell]", e); return null; });
@@ -328,7 +372,7 @@ export async function bookConfirmedProposal(p: {
     }).catch(() => [] as { content: string }[]);
     // …unless this IS the second one (another booking in this conversation in the last 3h).
     const bookedHere = await prisma.bookingProposal.count({ where: { conversationId: pending.conversationId, kind: "confirm", status: "accepted", respondedAt: { gte: new Date(Date.now() - 3 * 3600_000) } } }).catch(() => 2);
-    if (bookedHere < 2 && recent.some(m => MULTI_ASK.test(m.content || ""))) reply += `\n\nודיברנו גם על תור נוסף — לקבוע גם אותו?`;
+    if (bookedHere < 2 && recent.some(m => MULTI_ASK.test(m.content || ""))) reply += (await convLang(pending.conversationId)) === "en" ? "\n\nWe also talked about another appointment, want me to book that one too?" : `\n\nודיברנו גם על תור נוסף — לקבוע גם אותו?`;
   }
   return { booked: booked.length, reply };
 }
@@ -360,8 +404,8 @@ export function isPureAck(text: string): boolean {
 /** The agent's last message left nothing open: no question, no offered time, no "מתאים/רוצה". */
 export function leavesNothingOpen(assistantText: string): boolean {
   if (/[?؟]/.test(assistantText)) return false;
-  if (/קבעתי לך|^בוטל|נרשמת|רשמתי אותך/.test(assistantText)) return true;   // the system's own closings
-  return !/\d{1,2}:\d{2}/.test(assistantText) && !/פנוי|מתאים|רוצה|אפשר|איזה|איזו|מתי|תגיד|תרצה|מה השם/.test(assistantText);
+  if (/קבעתי לך|^בוטל|נרשמת|רשמתי אותך|you're booked|^cancelled|stays as it is/i.test(assistantText)) return true;   // the system's own closings (Hebrew and English)
+  return !/\d{1,2}:\d{2}/.test(assistantText) && !/פנוי|מתאים|רוצה|אפשר|איזה|איזו|מתי|תגיד|תרצה|מה השם|available|free|want|which|when|your name/i.test(assistantText);
 }
 const ACK_WINDOW_MS = 3 * 60 * 60 * 1000;
 
@@ -371,6 +415,7 @@ const ACK_WINDOW_MS = 3 * 60 * 60 * 1000;
 // made of letters only, that is not a yes/no/greeting/time word, IS the name.
 export const NAME_QUESTION = "רגע לפני שאני סוגר את התור, מה השם המלא שלך?";
 export const FAMILY_NAME_QUESTION = "ושם המשפחה?";
+export const nameQuestion = (lang: Lang, partial = false) => (lang === "en" ? (partial ? "And your last name?" : "Just before I book it, what's your full name?") : partial ? FAMILY_NAME_QUESTION : NAME_QUESTION);
 const NOT_NAME = new Set<string>([...YES_STEMS, ...NO_STEMS, ...FILLER, ...ACK_WORDS, ...CANCEL_VERBS,
   "היי", "הי", "הלו", "אהלן", "בוקר", "צהריים", "צהרים", "ערב", "לילה", "מחר", "היום", "מחרתיים", "שבוע", "הבא", "ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת",
   "תור", "תספורת", "זקן", "שעה", "מתי", "איפה", "כמה", "מה", "מי", "למה", "איך", "אפשר", "רוצה", "בשעה", "אצל", "עם", "בלי", "רק", "גם", "לא", "כן", "אותו", "אותה",
@@ -419,12 +464,12 @@ export async function handleIncomingForProposal(p: {
       const result = await p.execTool("cancel_appointment", { appointmentId: cm.appointmentId });
       const ok = p.sandbox || /✅|בוטל/.test(result);
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
-      if (ok) return { reply: `בוטל. אם תרצה לקבוע מחדש, אני כאן 👍` };
+      if (ok) return { reply: langOf(text) === "en" ? "Cancelled. If you want to book again, I'm here 👍" : `בוטל. אם תרצה לקבוע מחדש, אני כאן 👍` };
       return { context: `הלקוח אישר לבטל את ${what} אבל הביטול נכשל: "${result.slice(0, 160)}". הסבר בכנות ועזור.` };
     }
     if (cls === "no") {
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
-      return { reply: `סבבה, התור נשאר כמו שהוא 👍` };
+      return { reply: langOf(text) === "en" ? "Sure, your appointment stays as it is 👍" : `סבבה, התור נשאר כמו שהוא 👍` };
     }
     return { context: `שאלת את הלקוח אם לבטל את ${what} והוא ענה משהו אחר: "${text.slice(0, 120)}". אם הוא רוצה להזיז במקום לבטל — request_appointment_move; אם רוצה לבטל בכל זאת — cancel_appointment עם המזהה שבהנחיות, אחרי אישור.` };
   }
@@ -438,14 +483,14 @@ export async function handleIncomingForProposal(p: {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { customerName: full, note: JSON.stringify({ ...meta, awaitingName: false, partialName: null }) } });
         const grp = (meta as { group?: GroupItem[] }).group;
         return { reply: grp?.length
-          ? groupConfirmationQuestion({ firstName: firstNameOf(full), mainName: full, serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp })
-          : confirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", mentionStaff: !!meta.mentionStaff, date: dateISO, startTime: pending.startTime ?? "" }) };
+          ? groupConfirmationQuestion({ firstName: firstNameOf(full), mainName: full, serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp, lang: await convLang(pending.conversationId) })
+          : confirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", mentionStaff: !!meta.mentionStaff, date: dateISO, startTime: pending.startTime ?? "", lang: await convLang(pending.conversationId) }) };
       };
       if (nm?.full) return finish(nm.full);
       if (nm?.partial && meta.partialName) return finish(`${meta.partialName} ${nm.partial}`);
       if (nm?.partial) {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify({ ...meta, partialName: nm.partial }) } });
-        return { reply: FAMILY_NAME_QUESTION };
+        return { reply: nameQuestion(await convLang(pending.conversationId), true) };
       }
       return { context: `ביקשת מהלקוח שם מלא כדי לסגור תור (${what}) והוא ענה משהו שאינו שם: "${text.slice(0, 120)}". טפל במה שכתב, ואז בקש שוב שם מלא (פרטי + משפחה); כשיש שם מלא קרא ל-propose_booking עם אותם פרטים ו-customerName.` };
     }
