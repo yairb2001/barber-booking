@@ -336,7 +336,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const bizSettings: Record<string, unknown> = (() => {
     try { return biz.settings ? JSON.parse(biz.settings) : {}; } catch { return {}; }
   })();
-  if (bizSettings.ownerAgentEnabled === true) {
+  // Retired for every business (owner, 16.10.2026): "יש API, זה מספיק" — the
+  // agent gateway (/api/agent/gateway) does owner actions. Kept behind a
+  // constant so the routing can come back without digging through history.
+  const OWNER_WA_AGENT_ON = false as boolean;
+  if (OWNER_WA_AGENT_ON && bizSettings.ownerAgentEnabled === true) {
     try {
       const ownerPhone = bizSettings.ownerLoginPhone
         ? normalizeIsraeliPhone(String(bizSettings.ownerLoginPhone))

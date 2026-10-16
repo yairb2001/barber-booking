@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
+import { chatScopeOf, ownCustomerKeys } from "@/lib/chat-access";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
 
@@ -39,15 +40,18 @@ export async function GET(req: NextRequest) {
   // Permission enforcement: a barber may only read the shared inbox when granted
   // "view all chats" (per-staff flag OR business-wide flag). Otherwise no access.
   const perms = await getEffectivePermissions(req);
-  if (!perms.isOwner && !perms.canViewAllChats) {
+  const scope = await chatScopeOf(perms);
+  if (scope === "none") {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  // "Only his customers": conversations of people with an appointment with him.
+  const mine = scope === "own" && perms.staffId ? await ownCustomerKeys(business.id, perms.staffId) : null;
 
   // Hide owner-agent threads — those are the owner's private admin-command chats,
   // not customer conversations that need handling.
   const where: Record<string, unknown> = { businessId: business.id, agentType: { not: "owner" } };
 
-  const convs = await prisma.conversation.findMany({
+  const convsAll = await prisma.conversation.findMany({
     where,
     orderBy: { lastMessageAt: "desc" },
     take: 500,
@@ -61,6 +65,7 @@ export async function GET(req: NextRequest) {
       },
     },
   });
+  const convs = mine ? convsAll.filter(c => (!!c.customerId && mine.ids.has(c.customerId)) || mine.phones.has(normalizeIsraeliPhone(c.phone))) : convsAll;
 
   // Phone-based fallback: build a lookup of all customers in the business
   // keyed by their normalized phone. Conversations without a linked customerId

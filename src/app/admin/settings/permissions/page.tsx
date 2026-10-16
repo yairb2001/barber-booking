@@ -20,7 +20,6 @@ type StaffRow = {
 const PER_STAFF = [
   { key: "canViewAllCalendars", short: "יומנים", label: (v: Vocab) => `צפייה ביומנים של ${v.staffPlural} ${v.staffFem ? "אחרות" : "אחרים"}` },
   { key: "canViewAllChats", short: "שיחות", label: () => "גישה לשיחות WhatsApp" },
-  { key: "canUseOwnerAgent", short: "סוכן מנהל", label: () => "שליחת פקודות ניהול לסוכן בוואטסאפ" },
 ] as const;
 
 type PermKey = (typeof PER_STAFF)[number]["key"];

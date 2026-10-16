@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
+import { canAccessConversation } from "@/lib/chat-access";
 
 // POST /api/admin/chats/[id]/toggle-agent
 // Body: { active: boolean }
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // Permission enforcement: barber needs "view all chats" to manage the inbox.
   const perms = await getEffectivePermissions(req);
-  if (!perms.isOwner && !perms.canViewAllChats) {
+  if (!(await canAccessConversation(perms, business.id, params.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

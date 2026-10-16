@@ -96,6 +96,7 @@ export default function StaffSettingsPage() {
   const [canViewAllCalendars, setCanViewAllCalendars] = useState(false);
   const [canViewAllChats,     setCanViewAllChats]     = useState(false);
   const [fullAccess, setFullAccess] = useState(false);
+  const [chatScope, setChatScope] = useState<"all" | "own" | "none">("none");
   const [canUseOwnerAgent,    setCanUseOwnerAgent]    = useState(false);
   const [permSaved, setPermSaved] = useState(false);
 
@@ -130,6 +131,7 @@ export default function StaffSettingsPage() {
     setCanViewAllCalendars(!!data.canViewAllCalendars);
     setCanViewAllChats(!!data.canViewAllChats);
     setFullAccess(data.role === "owner");
+    setChatScope(data.canViewAllChats ? "all" : (() => { try { return JSON.parse(data.settings || "{}").chatScope === "own" ? "own" : "none"; } catch { return "none"; } })());
     setCanUseOwnerAgent(!!data.canUseOwnerAgent);
     setTagline(data.tagline ?? "");
     setLoading(false);
@@ -265,7 +267,7 @@ export default function StaffSettingsPage() {
     await fetch(`/api/admin/staff/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canViewAllCalendars, canViewAllChats, canUseOwnerAgent, fullAccess }),
+      body: JSON.stringify({ canViewAllCalendars, canViewAllChats: chatScope === "all", settingsPatch: { chatScope: chatScope === "own" ? "own" : null }, canUseOwnerAgent, fullAccess }),
     });
     setSaving(false);
     setPermSaved(true);
@@ -724,43 +726,22 @@ export default function StaffSettingsPage() {
             </button>
           </div>
 
-          {/* canViewAllChats toggle */}
-          <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">💬 צפייה בכל השיחות</p>
-              <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לראות את כל שיחות הוואטסאפ של העסק, לא רק של לקוחות {v.staffFem ? "שלה" : "שלו"}.
-                מתאים ל{v.staff} {v.staffFem ? "בכירה שמטפלת" : "בכיר שמטפל"} בלקוחות של אחרים.
-              </p>
+          {/* WhatsApp chats — three levels (owner, 16.10.2026) */}
+          <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+            <p className="text-sm font-semibold text-slate-900">💬 שיחות וואטסאפ</p>
+            <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">אילו שיחות {staff.name} רואה בתיבת השיחות.</p>
+            <div className="mt-3 grid grid-cols-3 gap-1.5">
+              {([["own", v.staffFem ? "רק הלקוחות שלה" : "רק הלקוחות שלו"], ["all", "הכל"], ["none", "לא רואה"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setChatScope(k)}
+                  className={`py-2 rounded-lg text-xs font-semibold border transition ${chatScope === k ? "bg-teal-600 text-white border-teal-600" : "bg-white text-slate-600 border-slate-200"}`}>
+                  {label}
+                </button>
+              ))}
             </div>
-            <button
-              type="button"
-              onClick={() => setCanViewAllChats(v => !v)}
-              className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canViewAllChats ? "bg-teal-500" : "bg-neutral-300"}`}
-            >
-              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canViewAllChats ? "right-1" : "right-6"}`} />
-            </button>
+            <p className="text-[11px] text-slate-400 mt-2 leading-relaxed">
+              {chatScope === "own" ? `רק שיחות של לקוחות שיש או היה להם תור אצל ${staff.name}.` : chatScope === "all" ? "כל שיחות הוואטסאפ של העסק." : "אין גישה לשיחות."}
+            </p>
           </div>
-
-          {/* canUseOwnerAgent toggle — owners always have access; this grants it to a barber */}
-          {staff.role !== "owner" && (
-            <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-slate-900">🤖 סוכן אישי בוואטסאפ</p>
-                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לשלוח פקודות ניהול לסוכן בוואטסאפ (להחליף תורים, לבטל,
-                  לשלוח הודעה לכל לקוחות היום). לבעלים יש גישה תמיד; הפעל בזהירות — זו סמכות מלאה.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCanUseOwnerAgent(v => !v)}
-                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${canUseOwnerAgent ? "bg-teal-500" : "bg-neutral-300"}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${canUseOwnerAgent ? "right-1" : "right-6"}`} />
-              </button>
-            </div>
-          )}
 
           <button onClick={savePermissions} disabled={saving}
             className={`w-full py-2.5 rounded-xl text-sm font-semibold transition ${permSaved ? "bg-emerald-100 text-emerald-700" : "bg-teal-600 text-white hover:bg-teal-700"} disabled:opacity-50`}>

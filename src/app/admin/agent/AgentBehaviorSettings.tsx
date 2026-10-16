@@ -227,56 +227,8 @@ export default function AgentBehaviorSettings() {
         )}
       </div>
 
-      {/* ── Personal WhatsApp agent (owner commands) ── */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <label className="text-sm text-neutral-800 font-semibold block">🤖 סוכן אישי בוואטסאפ</label>
-            <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
-              מאפשר לשלוח פקודות ניהול לסוכן ישירות בוואטסאפ — להזיז ולהחליף תורים, לבטל,
-              לקבוע ללקוח, ולשלוח הודעה לכל לקוחות היום. סמכות מלאה, ללא אישור לקוח.
-            </p>
-          </div>
-          {ownerSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}
-        </div>
-
-        <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200">
-          <div>
-            <p className="text-[13px] text-neutral-800 font-medium">הפעלה כללית</p>
-            <p className="text-[11px] text-neutral-500 mt-0.5">כיבוי כאן מבטל את הסוכן האישי לכולם — גם לך וגם למנהלי המשנה.</p>
-          </div>
-          <button
-            type="button"
-            disabled={ownerSaving}
-            onClick={() => { const v = !ownerAgentEnabled; setOwnerAgentEnabled(v); saveOwnerAgent({ enabled: v }); }}
-            className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${ownerAgentEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
-          >
-            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ownerAgentEnabled ? "right-1" : "right-6"}`} />
-          </button>
-        </div>
-
-        <div className={`flex items-center justify-between gap-3 mt-3 pt-3 border-t border-slate-200 ${ownerAgentEnabled ? "" : "opacity-40 pointer-events-none"}`}>
-          <div>
-            <p className="text-[13px] text-neutral-800 font-medium">הפעלה עבורי</p>
-            <p className="text-[11px] text-neutral-500 mt-0.5">כיבוי כאן מבטל את הסוכן עבורך בלבד; מנהלי משנה עם הרשאה ימשיכו להשתמש.</p>
-          </div>
-          <button
-            type="button"
-            disabled={ownerSaving || !ownerAgentEnabled}
-            onClick={() => { const v = !ownerAgentSelfEnabled; setOwnerAgentSelfEnabled(v); saveOwnerAgent({ selfEnabled: v }); }}
-            className={`w-12 h-6 rounded-full transition-colors relative shrink-0 disabled:opacity-50 ${ownerAgentSelfEnabled ? "bg-teal-500" : "bg-neutral-300"}`}
-          >
-            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${ownerAgentSelfEnabled ? "right-1" : "right-6"}`} />
-          </button>
-        </div>
-
-        <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
-          <span className="text-[12px] text-neutral-700">👥 הרשאה למנהלי משנה (פר {v.staff})</span>
-          <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
-            ניהול גישות ←
-          </a>
-        </div>
-      </div>
+      {/* The personal WhatsApp agent (owner commands) was retired for every
+          business on 16.10.2026 — the agent gateway API covers it. */}
 
       {/* ── Agent gateway (external CEO bot) ── */}
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">

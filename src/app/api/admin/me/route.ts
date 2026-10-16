@@ -11,6 +11,7 @@ import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
 import { getPlans, planKeyOf } from "@/lib/crm/plans";
 import { verifySession, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
+import { chatScopeOf } from "@/lib/chat-access";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -131,6 +132,7 @@ export async function GET(req: NextRequest) {
 
   // Effective permissions: owner = all; barber = per-staff flag OR business-wide flag.
   const perms = await getEffectivePermissions(req);
+  const chatScope = await chatScopeOf(perms);
 
   const rootBusinessId = await getRootBusinessId();
   const isRootBusiness = session.businessId === rootBusinessId;
@@ -194,7 +196,8 @@ export async function GET(req: NextRequest) {
     // Backward-compatible field names — now reflect the EFFECTIVE permission
     // (per-staff OR business-wide), so existing UI gating keeps working.
     barbersCanViewOthersCalendar: perms.canViewAllCalendars,
-    barbersCanAccessChats: perms.canViewAllChats,
+    barbersCanAccessChats: chatScope !== "none",
+    chatScope,
     referralProgramEnabled: getReferralConfig(business?.settings ?? null).enabled,
     cancellationPolicyMode: business?.cancellationPolicyMode ?? "owner",
     minCancellationHours: business?.minCancellationHours ?? 0,

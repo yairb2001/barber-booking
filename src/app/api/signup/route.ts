@@ -96,6 +96,9 @@ export async function POST(req: NextRequest) {
         slug,
         phone: ownerPhone,
         passwordHash,
+        // WhatsApp chats are on from day one (owner, 16.10.2026); the owner
+        // decides per staff member who sees them.
+        chatsEnabled: true,
         businessType,
         // Every Chator plan includes the agent (plans are WhatsApp quotas), so the
         // tier that unlocks it. "basic" blocked the agent for every self-signup (14.10.2026).

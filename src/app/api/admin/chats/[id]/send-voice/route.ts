@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
+import { canAccessConversation } from "@/lib/chat-access";
 import { providerForBusiness } from "@/lib/messaging";
 
 // POST /api/admin/chats/[id]/send-voice — a voice note recorded in the admin
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const business = await getSessionBusiness(req, { id: true, chatsEnabled: true });
   if (!business?.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
   const perms = await getEffectivePermissions(req);
-  if (!perms.isOwner && !perms.canViewAllChats) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!(await canAccessConversation(perms, business.id, params.id))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const form = await req.formData();
   const file = form.get("file") as File | null;

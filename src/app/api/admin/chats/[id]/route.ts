@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
+import { canAccessConversation } from "@/lib/chat-access";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   // Permission enforcement: a barber may only open a conversation when granted
   // "view all chats" (per-staff flag OR business-wide flag).
   const perms = await getEffectivePermissions(req);
-  if (!perms.isOwner && !perms.canViewAllChats) {
+  if (!(await canAccessConversation(perms, business.id, params.id))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
