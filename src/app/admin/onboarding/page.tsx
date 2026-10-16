@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
 import { setupFieldsFor, SERVICE_LIST, isServiceList, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
 import FreeTextCard from "../agent/FreeTextCard";
+import StyleHelper from "../agent/StyleHelper";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
@@ -339,7 +340,11 @@ export default function OnboardingPage() {
             {[true, false].map(v => { const on = (setup[f.key] ?? f.default) === v; return <button key={String(v)} type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: v }))} className={chip(on)} style={on ? { background: C.petrol } : {}}>{v ? "כן" : "לא"}</button>; })}
           </div>
         ) : f.multiline ? (
-          <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : hint || "כמה מילים בסגנון שלך"} />
+          <>
+            <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={3} placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : hint || "כמה מילים בסגנון שלך"} />
+            {/* Examples of his voice without exporting chats (16.10.2026). */}
+            {f.key === "styleSamples" && <StyleHelper value={String(setup[f.key] ?? "")} onChange={v => setSetup(s => ({ ...s, [f.key]: v }))} />}
+          </>
         ) : typeof f.default === "string" && f.default.length > 32 ? (
           // A long default (who gets escalated) shows whole, not cut off on a phone.
           <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={2} placeholder={f.default} />

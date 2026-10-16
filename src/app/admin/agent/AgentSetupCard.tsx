@@ -9,6 +9,7 @@
  */
 
 import { SERVICE_LIST, isServiceList } from "@/lib/agent/setup-fields";
+import StyleHelper from "./StyleHelper";
 
 export type SetupFieldDTO = {
   key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool";
@@ -97,7 +98,10 @@ export default function AgentSetupCard({ fields, answers, onChange, history, onR
                     className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     placeholder={f.key === "styleSamples" ? "הודעה אחת בכל שורה" : f.key === "businessRules" || f.key === "staffRules" ? "שורה לכל כלל" : "כמה מילים בסגנון שלך"}
                   />
-                ) : (
+                ) : null}
+                {/* Examples of his voice without exporting chats (16.10.2026). */}
+                {f.key === "styleSamples" && <StyleHelper value={typeof answers[f.key] === "string" ? String(answers[f.key]) : ""} onChange={v => onChange(f.key, v)} />}
+                {!(f.type === "choice" && f.options) && f.type !== "bool" && !f.multiline && (
                   <input
                     value={typeof answers[f.key] === "string" && !(f.key === "defaultService" && isServiceList(answers[f.key])) ? String(answers[f.key]) : ""}
                     onChange={e => onChange(f.key, e.target.value)}
