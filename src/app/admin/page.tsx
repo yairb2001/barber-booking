@@ -3723,12 +3723,21 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
   // this barber has on this day, the wizard (shown instead of saving when a
   // close/cut would displace them), and the open closure card for the day.
   const [dayApptCount, setDayApptCount] = useState<number>(0);
+  // The real number of customers that day — hidden ones included (owner,
+  // 16.10.2026: hiding cleans the calendar, it mustn't shrink the count).
+  const [dayTotal, setDayTotal] = useState<number>(0);
   const [wizard, setWizard] = useState<{ fromTime?: string | null; toTime?: string | null } | null>(null);
   const [openClosureId, setOpenClosureId] = useState<string | null>(null);
   useEffect(() => {
-    fetch(`/api/admin/appointments?date=${date}&staffId=${staffId}`).then(r => r.ok ? r.json() : [])
-      .then((rows: { status?: string }[]) => setDayApptCount(Array.isArray(rows) ? rows.filter(a => a.status === "confirmed" || a.status === "pending").length : 0))
-      .catch(() => setDayApptCount(0));
+    fetch(`/api/admin/appointments?date=${date}&staffId=${staffId}&includeHidden=1`).then(r => r.ok ? r.json() : [])
+      .then((rows: { status?: string; hiddenAt?: string | null }[]) => {
+        const list = Array.isArray(rows) ? rows : [];
+        const live = (a: { status?: string }) => a.status === "confirmed" || a.status === "pending" || a.status === "completed";
+        setDayTotal(list.filter(live).length);
+        // The closure wizard only concerns visible, still-active appointments.
+        setDayApptCount(list.filter(a => !a.hiddenAt && (a.status === "confirmed" || a.status === "pending")).length);
+      })
+      .catch(() => { setDayApptCount(0); setDayTotal(0); });
     fetch("/api/admin/closures?status=active").then(r => r.ok ? r.json() : [])
       .then((rows: { id: string; date: string; staffId: string }[]) => setOpenClosureId(rows.find(c => c.date === date && c.staffId === staffId)?.id ?? null))
       .catch(() => {});
@@ -4000,8 +4009,10 @@ function DayPanel({ date, staffId, onClose, onRefresh }: { date: string; staffId
             {israeliHoliday(date) && (
               <p className="text-xs font-semibold text-amber-600 mt-0.5">🕎 {israeliHoliday(date)} — שימו לב לפני פתיחת שעות</p>
             )}
-            {dayApptCount > 0 && !openClosureId && (
-              <p className="text-xs font-semibold text-teal-700 mt-0.5">ביום הזה יש {dayApptCount} תורים</p>
+            {dayTotal > 0 && (
+              <p className="text-xs font-semibold text-teal-700 mt-0.5">
+                {date < new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10) ? `ביום הזה היו ${dayTotal === 1 ? "לקוח אחד" : `${dayTotal} לקוחות`}` : `ביום הזה יש ${dayTotal === 1 ? "תור אחד" : `${dayTotal} תורים`}`}
+              </p>
             )}
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">✕</button>
