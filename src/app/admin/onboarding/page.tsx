@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
 import { setupFieldsFor, SERVICE_LIST, isServiceList, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
+import FreeTextCard from "../agent/FreeTextCard";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
@@ -494,6 +495,9 @@ export default function OnboardingPage() {
         <Card title="הסוכן" sub="הבסיס מוכן. כאן רק מה שמיוחד אצלך.">
           <Field label="איך לקוחות יקראו לו" help="השם של הסוכן. אם לקוח שואל עם מי הוא מדבר, זה השם שהסוכן יגיד."><input value={agentName} onChange={e => setAgentName(e.target.value)} className={input} placeholder="הסוכן" /></Field>
           {fields.filter(isMainQuestion).map(renderField)}
+
+          {/* Anything else, in his own words: the model maps it onto the questions (16.10.2026). */}
+          <div className="mt-4"><FreeTextCard author="wizard" onApplied={p => setSetup(s => ({ ...s, ...p.setup, ...(p.rules !== null ? { businessRules: p.rules } : {}) }))} /></div>
 
           {/* The rest can wait: folded, so the first setup stays short (13.10.2026). */}
           <button type="button" onClick={() => setMoreQs(v => !v)} className="mt-5 w-full flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold" style={{ color: C.petrol }} aria-expanded={moreQs}>

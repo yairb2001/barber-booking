@@ -7,6 +7,7 @@ import { WhatsAppConnectCard } from "@/components/WhatsAppQrPanel";
 import AgentSetupCard, { type Answers, type SetupFieldDTO, type SetupHistoryDTO } from "./AgentSetupCard";
 import AgentFeedbackCard from "./AgentFeedbackCard";
 import TesterCard from "./TesterCard";
+import FreeTextCard from "./FreeTextCard";
 
 type FAQ = { id?: string; question: string; answer: string; sortOrder?: number };
 type Config = {
@@ -498,6 +499,9 @@ export default function AdminAgentPage() {
               </div>
             )}
           </div>
+
+          {/* The owner's own words, mapped onto the answers below (16.10.2026) */}
+          <FreeTextCard onApplied={p => setAnswers(a => ({ ...a, ...p.setup, ...(p.rules !== null ? { businessRules: p.rules } : {}) }))} />
 
           {/* Setup answers — how a shop shapes its agent */}
           <AgentSetupCard
