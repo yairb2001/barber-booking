@@ -1,3 +1,5 @@
+import { legacyGenerate } from "@/lib/availability/engine";
+
 // Parse time string "HH:MM" to minutes since midnight
 export function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
@@ -11,49 +13,22 @@ export function minutesToTime(minutes: number): string {
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
 }
 
-// Get available time slots for a staff member on a given date
+// Get available time slots for a staff member on a given date. The rule lives
+// in the availability engine (src/lib/availability/engine.ts, legacyGenerate):
+// step by the duration, and after a break or a booking re-anchor to its end —
+// a 40-min appointment ending at 10:40 opens the next slot at 10:40, not 11:00.
 export function generateSlots(
   scheduleSlots: { start: string; end: string }[],
   breaks: { start: string; end: string }[] | null,
   durationMinutes: number,
   bookedSlots: { startTime: string; endTime: string }[]
 ): string[] {
-  const available: string[] = [];
-
-  // Merge breaks + booked appointments into one sorted list of "busy" intervals.
-  // Both block time AND re-anchor the grid (see the loop below).
   const blockers = [
-    ...(breaks || []).map((b) => ({ start: timeToMinutes(b.start), end: timeToMinutes(b.end) })),
-    ...bookedSlots.map((b) => ({ start: timeToMinutes(b.startTime), end: timeToMinutes(b.endTime) })),
-  ].sort((a, b) => a.start - b.start);
-
-  for (const slot of scheduleSlots) {
-    let current = timeToMinutes(slot.start);
-    const slotEnd = timeToMinutes(slot.end);
-
-    while (current + durationMinutes <= slotEnd) {
-      // Does the candidate [current, current+duration] overlap a busy interval?
-      const hit = blockers.find(
-        (b) => current < b.end && current + durationMinutes > b.start
-      );
-
-      if (hit) {
-        // RE-ANCHOR to the end of the blocking interval instead of stepping by a
-        // rigid `duration`. This is the fix for the "dead gap" bug: a 40-min
-        // appointment ending at 10:40 no longer forces the next slot to the rigid
-        // 11:00 grid mark — the next candidate opens exactly at 10:40. hit.end is
-        // always > current (the overlap test guarantees current < hit.end), so
-        // this always advances and can't loop forever.
-        current = hit.end;
-        continue;
-      }
-
-      available.push(minutesToTime(current));
-      current += durationMinutes; // free window: step by service duration
-    }
-  }
-
-  return available;
+    ...(breaks || []).map((b) => ({ s: timeToMinutes(b.start), e: timeToMinutes(b.end) })),
+    ...bookedSlots.map((b) => ({ s: timeToMinutes(b.startTime), e: timeToMinutes(b.endTime) })),
+  ];
+  const windows = scheduleSlots.map((w) => ({ s: timeToMinutes(w.start), e: timeToMinutes(w.end) }));
+  return legacyGenerate(windows, blockers, durationMinutes).map(minutesToTime);
 }
 
 // Format date to YYYY-MM-DD
