@@ -23,6 +23,7 @@ import { dayDistance } from "@/lib/day-distance";
 import { randomUUID } from "crypto";
 import { loadDayContext, findUpsell } from "@/lib/availability/visit";
 import { prisma } from "@/lib/prisma";
+import { agentSwitches } from "@/lib/agent/setup-fields";
 import { holdSlot, releaseHolds, holderKeyForPhone } from "@/lib/slot-holds";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { resolvePick } from "@/lib/closures/reply";
@@ -227,6 +228,8 @@ const OTHER_INTENT = /לקבוע|להזיז|להעביר|לדחות|במקום|�
 export async function maybeStartCancelFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null }): Promise<ProposalOutcome> {
   const text = p.text.trim();
   if (!CANCEL_INTENT.test(text) || OTHER_INTENT.test(text) || text.split(/\s+/).length > 14 || !p.customer) return {};
+  // The business said cancelling goes through it, not the agent (16.10.2026): the model escalates instead.
+  if (!agentSwitches((await prisma.agentConfig.findUnique({ where: { businessId: p.businessId }, select: { setupConfig: true } }))?.setupConfig).allowCancel) return {};
   const nowBiz = getBusinessNow();
   const todayStart = new Date(nowBiz.date + "T00:00:00.000Z");
   const upcoming = (await prisma.appointment.findMany({
@@ -358,7 +361,9 @@ export async function bookConfirmedProposal(p: {
   const lang = await convLang(pending.conversationId);
   if (visit) return { booked: booked.length, reply: visitBookedMessage({ date: dateISO, items: booked, lang }) };
   if (jobs.length > 1) return { booked: booked.length, reply: groupBookedMessage({ staffName: meta.staffName ?? "", date: dateISO, booked: booked.map(b => ({ name: b.name, startTime: b.startTime, staffName: b.staffName })), lang }) };
-  let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest, lang });
+  // No waitlist at this business → no "want me to let you know" line (16.10.2026).
+  const waitlistOk = !meta.originalRequest || !pending.conversationId || agentSwitches((await prisma.agentConfig.findFirst({ where: { business: { conversations: { some: { id: pending.conversationId } } } }, select: { setupConfig: true } }))?.setupConfig).offerWaitlist;
+  let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: waitlistOk ? meta.originalRequest : null, lang });
   // The extra treatment right after it (16.10.2026), never after an offer that was itself extra.
   if (!meta.upsell && !meta.originalRequest) {
     const q = await offerUpsell({ proposalId: pending.id, dateISO, mainName, sandbox: !!p.sandbox }).catch(e => { console.error("[upsell]", e); return null; });

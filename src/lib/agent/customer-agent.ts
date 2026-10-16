@@ -37,7 +37,7 @@ import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
-import { isServiceList, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
+import { isServiceList, agentSwitches, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
 import { vocabFor, vocabOf, staffChoiceOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
@@ -609,6 +609,13 @@ const V3_DROP = new Set(["get_staff_list", "get_services", "check_appointment", 
 export function selectTools(all: Anthropic.Tool[], o: { v3: boolean; hasCatalog: boolean }): Anthropic.Tool[] {
   if (!o.v3) return all.filter(t => t.name !== "propose_booking");
   return all.filter(t => !V3_DROP.has(t.name) || (!o.hasCatalog && (t.name === "get_staff_list" || t.name === "get_services")));
+}
+
+/** "No" to cancelling or to the waitlist takes the tool away, not only the wording (16.10.2026).
+ *  Stable per business, so the cached prefix stays stable; the cache marker sits on the last tool. */
+export function toolsForSwitches(tools: Anthropic.Tool[], setupConfig: string | null | undefined): Anthropic.Tool[] {
+  const sw = agentSwitches(setupConfig);
+  return tools.filter(t => !(t.name === "cancel_appointment" && !sw.allowCancel) && !(t.name === "join_waitlist" && !sw.offerWaitlist));
 }
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
@@ -1930,7 +1937,7 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
   // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
   const flags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim() });
-  const pingTools = selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock });
+  const pingTools = toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock }), agentConfig?.setupConfig);
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
@@ -2611,7 +2618,7 @@ export async function runCustomerAgent(opts: {
     customerContext,
   });
   const promptV3 = promptFlags.v3;
-  const tools = sandbox?.toolsOverride ?? selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock });
+  const tools = sandbox?.toolsOverride ?? toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock }), setupForPrompt);
   const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────

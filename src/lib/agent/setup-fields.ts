@@ -34,7 +34,24 @@ export const TEMPLATE_CONSUMED_SETUP_KEYS = new Set([
   "tone", "emojis", "address", "defaultService", "barberAssign",
   "priceNote", "cancelPolicy", "deposit", "walkin", "location", "payment",
   "styleNotes", "styleSamples", "escalateWhen", "platformNotes", "businessRules",
+  "allowCancel", "offerWaitlist", "priceWithSlots", "tellStaff", "offerBooking",
 ]);
+
+/**
+ * What the agent may do, yes/no per business (16.10.2026, Yair: behaviors that
+ * were fixed in the base and really differ between shops). Each answer replaces
+ * its own section of the base (prompt-template.ts); "no" to cancelling or to the
+ * waitlist also takes that tool away (customer-agent.ts, toolsForSwitches).
+ */
+export type AgentSwitches = { allowCancel: boolean; offerWaitlist: boolean; priceWithSlots: boolean; tellStaff: boolean; offerBooking: boolean };
+export function agentSwitches(setup: string | SetupConfig | null | undefined): AgentSwitches {
+  let c: SetupConfig = {};
+  if (typeof setup === "string") { try { c = JSON.parse(setup); } catch { c = {}; } } else if (setup) c = setup;
+  return {
+    allowCancel: c.allowCancel !== false, offerWaitlist: c.offerWaitlist !== false,
+    priceWithSlots: c.priceWithSlots === true, tellStaff: c.tellStaff === true, offerBooking: c.offerBooking !== false,
+  };
+}
 
 /** Written only by the platform (CRM card / promote script), never asked in the
  *  interview: what is unique to one business and has no question of its own
@@ -154,6 +171,32 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
     default: () => "עד שעתיים לפני התור",
     question: () => "עד כמה זמן לפני התור מותר לבטל בלי בעיה? (ברירת מחדל: עד שעתיים לפני)",
     compile: v => `מדיניות ביטול: אפשר לבטל ${v}.`,
+  },
+  // ── What the agent may do (16.10.2026) ──
+  {
+    key: "allowCancel", label: "ביטול דרך הסוכן", group: "מה הסוכן עושה", core: false, type: "bool", default: () => true,
+    question: v => `${v.customerFem ? "לקוחה יכולה" : "לקוח יכול"} לבטל תור דרך הסוכן? כן / לא (לא: הסוכן מעביר אליך את בקשת הביטול)`,
+    compile: () => "",
+  },
+  {
+    key: "offerWaitlist", label: "רשימת המתנה", group: "מה הסוכן עושה", core: false, type: "bool", default: () => true,
+    question: () => "כשהשעה שרצו תפוסה, להציע רשימת המתנה? כן / לא",
+    compile: () => "",
+  },
+  {
+    key: "priceWithSlots", label: "מחיר עם השעות", group: "מה הסוכן עושה", core: false, type: "bool", default: () => false,
+    question: () => "לציין מחיר כבר כשמציעים שעות? כן / לא (לא: רק כששואלים)",
+    compile: () => "",
+  },
+  {
+    key: "tellStaff", label: "להגיד אצל מי", group: "מה הסוכן עושה", core: false, type: "bool", default: () => false,
+    question: v => `להגיד ${v.customerFem ? "ללקוחה" : "ללקוח"} אצל מי התור, גם כשלא ${v.customerFem ? "ביקשה" : "ביקש"} מישהו מסוים? כן / לא`,
+    compile: () => "",
+  },
+  {
+    key: "offerBooking", label: "להציע לקבוע", group: "מה הסוכן עושה", core: false, type: "bool", default: () => true,
+    question: v => `אחרי ששאלו שאלה כללית (מחיר, מיקום), להציע ${v.customerFem ? "לה" : "לו"} לקבוע תור? כן / לא`,
+    compile: () => "",
   },
   {
     key: "deposit", label: "מקדמה", group: "מדיניות", core: false, type: "bool", default: () => false,

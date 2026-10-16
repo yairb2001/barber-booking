@@ -395,6 +395,9 @@ export async function requestAppointmentMove(opts: {
   // Don't bother the barber or another customer yet. Only when the customer
   // explicitly insists on the exact taken time (insistExactTime=true) do we fall
   // through to the swap-approval flow below.
+  // The business turned swap offers off (agent page): don't even mention one here
+  // (16.10.2026: the switch was only checked when the customer insisted).
+  const swapOn = (await prisma.agentConfig.findUnique({ where: { businessId: bizId }, select: { allowSwapOffers: true } }))?.allowSwapOffers !== false;
   if (!insistExactTime) {
     // Business opt-in: even when a SPECIFIC barber was requested, check if
     // another barber has this EXACT time free and offer it too. Only when
@@ -409,7 +412,7 @@ export async function requestAppointmentMove(opts: {
       : "";
     const sameNearest = nearestSlots(sameSlots, targetStartTime);
     if (sameNearest.length) {
-      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן עד שיש תשובה, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור בעצמו: אם הוא בוחר אחד מהזמנים הפנויים, קרא שוב ל-request_appointment_move עם השעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime}, קרא שוב עם insistExactTime=true.${otherBarberLine}`;
+      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. הזמנים הפנויים הכי קרובים אצלו באותו יום: ${sameNearest.join(", ")}. הצע ללקוח את הזמנים האלה${swapOn ? `, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן עד שיש תשובה, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור בעצמו: אם הוא בוחר אחד מהזמנים הפנויים, קרא שוב ל-request_appointment_move עם השעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime}, קרא שוב עם insistExactTime=true.` : `. אל תזכיר שיש שם לקוח אחר ואל תציע החלפה. בחר זמן → קרא שוב ל-request_appointment_move עם השעה שבחר.`}${otherBarberLine}`;
     }
     if (allowOtherBarber) {
       const allAvail = await computeDayAvailability(bizId, targetDate, undefined, appt.serviceId);
@@ -419,14 +422,14 @@ export async function requestAppointmentMove(opts: {
         .filter(s => s.slots.length);
       if (otherFree.length) {
         const lines = otherFree.map(s => `${s.name}: ${s.slots.join(", ")}`).join(" | ");
-        return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} אצל ${appt.staff.name} — זה דורש אישור גם ממנו וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור: אם הוא בוחר אחת מהאפשרויות הפנויות, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.`;
+        return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} לא פנויה אצל ${appt.staff.name}. זמנים פנויים קרובים אצל ספרים אחרים: ${lines}. הצע ללקוח את האפשרויות האלה${swapOn ? `, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} אצל ${appt.staff.name} — זה דורש אישור גם ממנו וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. תן לו לבחור: אם הוא בוחר אחת מהאפשרויות הפנויות, קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר. אם הוא מעדיף בכל זאת שתנסה בהחלפה על ${targetStartTime} אצל ${appt.staff.name}, קרא שוב עם insistExactTime=true.` : `. אל תזכיר שיש שם לקוח אחר ואל תציע החלפה. בחר אפשרות → קרא שוב ל-request_appointment_move עם allowOtherBarber=true והשעה שבחר.`}`;
       }
     }
     // No free alternatives that day. Still don't bother anyone yet — the swap
     // flow only actually starts (barber gets asked) once the customer opts in
     // via insistExactTime=true — but proactively OFFER that option every time,
     // don't wait for the customer to insist on their own.
-    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או ספר אחר, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} שביקש — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. אם הלקוח בוחר באפשרות הזו, קרא שוב ל-request_appointment_move עם insistExactTime=true.${otherBarberLine}`;
+    return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. אין אף שעה פנויה ב-${hebDate(dateOnly(targetDate))} אצל ${appt.staff.name} (היום עמוס). הצע ללקוח יום אחר קרוב (קרא ל-find_next_available) או ספר אחר${swapOn ? `, ובנוסף ציין שיש גם אפשרות לעשות החלפה עם התור שתפוס בדיוק בשעה ${targetStartTime} שביקש — זה דורש אישור גם מ${appt.staff.name} וגם מהלקוח שיושב שם עכשיו, ויכול לקחת זמן, אבל אף אחד לא מוטרד לפני שהספר מאשר. אם הלקוח בוחר באפשרות הזו, קרא שוב ל-request_appointment_move עם insistExactTime=true.` : `. אל תזכיר שיש שם לקוח אחר ואל תציע החלפה.`}${otherBarberLine}`;
   }
 
   // ── Master switch: swap offers disabled for this business ──────────────────
