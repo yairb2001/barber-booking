@@ -20,6 +20,8 @@
  * Everything the model used to do here is deterministic, so it is code.
  */
 import { dayDistance } from "@/lib/day-distance";
+import { randomUUID } from "crypto";
+import { loadDayContext, findUpsell } from "@/lib/availability/visit";
 import { prisma } from "@/lib/prisma";
 import { holdSlot, releaseHolds, holderKeyForPhone } from "@/lib/slot-holds";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -71,7 +73,24 @@ export function bookedMessage(p: { staffName: string; date: string; startTime: s
 
 /** Extra appointments booked in the same confirmation (owner, 14.10.2026: two
  *  customers came for two and found one — the second was never proposed). */
-export type GroupItem = { staffId: string; staffName: string; startTime: string; forName: string };
+export type GroupItem = {
+  staffId: string; staffName: string; startTime: string; forName: string;
+  /** A visit (16.10.2026): another treatment for the same customer, right after
+   *  the one before it, maybe with someone else. forName is empty then. */
+  serviceId?: string; serviceName?: string;
+};
+const isVisit = (g?: GroupItem[]) => !!g?.some(x => x.serviceId);
+
+/** One question for the whole visit: "לייזר ב-10:00 אצל דנה, ואחריו לק ג'ל ב-10:40 אצל שירן". */
+export function visitConfirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[] }): string {
+  const who = p.firstName ? `${p.firstName}, ` : "";
+  const rest = p.group.map(g => `${g.serviceName} ב-${g.startTime} אצל ${g.staffName}`);
+  return `${who}רגע לפני שאני קובע סופית, ${dayLabelWithDistance(p.date)}: ${p.serviceName} ב-${p.startTime} אצל ${p.staffName}, ואחריו ${rest.join(", ואחריו ")}\nמאשר?`;
+}
+
+export function visitBookedMessage(p: { date: string; items: { serviceName: string; startTime: string; staffName: string }[] }): string {
+  return `סגור, קבעתי לך ${dayLabelWithDistance(p.date)}: ${p.items.map(i => `${i.serviceName} ב-${i.startTime} אצל ${i.staffName}`).join(", ואחריו ")}. נתראה 💈`;
+}
 
 const nameOf = (full?: string | null) => (full ?? "").trim().split(/\s+/)[0] || "";
 /** One question for ALL the appointments, so one "כן" books all of them. */
@@ -207,6 +226,8 @@ export async function createConfirmProposal(p: {
   hold?: boolean;
   /** More appointments the same day for people he books for (brother, son…). */
   group?: GroupItem[];
+  /** The extra treatment offered right after a booking (16.10.2026): its own question, offered once. */
+  upsell?: boolean; question?: string;
 }): Promise<string> {
   const phone = normalizeIsraeliPhone(p.phone);
   await prisma.bookingProposal.updateMany({ where: { businessId: p.businessId, phone, status: "pending" }, data: { status: "superseded", respondedAt: new Date() } });
@@ -214,7 +235,7 @@ export async function createConfirmProposal(p: {
     data: {
       businessId: p.businessId, phone, conversationId: p.conversationId, kind: "confirm",
       staffId: p.staffId, serviceId: p.serviceId, date: new Date(p.date + "T00:00:00.000Z"), startTime: p.startTime,
-      customerName: p.customerName ?? null, note: JSON.stringify({ note: p.note ?? null, originalRequest: p.originalRequest ?? null, staffName: p.staffName, serviceName: p.serviceName, mentionStaff: p.mentionStaff, awaitingName: !!p.awaitingName, partialName: p.partialName ?? null, ...(p.group?.length ? { group: p.group } : {}) }),
+      customerName: p.customerName ?? null, note: JSON.stringify({ note: p.note ?? null, originalRequest: p.originalRequest ?? null, staffName: p.staffName, serviceName: p.serviceName, mentionStaff: p.mentionStaff, awaitingName: !!p.awaitingName, partialName: p.partialName ?? null, ...(p.group?.length ? { group: p.group } : {}), ...(p.upsell ? { upsell: true } : {}) }),
       expiresAt: new Date(Date.now() + CONFIRM_TTL_MS),
     },
   });
@@ -236,8 +257,9 @@ export async function createConfirmProposal(p: {
       // Every extra appointment is held too (same customer → he's exempt from his own holds).
       for (let i = 0; i < (p.group ?? []).length; i++) {
         const g = p.group![i];
-        const gs = await prisma.staffService.findFirst({ where: { staffId: g.staffId, serviceId: p.serviceId }, select: { customDuration: true } });
-        const gd = gs?.customDuration ?? svc?.durationMinutes ?? 30;
+        const gSvc = g.serviceId ?? p.serviceId;
+        const gs = await prisma.staffService.findFirst({ where: { staffId: g.staffId, serviceId: gSvc }, select: { customDuration: true } });
+        const gd = gs?.customDuration ?? (g.serviceId ? (await prisma.service.findUnique({ where: { id: g.serviceId }, select: { durationMinutes: true } }))?.durationMinutes : svc?.durationMinutes) ?? 30;
         const [gh, gm] = g.startTime.split(":").map(Number);
         const ge = gh * 60 + gm + gd;
         await holdSlot({ businessId: p.businessId, staffId: g.staffId, dateISO: p.date, startTime: g.startTime, endTime: `${String(Math.floor(ge / 60)).padStart(2, "0")}:${String(ge % 60).padStart(2, "0")}`, holderKey: `${holderKeyForPhone(phone)}#g${i}`, customerId: cust?.id ?? null, proposalId: created.id });
@@ -245,6 +267,8 @@ export async function createConfirmProposal(p: {
     } catch (err) { console.error("[proposal] hold failed", err); }
   }
   if (p.awaitingName) return p.partialName ? FAMILY_NAME_QUESTION : NAME_QUESTION;
+  if (p.question) return p.question;
+  if (isVisit(p.group)) return visitConfirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group! });
   if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group });
   return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime });
 }
@@ -265,26 +289,37 @@ export async function bookConfirmedProposal(p: {
   sandbox?: boolean; fallbackName: string | null; noteOverride?: string | null;
 }): Promise<{ reply?: string; context?: string; booked: number }> {
   const { pending } = p;
-  const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string; group?: GroupItem[] }; } catch { return {}; } })();
+  const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string; group?: GroupItem[]; upsell?: boolean }; } catch { return {}; } })();
+  // A visit: every treatment booked under one visit id (16.10.2026).
+  const visit = isVisit(meta.group);
+  const visitId = visit ? randomUUID() : null;
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
   const mainName = pending.customerName ?? p.fallbackName ?? "";
   const jobs = [
-    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf(mainName) || "אתה", note: p.noteOverride || meta.note || null },
-    ...(meta.group ?? []).map(g => ({ staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(g.forName) || g.forName, note: `התור בפועל עבור: ${g.forName}` })),
+    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf(mainName) || "אתה", note: p.noteOverride || meta.note || null, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "" },
+    ...(meta.group ?? []).map(g => g.serviceId
+      ? { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(mainName) || "אתה", note: null as string | null, serviceId: g.serviceId, serviceName: g.serviceName ?? "" }
+      : { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(g.forName) || g.forName, note: `התור בפועל עבור: ${g.forName}`, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "" }),
   ];
   const booked: typeof jobs = [], failed: { job: (typeof jobs)[number]; why: string }[] = [];
   await releaseHolds({ proposalId: pending.id });
   for (const j of jobs) {
-    const res = await p.execTool("book_appointment", { staffId: j.staffId, serviceId: pending.serviceId ?? "", date: dateISO, startTime: j.startTime, customerName: mainName, ...(j.note ? { note: j.note } : {}) });
+    const res = await p.execTool("book_appointment", { staffId: j.staffId, serviceId: j.serviceId, date: dateISO, startTime: j.startTime, customerName: mainName, ...(j.note ? { note: j.note } : {}), ...(visitId ? { visitId } : {}) });
     if (p.sandbox || res.startsWith("✅")) booked.push(j); else failed.push({ job: j, why: res.slice(0, 120) });
   }
   await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: booked.length ? "accepted" : "rejected", respondedAt: new Date() } });
-  const what = (j: (typeof jobs)[number]) => `${j.name} ב-${j.startTime} אצל ${j.staffName}`;
+  const what = (j: (typeof jobs)[number]) => visit ? `${j.serviceName} ב-${j.startTime} אצל ${j.staffName}` : `${j.name} ב-${j.startTime} אצל ${j.staffName}`;
   if (failed.length) {
     return { booked: booked.length, context: `⚠️ הלקוח אישר ${jobs.length > 1 ? `${jobs.length} תורים` : "את התור"} ${dayLabelHe(dateISO)}. ${booked.length ? `נקבעו: ${booked.map(what).join(", ")}. ` : ""}לא נקבעו (השעה נתפסה ברגע האחרון): ${failed.map(f => what(f.job)).join(", ")}. אמור לו בדיוק מה נקבע ומה לא — אף פעם לא "סגור" כללי — והצע מיד חלופה פנויה למה שלא נקבע (בדוק עם הכלי), ואז propose_booking.` };
   }
+  if (visit) return { booked: booked.length, reply: visitBookedMessage({ date: dateISO, items: booked }) };
   if (jobs.length > 1) return { booked: booked.length, reply: groupBookedMessage({ staffName: meta.staffName ?? "", date: dateISO, booked: booked.map(b => ({ name: b.name, startTime: b.startTime, staffName: b.staffName })) }) };
   let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: meta.originalRequest });
+  // The extra treatment right after it (16.10.2026), never after an offer that was itself extra.
+  if (!meta.upsell && !meta.originalRequest) {
+    const q = await offerUpsell({ proposalId: pending.id, dateISO, mainName, sandbox: !!p.sandbox }).catch(e => { console.error("[upsell]", e); return null; });
+    if (q) return { booked: booked.length, reply: `${reply}\n\n${q}` };
+  }
   // Safety net: the conversation was about more than one appointment → ask about the rest.
   if (pending.conversationId && !p.sandbox) {
     const recent = await prisma.conversationMessage.findMany({
@@ -473,4 +508,55 @@ export async function afterBookingWaitlistContext(businessId: string, phone: str
   let ctx = `המערכת כבר קבעה לו לפני ${ago < 1 ? "רגע" : `${ago} דק׳`} את התור: ${meta.serviceName ?? ""} אצל ${meta.staffName ?? ""} ${dayLabelHe(dateISO)} בשעה ${last.startTime} — הוא קבוע וסגור, גם אם השעה עדיין מופיעה בזמינות שבהנחיות. אל תציע אותו שוב ואל תקרא ל-propose_booking עליו; "תודה"/"סבבה" = סגירת שיחה קצרה.`;
   if (meta.originalRequest) ctx += ` אחרי הקביעה הצענו לו: "רוצה שאעדכן אותך אם יתפנה ${meta.originalRequest}?" — אם הוא עונה כן → join_waitlist למה שרצה במקור (${meta.originalRequest}); אם לא → תודה קצרה.`;
   return ctx;
+}
+
+/** The business offers an extra treatment after a booking: settings.agentUpsell,
+ *  on by default for every type but a men's barbershop. */
+export function upsellOn(biz: { businessType?: string | null; settings?: string | null } | null | undefined): boolean {
+  try { const v = biz?.settings ? (JSON.parse(biz.settings) as { agentUpsell?: unknown }).agentUpsell : undefined; if (typeof v === "boolean") return v; } catch { /* default */ }
+  return (biz?.businessType ?? "barber_men") !== "barber_men";
+}
+
+/**
+ * The extra treatment right after a booking (16.10.2026, Yair: "אם לקוחה קבעה
+ * תור במכון רק ללייזר, כשהיא מסיימת לייזר אפשר לשריין לה אצל הנותנת שירות
+ * השניה לק"). What the owner set to offer after this treatment, else what she
+ * herself usually adds; someone must be free for it within 15 minutes of the
+ * end. Once per conversation. Returns the question (a pending proposal holds the
+ * slot, so her "כן" books it) or null.
+ */
+async function offerUpsell(p: { proposalId: string; dateISO: string; mainName: string; sandbox: boolean }): Promise<string | null> {
+  const prop = await prisma.bookingProposal.findUnique({ where: { id: p.proposalId }, select: { businessId: true, phone: true, conversationId: true, serviceId: true, startTime: true } });
+  if (!prop?.serviceId || !prop.conversationId || !prop.startTime) return null;
+  const biz = await prisma.business.findUnique({ where: { id: prop.businessId }, select: { businessType: true, settings: true } });
+  if (!upsellOn(biz)) return null;
+  const offered = await prisma.bookingProposal.count({ where: { conversationId: prop.conversationId, note: { contains: `"upsell":true` }, createdAt: { gte: new Date(Date.now() - 3 * 3600_000) } } });
+  if (offered) return null;
+  const customer = await prisma.customer.findFirst({ where: { businessId: prop.businessId, OR: [{ phone: prop.phone }, { phone: prop.phone.replace(/^972/, "0") }] }, select: { id: true } });
+  const svc = await prisma.service.findUnique({ where: { id: prop.serviceId }, select: { upsellIds: true } });
+  let cands: string[] = [];
+  try { const x = svc?.upsellIds ? JSON.parse(svc.upsellIds) : []; if (Array.isArray(x)) cands = x.filter((v): v is string => typeof v === "string"); } catch { /* none */ }
+  if (!cands.length && customer) {
+    const past = await prisma.appointment.findMany({ where: { customerId: customer.id, serviceId: { not: prop.serviceId }, status: { notIn: ["cancelled_by_customer", "cancelled_by_staff", "no_show"] }, date: { gte: new Date(Date.now() - 365 * 86_400_000) } }, select: { serviceId: true } });
+    const count = new Map<string, number>();
+    for (const a of past) count.set(a.serviceId, (count.get(a.serviceId) ?? 0) + 1);
+    cands = Array.from(count.entries()).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([id]) => id);
+  }
+  const date = new Date(p.dateISO + "T00:00:00.000Z");
+  const sameDay = customer ? await prisma.appointment.findMany({ where: { customerId: customer.id, date, status: { in: ["pending", "confirmed"] } }, select: { serviceId: true, startTime: true, endTime: true } }) : [];
+  cands = cands.filter(id => id !== prop.serviceId && !sameDay.some(a => a.serviceId === id));
+  const booked = sameDay.find(a => a.serviceId === prop.serviceId && a.startTime === prop.startTime);
+  if (!cands.length || !booked) return null;
+  const ctx = await loadDayContext(prop.businessId, p.dateISO, { customerId: customer?.id ?? null, holderKeys: [holderKeyForPhone(prop.phone)] });
+  const [eh, em] = booked.endTime.split(":").map(Number);
+  const it = findUpsell(ctx, cands, eh * 60 + em);
+  if (!it) return null;
+  const question = `ורוצה שאשריין לך גם ${it.serviceName} אצל ${it.staffName} מיד אחרי, ב-${it.startTime}?`;
+  await createConfirmProposal({
+    businessId: prop.businessId, phone: prop.phone, conversationId: prop.conversationId,
+    staffId: it.staffId, staffName: it.staffName, serviceId: it.serviceId, serviceName: it.serviceName,
+    date: p.dateISO, startTime: it.startTime, customerName: p.mainName || null, mentionStaff: true,
+    hold: !p.sandbox, upsell: true, question,
+  });
+  return question;
 }

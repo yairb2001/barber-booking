@@ -26,6 +26,8 @@ export default function BookingFlowCard() {
   const [choice, setChoice] = useState<Choice>("customer");
   const [order, setOrder] = useState<Order>(barber ? "staff" : "service");
   const [grid, setGrid] = useState<GridV>(barber ? "legacy" : 15);
+  // The agent offers a complementary treatment right after a booking (16.10.2026).
+  const [upsell, setUpsell] = useState<boolean>(!barber);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -36,6 +38,7 @@ export default function BookingFlowCard() {
       if (s.staffChoice === "least" || s.staffChoice === "most") setChoice(s.staffChoice);
       if (s.bookingOrder === "service" || s.bookingOrder === "staff") setOrder(s.bookingOrder);
       if (s.slotGrid === "legacy" || [5, 10, 15, 30].includes(Number(s.slotGrid))) setGrid(s.slotGrid === "legacy" ? "legacy" : (Number(s.slotGrid) as GridV));
+      if (typeof s.agentUpsell === "boolean") setUpsell(s.agentUpsell);
       setLoaded(true);
     }).catch(() => setLoaded(true));
   }, []);
@@ -44,7 +47,7 @@ export default function BookingFlowCard() {
     setSaving(true); setSaved(false);
     const r = await fetch("/api/admin/business", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ settingsPatch: { staffChoice: choice, bookingOrder: order, slotGrid: grid } }),
+      body: JSON.stringify({ settingsPatch: { staffChoice: choice, bookingOrder: order, slotGrid: grid, agentUpsell: upsell } }),
     }).catch(() => null);
     setSaving(false);
     if (r?.ok) { setSaved(true); router.refresh(); }
@@ -88,6 +91,13 @@ export default function BookingFlowCard() {
           ))}
         </div>
         <p className="text-[11px] text-neutral-500 mt-1.5">בכל אפשרות מוצעת גם השעה המדויקת שבה תור קודם נגמר, כדי שלא יישארו חורים ביומן.</p>
+      </div>
+
+      <div className="mt-4">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" checked={upsell} onChange={e => { setUpsell(e.target.checked); setSaved(false); }} className="accent-teal-600 w-4 h-4 mt-0.5" />
+          <span className="text-sm text-neutral-700">אחרי קביעה, הסוכן מציע טיפול נוסף מיד אחרי <span className="text-neutral-500">(פעם אחת, רק אם מישהי פנויה. מה להציע אחרי כל טיפול: במסך השירותים)</span></span>
+        </label>
       </div>
 
       <div className="flex items-center gap-3 mt-5">

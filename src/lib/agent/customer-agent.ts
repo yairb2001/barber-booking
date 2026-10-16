@@ -14,6 +14,7 @@
  */
 
 import { dayDistance } from "@/lib/day-distance";
+import { loadDayContext, findVisitOptions, checkVisit } from "@/lib/availability/visit";
 import { writeChecked, SlotRefused } from "@/lib/availability/guard";
 import { bookingRecord } from "@/lib/availability/shape";
 import { agentReplyForType } from "@/lib/type-wording";
@@ -44,9 +45,9 @@ import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { applyToolDescriptions, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
-import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, type GroupItem } from "@/lib/agent/booking-proposals";
+import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
-import { getBusinessNow } from "@/lib/utils";
+import { getBusinessNow, addDaysISO } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 
@@ -403,6 +404,22 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         afterDate: { type: "string", description: "תאריך YYYY-MM-DD לסרוק החל מהיום שאחריו (אופציונלי) — לשימוש כשהלקוח דוחה תאריך שכבר הוצע ורוצה מאוחר יותר" },
       },
       required: [],
+    },
+  },
+  {
+    // Visits (16.10.2026): only beauty businesses get this tool (toolsForType).
+    name: "find_visit_times",
+    description:
+      "ביקור עם כמה טיפולים אחד אחרי השני (למשל לייזר ואז לק ג'ל אצל מישהי אחרת). קודם ברר עם הלקוחה את כל הטיפולים שהיא רוצה ('עוד משהו?'), ורק אז קרא עם כולם. " +
+      "המערכת בודקת כל סדר אפשרי, כל נותנת שירות שעושה כל טיפול וכל שעה, ומחזירה את האפשרויות הכי קצרות. הצע ללקוחה רק אפשרות שחזרה מכאן, ואז propose_booking עם הטיפול הראשון ו-others לכל טיפול נוסף (serviceId, staffId, startTime — בלי forName).",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        date: { type: "string", description: "YYYY-MM-DD — היום שהיא רוצה. בלי תאריך: מחפש מהיום קדימה את היום הקרוב שבו הכל נכנס." },
+        treatments: { type: "array", description: "כל הטיפולים שהיא רוצה בביקור.", items: { type: "object", properties: { serviceId: { type: "string" }, staffId: { type: "string", description: "רק אם ביקשה מישהי מסוימת לטיפול הזה" } }, required: ["serviceId"] } },
+        keepOrder: { type: "boolean", description: "true רק אם אמרה במפורש באיזה סדר" },
+      },
+      required: ["treatments"],
     },
   },
   {
@@ -813,6 +830,40 @@ export async function execTool(
       // times where >= count barbers are genuinely free at the same slot, each
       // tagged with its staffId. The model cannot fabricate a barber+time pair
       // because the only pairs it ever sees are real overlaps.
+      // ── find_visit_times (16.10.2026): several treatments in a row ──────────
+      case "find_visit_times": {
+        const raw = (input as Record<string, unknown>).treatments;
+        const asked = (Array.isArray(raw) ? raw : []).slice(0, 4).map((x: { serviceId?: unknown; staffId?: unknown }) => ({ serviceId: String(x?.serviceId ?? "").trim(), staffId: x?.staffId ? String(x.staffId).trim() : null })).filter(x => x.serviceId);
+        if (!asked.length) return "שגיאה: צריך את כל הטיפולים (treatments עם serviceId לכל אחד).";
+        // Ids as written in the instructions; a name is accepted too.
+        const steps: { serviceId: string; staffId: string | null }[] = [];
+        for (const a of asked) {
+          const svc = await prisma.service.findFirst({ where: { businessId: bizId, OR: [{ id: a.serviceId }, { name: { contains: a.serviceId, mode: "insensitive" } }] }, select: { id: true } });
+          if (!svc) return `שגיאה: לא זיהיתי את הטיפול "${a.serviceId}". השתמש במזהה מהרשימה.`;
+          const st = a.staffId ? await prisma.staff.findFirst({ where: { businessId: bizId, OR: [{ id: a.staffId }, { name: { contains: a.staffId, mode: "insensitive" } }] }, select: { id: true } }) : null;
+          steps.push({ serviceId: svc.id, staffId: st?.id ?? null });
+        }
+        const exempt = { customerId: await callerCustomerId(bizId, callerPhone), holderKeys: [callerPhone ? holderKeyForPhone(callerPhone) : null] };
+        const keepOrder = String((input as Record<string, unknown>).keepOrder) === "true";
+        const today = getBusinessNow().date;
+        const dates = input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? [input.date] : Array.from({ length: 14 }, (_, i) => addDaysISO(today, i));
+        for (const d of dates) {
+          const ctx = await loadDayContext(bizId, d, exempt);
+          const options = findVisitOptions(ctx, steps, { keepOrder });
+          if (!options.length) continue;
+          const lines = options.map((o, i) => {
+            const span = o[o.length - 1].end - o[0].start;
+            const path = o.map(it => `${it.startTime} ${it.serviceName} אצל ${it.staffName}`).join(" ← ");
+            const call = `propose_booking staffId=${o[0].staffId} serviceId=${o[0].serviceId} startTime=${o[0].startTime}${o.length > 1 ? `, others=${JSON.stringify(o.slice(1).map(it => ({ serviceId: it.serviceId, staffId: it.staffId, startTime: it.startTime })))}` : ""}`;
+            return `${i + 1}) ${path}. סה"כ ${span} דק', ₪${o.reduce((t, it) => t + it.price, 0)}.\n   לקביעה: ${call}`;
+          });
+          return `ביקור ${dayLabelWithDistance(d)} (date=${d}) — האפשרויות הקצרות ביותר:\n${lines.join("\n")}\nהצע ללקוחה אחת או שתיים במשפט טבעי (מה, אצל מי, מתי), ורק אחרי שבחרה — propose_booking בדיוק כמו שכתוב.`;
+        }
+        return input.date
+          ? `ב-${input.date} אין זמן שבו כל הטיפולים נכנסים ברצף. קרא שוב בלי date כדי למצוא את היום הקרוב שבו הכל נכנס, או הצע לפצל לשני ימים.`
+          : "בשבועיים הקרובים אין יום שבו כל הטיפולים נכנסים ברצף. הצע לפצל לשני ביקורים (get_available_slots לכל טיפול).";
+      }
+
       case "find_parallel_slots": {
         const { date: inDate, serviceId: inputServiceId } = input;
         const count = Math.max(2, Number(input.count) || 2);
@@ -883,9 +934,13 @@ export async function execTool(
         // barber's booking horizon, or a slot already taken. computeDayAvailability
         // is the single source of truth (it applies schedule, overrides, horizon
         // and existing bookings), so re-check the exact slot here before writing.
+        // A treatment of a confirmed visit (bookConfirmedProposal passes visitId; the
+        // model can't): it may start off the day's grid, right after the one before
+        // it — checked by its exact time under the lock below, with the customer's rules.
+        const visitId = typeof (input as Record<string, unknown>).visitId === "string" ? String((input as Record<string, unknown>).visitId) : null;
         const dayAvail = await computeDayAvailabilityRetrying(bizId, date, staffId, serviceId, callerPhone);
         const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
-        if (!staffSlots.includes(startTime)) {
+        if (!visitId && !staffSlots.includes(startTime)) {
           // Diagnostic: this is the "agent said free, booking says taken" path.
           // Dump exactly what the guard saw so an intermittent rejection (e.g. the
           // model attributing another barber's free slot to THIS barber, or a slot
@@ -977,7 +1032,7 @@ export async function execTool(
         // the treatment's shape recorded on the booking.
         let appt;
         try {
-          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] }, room: { businessId: bizId, serviceId } }], (tx, rooms) => tx.appointment.create({
+          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] }, room: { businessId: bizId, serviceId }, ...(visitId ? { customer: {} } : {}) }], (tx, rooms) => tx.appointment.create({
             data: {
               businessId: bizId,
               customerId: customer.id,
@@ -993,6 +1048,7 @@ export async function execTool(
               note:      note || null,
               ...bookingRecord(eff.shape),
               roomId:    rooms[0],
+              visitId,
             },
           }));
         } catch (err: unknown) {
@@ -1063,15 +1119,35 @@ export async function execTool(
         const customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true, name: true } });
         const words = (t: string | null | undefined) => (t ?? "").trim().split(/\s+/).filter(Boolean).length;
         const registeredName = !!customer && words(customer.name) >= 2 && !/^\+?\d[\d\s-]*$/.test(customer.name.trim());
-        const avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
-        if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
-          return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
+        const othersIn = (input as Record<string, unknown>).others;
+        const group: GroupItem[] = [];
+        // A visit (16.10.2026): further treatments for the same customer, each with
+        // its own serviceId — the whole chain checked together (order, staff, rooms,
+        // never two chairs at once), confirmed by one question, booked together.
+        const visitMode = Array.isArray(othersIn) && othersIn.some((o: { serviceId?: unknown }) => !!o?.serviceId);
+        let avail: Awaited<ReturnType<typeof computeDayAvailabilityRetrying>> = [];
+        if (visitMode) {
+          const items = [{ staffId: staff.id, serviceId: service.id, startTime }];
+          for (const o of (othersIn as { serviceId?: string; staffId?: string; startTime?: string }[]).slice(0, 3)) {
+            const t = String(o?.startTime ?? "");
+            const vs = await prisma.service.findFirst({ where: { businessId: bizId, OR: [{ id: String(o?.serviceId ?? "") }, { name: { contains: String(o?.serviceId ?? "-"), mode: "insensitive" } }] }, select: { id: true } });
+            const vst = await prisma.staff.findFirst({ where: { businessId: bizId, OR: [{ id: String(o?.staffId ?? "") }, { name: { contains: String(o?.staffId ?? "-"), mode: "insensitive" } }] }, select: { id: true } });
+            if (!vs || !vst || !/^\d{1,2}:\d{2}$/.test(t)) return "שגיאה: בכל טיפול נוסף צריך serviceId, staffId ו-startTime בדיוק כפי שחזרו מ-find_visit_times.";
+            items.push({ staffId: vst.id, serviceId: vs.id, startTime: t });
+          }
+          const ctx = await loadDayContext(bizId, date, { customerId: customer?.id ?? null, holderKeys: [holderKeyForPhone(callerPhone)] });
+          const chk = checkVisit(ctx, items);
+          if (!chk.ok) return `שגיאה: הביקור הזה כבר לא נכנס ברצף (הטיפול ה-${chk.index + 1} ב-${items[chk.index].startTime}). קרא שוב ל-find_visit_times והצע אפשרות שחזרה.`;
+          for (const it of chk.items.slice(1)) group.push({ staffId: it.staffId, staffName: it.staffName, startTime: it.startTime, forName: "", serviceId: it.serviceId, serviceName: it.serviceName });
+        } else {
+          avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
+          if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
+            return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
+          }
         }
         // Several appointments the same day (him + brother/son): all verified now,
         // confirmed by ONE question and booked together (owner, 14.10.2026).
-        const group: GroupItem[] = [];
-        const othersIn = (input as Record<string, unknown>).others;
-        if (Array.isArray(othersIn) && othersIn.length) {
+        if (!visitMode && Array.isArray(othersIn) && othersIn.length) {
           const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
           const durOf = async (sid: string) => (await prisma.staffService.findFirst({ where: { staffId: sid, serviceId: service.id }, select: { customDuration: true } }))?.customDuration
             ?? (await prisma.service.findUnique({ where: { id: service.id }, select: { durationMinutes: true } }))?.durationMinutes ?? 30;

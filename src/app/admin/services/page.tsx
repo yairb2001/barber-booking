@@ -19,7 +19,9 @@ type Service = {
   rebookDays?: number | null;
   segments?: string | null;
   bufferAfterMin?: number;
+  upsellIds?: string | null;
 };
+const upsellOf = (s: Service): string[] => { try { const x = s.upsellIds ? JSON.parse(s.upsellIds) : []; return Array.isArray(x) ? x : []; } catch { return []; } };
 
 /** "[work, wait, work]" from a service's segments, when it has that form. */
 function procOf(s: Service): [number, number, number] | null {
@@ -33,7 +35,7 @@ function procOf(s: Service): [number, number, number] | null {
 // rebookDays: when she usually comes back for it, the "הגיע הזמן לתור" date (beauty types).
 // Stage B (16.10.2026): cleaning after the treatment, and a wait inside it
 // (color processing: work → the stylist is free → work again).
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segA: "", segB: "", segC: "" };
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segA: "", segB: "", segC: "", upsellIds: [] as string[] };
 
 export default function AdminServicesPage() {
   const v = useVocab();
@@ -120,6 +122,7 @@ export default function AdminServicesPage() {
       segA: procOf(s) ? String(procOf(s)![0]) : "",
       segB: procOf(s) ? String(procOf(s)![1]) : "",
       segC: procOf(s) ? String(procOf(s)![2]) : "",
+      upsellIds: upsellOf(s),
     });
     setShowAdd(true);
   }
@@ -300,6 +303,23 @@ export default function AdminServicesPage() {
                       <p className="text-[11px] text-neutral-500 mt-1.5">המשך הכולל יתעדכן לסכום: {[form.segA, form.segB, form.segC].reduce((t, x) => t + (parseInt(x) || 0), 0)} דק׳.</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {v.type !== "barber_men" && services.some(x => x.id !== editing?.id) && (
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1.5">מה הסוכן מציע מיד אחרי הטיפול הזה <span className="text-neutral-400">(ריק = מה {v.customerFem ? "שהלקוחה נוהגת" : "שהלקוח נוהג"} להוסיף)</span></label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {services.filter(x => x.id !== editing?.id).map(x => {
+                      const on = form.upsellIds.includes(x.id);
+                      return (
+                        <button key={x.id} type="button" onClick={() => setForm(p => ({ ...p, upsellIds: on ? p.upsellIds.filter(i => i !== x.id) : [...p.upsellIds, x.id] }))}
+                          className={`px-3 py-1 rounded-full text-xs border transition ${on ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-600"}`}>
+                          {x.name}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

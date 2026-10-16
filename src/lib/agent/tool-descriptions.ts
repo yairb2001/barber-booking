@@ -86,8 +86,9 @@ export function applyToolDescriptions<T extends { name: string; description?: st
  * "מניקוריסטית", never "ספר", so it never says "ספר" to a customer. A men's
  * barbershop gets the tools untouched (same bytes, same prompt cache).
  */
-export function toolsForType<T extends { description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
-  if (v.type === "barber_men") return tools;
+export function toolsForType<T extends { name: string; description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
+  // Visits with several treatments are a beauty thing: a barbershop's tools stay as they were.
+  if (v.type === "barber_men") return tools.filter(t => t.name !== "find_visit_times");
   const f = v.staffFem;
   const word = (w: string) => new RegExp(`(^|[^א-ת])${w}(?![א-ת])`, "g");
   const swap = (s: string) => s
@@ -108,5 +109,18 @@ export function toolsForType<T extends { description?: string; input_schema: unk
     if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, val]) => [k, k === "description" && typeof val === "string" ? swap(val) : deep(val)]));
     return x;
   };
-  return tools.map(t => ({ ...t, ...(t.description ? { description: swap(t.description) } : {}), input_schema: deep(t.input_schema) }));
+  return tools.map(t => {
+    const out = { ...t, ...(t.description ? { description: swap(t.description) } : {}), input_schema: deep(t.input_schema) };
+    // A visit: the further treatments of the same customer ride in "others" with their own serviceId.
+    if (t.name === "propose_booking") {
+      const sch = out.input_schema as { properties?: { others?: { items?: { properties?: Record<string, unknown>; required?: string[] } } } };
+      const items = sch.properties?.others?.items;
+      if (items?.properties) {
+        items.properties.serviceId = { type: "string", description: "ביקור עם כמה טיפולים לאותה לקוחה: מזהה הטיפול הזה, כפי שחזר מ-find_visit_times (ואז בלי forName)." };
+        items.required = ["startTime"];
+      }
+      out.description = `${out.description ?? ""} ביקור עם כמה טיפולים: others עם serviceId, staffId ו-startTime לכל טיפול נוסף, בדיוק כפי שחזרו מ-find_visit_times.`;
+    }
+    return out;
+  });
 }

@@ -289,6 +289,8 @@ model Service {
   segments        String?
   /// Cleaning after the customer leaves; the staff member stays busy.
   bufferAfterMin  Int      @default(0) @map("buffer_after_min")
+  /// What the agent offers right after this treatment (JSON array of service ids, 16.10.2026).
+  upsellIds       String?  @map("upsell_ids")
   createdAt       DateTime @default(now()) @map("created_at")
 
   business        Business @relation(fields: [businessId], references: [id])
@@ -412,6 +414,8 @@ model Appointment {
   bufferAfterMin Int      @default(0) @map("buffer_after_min")
   /// The room the system picked (rooms, 16.10.2026); null = no room needed.
   roomId         String?  @map("room_id")
+  /// The treatments of one visit, booked together (16.10.2026).
+  visitId        String?  @map("visit_id")
   status         String   @default("confirmed") // pending, confirmed, cancelled_by_customer, cancelled_by_staff, completed, no_show
   price          Float
   // Ad-hoc "temporary service" (שירות זמני): when the barber picks a variable

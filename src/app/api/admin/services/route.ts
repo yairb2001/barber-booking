@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       priceFrom: body.priceFrom === true,
       segments: body.segments !== undefined ? (() => { if (body.segments === null) return null; try { const x = JSON.parse(String(body.segments)); return Array.isArray(x) && x.length && x.every((g: { m?: unknown }) => Number(g?.m) > 0) ? JSON.stringify(x.map((g: { m: number; busy?: boolean }) => ({ m: Math.round(Number(g.m)), busy: g.busy !== false }))) : null; } catch { return null; } })() : null,
       bufferAfterMin: (Number.isInteger(body.bufferAfterMin) && body.bufferAfterMin >= 0 && body.bufferAfterMin <= 240 ? body.bufferAfterMin : 0),
+      upsellIds: (() => { if (!Array.isArray(body.upsellIds)) return null; const ids = body.upsellIds.filter((x: unknown) => typeof x === "string").slice(0, 5); return ids.length ? JSON.stringify(ids) : null; })(),
       rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null),
     },
   });
