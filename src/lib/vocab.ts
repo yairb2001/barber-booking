@@ -16,13 +16,16 @@
  * (e.g. { "staff": "מעצב שיער" }) — see vocabFor().
  */
 
-export type BusinessType = "barber_men" | "barber_women" | "nails" | "cosmetics";
+export type BusinessType = "barber_men" | "barber_women" | "nails" | "cosmetics" | "other";
 
 export const BUSINESS_TYPES: ReadonlyArray<{ id: BusinessType; label: string }> = [
   { id: "barber_men",   label: "מספרת גברים" },
   { id: "barber_women", label: "מספרת נשים" },
   { id: "nails",        label: "סטודיו ציפורניים" },
   { id: "cosmetics",    label: "מכון קוסמטיקה" },
+  // Anything else that books by appointment (tattoo, physio, trainer): neutral
+  // words, customer addressed in the masculine as Hebrew does by default.
+  { id: "other",        label: "עסק אחר" },
 ];
 
 export const DEFAULT_BUSINESS_TYPE: BusinessType = "barber_men";
@@ -182,19 +185,56 @@ const BASE: Record<BusinessType, Vocab> = {
       { category: "ייעוץ", name: "ייעוץ ובדיקת רגישות", price: 0, duration: 20 },
     ],
   },
+  other: {
+    type: "other", typeLabel: "עסק אחר", placeKind: "עסק",
+    place: "עסק", placeDef: "העסק",
+    staff: "נותן שירות", staffDef: "נותן השירות", staffPlural: "נותני שירות", staffPluralDef: "נותני השירות", staffFem: false,
+    free: "פנוי", freePlural: "פנויים", regular: "הקבוע", main: "הראשי", other: "אחר", such: "כזה",
+    works: "עובד", writes: "כותב", none: "אף נותן שירות",
+    customer: "לקוח", customerPlural: "לקוחות", customerFem: false, choose: "בחר", tryVerb: "נסה", knows: "ידע",
+    defaultService: "פגישה", serviceExamples: "פגישה, טיפול, ייעוץ",
+    emoji: "✨", treatment: "שירות",
+    slangAllowed: false,
+    // No starter catalog: the owner writes his own services in the wizard.
+    serviceCatalog: [],
+  },
 };
 
-/** Keys a business may override through settings.vocab (single words only —
- *  the gendered helpers are derived from the type, not overridable). */
+/** The words that follow the professional's gender, and the customer's. */
+const STAFF_FORMS = {
+  m: { free: "פנוי", freePlural: "פנויים", regular: "הקבוע", main: "הראשי", other: "אחר", such: "כזה", works: "עובד", writes: "כותב", knows: "ידע" },
+  f: { free: "פנויה", freePlural: "פנויות", regular: "הקבועה", main: "הראשית", other: "אחרת", such: "כזאת", works: "עובדת", writes: "כותבת", knows: "תדע" },
+};
+const CUSTOMER_FORMS = { m: { customer: "לקוח", choose: "בחר", tryVerb: "נסה" }, f: { customer: "לקוחה", choose: "בחרי", tryVerb: "נסי" } };
+
+/** The definite form: "מעצבת" → "המעצבת"; a two-word name takes the ה on its
+ *  last word, as Hebrew does ("מעצבת שיער" → "מעצבת השיער"). */
+export function definite(phrase: string): string {
+  const w = phrase.trim().split(/\s+/);
+  w[w.length - 1] = "ה" + w[w.length - 1];
+  return w.join(" ");
+}
+
+/** Keys a business may override through settings.vocab (16.10.2026, Yair: the
+ *  owner renames the word in settings, e.g. "מעצבות שיער"). Words, plus the two
+ *  genders (staffFem, customerFem); every gendered helper follows the gender,
+ *  and a definite form not given is derived from the word. */
 const OVERRIDABLE = new Set<keyof Vocab>(["place", "placeDef", "placeKind", "staff", "staffDef", "staffPlural", "staffPluralDef", "customer", "customerPlural", "defaultService", "serviceExamples"]);
 
 export function vocabFor(type: string | null | undefined, overrides?: Record<string, unknown> | null): Vocab {
   const base = BASE[isBusinessType(type) ? type : DEFAULT_BUSINESS_TYPE];
   if (!overrides || typeof overrides !== "object") return base;
   const out: Vocab = { ...base };
-  for (const [k, v] of Object.entries(overrides)) {
+  const o = overrides as Record<string, unknown>;
+  if (typeof o.staffFem === "boolean" && o.staffFem !== base.staffFem) Object.assign(out, STAFF_FORMS[o.staffFem ? "f" : "m"], { staffFem: o.staffFem });
+  if (typeof o.customerFem === "boolean" && o.customerFem !== base.customerFem) Object.assign(out, CUSTOMER_FORMS[o.customerFem ? "f" : "m"], { customerFem: o.customerFem });
+  const given = (k: string) => typeof o[k] === "string" && (o[k] as string).trim() !== "";
+  for (const [k, v] of Object.entries(o)) {
     if (OVERRIDABLE.has(k as keyof Vocab) && typeof v === "string" && v.trim()) (out as unknown as Record<string, string>)[k] = v.trim();
   }
+  if (given("staff")) { if (!given("staffDef")) out.staffDef = definite(out.staff); out.none = `אף ${out.staff}`; }
+  if (given("staffPlural") && !given("staffPluralDef")) out.staffPluralDef = definite(out.staffPlural);
+  if (given("place") && !given("placeDef")) out.placeDef = definite(out.place);
   return out;
 }
 

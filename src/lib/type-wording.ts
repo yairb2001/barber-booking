@@ -1,4 +1,4 @@
-import { vocabFor, type BusinessType } from "@/lib/vocab";
+import { vocabFor, type BusinessType, type Vocab } from "@/lib/vocab";
 import type { MessageKind } from "@/lib/messaging/types";
 
 /**
@@ -12,24 +12,37 @@ import type { MessageKind } from "@/lib/messaging/types";
  * defaults through the same function, so what the shop sees is what is sent.
  */
 
-/** Customer addressed as a woman, and words that only fit a barbershop. Order
- *  matters: whole sentences before the single words inside them. */
-const BEAUTY: [string, string][] = [
-  ["בביקור הזה תוכל לשדרג את התספורת עם טיפול זקן/עיצוב בהנחה", "בביקור הזה תוכלי להוסיף טיפול משלים בהנחה"],
+/** A business's words: its type, or the vocabulary itself (with the owner's
+ *  own words and genders from settings.vocab). */
+type Words = Vocab | string | null | undefined;
+const vocabOfWords = (x: Words): Vocab => (x && typeof x === "object" ? x : vocabFor(x));
+
+/** Sentences of ours that only fit a barbershop, in a type's words. */
+function haircutSentences(v: Vocab): [string, string][] {
+  const f = v.customerFem, t = v.treatment;
+  return [
+    ["בביקור הזה תוכל לשדרג את התספורת עם טיפול זקן/עיצוב בהנחה", `בביקור הזה ${f ? "תוכלי" : "תוכל"} להוסיף ${t} משלים בהנחה`],
+    ["תחויב/י במחיר המלא של התספורת", `${f ? "תחויבי" : "תחויב/י"} במחיר המלא של ה${t}`],
+    ["לארח אותך ולגזור לך!", v.type === "other" ? "לארח אותך!" : "לארח ולפנק אותך!"],
+    ["שהסתפרת אצלנו", "שביקרת אצלנו"],
+  ];
+}
+
+/** The customer addressed as a woman. Order matters: whole sentences before
+ *  the single words inside them. */
+const FEM: [string, string][] = [
   ["מסכים? ענה *כן* או *לא*", "מסכימה? עני *כן* או *לא*"],
   ["ענה *כן* או *לא*", "עני *כן* או *לא*"],
   ["ענה כן או לא", "עני כן או לא"],
   ["ברוך הבא ל", "ברוכה הבאה ל"],
   ["פשוט כתוב לנו כאן", "פשוט כתבי לנו כאן"],
-  ["תחויב/י במחיר המלא של התספורת", "תחויבי במחיר המלא של הטיפול"],
+  ["תחויב/י", "תחויבי"],
   ["מקווים שתביני/תבין", "מקווים שתביני"],
   ["ללקוח אחר", "ללקוחה אחרת"],
   ["נראה שאתה צריך", "נראה שאת צריכה"],
   ["ואם אתה צריך", "ואם את צריכה"],
   ["מאחר, להזיז או לבטל", "מאחרת, להזיז או לבטל"],
   ["ואם תרצה", "ואם תרצי"],
-  ["לארח אותך ולגזור לך!", "לארח ולפנק אותך!"],
-  ["שהסתפרת אצלנו", "שביקרת אצלנו"],
   // Referral thank-you (api/appointments): the friend and the referrer.
   ["והזכיר את שמך כמי שהמליץ", "והזכירה את שמך כמי שהמליצה"],
   ["קבע תור ב*", "קבעה תור ב*"],
@@ -40,7 +53,7 @@ const BEAUTY: [string, string][] = [
 ];
 
 /** Second-person verbs as whole words (never inside a longer word). */
-const BEAUTY_WORDS: [string, string][] = [["תגיד", "תגידי"], ["תכתוב", "תכתבי"], ["תוכל", "תוכלי"], ["תרצה", "תרצי"]];
+const FEM_WORDS: [string, string][] = [["תגיד", "תגידי"], ["תכתוב", "תכתבי"], ["תוכל", "תוכלי"], ["תרצה", "תרצי"]];
 
 /** The staff member speaking (a closed day, in her own voice). */
 const STAFF_FEM: [string, string][] = [
@@ -49,30 +62,39 @@ const STAFF_FEM: [string, string][] = [
   ["רק מוודא שראית", "רק מוודאת שראית"],
 ];
 
-/** The walk-in thank-you's "find us on WhatsApp with the words" line. */
-const KEYWORDS: Record<BusinessType, string> = {
+/** The walk-in thank-you's "find us on WhatsApp with the words" line; a
+ *  business of another kind has no such words, and the line goes. */
+const KEYWORDS: Record<BusinessType, string | null> = {
   barber_men: "*מספרה* | *תספורת* | *ספר*",
   barber_women: "*מספרה* | *תספורת* | *ספרית*",
   nails: "*ציפורניים* | *לק ג'ל* | *מניקור*",
   cosmetics: "*קוסמטיקה* | *טיפול פנים* | *קוסמטיקאית*",
+  other: null,
 };
+const KEYWORDS_LINE = "אפשר למצוא אותנו בוואצאפ עם המילים:\n";
 
 /** ✂️ beside the business name: a salon keeps the scissors, the others don't cut. */
-const SCISSORS: Record<BusinessType, string> = { barber_men: "✂️", barber_women: "✂️", nails: "💅", cosmetics: "✨" };
+const SCISSORS: Record<BusinessType, string> = { barber_men: "✂️", barber_women: "✂️", nails: "💅", cosmetics: "✨", other: "✨" };
 
 const HEB = "א-ת";
 // No lookbehind: older iPhones (Safari before 16.4) cannot parse it.
 const word = (w: string) => new RegExp(`(^|[^${HEB}])${w}(?![${HEB}])`, "g");
 
-export function forType(text: string, type: string | null | undefined): string {
-  const v = vocabFor(type);
-  if (v.type === "barber_men" || !text) return text;
+export function forType(text: string, words: Words): string {
+  const v = vocabOfWords(words);
+  if (!text) return text;
   let out = text;
-  for (const [a, b] of BEAUTY) out = out.split(a).join(b);
-  for (const [a, b] of BEAUTY_WORDS) out = out.replace(word(a), (_m, pre: string) => pre + b);
+  if (v.type !== "barber_men") {
+    for (const [a, b] of haircutSentences(v)) out = out.split(a).join(b);
+    const kw = KEYWORDS[v.type];
+    out = kw ? out.split(KEYWORDS.barber_men!).join(kw) : out.split(KEYWORDS_LINE + KEYWORDS.barber_men! + "\n").join("").split(KEYWORDS_LINE + KEYWORDS.barber_men!).join("").replace(/\n{3,}/g, "\n\n");
+    out = out.split("💈").join(v.emoji).split("✂️").join(SCISSORS[v.type]);
+  }
+  if (v.customerFem) {
+    for (const [a, b] of FEM) out = out.split(a).join(b);
+    for (const [a, b] of FEM_WORDS) out = out.replace(word(a), (_m, pre: string) => pre + b);
+  }
   if (v.staffFem) for (const [a, b] of STAFF_FEM) out = out.split(a).join(b);
-  out = out.split(KEYWORDS.barber_men).join(KEYWORDS[v.type]);
-  out = out.split("💈").join(v.emoji).split("✂️").join(SCISSORS[v.type]);
   return out;
 }
 
@@ -97,10 +119,10 @@ export function adaptsKind(kind: MessageKind): boolean {
  *  "אם תרצה לקבוע מחדש") and any 💈 the model copied from a tool result.
  *  Narrow on purpose: the model writes its own Hebrew, and there "תוכל" may
  *  be "she will be able", about the staff member, not "you will". */
-export function agentReplyForType(text: string, type: string | null | undefined): string {
-  const v = vocabFor(type);
-  if (v.type === "barber_men" || !text) return text;
-  let out = text.split("💈").join(v.emoji);
+export function agentReplyForType(text: string, words: Words): string {
+  const v = vocabOfWords(words);
+  if (!text) return text;
+  let out = v.type === "barber_men" ? text : text.split("💈").join(v.emoji);
   if (v.customerFem) {
     out = out
       .replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "מאשרת?")

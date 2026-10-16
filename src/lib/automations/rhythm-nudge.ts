@@ -21,6 +21,7 @@ import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/li
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { recordNudgeOffer } from "@/lib/agent/booking-proposals";
 import { forType } from "@/lib/type-wording";
+import { vocabOf } from "@/lib/vocab";
 
 // ── Settings (Business.settings.rhythmNudge) ─────────────────────────────────
 export type RhythmSettings = {
@@ -394,7 +395,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         : variant === "new" ? (b.rhythmNudgeNewTemplate || DEFAULT_RHYTHM_NEW_TEMPLATE)
         : (b.rhythmNudgeTemplate || DEFAULT_RHYTHM_TEMPLATE);
       // In the shop's words already here, so the dry-run preview is what is sent.
-      const body = forType(applyTemplate(tmpl, vars), b.businessType);
+      const body = forType(applyTemplate(tmpl, vars), vocabOf(b));
 
       res.planned.push({ customerId: c.id, name: c.name, phone, kind, variant, reason, daysToDue, staffMode: mixed ? "mixed" : "regular", slots, body, serviceId });
     }

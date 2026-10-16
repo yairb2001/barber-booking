@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { THEMES, type ThemeId, DEFAULT_THEME } from "@/lib/themes";
+import TypeAndWords from "./TypeAndWords";
 
 type BizCore = {
   name: string; phone: string; address: string; about: string;
@@ -122,6 +123,8 @@ export default function BusinessInfoPage() {
               </div>
             </div>
           </div>
+
+          <TypeAndWords />
 
           <div className="bg-white rounded-2xl border border-neutral-200 p-6">
             <h2 className="font-semibold text-neutral-800 mb-4">תמונות</h2>

@@ -5,6 +5,7 @@ import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM
 import { DEFAULT_CALL_NEW_MISSED_TEMPLATE, DEFAULT_CALL_NEW_ANSWERED_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_TEMPLATE } from "@/lib/automations/call-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
 import { forType, adaptsKind } from "@/lib/type-wording";
+import { vocabOf, type Vocab } from "@/lib/vocab";
 import { GreenApiProvider } from "./green-api";
 import { EvolutionProvider } from "./evolution";
 import { normalizeIsraeliPhone } from "./phone";
@@ -388,8 +389,9 @@ export async function deliverMessageLog(
   return result;
 }
 
-async function businessTypeById(id: string): Promise<string | null> {
-  return (await prisma.business.findUnique({ where: { id }, select: { businessType: true } }))?.businessType ?? null;
+/** The business's words (type + the owner's own words from settings.vocab). */
+async function vocabById(id: string): Promise<Vocab> {
+  return vocabOf(await prisma.business.findUnique({ where: { id }, select: { businessType: true, settings: true } }));
 }
 
 /**
@@ -416,7 +418,7 @@ export async function sendMessage(opts: {
       appointmentId: opts.appointmentId || null,
       customerPhone: opts.customerPhone,
       kind: opts.kind,
-      body: adaptsKind(opts.kind) ? forType(opts.body, business.businessType) : opts.body,
+      body: adaptsKind(opts.kind) ? forType(opts.body, vocabOf(business)) : opts.body,
       status: "queued",
     },
   });
@@ -440,7 +442,7 @@ export async function enqueueMessage(opts: {
   /** JSON side-data the drip queue acts on before sending (waitlist cascade). */
   meta?: Record<string, unknown> | null;
 }): Promise<void> {
-  const body = adaptsKind(opts.kind) ? forType(opts.body, await businessTypeById(opts.businessId)) : opts.body;
+  const body = adaptsKind(opts.kind) ? forType(opts.body, await vocabById(opts.businessId)) : opts.body;
   await prisma.messageLog.create({
     data: {
       businessId: opts.businessId,
@@ -485,7 +487,7 @@ export async function sendProactiveMessage(opts: {
   const escalate = opts.escalate !== false;
   // The thread shows exactly what the customer gets (a delay or "moved" notice
   // in the business's words).
-  if (adaptsKind(opts.kind)) opts = { ...opts, body: forType(opts.body, await businessTypeById(opts.businessId)) };
+  if (adaptsKind(opts.kind)) opts = { ...opts, body: forType(opts.body, await vocabById(opts.businessId)) };
   // An Instagram key ("ig:<IGSID>") is not a phone number: keep it as is.
   const normalized = isInstagramKey(opts.customerPhone) ? opts.customerPhone : normalizeIsraeliPhone(opts.customerPhone);
 

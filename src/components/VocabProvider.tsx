@@ -10,7 +10,7 @@ import { vocabFor, type Vocab, type BookingOrder } from "@/lib/vocab";
 const VocabContext = createContext<Vocab>(vocabFor("barber_men"));
 const OrderContext = createContext<BookingOrder>("staff");
 
-export function VocabProvider({ type, vocab: overrides, order = "staff", children }: { type: string | null | undefined; vocab?: Record<string, string> | null; order?: BookingOrder; children: React.ReactNode }) {
+export function VocabProvider({ type, vocab: overrides, order = "staff", children }: { type: string | null | undefined; vocab?: Record<string, unknown> | null; order?: BookingOrder; children: React.ReactNode }) {
   const vocab = useMemo(() => vocabFor(type, overrides ?? null), [type, overrides]);
   return <VocabContext.Provider value={vocab}><OrderContext.Provider value={order}>{children}</OrderContext.Provider></VocabContext.Provider>;
 }

@@ -2665,7 +2665,7 @@ export async function runCustomerAgent(opts: {
 
   assistantText = correctHebrewWeekdayLabels(assistantText);
   // A nail studio's customer reads "מאשרת?" and 💅, never 💈 (type-wording.ts).
-  assistantText = agentReplyForType(assistantText, biz.businessType);
+  assistantText = agentReplyForType(assistantText, vocabOf(biz));
   // A reply that copies its own instructions never goes out (prompt-guard.ts).
   assistantText = guardReply(assistantText, promptInstructions(promptParams), { agent: "shop", label: `${biz.name} · ${phone}`, businessId });
 

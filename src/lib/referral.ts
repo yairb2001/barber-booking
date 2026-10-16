@@ -89,14 +89,14 @@ export const REFERRAL_DEFAULTS: ReferralConfig = {
  */
 export function getReferralConfig(settings: string | Record<string, unknown> | null | undefined, businessType?: string | null): ReferralConfig {
   // The default gift in the business's words: "טיפול חינם" in a salon or clinic.
-  const defaults = { ...REFERRAL_DEFAULTS, giftLabel: `${vocabFor(businessType).treatment} חינם` };
-  let s: Record<string, unknown> = {};
+    let s: Record<string, unknown> = {};
+  let bad = false;
   try {
     if (typeof settings === "string") s = settings ? JSON.parse(settings) : {};
     else if (settings && typeof settings === "object") s = settings;
-  } catch {
-    return defaults;
-  }
+  } catch { bad = true; }
+  const defaults = { ...REFERRAL_DEFAULTS, giftLabel: `${vocabFor(businessType, s.vocab as Record<string, unknown> | null).treatment} חינם` };
+  if (bad) return defaults;
 
   const goalNum = Number(s.referralGoal);
   const gift = typeof s.referralGiftLabel === "string" ? s.referralGiftLabel.trim() : "";

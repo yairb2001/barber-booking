@@ -155,7 +155,6 @@ type EditorState = {
 
 export default function MessagesHubPage() {
   const v = useVocab();
-  const vtype = v.type;
   const [bizName, setBizName] = useState("");
   const keys = Object.keys(TEMPLATE_DEFS) as TemplateKey[];
   const [tab, setTab] = useState<TabKey>("appointment");
@@ -190,7 +189,7 @@ export default function MessagesHubPage() {
           for (const k of keys) {
             const def = TEMPLATE_DEFS[k];
             const stored: string | null = data[def.field] ?? null;
-            const value = stored ?? forType(def.default, vtype);
+            const value = stored ?? forType(def.default, v);
             next[k] = { value, initialValue: value, saving: false, saved: false };
           }
           return next;
@@ -225,7 +224,7 @@ export default function MessagesHubPage() {
     const cur = byKey[k];
     setByKey(prev => ({ ...prev, [k]: { ...prev[k], saving: true, saved: false } }));
     // If user reset to default, send null so the server uses the built-in
-    const valueToSend = cur.value === forType(def.default, vtype) ? null : cur.value;
+    const valueToSend = cur.value === forType(def.default, v) ? null : cur.value;
     const res = await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -243,7 +242,7 @@ export default function MessagesHubPage() {
   function resetToDefault(k: TemplateKey) {
     const def = TEMPLATE_DEFS[k];
     if (!confirm("לאפס לתבנית ברירת המחדל? השינויים שלך יאבדו.")) return;
-    setByKey(prev => ({ ...prev, [k]: { ...prev[k], value: forType(def.default, vtype), saved: false } }));
+    setByKey(prev => ({ ...prev, [k]: { ...prev[k], value: forType(def.default, v), saved: false } }));
   }
 
   /** Insert {{var}} at the textarea's cursor position. */
@@ -278,7 +277,7 @@ export default function MessagesHubPage() {
     const meta = MSG_META[k];
     const state = byKey[k];
     const isDirty = state.value !== state.initialValue;
-    const isDefault = state.value === forType(def.default, vtype);
+    const isDefault = state.value === forType(def.default, v);
 
     // Enablement: an explicit toggle, a variant that follows its parent, or
     // "always sent" (action-triggered).
@@ -352,7 +351,7 @@ export default function MessagesHubPage() {
             rows={7}
             dir="rtl"
             className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 font-mono leading-relaxed resize-y"
-            placeholder={forType(def.default, vtype)}
+            placeholder={forType(def.default, v)}
           />
           <p className="text-[10px] text-neutral-400 mt-1">{state.value.length} תווים</p>
         </div>

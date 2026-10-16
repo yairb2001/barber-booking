@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getSessionBusiness, requireOwner } from "@/lib/session";
 import { propagateTeamPermissions } from "@/lib/staff-permissions";
+import { isBusinessType } from "@/lib/vocab";
 
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
@@ -60,6 +61,8 @@ export async function PATCH(req: NextRequest) {
     where: { id: business.id },
     data: {
       ...(body.name !== undefined && { name: body.name }),
+      // The owner may change the kind of business (settings, "סוג העסק והמילים").
+      ...(isBusinessType(body.businessType) && { businessType: body.businessType }),
       ...(body.phone !== undefined && { phone: body.phone }),
       ...(body.address !== undefined && { address: body.address }),
       ...(body.about !== undefined && { about: body.about }),
