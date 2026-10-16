@@ -8,7 +8,7 @@
  * The Chator pixel: an empty id keeps it off. The landing page carries the same
  * id in its own script (public/chator/landing.html, CHATOR_PIXEL).
  */
-export const CHATOR_PIXEL_ID: string = "";
+export const CHATOR_PIXEL_ID: string = "28711212901840630";
 
 export type LeadAttribution = { source?: string; medium?: string; campaign?: string; content?: string; term?: string; fbclid?: boolean; ref?: string; ts?: number };
 
