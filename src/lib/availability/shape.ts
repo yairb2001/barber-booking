@@ -9,7 +9,7 @@
  *    (Appointment.busySegments, bufferAfterMin). Recorded, not re-derived from
  *    the service, so editing a treatment never moves existing bookings.
  */
-import { plainShape, shapeLength, staffBlocks, toMin, toHHMM, type Grid, type Iv, type Seg, type Shape } from "@/lib/availability/engine";
+import { plainShape, shapeLength, staffBlocks, toMin, toHHMM, type Grid, type GapPolicy, type Iv, type Seg, type Shape } from "@/lib/availability/engine";
 
 export type ShapedService = { durationMinutes?: number; segments?: string | null; bufferAfterMin?: number | null };
 export type BookedRow = { startTime: string; endTime: string; busySegments?: string | null; bufferAfterMin?: number | null };
@@ -82,12 +82,24 @@ export function bookedBusyRows(a: BookedRow): { startTime: string; endTime: stri
  * plus the moment a booking ends.
  */
 export function gridOf(biz: { businessType?: string | null; settings?: string | null } | null | undefined): Grid {
-  let v: unknown;
-  try { v = biz?.settings ? (JSON.parse(biz.settings) as { slotGrid?: unknown }).slotGrid : undefined; } catch { v = undefined; }
-  if (v === "legacy") return { mode: "legacy" };
+  let v: unknown, gp: unknown;
+  try { const s = biz?.settings ? (JSON.parse(biz.settings) as { slotGrid?: unknown; gapPolicy?: unknown }) : {}; v = s.slotGrid; gp = s.gapPolicy; } catch { v = undefined; }
+  const gaps = gapPolicyOf(gp);
+  if (v === "legacy") return { mode: "legacy", gaps };
   const n = Number(v);
-  if (Number.isFinite(n) && n >= 5 && n <= 60) return { mode: "fixed", step: Math.round(n) };
-  return (biz?.businessType ?? "barber_men") === "barber_men" ? { mode: "legacy" } : { mode: "fixed", step: 15 };
+  if (Number.isFinite(n) && n >= 5 && n <= 60) return { mode: "fixed", step: Math.round(n), gaps };
+  return (biz?.businessType ?? "barber_men") === "barber_men" ? { mode: "legacy", gaps } : { mode: "fixed", step: 15, gaps };
+}
+
+/** Business.settings.gapPolicy → the engine's policy. Defaults (owner, 16.10.2026):
+ *  no dead gaps, minimum = the shortest service (autoMin, kept fresh by the
+ *  services routes), empty days free, adjacent-only off. */
+export type StoredGapPolicy = { deadGaps?: boolean; minGap?: number | null; autoMin?: number; adjacentOnly?: boolean; emptyDayFree?: boolean };
+export function gapPolicyOf(raw: unknown): GapPolicy {
+  const g = (raw && typeof raw === "object" ? raw : {}) as StoredGapPolicy;
+  const fixed = Number(g.minGap), auto = Number(g.autoMin);
+  const minGap = Number.isFinite(fixed) && fixed > 0 ? fixed : Number.isFinite(auto) && auto > 0 ? auto : 15;
+  return { deadGaps: g.deadGaps !== false, minGap, adjacentOnly: g.adjacentOnly === true, emptyDayFree: g.emptyDayFree !== false };
 }
 
 /** A booked row back to a shape (a move keeps what it recorded when booked). */

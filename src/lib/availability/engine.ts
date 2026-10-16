@@ -21,7 +21,17 @@ export type Iv = { s: number; e: number };
 /** One part of a treatment: m minutes; staffBusy false = processing (she is free). */
 export type Seg = { m: number; staffBusy: boolean };
 export type Shape = { segs: Seg[]; bufferAfter: number };
-export type Grid = { mode: "legacy" } | { mode: "fixed"; step: number };
+/**
+ * A calendar without holes (owner, 16.10.2026), each layer the business's own
+ * switch (Business.settings.gapPolicy, read by gridOf):
+ *  - deadGaps: never offer a start that leaves a gap shorter than minGap
+ *    (gap 0 is fine) before or after it — a 15-minute hole sells to no one.
+ *  - adjacentOnly: offer only starts that touch a booking, a break or the
+ *    edge of the working hours.
+ *  - emptyDayFree: on a day with no booking yet, the rules wait for the first one.
+ */
+export type GapPolicy = { deadGaps: boolean; minGap: number; adjacentOnly: boolean; emptyDayFree: boolean };
+export type Grid = ({ mode: "legacy" } | { mode: "fixed"; step: number }) & { gaps?: GapPolicy };
 
 export const LEGACY_GRID: Grid = { mode: "legacy" };
 
@@ -97,7 +107,27 @@ export function fitsAt(windows: Iv[], busy: Iv[], sh: Shape, start: number): boo
  * treatment's length as the step), plus the exact end of each busy block, so
  * a gap that opens at 10:40 is offered at 10:40.
  */
-export function freeStarts(windows: Iv[], busy: Iv[], sh: Shape, grid: Grid = LEGACY_GRID): number[] {
+export function freeStarts(windows: Iv[], busy: Iv[], sh: Shape, grid: Grid = LEGACY_GRID, ctx: { hasBookings?: boolean } = {}): number[] {
+  return applyGapPolicy(freeStartsRaw(windows, busy, sh, grid), windows, busy, shapeLength(sh), grid.gaps, ctx.hasBookings ?? busy.length > 0);
+}
+
+/** Drops the starts the business's gap policy rules out (see GapPolicy). */
+export function applyGapPolicy(starts: number[], windows: Iv[], busy: Iv[], len: number, p: GapPolicy | undefined, hasBookings: boolean): number[] {
+  if (!p || (!p.deadGaps && !p.adjacentOnly)) return starts;
+  if (p.emptyDayFree && !hasBookings) return starts;
+  return starts.filter(t => {
+    const w = windows.find(x => t >= x.s && t + len <= x.e);
+    if (!w) return true;
+    const before = busy.reduce((m, b) => (b.e <= t && b.e > m ? b.e : m), w.s);
+    const after = busy.reduce((m, b) => (b.s >= t + len && b.s < m ? b.s : m), w.e);
+    const gb = t - before, ga = after - (t + len);
+    if (p.deadGaps && ((gb > 0 && gb < p.minGap) || (ga > 0 && ga < p.minGap))) return false;
+    if (p.adjacentOnly && gb !== 0 && ga !== 0) return false;
+    return true;
+  });
+}
+
+function freeStartsRaw(windows: Iv[], busy: Iv[], sh: Shape, grid: Grid): number[] {
   const len = shapeLength(sh);
   if (!(len > 0)) return [];
   if (grid.mode === "legacy" && isPlain(sh)) return legacyGenerate(windows, busy, len);

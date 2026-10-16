@@ -34,7 +34,8 @@ export function generateSlots(
     ...bookedSlots.flatMap(bookedBusy),
   ];
   const windows = scheduleSlots.map((w) => ({ s: timeToMinutes(w.start), e: timeToMinutes(w.end) }));
-  return freeStarts(windows, blockers, typeof duration === "number" ? plainShape(duration) : duration, grid).map(minutesToTime);
+  // "A day with no booking yet" counts bookings only — a fixed lunch break doesn't make a day busy.
+  return freeStarts(windows, blockers, typeof duration === "number" ? plainShape(duration) : duration, grid, { hasBookings: bookedSlots.length > 0 }).map(minutesToTime);
 }
 
 // Format date to YYYY-MM-DD

@@ -40,6 +40,9 @@ export default function CalendarBookingPage() {
   const [waitlistCascade, setWaitlistCascade] = useState(false);
   const [waitlistCascadeMinutes, setWaitlistCascadeMinutes] = useState(5);
   const [toggleSaving, setToggleSaving] = useState<string | null>(null);
+  // A calendar without holes (16.10.2026) — three independent switches, see GapPolicy in the engine.
+  const [gp, setGp] = useState<{ deadGaps: boolean; minGap: number | null; autoMin?: number; adjacentOnly: boolean; emptyDayFree: boolean }>({ deadGaps: true, minGap: null, adjacentOnly: false, emptyDayFree: true });
+  const saveGp = (next: typeof gp) => { setGp(next); void patchSettings({ gapPolicy: next }, "gaps"); };
 
   async function patchSettings(patch: Record<string, unknown>, key: string) {
     setToggleSaving(key);
@@ -73,6 +76,8 @@ export default function CalendarBookingPage() {
         setWaitlistMode(s.waitlistMode === "auto" ? "auto" : "notify");
         setWaitlistCascade(s.waitlistCascade === true);
         if (typeof s.waitlistCascadeMinutes === "number") setWaitlistCascadeMinutes(s.waitlistCascadeMinutes);
+        const g = s.gapPolicy || {};
+        setGp({ deadGaps: g.deadGaps !== false, minGap: typeof g.minGap === "number" && g.minGap > 0 ? g.minGap : null, autoMin: typeof g.autoMin === "number" ? g.autoMin : undefined, adjacentOnly: g.adjacentOnly === true, emptyDayFree: g.emptyDayFree !== false });
       }
       setLoading(false);
     });
@@ -285,6 +290,51 @@ export default function CalendarBookingPage() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* A calendar without holes */}
+          <div className="bg-white rounded-2xl border border-neutral-200 p-6">
+            <h2 className="font-semibold text-neutral-800 mb-1">יומן בלי חורים</h2>
+            <p className="text-xs text-neutral-400 mb-4">אילו שעות הלקוחות והסוכן מקבלים, כדי שלא יישארו רווחים קטנים שאף אחד לא יקבע. מהיומן עצמו אפשר תמיד לקבוע כל שעה.</p>
+            <div className="space-y-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 accent-teal-600" checked={gp.deadGaps} onChange={e => saveGp({ ...gp, deadGaps: e.target.checked })} />
+                <span>
+                  <span className="text-sm font-semibold text-neutral-800 block">לא להציע שעה שמשאירה חור מת</span>
+                  <span className="text-[11px] text-neutral-500 leading-relaxed block mt-0.5">שעה מוצעת רק אם אין רווח לפניה ואחריה, או שהרווח מספיק לשירות.</span>
+                </span>
+              </label>
+              {gp.deadGaps && (
+                <div className="mr-7 flex flex-wrap items-center gap-2 text-sm text-neutral-700">
+                  <span>רווח מינימלי:</span>
+                  <button type="button" onClick={() => saveGp({ ...gp, minGap: null })}
+                    className={`px-3 py-1 rounded-full text-xs border ${gp.minGap === null ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-600"}`}>
+                    אוטומטי{gp.autoMin ? ` (השירות הקצר ביותר: ${gp.autoMin} דק׳)` : ""}
+                  </button>
+                  <span className="text-xs text-neutral-400">או</span>
+                  <input type="number" min={5} max={120} step={5} placeholder="דק׳" value={gp.minGap ?? ""}
+                    onChange={e => setGp({ ...gp, minGap: e.target.value ? Number(e.target.value) : null })}
+                    onBlur={() => saveGp({ ...gp, minGap: gp.minGap && gp.minGap > 0 ? Math.min(120, Math.round(gp.minGap)) : null })}
+                    className="w-16 border border-neutral-200 rounded-lg px-2 py-1 text-sm" dir="ltr" />
+                  <span>דקות</span>
+                </div>
+              )}
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 accent-teal-600" checked={gp.adjacentOnly} onChange={e => saveGp({ ...gp, adjacentOnly: e.target.checked })} />
+                <span>
+                  <span className="text-sm font-semibold text-neutral-800 block">להציע רק שעות צמודות</span>
+                  <span className="text-[11px] text-neutral-500 leading-relaxed block mt-0.5">רק שעות שנצמדות לתור קיים, להפסקה או לפתיחה וסגירה. הכי צפוף, פחות בחירה ללקוח.</span>
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" className="mt-1 accent-teal-600" checked={gp.emptyDayFree} onChange={e => saveGp({ ...gp, emptyDayFree: e.target.checked })} />
+                <span>
+                  <span className="text-sm font-semibold text-neutral-800 block">יום ריק פתוח לגמרי</span>
+                  <span className="text-[11px] text-neutral-500 leading-relaxed block mt-0.5">ביום שעוד אין בו תור, כל השעות מוצעות. הכללים נכנסים לפעולה מהתור הראשון.</span>
+                </span>
+              </label>
+              {toggleSaving === "gaps" && <p className="text-[11px] text-teal-700">שומר...</p>}
+            </div>
           </div>
 
           {/* Cancellation policy */}

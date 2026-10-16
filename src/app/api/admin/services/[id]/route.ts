@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { refreshGapAutoMin } from "@/lib/gap-policy";
 import { getRequestSession, requireOwner } from "@/lib/session";
 import { setServiceRooms } from "@/lib/availability/rooms";
 import { syncServiceStaff } from "@/lib/service-staff";
@@ -32,6 +33,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
   await setServiceRooms(service.id, session.businessId, body.roomIds);
   await syncServiceStaff(service.id, session.businessId, body.staffIds);
+  await refreshGapAutoMin(session.businessId).catch(() => {});
   return NextResponse.json(service);
 }
 
@@ -42,5 +44,6 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   // Tenant isolation: deleteMany scoped by business → a cross-business id deletes nothing.
   const { count } = await prisma.service.deleteMany({ where: { id: params.id, businessId: session.businessId } });
   if (count === 0) return NextResponse.json({ error: "not found" }, { status: 404 });
+  await refreshGapAutoMin(session.businessId).catch(() => {});
   return NextResponse.json({ ok: true });
 }

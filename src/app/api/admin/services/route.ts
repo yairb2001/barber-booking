@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { refreshGapAutoMin } from "@/lib/gap-policy";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 import { setServiceRooms } from "@/lib/availability/rooms";
 import { syncServiceStaff } from "@/lib/service-staff";
@@ -80,5 +81,6 @@ export async function POST(req: NextRequest) {
   const staffIds = Array.isArray(body.staffIds) ? body.staffIds
     : (await prisma.staff.findMany({ where: { businessId: business.id, isActive: true }, select: { id: true } })).map(s => s.id);
   await syncServiceStaff(service.id, business.id, staffIds);
+  await refreshGapAutoMin(business.id).catch(() => {});
   return NextResponse.json(service, { status: 201 });
 }
