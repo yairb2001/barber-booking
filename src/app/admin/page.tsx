@@ -837,12 +837,45 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     badge = { text: "✅ אישר", cls: "bg-emerald-500 text-white" };
   }
 
+  const content = (
+    <>
+      {badge && (
+        <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
+      )}
+      {appt.hiddenAt && (
+        <span className="absolute inset-0 rounded-[inherit] bg-neutral-200/60 pointer-events-none flex items-start justify-center pt-0.5">
+          <span className="text-[9px] font-bold text-neutral-600 bg-white/85 rounded px-1">מוסתר</span>
+        </span>
+      )}
+      {(!!appt.customerNoShows || appt.isFirstVisit) && (
+        <span className="absolute top-0.5 right-0.5 z-10 flex gap-0.5 text-[9px] leading-none">
+          {appt.isFirstVisit && <span className="text-amber-500" title="לקוח חדש — ביקור ראשון">★</span>}
+          {!!appt.customerNoShows && <span className="text-neutral-500" title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>⚠</span>}
+        </span>
+      )}
+      {(appt.note || appt.staffNote) && (
+        <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
+          {appt.note && <span className="block w-1.5 h-1.5 rounded-full bg-blue-500" title="הערת לקוח" />}
+          {appt.staffNote && <span className="block w-1.5 h-1.5 rounded-full bg-orange-500" title="הערה פנימית" />}
+        </span>
+      )}
+      {/* Full customer name (first + last) — ALWAYS shown in full. The font
+          starts at the zoom-based size and auto-shrinks only as much as needed
+          so the complete name fits (wrapping to up to `nameLines` lines); it is
+          never cut off with an ellipsis. */}
+      <FitName name={appt.customer.name} max={nameFont} min={7} maxLines={nameLines} />
+      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.customServiceName || appt.service.name}{appt.room ? ` · ${appt.room.name}` : ""}</p>}
+      {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
+    </>
+  );
   return (
     // touchAction: allow vertical calendar scroll even when the finger starts on a
     // block (pan-y); switch to "none" only once THIS block is actively dragged, so
     // the drag captures movement instead of scrolling. The switch happens at
     // long-press time — before any finger movement — so it's in place in time.
-    <div className={`no-touch-select absolute flex flex-col ${short && !parts ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} ${parts ? "z-[5]" : "z-10"} ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={parts
+      ? `no-touch-select absolute z-[5] pointer-events-none ${isMoving ? "opacity-30" : ""}`
+      : `no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
@@ -877,42 +910,27 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
         lpMoved.current = false;
       }}
       onPointerCancel={() => { clearLP(); lpStart.current = null; lpFired.current = false; lpMoved.current = false; }}>
-      {badge && (
-        <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
-      )}
-      {parts && parts.slice(0, -1).map((g, i) => {
-        const from = g.o + g.m, to = parts[i + 1].o, px = ((to - from) / 60) * hh;
-        return to > from ? (
-          <span key={i} className="absolute left-0 right-0 pointer-events-none flex items-center justify-center border-y border-dashed"
-            style={{ top: (from / 60) * hh, height: px, borderColor: "rgba(0,0,0,.18)", background: "repeating-linear-gradient(135deg, rgba(255,255,255,.88) 0 6px, rgba(255,255,255,.55) 6px 12px)" }}>
-            {px >= 14 && <span className="text-[10px] font-semibold opacity-80 truncate px-1">⏳ המתנה {to - from} דק׳ · פנוי</span>}
-          </span>
-        ) : null;
-      })}
-      {appt.hiddenAt && (
-        <span className="absolute inset-0 rounded-[inherit] bg-neutral-200/60 pointer-events-none flex items-start justify-center pt-0.5">
-          <span className="text-[9px] font-bold text-neutral-600 bg-white/85 rounded px-1">מוסתר</span>
-        </span>
-      )}
-      {(!!appt.customerNoShows || appt.isFirstVisit) && (
-        <span className="absolute top-0.5 right-0.5 z-10 flex gap-0.5 text-[9px] leading-none">
-          {appt.isFirstVisit && <span className="text-amber-500" title="לקוח חדש — ביקור ראשון">★</span>}
-          {!!appt.customerNoShows && <span className="text-neutral-500" title={`הבריז ${appt.customerNoShows} פעם${appt.customerNoShows > 1 ? "ים" : ""} בעבר`}>⚠</span>}
-        </span>
-      )}
-      {(appt.note || appt.staffNote) && (
-        <span className="absolute bottom-1 left-1 z-10 flex gap-0.5">
-          {appt.note && <span className="block w-1.5 h-1.5 rounded-full bg-blue-500" title="הערת לקוח" />}
-          {appt.staffNote && <span className="block w-1.5 h-1.5 rounded-full bg-orange-500" title="הערה פנימית" />}
-        </span>
-      )}
-      {/* Full customer name (first + last) — ALWAYS shown in full. The font
-          starts at the zoom-based size and auto-shrinks only as much as needed
-          so the complete name fits (wrapping to up to `nameLines` lines); it is
-          never cut off with an ellipsis. */}
-      <FitName name={appt.customer.name} max={nameFont} min={7} maxLines={nameLines} />
-      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.customServiceName || appt.service.name}{appt.room ? ` · ${appt.room.name}` : ""}</p>}
-      {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
+      {parts ? (
+        <>
+          {/* A treatment with a wait (owner, 16.10.2026: "יותר נקי", and the wait
+              must stay tappable to book): each work part is its own card; the
+              wait is only a thin dotted line, and taps there fall through to the
+              grid (the wrapper ignores pointer events), opening a new booking. */}
+          {parts.map((g, i) => (
+            <div key={i} className={`absolute left-0 right-0 pointer-events-auto flex flex-col justify-start border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${veryShort ? "rounded-md" : "rounded-lg"} ${padClass} ${blockColor} ${ringClass}`}
+              style={{ top: (g.o / 60) * hh, height: Math.max(6, (g.m / 60) * hh - 1) }}>
+              {i === 0 ? content : null}
+            </div>
+          ))}
+          {parts.slice(0, -1).map((g, i) => {
+            const from = g.o + g.m, to = parts[i + 1].o;
+            return to > from ? (
+              <span key={"w" + i} className="absolute pointer-events-none border-r-2 border-dotted opacity-50"
+                style={{ top: (from / 60) * hh, height: ((to - from) / 60) * hh, right: "50%", borderColor: "currentColor" }} />
+            ) : null;
+          })}
+        </>
+      ) : content}
     </div>
   );
 }
