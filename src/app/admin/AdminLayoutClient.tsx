@@ -116,7 +116,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     if (pathname === "/admin/login" || (pathname.startsWith("/admin/onboarding") || pathname.startsWith("/admin/crm"))) return;
     fetch("/api/admin/me")
       .then(r => r.ok ? r.json() : null)
-      .then(setMe)
+      .then(d => { if (d?.roleChanged) { window.location.reload(); return; } setMe(d); })
       .catch(() => setMe(null));
   }, [pathname]);
 
@@ -130,7 +130,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
       if (cancelled || document.visibilityState !== "visible") return;
       fetch("/api/admin/me")
         .then(r => r.ok ? r.json() : null)
-        .then(data => { if (!cancelled && data) setMe(data); })
+        .then(data => { if (data?.roleChanged) { window.location.reload(); return; } if (!cancelled && data) setMe(data); })
         .catch(() => {});
     };
     const id = setInterval(tick, 60000);

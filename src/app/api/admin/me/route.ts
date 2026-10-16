@@ -10,6 +10,7 @@ import { getRootBusinessId } from "@/lib/tenant";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { alertWhatsAppDown, alertWhatsAppRecovered } from "@/lib/wa-alerts";
 import { getPlans, planKeyOf } from "@/lib/crm/plans";
+import { verifySession, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
 
 // GreenAPI states that mean the bot truly can't send/receive → red banner.
 const WA_DOWN_STATES = new Set(["notAuthorized", "blocked", "yellowCard"]);
@@ -151,7 +152,19 @@ export async function GET(req: NextRequest) {
     ? await (await import("@/lib/setup-tasks")).setupTasksFor(session.businessId).catch(() => [])
     : [];
 
-  return NextResponse.json({
+  // "👑 גישה מלאה" switched on/off for this staff member → re-issue his cookie
+  // with the role the DB says, and tell the app to reload into the new menu.
+  let reissue: string | null = null;
+  if (staff && !req.cookies.get("super_origin")?.value) {
+    const tok = await verifySession(req.cookies.get(COOKIE_NAME)?.value);
+    const want = staff.role === "owner" ? "owner" : "barber";
+    if (tok && tok.staffId === staff.id && tok.role !== want) {
+      reissue = await signSession({ businessId: tok.businessId, staffId: staff.id, role: want });
+    }
+  }
+
+  const res = NextResponse.json({
+    roleChanged: !!reissue,
     trialEnding,
     setupTasks,
     businessId: session.businessId,
@@ -186,4 +199,6 @@ export async function GET(req: NextRequest) {
     cancellationPolicyMode: business?.cancellationPolicyMode ?? "owner",
     minCancellationHours: business?.minCancellationHours ?? 0,
   });
+  if (reissue) res.cookies.set(COOKIE_NAME, reissue, COOKIE_OPTIONS);
+  return res;
 }

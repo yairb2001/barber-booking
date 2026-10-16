@@ -95,6 +95,7 @@ export default function StaffSettingsPage() {
   // Permissions
   const [canViewAllCalendars, setCanViewAllCalendars] = useState(false);
   const [canViewAllChats,     setCanViewAllChats]     = useState(false);
+  const [fullAccess, setFullAccess] = useState(false);
   const [canUseOwnerAgent,    setCanUseOwnerAgent]    = useState(false);
   const [permSaved, setPermSaved] = useState(false);
 
@@ -128,6 +129,7 @@ export default function StaffSettingsPage() {
     } catch { /* ignore */ }
     setCanViewAllCalendars(!!data.canViewAllCalendars);
     setCanViewAllChats(!!data.canViewAllChats);
+    setFullAccess(data.role === "owner");
     setCanUseOwnerAgent(!!data.canUseOwnerAgent);
     setTagline(data.tagline ?? "");
     setLoading(false);
@@ -263,7 +265,7 @@ export default function StaffSettingsPage() {
     await fetch(`/api/admin/staff/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ canViewAllCalendars, canViewAllChats, canUseOwnerAgent }),
+      body: JSON.stringify({ canViewAllCalendars, canViewAllChats, canUseOwnerAgent, fullAccess }),
     });
     setSaving(false);
     setPermSaved(true);
@@ -683,6 +685,26 @@ export default function StaffSettingsPage() {
           <p className="text-xs text-neutral-400">
             הגדר מה {staff.name} {v.staffFem ? "רשאית" : "רשאי"} לראות ולעשות במערכת.
           </p>
+
+          {/* 👑 Full access (owner, 16.10.2026): this login becomes an owner login. */}
+          <div className={`flex items-start gap-4 p-4 rounded-xl border ${fullAccess ? "bg-amber-50 border-amber-300" : "bg-slate-50 border-slate-200"}`}>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-slate-900">👑 גישה מלאה כמו בעלים</p>
+              <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                כשמופעל — {staff.name} {v.staffFem ? "נכנסת" : "נכנס"} עם הטלפון והסיסמה {v.staffFem ? "שלה" : "שלו"} ורואה ועושה הכל כמוך: הגדרות העסק, סוכן ה-AI, היומנים, השיחות וההכנסות של כל הצוות, וגם {v.staffFem ? "יכולה" : "יכול"} לשנות הרשאות של אחרים.
+              </p>
+              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                הכניסה שלך כבעלים לא תלויה בזה, אז אי אפשר לנעול אותך בחוץ. כיבוי {v.staffFem ? "מחזיר אותה" : "מחזיר אותו"} להרשאות הרגילות תוך דקה, בלי התנתקות.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFullAccess(v => !v)}
+              className={`w-12 h-6 rounded-full transition-colors relative shrink-0 mt-0.5 ${fullAccess ? "bg-amber-500" : "bg-neutral-300"}`}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${fullAccess ? "right-1" : "right-6"}`} />
+            </button>
+          </div>
 
           {/* canViewAllCalendars toggle */}
           <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">

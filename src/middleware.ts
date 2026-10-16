@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { SignJWT } from "jose";
 import { verifySession, COOKIE_NAME } from "@/lib/auth";
+
+// A barber with "👑 גישה מלאה" logs in as owner (Staff.role "owner"). His cookie
+// lives 30 days, so the role is re-checked against the DB (cached 60s per
+// instance) — switching it off takes effect within a minute. Fails closed.
+const fullAccessCache = new Map<string, { owner: boolean; at: number }>();
+async function staffStillOwner(req: NextRequest, staffId: string): Promise<boolean> {
+  const hit = fullAccessCache.get(staffId);
+  if (hit && Date.now() - hit.at < 60_000) return hit.owner;
+  try {
+    const key = await new SignJWT({ type: "staff_role_check", staffId }).setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt().setExpirationTime("60s").sign(new TextEncoder().encode(process.env.AUTH_SECRET || ""));
+    const r = await fetch(new URL(`/api/internal/staff-role`, req.url), { headers: { "x-internal-key": key }, cache: "no-store" });
+    const owner = r.ok ? !!(await r.json()).owner : false;
+    fullAccessCache.set(staffId, { owner, at: Date.now() });
+    return owner;
+  } catch { return false; }
+}
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -59,7 +77,8 @@ export async function middleware(req: NextRequest) {
 
   // Pass session info to API route handlers via request headers
   requestHeaders.set("x-session-business-id", session.businessId);
-  requestHeaders.set("x-session-role", session.role);
+  const role = session.role === "owner" && session.staffId && !(await staffStillOwner(req, session.staffId)) ? "barber" : session.role;
+  requestHeaders.set("x-session-role", role);
   if (session.staffId) {
     requestHeaders.set("x-session-staff-id", session.staffId);
   } else {
