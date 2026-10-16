@@ -21,6 +21,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.showDuration !== undefined && { showDuration: body.showDuration }),
       ...(body.category !== undefined && { category: typeof body.category === "string" && body.category.trim() ? body.category.trim() : null }),
       ...(body.priceFrom !== undefined && { priceFrom: body.priceFrom === true }),
+      ...(body.segments !== undefined && { segments: (() => { if (body.segments === null) return null; try { const x = JSON.parse(String(body.segments)); return Array.isArray(x) && x.length && x.every((g: { m?: unknown }) => Number(g?.m) > 0) ? JSON.stringify(x.map((g: { m: number; busy?: boolean }) => ({ m: Math.round(Number(g.m)), busy: g.busy !== false }))) : null; } catch { return null; } })() }),
+      ...(body.bufferAfterMin !== undefined && { bufferAfterMin: (Number.isInteger(body.bufferAfterMin) && body.bufferAfterMin >= 0 && body.bufferAfterMin <= 240 ? body.bufferAfterMin : 0) }),
       ...(body.rebookDays !== undefined && { rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null) }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },

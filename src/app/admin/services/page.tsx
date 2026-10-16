@@ -17,11 +17,23 @@ type Service = {
   category?: string | null;
   priceFrom?: boolean;
   rebookDays?: number | null;
+  segments?: string | null;
+  bufferAfterMin?: number;
 };
+
+/** "[work, wait, work]" from a service's segments, when it has that form. */
+function procOf(s: Service): [number, number, number] | null {
+  try {
+    const x = s.segments ? (JSON.parse(s.segments) as { m: number; busy: boolean }[]) : null;
+    return x && x.length === 3 && x[0].busy && !x[1].busy && x[2].busy ? [x[0].m, x[1].m, x[2].m] : null;
+  } catch { return null; }
+}
 
 // category + "החל מ" (16.10.2026): grouping on the booking page, a price set at a consultation.
 // rebookDays: when she usually comes back for it, the "הגיע הזמן לתור" date (beauty types).
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "" };
+// Stage B (16.10.2026): cleaning after the treatment, and a wait inside it
+// (color processing: work → the stylist is free → work again).
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segA: "", segB: "", segC: "" };
 
 export default function AdminServicesPage() {
   const v = useVocab();
@@ -45,7 +57,17 @@ export default function AdminServicesPage() {
   async function save() {
     if (!form.name.trim() || !form.price) return;
     setSaving(true);
-    const payload = { ...form, rebookDays: parseInt(form.rebookDays) > 0 ? parseInt(form.rebookDays) : null };
+    const segs = [form.segA, form.segB, form.segC].map(x => parseInt(x));
+    const procOk = form.proc && segs.every(x => x > 0);
+    const { proc: _p, segA: _a, segB: _b, segC: _c, ...rest } = form;
+    void _p; void _a; void _b; void _c;
+    const payload = {
+      ...rest,
+      rebookDays: parseInt(form.rebookDays) > 0 ? parseInt(form.rebookDays) : null,
+      bufferAfterMin: parseInt(form.bufferAfterMin) > 0 ? parseInt(form.bufferAfterMin) : 0,
+      segments: procOk ? JSON.stringify([{ m: segs[0], busy: true }, { m: segs[1], busy: false }, { m: segs[2], busy: true }]) : null,
+      ...(procOk ? { durationMinutes: String(segs[0] + segs[1] + segs[2]) } : {}),
+    };
     if (editing) {
       await fetch(`/api/admin/services/${editing.id}`, {
         method: "PATCH",
@@ -93,6 +115,11 @@ export default function AdminServicesPage() {
       category: s.category ?? "",
       priceFrom: !!s.priceFrom,
       rebookDays: s.rebookDays ? String(s.rebookDays) : "",
+      bufferAfterMin: s.bufferAfterMin ? String(s.bufferAfterMin) : "",
+      proc: !!procOf(s),
+      segA: procOf(s) ? String(procOf(s)![0]) : "",
+      segB: procOf(s) ? String(procOf(s)![1]) : "",
+      segC: procOf(s) ? String(procOf(s)![2]) : "",
     });
     setShowAdd(true);
   }
@@ -137,6 +164,8 @@ export default function AdminServicesPage() {
                     <span className="font-medium text-neutral-800">₪{s.price}</span>
                     <span className="mx-1.5 text-neutral-300">·</span>
                     <span>{s.durationMinutes} דק׳</span>
+                    {procOf(s) && <><span className="mx-1.5 text-neutral-300">·</span><span>המתנה {procOf(s)![1]} דק׳</span></>}
+                    {!!s.bufferAfterMin && <><span className="mx-1.5 text-neutral-300">·</span><span>ניקוי {s.bufferAfterMin} דק׳</span></>}
                   </div>
                 </div>
 
@@ -245,6 +274,34 @@ export default function AdminServicesPage() {
                   />
                 </div>
               </div>
+
+              {v.type !== "barber_men" && (
+                <div className="rounded-xl border border-neutral-200 p-3 space-y-3">
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">זמן ניקוי אחרי הטיפול (דקות) <span className="text-neutral-400">({v.staffDef} {v.staffFem ? "תפוסה" : "תפוס"}, {v.customerFem ? "הלקוחה כבר יצאה" : "הלקוח כבר יצא"})</span></label>
+                    <input type="number" min="0" step="5" value={form.bufferAfterMin} onChange={(e) => setForm((p) => ({ ...p, bufferAfterMin: e.target.value }))}
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" dir="ltr" placeholder="0" />
+                  </div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox" checked={form.proc} onChange={(e) => setForm((p) => ({ ...p, proc: e.target.checked }))} className="accent-teal-600 w-4 h-4" />
+                    <span className="text-sm text-neutral-700">יש המתנה באמצע (למשל צבע שנקלט): {v.staffDef} {v.staffFem ? "פנויה" : "פנוי"} בזמן הזה ל{v.customerFem ? "לקוחה אחרת" : "לקוח אחר"}</span>
+                  </label>
+                  {form.proc && (
+                    <div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {([["segA", "עבודה"], ["segB", "המתנה"], ["segC", "עבודה אחרי"]] as const).map(([k, label]) => (
+                          <div key={k}>
+                            <label className="text-[11px] text-neutral-500 block mb-1">{label} (דק׳)</label>
+                            <input type="number" min="5" step="5" value={form[k]} onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.value }))}
+                              className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" dir="ltr" />
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-[11px] text-neutral-500 mt-1.5">המשך הכולל יתעדכן לסכום: {[form.segA, form.segB, form.segC].reduce((t, x) => t + (parseInt(x) || 0), 0)} דק׳.</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {v.type !== "barber_men" && (
                 <div>
