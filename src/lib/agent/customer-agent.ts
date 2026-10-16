@@ -30,7 +30,7 @@ import { applyMessagingOptOut } from "@/lib/messaging/opt-out";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
-import { computeDayAvailability, computeParallelSlots, resolveStaffService } from "@/lib/agent/availability";
+import { computeDayAvailability, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -953,6 +953,10 @@ export async function execTool(
         // Use THIS barber's own length & price (per-barber override), falling
         // back to base catalog values. Mirrors what computeDayAvailability used
         // for the slot grid, so endTime matches the slot the customer picked.
+        // Beauty businesses: never book someone for a treatment she doesn't do.
+        if (!(await staffDoesService(bizId, staffId, serviceId, service.name))) {
+          return `❌ נותנת השירות שבחרת לא מבצעת את "${service.name}". הצע רק מי שמבצעת את הטיפול (get_staff_list / get_available_slots עם serviceId), ואל תקבע אצלה.`;
+        }
         const eff = await resolveStaffService(staffId, serviceId, service.name, service.durationMinutes, service.price);
 
         const apptDate = new Date(`${date}T00:00:00.000Z`);

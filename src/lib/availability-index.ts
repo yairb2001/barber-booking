@@ -27,7 +27,7 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   const toISO = addDaysISO(fromISO, Math.max(0, days - 1));
   const first = new Date(fromISO + "T00:00:00.000Z"), last = new Date(toISO + "T00:00:00.000Z");
   const [biz, staffRows, services] = await Promise.all([
-    prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true } }),
+    prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true } }),
     prisma.staff.findMany({ where: { businessId, isAvailable: true }, select: { id: true, name: true, isAvailable: true, inQuickPool: true, settings: true, staffServices: { select: { serviceId: true, customDuration: true } } } }),
     prisma.service.findMany({ where: { businessId }, select: { id: true, durationMinutes: true } }),
   ]);
@@ -59,6 +59,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
     const hit = cache.get(key); if (hit) return hit;
     const st = staff.find(s => s.id === staffId);
     if (!st || dateISO < fromISO || dateISO > toISO) { cache.set(key, []); return []; }
+    // Beauty businesses: a person who doesn't do this treatment has no slots for it.
+    if (serviceId && (biz?.businessType ?? "barber_men") !== "barber_men" && !staffDuration.has(`${staffId}|${serviceId}`)) { cache.set(key, []); return []; }
     const duration = serviceId ? (staffDuration.get(`${staffId}|${serviceId}`) ?? svcDuration.get(serviceId) ?? 30) : 30;
     const ov = over.get(`${staffId}|${dateISO}`);
     let work: { start: string; end: string }[] = [], breaks: { start: string; end: string }[] | null = null;

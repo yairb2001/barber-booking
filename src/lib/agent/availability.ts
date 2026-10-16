@@ -47,8 +47,11 @@ export async function computeDayAvailability(
 
   const biz = await prisma.business.findUnique({
     where: { id: bizId },
-    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true },
+    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true },
   });
+  // Beauty businesses (16.10.2026): not everyone does every treatment, so a
+  // person who doesn't offer the requested one is never offered for it.
+  const strict = strictServices(biz?.businessType);
   const defaultHorizon = biz?.bookingHorizonDays ?? 30;
 
   const reqService = inputServiceId
@@ -94,16 +97,20 @@ export async function computeDayAvailability(
         // the requested service's own duration, then the barber's shortest
         // service, then 30 min. A barber is only ever skipped for a REAL reason
         // (day off, beyond horizon, no free slot) — never service-id confusion.
-        const alt = reqService
-          ? (await prisma.staffService.findFirst({
+        const sameName = reqService
+          ? await prisma.staffService.findFirst({
               where: { staffId: staff.id, service: { name: reqService.name } },
               include: { service: true },
-            })) ??
-            (await prisma.staffService.findFirst({
+            })
+          : null;
+        // Strict (beauty): only the same treatment under another id counts.
+        if (strict && !sameName) continue;
+        const alt = sameName ?? (reqService
+          ? await prisma.staffService.findFirst({
               where: { staffId: staff.id, service: { durationMinutes: reqService.durationMinutes } },
               include: { service: true },
-            }))
-          : null;
+            })
+          : null);
         if (alt) {
           duration = alt.customDuration ?? alt.service.durationMinutes;
         } else if (reqService) {
@@ -213,6 +220,19 @@ export async function computeParallelSlots(
     .filter(([, barbers]) => barbers.length >= count)
     .sort(([a], [b]) => timeToMinutes(a) - timeToMinutes(b))
     .map(([time, barbers]) => ({ time, barbers }));
+}
+
+/** Beauty businesses: a treatment is offered only by the people who do it (no "similar service" fallback). */
+export const strictServices = (businessType: string | null | undefined) => (businessType ?? "barber_men") !== "barber_men";
+
+/** Whether this person may be booked for this treatment. Men's barbershops keep
+ *  the old tolerance (duplicate catalogs); beauty businesses need the treatment
+ *  itself (or the same treatment under another id). */
+export async function staffDoesService(bizId: string, staffId: string, serviceId: string, serviceName: string): Promise<boolean> {
+  const biz = await prisma.business.findUnique({ where: { id: bizId }, select: { businessType: true } });
+  if (!strictServices(biz?.businessType)) return true;
+  const ss = await prisma.staffService.findFirst({ where: { staffId, OR: [{ serviceId }, { service: { name: serviceName } }] }, select: { serviceId: true } });
+  return !!ss;
 }
 
 /**
