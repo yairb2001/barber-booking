@@ -18,10 +18,13 @@ import { budgetOf, currentMonth } from "@/lib/agent/token-budget";
 import { getCrmSettings } from "@/lib/crm/core";
 import { onFreePackage, freePackageState } from "@/lib/agent/free-package";
 
+// 16.10.2026, Yair approved: about 6 messages an appointment (agent, confirmations,
+// reminders, system), so 1,200 / 2,400 / 4,000 ran out well before the appointments
+// each plan promises (src/lib/crm/plan-reco.ts).
 export const DEFAULT_PLANS = [
-  { key: "base", name: "בסיס", apptsCap: 300, messages: 1200, aiBudgetIls: 30, priceIls: 287, sort: 1 },
-  { key: "mid", name: "ביניים", apptsCap: 600, messages: 2400, aiBudgetIls: 60, priceIls: 367, sort: 2 },
-  { key: "top", name: "עליון", apptsCap: 1000, messages: 4000, aiBudgetIls: 100, priceIls: 467, sort: 3 },
+  { key: "base", name: "בסיס", apptsCap: 330, messages: 2000, aiBudgetIls: 30, priceIls: 287, sort: 1 },
+  { key: "mid", name: "ביניים", apptsCap: 660, messages: 4000, aiBudgetIls: 60, priceIls: 367, sort: 2 },
+  { key: "top", name: "עליון", apptsCap: 1000, messages: 6500, aiBudgetIls: 100, priceIls: 467, sort: 3 },
 ];
 
 /** Re-engagement and promotion kinds — "marketing" on Meta's side, never in a plan. */

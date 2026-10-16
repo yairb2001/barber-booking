@@ -7,6 +7,7 @@ import { setupFieldsFor, SERVICE_LIST, isServiceList, type SetupField, type Setu
 import FreeTextCard from "../agent/FreeTextCard";
 import StyleHelper from "../agent/StyleHelper";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
+import { estimateAppts, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan-reco";
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
 /**
@@ -275,6 +276,9 @@ export default function OnboardingPage() {
     setBusy(false);
   };
   useEffect(() => { if (step === 6 && !tester && members[0]?.phone) setTester(members[0].phone); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Which plan fits, now that the team is known (16.10.2026, Yair: "בהקמה").
+  const [plans, setPlans] = useState<{ key: string; name: string; priceIls: number; apptsEstimate: number }[]>([]);
+  useEffect(() => { if (step === 6 && !plans.length) fetch("/api/plans").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.plans?.length) setPlans(j.plans); }).catch(() => {}); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (step !== 5) return;
     fetch("/api/admin/whatsapp/official").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.wanted) setWaOfficial(true); }).catch(() => {});
@@ -598,6 +602,16 @@ export default function OnboardingPage() {
               <li key={String(label)} className="flex items-center gap-2"><span className={`w-5 h-5 rounded-full text-[11px] flex items-center justify-center text-white ${ok ? "" : "bg-slate-300"}`} style={ok ? { background: C.turquoise, color: C.ink } : {}}>{ok ? "✓" : "·"}</span><span className={ok ? "text-slate-800" : "text-slate-500"}>{label as string}</span></li>
             ))}
           </ul>
+          {(() => {
+            const people = Math.max(1, members.filter(m => m.id).length);
+            const appts = estimateAppts(bizType, people);
+            const reco = recommendPlan(plans, appts);
+            return reco && (
+              <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 mt-4 leading-relaxed">
+                <b className="text-slate-800">{people === 1 ? "איש צוות אחד" : `${people} אנשי צוות`}: בערך {appts.toLocaleString("he-IL")} תורים בחודש, מתאים מסלול {reco.name} ({reco.priceIls} ₪ לחודש).</b> {MESSAGES_EXPLAINED}. אפשר לשנות מסלול בכל רגע בהגדרות, במסך המסלול שלי.
+              </p>
+            );
+          })()}
           <Help label="מה קורה כשלוחצים הפעל?">
             <Bubble>הסוכן מתחיל לענות ללקוחות, הלקוחות יכולים לקבוע, ומתחיל החודש החינמי. הוא כולל את החבילה של מסלול בסיס. אם היא נגמרת לפני סוף החודש, ממשיכים בהצטרפות למסלול. בלי כרטיס זה פשוט נעצר, בלי שום חיוב.</Bubble>
           </Help>

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { barColor, n, shortDate, type Meter, type PlanData } from "./shared";
 import Referral from "./Referral";
+import { BUSINESS_TYPES } from "@/lib/vocab";
+import { estimateAppts, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan-reco";
 
 /**
  * "המסלול שלי" (10.10.2026). A plan is a WhatsApp message quota; appointments
@@ -63,6 +65,11 @@ export default function MyPlanPage() {
   // Only WhatsApp messages are limited (Yair, 10.10.2026); appointments are never capped.
   const full = u && plan ? u.messages.pct >= 100 || u.aiPct >= 100 : false;
   const near = u && plan ? u.messages.pct >= 80 || u.aiPct >= 80 : false;
+  // Which plan fits his team (16.10.2026): people × typical appointments of the type.
+  const people = Math.max(1, d.staffCount);
+  const appts = estimateAppts(d.businessType, people);
+  const reco = recommendPlan(d.plans, appts);
+  const typeLabel = BUSINESS_TYPES.find(t => t.id === d.businessType)?.label;
 
   return (
     <div className="p-6 sm:p-8 overflow-auto h-full">
@@ -128,7 +135,13 @@ export default function MyPlanPage() {
         {/* Plans */}
         <section className="bg-white rounded-2xl border border-neutral-200 p-5">
           <h2 className="font-semibold text-neutral-800 mb-1">המסלולים</h2>
-          <p className="text-xs text-neutral-500 mb-4">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. התורים לא מוגבלים: המסלול נקבע לפי כמות הודעות הוואטסאפ והשימוש בסוכן, ומספר התורים הוא רק הערכה.</p>
+          <p className="text-xs text-neutral-500 mb-3">כולם כוללים את הסוכן בוואטסאפ, תזכורות ואישורי הגעה ואפליקציה ללקוחות. {MESSAGES_EXPLAINED}. התורים עצמם לא מוגבלים.</p>
+          {reco && (
+            <p className="text-sm text-teal-900 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 mb-4">
+              {typeLabel ? `${typeLabel} עם ` : "עם "}{people === 1 ? "איש צוות אחד" : `${people} אנשי צוות`}: בערך {n(appts)} תורים בחודש,{" "}
+              {reco.key === d.planKey ? <>המסלול שלך מתאים.</> : <>מתאים מסלול <b>{reco.name}</b>.</>}
+            </p>
+          )}
           <div className="grid sm:grid-cols-3 gap-2">
             {d.plans.map(p => {
               const mine = p.key === d.planKey;
@@ -137,7 +150,7 @@ export default function MyPlanPage() {
                 <div key={p.key} className={`rounded-xl border p-4 flex flex-col gap-1 ${mine ? "border-teal-500 bg-teal-50" : "border-neutral-200"}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold text-neutral-800">{p.name}</span>
-                    {mine && <span className="text-[11px] font-semibold text-teal-700">המסלול שלך</span>}
+                    {mine ? <span className="text-[11px] font-semibold text-teal-700">המסלול שלך</span> : reco?.key === p.key && <span className="text-[11px] font-semibold text-teal-700">מומלץ לך</span>}
                   </div>
                   <span className="text-2xl font-bold text-neutral-900 tabular-nums">{p.priceIls} ₪<span className="text-xs font-normal text-neutral-500"> לחודש</span></span>
                   <span className="text-xs text-neutral-700 font-medium">{n(p.messages)} הודעות וואטסאפ בחודש</span>

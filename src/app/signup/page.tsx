@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/lib/vocab";
+import { TYPICAL_BUSINESS, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan-reco";
 
 /**
  * Self-service signup — a new business owner registers their shop and goes
@@ -23,6 +24,11 @@ export default function SignupPage() {
   const [planKey, setPlanKey] = useState("base");
   useEffect(() => { fetch("/api/plans").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.plans?.length) setPlans(j.plans); }).catch(() => {}); }, []);
   const plan = plans.find(p => p.key === planKey) ?? null;
+  // The plan that fits the type (16.10.2026): chosen for him until he picks one himself.
+  const [planTouched, setPlanTouched] = useState(false);
+  const typical = TYPICAL_BUSINESS[businessType] ?? TYPICAL_BUSINESS.other;
+  const reco = recommendPlan(plans, typical);
+  useEffect(() => { if (!planTouched && reco) setPlanKey(reco.key); }, [businessType, reco?.key, planTouched]); // eslint-disable-line react-hooks/exhaustive-deps
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -100,7 +106,7 @@ export default function SignupPage() {
                 {plans.map(p => {
                   const on = planKey === p.key;
                   return (
-                    <button key={p.key} type="button" onClick={() => setPlanKey(p.key)}
+                    <button key={p.key} type="button" onClick={() => { setPlanTouched(true); setPlanKey(p.key); }}
                       className={`rounded-xl border px-2 py-2 text-center transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-700"}`}
                       style={on ? { background: C.petrol } : {}}>
                       <span className="block text-sm font-bold">כ־{p.apptsEstimate.toLocaleString("he-IL")}</span>
@@ -109,7 +115,8 @@ export default function SignupPage() {
                   );
                 })}
               </div>
-              {plan && <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש ושימוש בסוכן שמתאים לכ־{plan.apptsEstimate.toLocaleString("he-IL")} תורים. התורים עצמם לא מוגבלים: המסלול נקבע לפי ההודעות והשימוש בסוכן, ומספר התורים הוא רק הערכה. אפשר לשנות מסלול בכל רגע.</p>}
+              {reco && <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: C.petrol }}>{BUSINESS_TYPES.find(t => t.id === businessType)?.label}: בדרך כלל כ־{typical.toLocaleString("he-IL")} תורים בחודש, מסלול {reco.name} מתאים.{plan && plan.key !== reco.key ? " אפשר כמובן לבחור אחר." : ""}</p>}
+              {plan && <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש. {MESSAGES_EXPLAINED}, כ־{plan.apptsEstimate.toLocaleString("he-IL")} תורים. התורים עצמם לא מוגבלים, ואפשר לשנות מסלול בכל רגע.</p>}
               <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.petrol }}><b>חבר מביא חבר:</b> על כל מספרה שתביא, כשהיא מתחילה לשלם, אתה מקבל חודש חינם.</p>
             </div>
           )}

@@ -1,6 +1,8 @@
 /** Shapes of GET /api/admin/plan (the owner's "המסלול שלי"). */
 export type Meter = { used: number; cap: number; pct: number };
 export type PlanData = {
+  businessType: string | null;
+  staffCount: number;
   planKey: string | null;
   plans: { key: string; name: string; apptsCap: number; messages: number; priceIls: number }[];
   usage: { month: string; appts: Meter; messages: Meter; marketing: Meter; aiPct: number } | null;

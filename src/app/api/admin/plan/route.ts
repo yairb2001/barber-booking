@@ -25,8 +25,10 @@ const parse = (raw: string | null | undefined): Record<string, unknown> => { try
 export async function GET(req: NextRequest) {
   const guard = requireOwner(req);
   if (guard) return guard;
-  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true, activatedAt: true, createdAt: true });
+  const biz = await getSessionBusiness(req, { id: true, slug: true, settings: true, trialEndsAt: true, paidAt: true, monthlyPrice: true, activatedAt: true, createdAt: true, businessType: true });
   if (!biz) return NextResponse.json({ error: "No business" }, { status: 400 });
+  // The team, for "which plan fits" (16.10.2026, src/lib/crm/plan-reco.ts).
+  const staffCount = await prisma.staff.count({ where: { businessId: biz.id, isActive: true } });
   const [plans, usage, cs, packs, invoices, referral, free] = await Promise.all([
     getPlans(),
     usageFor([biz.id]),
@@ -40,6 +42,7 @@ export async function GET(req: NextRequest) {
   const s = parse(biz.settings);
   const requests = (s.planRequests ?? {}) as Record<string, string>;
   return NextResponse.json({
+    businessType: biz.businessType, staffCount,
     planKey: planKeyOf(biz.settings),
     plans: plans.filter(p => p.active).map(p => ({ key: p.key, name: p.name, apptsCap: p.apptsCap, messages: p.messages, priceIls: p.priceIls })),
     usage: u && {

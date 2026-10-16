@@ -35,7 +35,7 @@ export type FreePackage = {
 export async function freePackageCaps(): Promise<{ name: string; messages: number; aiBudgetIls: number }> {
   const { getPlans } = await import("@/lib/crm/plans"); // plans → token-budget → here: load late
   const p = (await getPlans()).filter(x => x.active !== false).sort((a, b) => a.priceIls - b.priceIls)[0];
-  return { name: p?.name ?? "בסיס", messages: p?.messages ?? 1200, aiBudgetIls: p?.aiBudgetIls ?? 30 };
+  return { name: p?.name ?? "בסיס", messages: p?.messages ?? 2000, aiBudgetIls: p?.aiBudgetIls ?? 30 };
 }
 
 export async function freePackageState(biz: { id: string; createdAt: Date }): Promise<FreePackage> {
