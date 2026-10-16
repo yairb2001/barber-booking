@@ -7,6 +7,7 @@ import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { getPlans } from "@/lib/crm/plans";
 import { findReferrer, recordReferral } from "@/lib/chator-referral";
 import { sanitizePhoneInput } from "@/lib/messaging/phone";
+import { cleanAttribution } from "@/lib/lead-attribution";
 
 /**
  * Self-service signup — creates a NEW business (tenant) and logs the owner in.
@@ -41,7 +42,8 @@ function phoneMatches(input: string, stored: string | null | undefined): boolean
 
 export async function POST(req: NextRequest) {
   try {
-    const { businessName, phone, password, confirmPassword, businessType: rawType, planKey, ref, referrerPhone } = await req.json();
+    const { businessName, phone, password, confirmPassword, businessType: rawType, planKey, ref, referrerPhone, attribution: rawAttribution } = await req.json();
+    const attribution = cleanAttribution(rawAttribution);
     const businessType = isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE;
 
     // The shop's name is optional at signup (Yair, 10.10.2026); the wizard asks for it.
@@ -107,7 +109,7 @@ export async function POST(req: NextRequest) {
         trialEndsAt: null,
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
-        settings: JSON.stringify({ ownerLoginPhone: ownerPhone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}) }),
+        settings: JSON.stringify({ ownerLoginPhone: ownerPhone, ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}), ...(attribution ? { signupAttribution: JSON.parse(attribution) } : {}) }),
         ...(plan ? { monthlyPrice: plan.priceIls } : {}),
       },
       select: { id: true, slug: true },
@@ -121,7 +123,7 @@ export async function POST(req: NextRequest) {
 
     // Already a lead in the CRM → that lead is now this business (15.10.2026).
     const { linkSignupToLead } = await import("@/lib/leads");
-    await linkSignupToLead(business.id, ownerPhone).catch(e => console.error("[signup] link lead", e));
+    await linkSignupToLead(business.id, ownerPhone, attribution).catch(e => console.error("[signup] link lead", e));
 
     // "איזה כיף שנרשמת, אני כאן בשבילך בהקמה" from Chator's number (CRM automation, 14.10.2026).
     const { startAutomation } = await import("@/lib/crm/automations");

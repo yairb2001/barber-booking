@@ -1010,6 +1010,8 @@ model Lead {
   businessType   String?   @map("business_type")   // vertical guessed/asked (default barber_men)
   conversationId String?   @map("conversation_id") // the demo conversation the lead came from
   summary        String?                           // one-paragraph recap of what he tried and asked
+  /// Where he came from: first-touch utm/fbclid/ref of the sales landing, JSON (lead-attribution.ts).
+  attribution    String?
   remindedAt     DateTime? @map("reminded_at")     // "lead untouched for 24h" reminder sent to the owner
   businessId     String?   @map("business_id")     // the tenant created from this lead ("צור עסק מליד")
   createdAt DateTime @default(now()) @map("created_at")

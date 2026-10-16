@@ -5,11 +5,12 @@ import { useState, useContext, useEffect } from "react";
 import { C, Btn, Card, useCrm, crmAction, STAGE_TONE, SOURCE_LABEL } from "../../ui";
 import { InModal } from "../../card-context";
 import { WaButton, WaPanel } from "../../WaPanel";
+import { attributionLabel } from "@/lib/lead-attribution";
 
 type Msg = { id: string; role: string; content: string; source: string | null; createdAt: string };
 type Call = { id: string; startsAt: string; status: string; outcome: string | null; label: string; rep: string };
 type Data = {
-  lead: { id: string; name: string | null; phone: string; businessName: string | null; businessType: string | null; shopSize: string | null; source: string; stage: string; summary: string | null; optedOut: boolean; rep: string | null; repId: string | null; followUpAt: string | null; lostReason: string | null; businessId: string | null; createdAt: string };
+  lead: { id: string; name: string | null; phone: string; businessName: string | null; businessType: string | null; shopSize: string | null; source: string; attribution?: string | null; stage: string; summary: string | null; optedOut: boolean; rep: string | null; repId: string | null; followUpAt: string | null; lostReason: string | null; businessId: string | null; createdAt: string };
   stages: { key: string; label: string }[];
   reps: { id: string; name: string }[];
   agentPausedUntil: string | null;
@@ -61,7 +62,7 @@ export default function LeadCard({ id }: { id: string }) {
           <span className="w-[52px] h-[52px] rounded-full inline-flex items-center justify-center font-extrabold text-xl" style={{ background: C.mist, color: C.petrol }}>{initials}</span>
           <div>
             <h1 className="m-0 text-2xl font-extrabold">{l.name || l.phone}</h1>
-            <span className="text-sm" style={{ color: C.muted }}>{[l.businessName, l.shopSize, l.phone, SOURCE_LABEL[l.source] ?? l.source].filter(Boolean).join(" · ")}</span>
+            <span className="text-sm" style={{ color: C.muted }}>{[l.businessName, l.shopSize, l.phone, SOURCE_LABEL[l.source] ?? l.source, attributionLabel(l.attribution)].filter(Boolean).join(" · ")}</span>
           </div>
           <WaButton open={waOpen} onClick={() => setWaOpen(o => !o)} count={data.messages.length} waiting={data.messages[data.messages.length - 1]?.role === "user"} />
         </div>

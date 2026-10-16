@@ -5,6 +5,7 @@ import { notifyPlatformOwner } from "@/lib/super-admin";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { ensureCrmSeed, stageLabel } from "@/lib/crm/core";
 import { startAutomation } from "@/lib/crm/automations";
+import { cleanAttribution } from "@/lib/lead-attribution";
 
 /**
  * PUBLIC lead capture — the /for-business landing page posts here.
@@ -25,14 +26,15 @@ export async function POST(req: NextRequest) {
 
   const businessName = typeof body?.businessName === "string" ? body.businessName.trim().slice(0, 120) : "";
   const shopSize = typeof body?.shopSize === "string" ? body.shopSize.trim().slice(0, 40) : "";
+  const attribution = cleanAttribution(body?.attribution);
   // The same person filling the form twice is one lead (CRM, 9.10.2026).
   const normalized = normalizeIsraeliPhone(phone);
   await ensureCrmSeed().catch(() => {});
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
   // Any format: a lead who already talks to the agent on WhatsApp is stored as 05X (12.10.2026).
-  const existing = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, stage: true, name: true } });
+  const existing = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, stage: true, name: true, attribution: true } });
   const lead = existing
-    ? await prisma.lead.update({ where: { id: existing.id }, data: { ...(name ? { name } : {}), ...(businessName ? { businessName } : {}), ...(shopSize ? { shopSize } : {}) }, select: { id: true } })
+    ? await prisma.lead.update({ where: { id: existing.id }, data: { ...(name ? { name } : {}), ...(businessName ? { businessName } : {}), ...(shopSize ? { shopSize } : {}), ...(attribution && !existing.attribution ? { attribution } : {}) }, select: { id: true } })
     : await prisma.lead.create({
         data: {
           name: name || null,
@@ -43,6 +45,7 @@ export async function POST(req: NextRequest) {
           repId: rep?.id ?? null,
           businessName: businessName || null,
           shopSize: shopSize || null,
+          attribution,
         },
         select: { id: true },
       });

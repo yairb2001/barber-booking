@@ -5,6 +5,37 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BUSINESS_TYPES } from "@/lib/vocab";
 import { TYPICAL_BUSINESS, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan-reco";
+import { CHATOR_PIXEL_ID } from "@/lib/lead-attribution";
+
+/** The first touch the sales landing kept (chator_attr), or this page's own utm/fbclid. */
+function readAttribution(): Record<string, unknown> | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem("chator_attr") || "null");
+    if (stored) return stored;
+  } catch { /* private mode */ }
+  try {
+    const p = new URLSearchParams(window.location.search);
+    const a: Record<string, unknown> = {};
+    for (const k of ["source", "medium", "campaign", "content", "term"]) { const v = p.get(`utm_${k}`); if (v) a[k] = v; }
+    if (p.get("fbclid")) a.fbclid = true;
+    return Object.keys(a).length ? a : null;
+  } catch { return null; }
+}
+
+/** Chator's own pixel (off while CHATOR_PIXEL_ID is empty). */
+function chatorPixel(event?: string) {
+  if (!CHATOR_PIXEL_ID || typeof window === "undefined") return;
+  type Fbq = ((...a: unknown[]) => void) & { queue?: unknown[]; callMethod?: (...a: unknown[]) => void; loaded?: boolean; version?: string; push?: unknown };
+  const w = window as unknown as { fbq?: Fbq; _fbq?: unknown; __chatorPixel?: boolean };
+  if (!w.fbq) {
+    const n = function (...args: unknown[]) { if (n.callMethod) n.callMethod(...args); else n.queue!.push(args); } as Fbq;
+    n.queue = []; n.loaded = true; n.version = "2.0"; n.push = n;
+    w.fbq = n; if (!w._fbq) w._fbq = n;
+    const s = document.createElement("script"); s.async = true; s.src = "https://connect.facebook.net/en_US/fbevents.js"; document.head.appendChild(s);
+  }
+  if (!w.__chatorPixel) { w.fbq!("init", CHATOR_PIXEL_ID); w.fbq!("track", "PageView"); w.__chatorPixel = true; }
+  if (event) w.fbq!("track", event);
+}
 
 /**
  * Self-service signup — a new business owner registers their shop and goes
@@ -39,6 +70,7 @@ export default function SignupPage() {
   const [ref, setRef] = useState<{ code: string; name: string | null } | null>(null);
   const [askRef, setAskRef] = useState(false);
   const [referrerPhone, setReferrerPhone] = useState("");
+  useEffect(() => { chatorPixel(); }, []);
   useEffect(() => {
     let code = new URLSearchParams(window.location.search).get("ref") ?? "";
     try { if (code) localStorage.setItem("chator_ref", code); else code = localStorage.getItem("chator_ref") ?? ""; } catch { /* private mode */ }
@@ -56,12 +88,13 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, planKey: plan ? planKey : undefined, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined }),
+        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, planKey: plan ? planKey : undefined, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined, attribution: readAttribution() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error || "שגיאה בהרשמה"); setSubmitting(false); return;
       }
+      chatorPixel("CompleteRegistration");
       router.push("/admin/onboarding");
       router.refresh();
     } catch { setError("שגיאה בחיבור לשרת"); setSubmitting(false); }

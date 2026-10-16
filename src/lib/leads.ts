@@ -28,10 +28,10 @@ const APP_URL = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https
  * becomes this business in the CRM. His sales automations stop, the operations
  * ones (setup, "הפעל", the free month) take over, and his name fills them.
  */
-export async function linkSignupToLead(businessId: string, phone: string): Promise<string | null> {
-  const lead = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) }, businessId: null }, orderBy: { createdAt: "desc" }, select: { id: true } });
+export async function linkSignupToLead(businessId: string, phone: string, attribution?: string | null): Promise<string | null> {
+  const lead = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(phone) }, businessId: null }, orderBy: { createdAt: "desc" }, select: { id: true, attribution: true } });
   if (!lead) return null;
-  await prisma.lead.update({ where: { id: lead.id }, data: { businessId, status: "won", stage: "trial" } });
+  await prisma.lead.update({ where: { id: lead.id }, data: { businessId, status: "won", stage: "trial", ...(attribution && !lead.attribution ? { attribution } : {}) } });
   const { stopLeadAutomations } = await import("@/lib/crm/automations");
   await stopLeadAutomations(lead.id, "signed_up");
   return lead.id;
