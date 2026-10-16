@@ -3,6 +3,8 @@ import { withActiveHolds } from "@/lib/slot-holds";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
+import { gridOf, shapeOf } from "@/lib/availability/shape";
+import type { Grid } from "@/lib/availability/engine";
 import { getBlockStatus } from "@/lib/customer-block";
 
 export const dynamic = "force-dynamic";
@@ -47,6 +49,9 @@ export async function GET(request: Request) {
 
   const duration = staffService.customDuration || staffService.service.durationMinutes;
 
+  // The business's slot grid (stage B): legacy for a barbershop, else a fixed step.
+  let grid: Grid = { mode: "legacy" };
+
   // ── Booking horizon gate ─────────────────────────────────────────────────
   // Days beyond the barber's booking horizon are not open for booking yet. The
   // customer can still browse/waitlist them, but we must not offer slots — so
@@ -55,9 +60,10 @@ export async function GET(request: Request) {
     const [staffForHorizon, bizForHorizon] = await Promise.all([
       prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } }),
       businessId
-        ? prisma.business.findUnique({ where: { id: businessId }, select: { bookingHorizonDays: true } })
-        : fallbackBusiness({ select: { bookingHorizonDays: true } }),
+        ? prisma.business.findUnique({ where: { id: businessId }, select: { bookingHorizonDays: true, businessType: true, settings: true } })
+        : fallbackBusiness({ select: { bookingHorizonDays: true, businessType: true, settings: true } }),
     ]);
+    grid = gridOf(bizForHorizon);
     let horizonDays = bizForHorizon?.bookingHorizonDays ?? 30;
     try {
       if (staffForHorizon?.settings) {
@@ -123,10 +129,10 @@ export async function GET(request: Request) {
       date: { gte: dayStart, lt: dayEnd },
       status: { in: ["pending", "confirmed"] },
     },
-    select: { startTime: true, endTime: true },
+    select: { startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
   }), { staffIds: [staffId], from: dayStart, to: dayStart });
 
-  let slots = generateSlots(scheduleSlots, breaks, duration, appointments);
+  let slots = generateSlots(scheduleSlots, breaks, shapeOf(staffService.service, duration), appointments, grid);
 
   // Filter out past slots + honor min-lead-time when the requested date is today.
   // ⚠️  The JSON.parse for staff settings lives in its own try/catch so that a

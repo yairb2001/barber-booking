@@ -18,6 +18,9 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getBusinessNow, timeToMinutes, addDaysISO, getDayOfWeekISO, generateSlots } from "@/lib/utils";
+import { gridOf, shapeOf, type BookedRow, type ShapedService } from "@/lib/availability/shape";
+import { LEGACY_GRID, type Grid, type Shape } from "@/lib/availability/engine";
+import { strictServices } from "@/lib/agent/availability";
 
 export const LOYALTY_THRESHOLD = 0.7;
 /** How far around the closed date we look for alternatives (calendar days). */
@@ -135,12 +138,15 @@ export async function loyaltyShare(businessId: string, customerId: string, staff
  *  horizon / lead-time, day overrides win over the weekly schedule, bookings and
  *  unexpired holds block, and on today only the past is off-limits. */
 type DayAvail = { staffId: string; name: string; slots: string[] }[];
-type Busy = { startTime: string; endTime: string };
+type Busy = BookedRow;
+type SvcRow = { name: string; durationMinutes: number; segments: string | null; bufferAfterMin: number };
 class WindowAvail {
   private loaded: Promise<void> | null = null;
   private staff: { id: string; name: string }[] = [];
-  private staffServices: { staffId: string; serviceId: string; customDuration: number | null; service: { name: string; durationMinutes: number } }[] = [];
-  private services = new Map<string, { name: string; durationMinutes: number }>();
+  private staffServices: { staffId: string; serviceId: string; customDuration: number | null; service: SvcRow }[] = [];
+  private services = new Map<string, SvcRow>();
+  private grid: Grid = LEGACY_GRID;
+  private strict = false;
   private overrides = new Map<string, { isWorking: boolean; slots: string | null; breaks: string | null }>(); // staffId|date
   private schedules = new Map<string, { isWorking: boolean; slots: string; breaks: string | null }>();        // staffId|dow
   private busy = new Map<string, Busy[]>();                                                                   // staffId|date
@@ -153,13 +159,14 @@ class WindowAvail {
       const fromD = new Date(this.from + "T00:00:00.000Z");
       const toD = new Date(addDaysISO(this.to, 1) + "T00:00:00.000Z");
       const inWindow = { gte: fromD, lt: toD };
-      const [staff, staffServices, services, overrides, schedules, appts, holds] = await Promise.all([
+      const [biz, staff, staffServices, services, overrides, schedules, appts, holds] = await Promise.all([
+        prisma.business.findUnique({ where: { id: this.businessId }, select: { businessType: true, settings: true } }),
         prisma.staff.findMany({ where: { businessId: this.businessId, isAvailable: true }, select: { id: true, name: true } }),
         prisma.staffService.findMany({
           where: { staff: { businessId: this.businessId } },
-          select: { staffId: true, serviceId: true, customDuration: true, service: { select: { name: true, durationMinutes: true } } },
+          select: { staffId: true, serviceId: true, customDuration: true, service: { select: { name: true, durationMinutes: true, segments: true, bufferAfterMin: true } } },
         }),
-        prisma.service.findMany({ where: { businessId: this.businessId }, select: { id: true, name: true, durationMinutes: true } }),
+        prisma.service.findMany({ where: { businessId: this.businessId }, select: { id: true, name: true, durationMinutes: true, segments: true, bufferAfterMin: true } }),
         prisma.staffScheduleOverride.findMany({
           where: { staff: { businessId: this.businessId }, date: inWindow },
           select: { staffId: true, date: true, isWorking: true, slots: true, breaks: true },
@@ -170,43 +177,51 @@ class WindowAvail {
         }),
         prisma.appointment.findMany({
           where: { businessId: this.businessId, date: inWindow, status: { in: [...ACTIVE] } },
-          select: { staffId: true, date: true, startTime: true, endTime: true },
+          select: { staffId: true, date: true, startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
         }),
         prisma.slotHold.findMany({
           where: { businessId: this.businessId, date: inWindow, expiresAt: { gt: new Date() } },
           select: { staffId: true, date: true, startTime: true, endTime: true },
         }),
       ]);
+      this.grid = gridOf(biz);
+      this.strict = strictServices(biz?.businessType);
       this.staff = staff;
       this.staffServices = staffServices;
-      for (const sv of services) this.services.set(sv.id, { name: sv.name, durationMinutes: sv.durationMinutes });
+      for (const sv of services) this.services.set(sv.id, { name: sv.name, durationMinutes: sv.durationMinutes, segments: sv.segments, bufferAfterMin: sv.bufferAfterMin });
       for (const o of overrides) this.overrides.set(`${o.staffId}|${o.date.toISOString().slice(0, 10)}`, o);
       for (const sc of schedules) this.schedules.set(`${sc.staffId}|${sc.dayOfWeek}`, sc);
       for (const b of [...appts, ...holds]) {
         const k = `${b.staffId}|${b.date.toISOString().slice(0, 10)}`;
-        (this.busy.get(k) ?? this.busy.set(k, []).get(k)!).push({ startTime: b.startTime, endTime: b.endTime });
+        const rec = b as { busySegments?: string | null; bufferAfterMin?: number | null };
+        (this.busy.get(k) ?? this.busy.set(k, []).get(k)!).push({ startTime: b.startTime, endTime: b.endTime, busySegments: rec.busySegments ?? null, bufferAfterMin: rec.bufferAfterMin ?? 0 });
       }
     })();
     return this.loaded;
   }
 
-  /** Same fallback ladder as computeDayAvailability: the barber's own row for the
+  /** The treatment's shape for this barber (processing, cleaning — stage B), by the
+   *  same fallback ladder as computeDayAvailability: the barber's own row for the
    *  service → a same-name service they offer → same duration → the service's own
-   *  duration → their shortest service → 30. */
-  private duration(staffId: string, serviceId?: string): number {
+   *  duration → their shortest service → 30. Null when a beauty business's staff
+   *  member doesn't do it: never offered for it. */
+  private shape(staffId: string, serviceId?: string): Shape | null {
     const mine = this.staffServices.filter(r => r.staffId === staffId);
+    const of = (svc: ShapedService | null, d: number) => shapeOf(svc, d);
     if (serviceId) {
       const own = mine.find(r => r.serviceId === serviceId);
-      if (own) return own.customDuration ?? own.service.durationMinutes;
+      if (own) return of(own.service, own.customDuration ?? own.service.durationMinutes);
       const req = this.services.get(serviceId);
       if (req) {
-        const alt = mine.find(r => r.service.name === req.name) ?? mine.find(r => r.service.durationMinutes === req.durationMinutes);
-        if (alt) return alt.customDuration ?? alt.service.durationMinutes;
-        return req.durationMinutes;
+        const sameName = mine.find(r => r.service.name === req.name);
+        if (this.strict && !sameName) return null;
+        const alt = sameName ?? mine.find(r => r.service.durationMinutes === req.durationMinutes);
+        if (alt) return of(alt.service, alt.customDuration ?? alt.service.durationMinutes);
+        return of(req, req.durationMinutes);
       }
     }
     const shortest = [...mine].sort((a, b) => (a.customDuration ?? a.service.durationMinutes) - (b.customDuration ?? b.service.durationMinutes))[0];
-    return shortest ? (shortest.customDuration ?? shortest.service.durationMinutes) : 30;
+    return of(null, shortest ? (shortest.customDuration ?? shortest.service.durationMinutes) : 30);
   }
 
   async get(date: string, serviceId?: string): Promise<DayAvail> {
@@ -231,7 +246,9 @@ class WindowAvail {
         scheduleSlots = JSON.parse(sc.slots);
         breaks = sc.breaks ? JSON.parse(sc.breaks) : null;
       }
-      let slots = generateSlots(scheduleSlots, breaks, this.duration(st.id, serviceId), this.busy.get(`${st.id}|${date}`) ?? []);
+      const shape = this.shape(st.id, serviceId);
+      if (!shape) continue;
+      let slots = generateSlots(scheduleSlots, breaks, shape, this.busy.get(`${st.id}|${date}`) ?? [], this.grid);
       if (nowBiz.date === date) slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes);
       if (slots.length) out.push({ staffId: st.id, name: st.name, slots });
     }

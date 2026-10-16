@@ -11,6 +11,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { gridOf, shapeOf, type ShapedService } from "@/lib/availability/shape";
 import { activeHolds } from "@/lib/slot-holds";
 import {
   generateSlots,
@@ -47,8 +48,9 @@ export async function computeDayAvailability(
 
   const biz = await prisma.business.findUnique({
     where: { id: bizId },
-    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true },
+    select: { bookingHorizonDays: true, minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true, settings: true },
   });
+  const grid = gridOf(biz);
   // Beauty businesses (16.10.2026): not everyone does every treatment, so a
   // person who doesn't offer the requested one is never offered for it.
   const strict = strictServices(biz?.businessType);
@@ -57,7 +59,7 @@ export async function computeDayAvailability(
   const reqService = inputServiceId
     ? await prisma.service.findUnique({
         where: { id: inputServiceId },
-        select: { name: true, durationMinutes: true },
+        select: { name: true, durationMinutes: true, segments: true, bufferAfterMin: true },
       })
     : null;
 
@@ -81,6 +83,8 @@ export async function computeDayAvailability(
     if (!opts.ignoreLimits && date > lastBookableDate) continue; // beyond this barber's horizon → not bookable
 
     let duration = 30;
+    // The treatment whose shape (processing, cleaning) this barber would do.
+    let shapeSvc: ShapedService | null = null;
     if (inputServiceId) {
       const ss = await prisma.staffService.findUnique({
         where: { staffId_serviceId: { staffId: staff.id, serviceId: inputServiceId } },
@@ -88,6 +92,7 @@ export async function computeDayAvailability(
       });
       if (ss) {
         duration = ss.customDuration ?? ss.service.durationMinutes;
+        shapeSvc = ss.service;
       } else {
         // The barber has no direct StaffService row for this serviceId. Do NOT
         // drop the barber from availability — that produced false "no
@@ -113,8 +118,10 @@ export async function computeDayAvailability(
           : null);
         if (alt) {
           duration = alt.customDuration ?? alt.service.durationMinutes;
+          shapeSvc = alt.service;
         } else if (reqService) {
           duration = reqService.durationMinutes;
+          shapeSvc = reqService;
         } else {
           const firstSvc = await prisma.staffService.findFirst({
             where: { staffId: staff.id },
@@ -157,7 +164,7 @@ export async function computeDayAvailability(
     const dayEnd   = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
     const booked = await prisma.appointment.findMany({
       where: { staffId: staff.id, date: { gte: dayStart, lt: dayEnd }, status: { in: ["pending", "confirmed"] } },
-      select: { startTime: true, endTime: true },
+      select: { startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
     });
     // Soft holds (calendar-closure alternatives offered to a customer, later
     // deposits) block the slot like a booking until they expire — otherwise two
@@ -166,7 +173,7 @@ export async function computeDayAvailability(
     // agent told a closure customer "13:00 isn't free" about his own option.
     const holds = await activeHolds({ staffIds: [staff.id], from: dateObj, to: dateObj, exemptCustomerId: opts.exemptHoldsCustomerId, exemptHolderKeys: [opts.exemptHoldsHolderKey] });
 
-    let slots = generateSlots(scheduleSlots, breaks, duration, [...booked, ...holds]);
+    let slots = generateSlots(scheduleSlots, breaks, shapeOf(shapeSvc, duration), [...booked, ...holds], grid);
 
     if (nowBiz.date === date && opts.ignoreLimits) {
       slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes); // only the past is off-limits

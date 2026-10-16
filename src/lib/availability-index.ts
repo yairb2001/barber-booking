@@ -11,6 +11,7 @@
 import { prisma } from "@/lib/prisma";
 import { activeHolds } from "@/lib/slot-holds";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
+import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
 
 export type StaffRow = { id: string; name: string; isAvailable: boolean; inQuickPool: boolean; leadMinutes: number; firstLeadMinutes: number };
 export type AvailabilityIndex = {
@@ -27,15 +28,15 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   const toISO = addDaysISO(fromISO, Math.max(0, days - 1));
   const first = new Date(fromISO + "T00:00:00.000Z"), last = new Date(toISO + "T00:00:00.000Z");
   const [biz, staffRows, services] = await Promise.all([
-    prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true } }),
+    prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, businessType: true, settings: true } }),
     prisma.staff.findMany({ where: { businessId, isAvailable: true }, select: { id: true, name: true, isAvailable: true, inQuickPool: true, settings: true, staffServices: { select: { serviceId: true, customDuration: true } } } }),
-    prisma.service.findMany({ where: { businessId }, select: { id: true, durationMinutes: true } }),
+    prisma.service.findMany({ where: { businessId }, select: { id: true, durationMinutes: true, segments: true, bufferAfterMin: true } }),
   ]);
   const staffIds = staffRows.map(s => s.id);
   const [schedules, overrides, appts] = await Promise.all([
     prisma.staffSchedule.findMany({ where: { staffId: { in: staffIds } }, select: { staffId: true, dayOfWeek: true, isWorking: true, slots: true, breaks: true } }),
     prisma.staffScheduleOverride.findMany({ where: { staffId: { in: staffIds }, date: { gte: first, lte: last } }, select: { staffId: true, date: true, isWorking: true, slots: true, breaks: true } }),
-    prisma.appointment.findMany({ where: { staffId: { in: staffIds }, date: { gte: first, lte: last }, status: { in: ["pending", "confirmed"] } }, select: { staffId: true, date: true, startTime: true, endTime: true } }),
+    prisma.appointment.findMany({ where: { staffId: { in: staffIds }, date: { gte: first, lte: last }, status: { in: ["pending", "confirmed"] } }, select: { staffId: true, date: true, startTime: true, endTime: true, busySegments: true, bufferAfterMin: true } }),
     activeHolds({ staffIds, from: first, to: last, exemptCustomerId: opts.exemptHoldsCustomerId, exemptHolderKeys: [opts.exemptHoldsHolderKey] }).catch(() => []),
   ]).then(([sc, ov, ap, holds]) => [sc, ov, [...ap, ...holds]] as const);
   const numFrom = (raw: string | null, key: string, d: number) => { try { const v = raw ? Number(JSON.parse(raw)[key]) : NaN; return isNaN(v) ? d : v; } catch { return d; } };
@@ -45,12 +46,18 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
     firstLeadMinutes: numFrom(s.settings, "firstApptLeadMinutes", biz?.firstApptLeadMinutes ?? 0),
   }));
   const svcDuration = new Map(services.map(s => [s.id, s.durationMinutes]));
+  const svcRow = new Map(services.map(s => [s.id, s]));
+  const grid = gridOf(biz);
   const staffDuration = new Map<string, number>(); // `${staffId}|${serviceId}` → minutes
   for (const s of staffRows) for (const ss of s.staffServices) staffDuration.set(`${s.id}|${ss.serviceId}`, ss.customDuration ?? svcDuration.get(ss.serviceId) ?? 30);
   const sched = new Map(schedules.map(sc => [`${sc.staffId}|${sc.dayOfWeek}`, sc]));
   const over = new Map(overrides.map(ov => [`${ov.staffId}|${ov.date.toISOString().slice(0, 10)}`, ov]));
-  const booked = new Map<string, { startTime: string; endTime: string }[]>();
-  for (const a of appts) { const k = `${a.staffId}|${a.date.toISOString().slice(0, 10)}`; booked.set(k, [...(booked.get(k) || []), { startTime: a.startTime, endTime: a.endTime }]); }
+  const booked = new Map<string, BookedRow[]>();
+  for (const a of appts) {
+    const k = `${a.staffId}|${a.date.toISOString().slice(0, 10)}`;
+    const rec = a as { busySegments?: string | null; bufferAfterMin?: number | null };
+    booked.set(k, [...(booked.get(k) || []), { startTime: a.startTime, endTime: a.endTime, busySegments: rec.busySegments ?? null, bufferAfterMin: rec.bufferAfterMin ?? 0 }]);
+  }
   const nowBiz = getBusinessNow();
   const cache = new Map<string, string[]>();
 
@@ -73,7 +80,7 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
       work = JSON.parse(sc.slots); breaks = sc.breaks ? JSON.parse(sc.breaks) : null;
     }
     const taken = booked.get(`${staffId}|${dateISO}`) || [];
-    let out = generateSlots(work, breaks, duration, taken);
+    let out = generateSlots(work, breaks, shapeOf(serviceId ? svcRow.get(serviceId) : null, duration), taken, grid);
     if (dateISO === nowBiz.date) {
       const lead = taken.length === 0 ? Math.max(st.firstLeadMinutes, st.leadMinutes) : st.leadMinutes;
       out = out.filter(t => timeToMinutes(t) >= nowBiz.minutes + lead);

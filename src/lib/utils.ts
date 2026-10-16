@@ -1,4 +1,5 @@
-import { legacyGenerate } from "@/lib/availability/engine";
+import { freeStarts, plainShape, LEGACY_GRID, type Grid, type Shape } from "@/lib/availability/engine";
+import { bookedBusy, type BookedRow } from "@/lib/availability/shape";
 
 // Parse time string "HH:MM" to minutes since midnight
 export function timeToMinutes(time: string): number {
@@ -17,18 +18,23 @@ export function minutesToTime(minutes: number): string {
 // in the availability engine (src/lib/availability/engine.ts, legacyGenerate):
 // step by the duration, and after a break or a booking re-anchor to its end —
 // a 40-min appointment ending at 10:40 opens the next slot at 10:40, not 11:00.
+// Stage B: `duration` may be a treatment's shape (processing, cleaning), a
+// booked row may carry the busy parts it recorded, and a business may use a
+// fixed grid (src/lib/availability/shape.ts gridOf). A plain length on the
+// legacy grid is exactly the rule above.
 export function generateSlots(
   scheduleSlots: { start: string; end: string }[],
   breaks: { start: string; end: string }[] | null,
-  durationMinutes: number,
-  bookedSlots: { startTime: string; endTime: string }[]
+  duration: number | Shape,
+  bookedSlots: BookedRow[],
+  grid: Grid = LEGACY_GRID,
 ): string[] {
   const blockers = [
     ...(breaks || []).map((b) => ({ s: timeToMinutes(b.start), e: timeToMinutes(b.end) })),
-    ...bookedSlots.map((b) => ({ s: timeToMinutes(b.startTime), e: timeToMinutes(b.endTime) })),
+    ...bookedSlots.flatMap(bookedBusy),
   ];
   const windows = scheduleSlots.map((w) => ({ s: timeToMinutes(w.start), e: timeToMinutes(w.end) }));
-  return legacyGenerate(windows, blockers, durationMinutes).map(minutesToTime);
+  return freeStarts(windows, blockers, typeof duration === "number" ? plainShape(duration) : duration, grid).map(minutesToTime);
 }
 
 // Format date to YYYY-MM-DD

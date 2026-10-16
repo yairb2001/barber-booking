@@ -284,6 +284,10 @@ model Service {
   priceFrom       Boolean  @default(false) @map("price_from")
   /// The treatment's return pace in days (gel 21, laser 49): the rhythm nudge's date in beauty businesses.
   rebookDays      Int?     @map("rebook_days")
+  /// Stage B: the treatment's parts, JSON [{"m":30,"busy":true},{"m":35,"busy":false}] (busy false = processing, the staff member is free). Null = one block.
+  segments        String?
+  /// Cleaning after the customer leaves; the staff member stays busy.
+  bufferAfterMin  Int      @default(0) @map("buffer_after_min")
   createdAt       DateTime @default(now()) @map("created_at")
 
   business        Business @relation(fields: [businessId], references: [id])
@@ -400,6 +404,10 @@ model Appointment {
   date           DateTime
   startTime      String   @map("start_time") // "14:30"
   endTime        String   @map("end_time")   // "15:00"
+  /// Stage B: the staff member's busy parts recorded at booking, JSON [{"o":0,"m":30},{"o":65,"m":30}] (offsets from start). Null = start to end.
+  busySegments   String?  @map("busy_segments")
+  /// Cleaning recorded with the booking (the staff member is busy until end + this).
+  bufferAfterMin Int      @default(0) @map("buffer_after_min")
   status         String   @default("confirmed") // pending, confirmed, cancelled_by_customer, cancelled_by_staff, completed, no_show
   price          Float
   // Ad-hoc "temporary service" (שירות זמני): when the barber picks a variable

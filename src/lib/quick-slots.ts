@@ -11,6 +11,7 @@ import {
   addDaysISO,
   getDayOfWeekISO,
 } from "@/lib/utils";
+import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
 
 // How far ahead we are willing to scan when a barber is fully booked in the near
 // term. Bounded so a pathological "booked solid" barber can't make us scan
@@ -63,7 +64,8 @@ export async function computeQuickSlots(opts: {
   // Collect enough raw slots per barber to satisfy the requested list length.
   const rawPerStaff = Math.max(RAW_PER_STAFF, (staffIdFilter ? singleLimit : perBarber) * 3);
   // Business-wide booking defaults: min lead time + how far ahead bookings open.
-  const biz = await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+  const biz = await prisma.business.findUnique({ where: { id: resolvedBusinessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true, businessType: true, settings: true } });
+  const grid = gridOf(biz);
   const leadMinutes = opts.leadOverride ?? (biz?.minBookingLeadMinutes ?? 0);
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
   const bizHorizon = biz?.bookingHorizonDays ?? 30;
@@ -83,7 +85,7 @@ export async function computeQuickSlots(opts: {
   const visibleServices = await prisma.service.findMany({
     where: { isVisible: true, ...bizScope },
     orderBy: { sortOrder: "asc" },
-    select: { id: true, name: true, price: true, durationMinutes: true },
+    select: { id: true, name: true, price: true, durationMinutes: true, segments: true, bufferAfterMin: true },
   });
 
   if (visibleServices.length === 0) {
@@ -154,6 +156,7 @@ export async function computeQuickSlots(opts: {
           name: svc.name,
           price: ss?.customPrice || svc.price,
           durationMinutes: ss?.customDuration || svc.durationMinutes,
+          shape: shapeOf(svc, ss?.customDuration || svc.durationMinutes),
         },
       };
     })
@@ -196,7 +199,7 @@ export async function computeQuickSlots(opts: {
     }),
     withActiveHolds(prisma.appointment.findMany({
       where: { staffId: { in: staffIds }, date: { gte: firstDate, lte: lastDate }, status: { in: ["pending", "confirmed"] } },
-      select: { staffId: true, date: true, startTime: true, endTime: true },
+      select: { staffId: true, date: true, startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
     }), { staffIds, from: firstDate, to: lastDate }),
   ]);
 
@@ -206,11 +209,11 @@ export async function computeQuickSlots(opts: {
   const overrideByKey = new Map<string, { isWorking: boolean; slots: string | null; breaks: string | null }>();
   for (const ov of overrides) overrideByKey.set(`${ov.staffId}|${ov.date.toISOString().slice(0, 10)}`, ov);
 
-  const apptsByKey = new Map<string, { startTime: string; endTime: string }[]>();
+  const apptsByKey = new Map<string, BookedRow[]>();
   for (const a of appts) {
     const key = `${a.staffId}|${a.date.toISOString().slice(0, 10)}`;
     const list = apptsByKey.get(key) || [];
-    list.push({ startTime: a.startTime, endTime: a.endTime });
+    list.push({ startTime: a.startTime, endTime: a.endTime, busySegments: a.busySegments ?? null, bufferAfterMin: a.bufferAfterMin ?? 0 });
     apptsByKey.set(key, list);
   }
 
@@ -266,7 +269,7 @@ export async function computeQuickSlots(opts: {
       const price = staff.svc.price;
       const appointments = apptsByKey.get(`${staff.id}|${dateStr}`) || [];
 
-      const slots = generateSlots(scheduleSlots, breaks, duration, appointments);
+      const slots = generateSlots(scheduleSlots, breaks, staff.svc.shape, appointments, grid);
 
       // When no appointments yet today, the next slot is the first of the day.
       const effectiveLead = appointments.length === 0

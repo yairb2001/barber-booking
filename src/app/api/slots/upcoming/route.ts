@@ -3,6 +3,7 @@ import { withActiveHolds } from "@/lib/slot-holds";
 import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
+import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     prisma.staffScheduleOverride.findMany({ where: { staffId, date: { gte: rangeStart, lte: rangeEnd } } }),
     withActiveHolds(prisma.appointment.findMany({
       where: { staffId, date: { gte: rangeStart, lte: rangeEnd }, status: { in: ["pending", "confirmed"] } },
-      select: { date: true, startTime: true, endTime: true },
+      select: { date: true, startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
     }), { staffIds: [staffId], from: rangeStart, to: rangeEnd }),
     prisma.staff.findUnique({ where: { id: staffId }, select: { settings: true } }),
   ]);
@@ -50,11 +51,11 @@ export async function GET(request: Request) {
   const weeklyByDow = new Map(weekly.map(w => [w.dayOfWeek, w]));
   const fmt = (d: Date) => d.toISOString().split("T")[0];
   const overrideByDate = new Map(overrides.map(o => [fmt(o.date), o]));
-  const apptsByDate = new Map<string, { startTime: string; endTime: string }[]>();
+  const apptsByDate = new Map<string, BookedRow[]>();
   for (const a of appts) {
     const k = fmt(a.date);
     if (!apptsByDate.has(k)) apptsByDate.set(k, []);
-    apptsByDate.get(k)!.push({ startTime: a.startTime, endTime: a.endTime });
+    apptsByDate.get(k)!.push({ startTime: a.startTime, endTime: a.endTime, busySegments: a.busySegments ?? null, bufferAfterMin: a.bufferAfterMin ?? 0 });
   }
 
   // Lead time (per-barber override → business default)
@@ -64,8 +65,10 @@ export async function GET(request: Request) {
   // the staff overrides lead times, so this list respects the booking window
   // exactly like the calendar's green dots (no slots past the horizon).
   const biz = businessId
-    ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } })
-    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true } });
+    ? await prisma.business.findUnique({ where: { id: businessId }, select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true, businessType: true, settings: true } })
+    : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true, businessType: true, settings: true } });
+  const grid = gridOf(biz);
+  const shape = shapeOf(staffService.service, duration);
   const leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);
@@ -101,7 +104,7 @@ export async function GET(request: Request) {
       breaks = sched.breaks ? safeArr(sched.breaks) : null;
     }
 
-    let slots = generateSlots(scheduleSlots, breaks, duration, apptsByDate.get(dateStr) || []);
+    let slots = generateSlots(scheduleSlots, breaks, shape, apptsByDate.get(dateStr) || [], grid);
 
     if (dateStr === nowBiz.date) {
       const dayAppts = apptsByDate.get(dateStr) || [];
