@@ -11,6 +11,7 @@ import { useRouter , useSearchParams } from "next/navigation";
 import NotificationsBell from "./NotificationsBell";
 import ClosureWizard from "./ClosureWizard";
 import ClosureCard from "./ClosureCard";
+import { useVocab } from "@/components/VocabProvider";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const DEFAULT_HOUR_HEIGHT = 64;
@@ -1000,6 +1001,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
   }
 ) {
   useModalBack(true, onClose);
+  const v = useVocab();
   // fromGrid = opened by clicking a cell (staff + time pre-set)
   const fromGrid = !!staff;
   // Quick mode (grid tap): customer → save. Service/duration/price come from
@@ -1284,12 +1286,12 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
           {/* Staff — always a dropdown so the barber can be changed */}
           {!quick && <div>
             <label className="text-xs text-neutral-500 block mb-1">
-              ספר
+              {v.staff}
               {fromGrid && <span className="text-teal-600 font-medium"> · ניתן לשנות</span>}
             </label>
             <select value={form.staffId} onChange={e => setForm(p => ({ ...p, staffId: e.target.value }))}
               className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white text-neutral-900 cursor-pointer">
-              {!fromGrid && <option value="">בחר ספר...</option>}
+              {!fromGrid && <option value="">בחר {v.staff}...</option>}
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>}
@@ -1311,7 +1313,7 @@ function NewApptModal({ staff, allStaff, services, date, time, onClose, onSaved,
                 <input
                   value={customSvc.name}
                   onChange={e => setCustomSvc(p => ({ ...p, name: e.target.value }))}
-                  placeholder="שם השירות (למשל: תספורת + זקן מיוחד)"
+                  placeholder={`שם השירות (למשל: ${v.type === "barber_men" ? "תספורת + זקן מיוחד" : v.defaultService})`}
                   className="w-full border border-amber-200 rounded-lg px-3 py-2 text-sm bg-white" />
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -1664,6 +1666,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   onApproveSwap: (proposalId: string) => Promise<void>;
 }) {
   useModalBack(true, onClose);
+  const v = useVocab();
   const [updating, setUpdating] = useState(false);
   const [staffNote, setStaffNote] = useState(appt.staffNote || "");
   const [savingNote, setSavingNote] = useState(false);
@@ -2620,7 +2623,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
               </select>
               {editServiceId === "__custom__" && (
                 <input value={editCustomServiceName} onChange={e => setEditCustomServiceName(e.target.value)}
-                  placeholder="שם השירות (למשל: תספורת + זקן מיוחד)" autoFocus
+                  placeholder={`שם השירות (למשל: ${v.type === "barber_men" ? "תספורת + זקן מיוחד" : v.defaultService})`} autoFocus
                   className="w-full mt-1.5 border border-neutral-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               )}
             </div>
@@ -3383,6 +3386,7 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
   { customerId: string; customerName: string; onClose: () => void }
 ) {
   useModalBack(true, onClose);
+  const v = useVocab();
   const [data, setData] = useState<CustomerHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -3445,7 +3449,7 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
 
             {/* Barbers visited */}
             <div>
-              <p className="text-xs text-neutral-400 mb-1.5">ספרים שהיה אצלם</p>
+              <p className="text-xs text-neutral-400 mb-1.5">{v.staffPlural} שהיה {v.staffFem ? "אצלן" : "אצלם"}</p>
               {barbers.length === 0 ? (
                 <p className="text-sm text-neutral-400 italic">אין ביקורים</p>
               ) : (
@@ -3462,7 +3466,7 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
             {/* Visit history list */}
             <div>
               <p className="text-xs text-neutral-400 mb-1.5">
-                ביקורים אחרונים {typeof data.totalVisits === "number" ? `(${data.totalVisits} תספורות)` : ""}
+                ביקורים אחרונים {typeof data.totalVisits === "number" ? `(${data.totalVisits} ${v.treatment === "תספורת" ? "תספורות" : "טיפולים"})` : ""}
               </p>
               {past.length === 0 ? (
                 <p className="text-sm text-neutral-400 italic">אין היסטוריה</p>
@@ -3475,7 +3479,7 @@ function CustomerHistoryModal({ customerId, customerName, onClose }:
                         <p className="text-neutral-500">
                           {a.staff?.name || "—"}
                           {a.status === "cancelled_by_customer" && <span className="text-red-500"> · ביטל</span>}
-                          {a.status === "cancelled_by_staff" && <span className="text-red-500"> · בוטל ע״י הספר</span>}
+                          {a.status === "cancelled_by_staff" && <span className="text-red-500"> · בוטל ע״י {v.staffDef}</span>}
                           {a.status === "no_show" && <span className="text-orange-600"> · הבריז</span>}
                         </p>
                       </div>
@@ -3503,6 +3507,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose, embedded = false }: {
    *  modal on top of it. */
   embedded?: boolean;
 }) {
+  const v = useVocab();
   const initialDate = appt.date.split("T")[0];
   const initialDuration = toMin(appt.endTime) - toMin(appt.startTime);
 
@@ -3609,7 +3614,7 @@ function ApptEditForm({ appt, onCancel, onSaved, onClose, embedded = false }: {
 
           {/* Staff */}
           <div>
-            <label className="text-xs text-neutral-500 mb-1 block">ספר</label>
+            <label className="text-xs text-neutral-500 mb-1 block">{v.staff}</label>
             <select value={staffId} onChange={e => setStaffId(e.target.value)}
               className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400">
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -4580,6 +4585,7 @@ function DraftApptBlock({
 
 // ── Main Calendar ─────────────────────────────────────────────────────────────
 export default function AdminCalendar() {
+  const v = useVocab();
   const [view, setView] = useState<ViewType>("week");
   const [date, setDate] = useState(todayISO());
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
@@ -6544,7 +6550,7 @@ export default function AdminCalendar() {
           {/* ⚡ nearest slots / 🔍 find customer — row 1 on desktop; on mobile
               they live in row 2 so the date label keeps its width. */}
           {!isMobile && (<>
-            <button onClick={() => setNearestOpen(true)} title="התורים הפנויים הקרובים ביותר — אצל כל הספרים"
+            <button onClick={() => setNearestOpen(true)} title={`התורים הפנויים הקרובים ביותר — אצל כל ${v.staffPluralDef}`}
               className="w-9 h-9 rounded-lg border border-teal-200 text-teal-700 hover:bg-teal-50 flex items-center justify-center shrink-0 text-sm">⚡</button>
             <button onClick={() => setFindOpen(true)} title="מתי יש ללקוח תור?"
               className="w-9 h-9 rounded-lg border border-neutral-200 text-neutral-600 hover:bg-neutral-100 flex items-center justify-center shrink-0 text-sm">🔍</button>
@@ -6640,7 +6646,7 @@ export default function AdminCalendar() {
               {showFilter && (
                 <div className="absolute left-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-neutral-200 p-2 w-44 z-30">
                   <div className="flex items-center justify-between mb-1 px-1">
-                    <span className="text-xs font-semibold text-neutral-700">ספרים</span>
+                    <span className="text-xs font-semibold text-neutral-700">{v.staffPlural}</span>
                     <button onClick={() => setVisibleStaff(allStaff.map(s => s.id))} className="text-[11px] text-slate-800">הכל</button>
                   </div>
                   {allStaff.map((s, si) => (
@@ -6656,7 +6662,7 @@ export default function AdminCalendar() {
                     <div className="border-t border-neutral-100 mt-1 pt-1">
                       <button onClick={toggleShowDeparted}
                         className="w-full text-right text-[11px] text-neutral-500 hover:text-neutral-800 px-1 py-1">
-                        {loadingDeparted ? "טוען..." : showDeparted ? "▲ הסתר ספרים שעזבו" : "▼ הצג ספרים שעזבו"}
+                        {loadingDeparted ? "טוען..." : showDeparted ? `▲ הסתר ${v.staffPlural} שעזבו` : `▼ הצג ${v.staffPlural} שעזבו`}
                       </button>
                       {showDeparted && departedStaff.map((s, si) => (
                         <label key={s.id} className="flex items-center gap-2 px-1 py-1.5 cursor-pointer rounded-lg hover:bg-neutral-50 opacity-70">
@@ -6667,11 +6673,11 @@ export default function AdminCalendar() {
                             }}
                             className="accent-slate-900" />
                           <div className={`w-4 h-4 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${COLORS[si % COLORS.length].bg}`}>{s.name[0]}</div>
-                          <span className="text-xs text-neutral-800">{s.name} <span className="text-neutral-400">(עזב)</span></span>
+                          <span className="text-xs text-neutral-800">{s.name} <span className="text-neutral-400">({v.staffFem ? "עזבה" : "עזב"})</span></span>
                         </label>
                       ))}
                       {showDeparted && !loadingDeparted && departedStaff.length === 0 && (
-                        <p className="text-[10px] text-neutral-400 px-1 py-1">אין ספרים שעזבו</p>
+                        <p className="text-[10px] text-neutral-400 px-1 py-1">אין {v.staffPlural} שעזבו</p>
                       )}
                     </div>
                   )}
@@ -6923,7 +6929,7 @@ export default function AdminCalendar() {
                 <div className="flex-1 min-w-0">
                   <p className="font-bold text-slate-900 text-sm">להזיז את ההפסקה?</p>
                   <p className="text-xs text-slate-600 mt-0.5">
-                    {pendingBreakMove.drag.name} → <span className="font-semibold text-slate-800">{targetStaff?.name || "אותו ספר"}</span>
+                    {pendingBreakMove.drag.name} → <span className="font-semibold text-slate-800">{targetStaff?.name || `${v.staffFem ? "אותה" : "אותו"} ${v.staff}`}</span>
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5" dir="rtl">
                     {dateLabel} · <span dir="ltr">{pendingBreakMove.target.startTime}–{endTime}</span>

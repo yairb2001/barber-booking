@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -57,6 +58,7 @@ const emptySchedule = () =>
 const DEFAULT_PASSWORD = "12345678";
 
 export default function AdminStaffPage() {
+  const v = useVocab();
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
   const [isOwner, setIsOwner] = useState(false);
@@ -213,7 +215,7 @@ export default function AdminStaffPage() {
   }
 
   async function deleteStaff(id: string, name: string) {
-    if (!confirm(`להוציא את ${name} מהניהול?\n\nהוא ייעלם מהיומן ומקביעת תורים חדשים, אבל כל ההיסטוריה שלו (תורים, לוח שעות, שירותים, גלריה) נשמרת ולא נמחקת — אפשר עדיין לראות אותה בדוחות ובכרטיסי לקוחות.`)) return;
+    if (!confirm(`להוציא את ${name} מהניהול?\n\n${v.staffFem ? "היא תיעלם" : "הוא ייעלם"} מהיומן ומקביעת תורים חדשים, אבל כל ההיסטוריה ${v.staffFem ? "שלה" : "שלו"} (תורים, לוח שעות, שירותים, גלריה) נשמרת ולא נמחקת — אפשר עדיין לראות אותה בדוחות ובכרטיסי לקוחות.`)) return;
     const res = await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
     if (!res.ok) { const data = await res.json(); alert(data.error || "שגיאה במחיקה"); return; }
     load();
@@ -262,10 +264,10 @@ export default function AdminStaffPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">ספרים</h1>
-          <p className="text-neutral-500 text-sm mt-1">{staff.length} ספרים רשומים</p>
+          <h1 className="text-2xl font-bold text-neutral-900">{v.staffPlural}</h1>
+          <p className="text-neutral-500 text-sm mt-1">{staff.length} {v.staffPlural} {v.staffFem ? "רשומות" : "רשומים"}</p>
           {isOwner && staff.length > 1 && (
-            <p className="text-neutral-400 text-xs mt-1">↑↓ סדרו את הספרים — הסדר נשמר גם בעמוד קביעת התור</p>
+            <p className="text-neutral-400 text-xs mt-1">↑↓ סדרו את {v.staffPluralDef} — הסדר נשמר גם בעמוד קביעת התור</p>
           )}
         </div>
         {isOwner && (
@@ -273,7 +275,7 @@ export default function AdminStaffPage() {
             onClick={() => setShowAdd(true)}
             className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
           >
-            + ספר חדש
+            + {v.staff} {v.staffFem ? "חדשה" : "חדש"}
           </button>
         )}
       </div>
@@ -399,7 +401,7 @@ export default function AdminStaffPage() {
                     s.isAvailable ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-neutral-200 text-neutral-400"
                   }`}
                 >
-                  {s.isAvailable ? "פעיל" : "לא פעיל"}
+                  {s.isAvailable ? (v.staffFem ? "פעילה" : "פעיל") : (v.staffFem ? "לא פעילה" : "לא פעיל")}
                 </button>
                 {isOwner && (
                   <button
@@ -482,16 +484,16 @@ export default function AdminStaffPage() {
       {showAdd && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAdd(false)}>
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold text-neutral-900 mb-5 text-lg">ספר חדש</h3>
+            <h3 className="font-bold text-neutral-900 mb-5 text-lg">{v.staff} {v.staffFem ? "חדשה" : "חדש"}</h3>
             <p className="text-xs text-neutral-500 mb-4 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-              💡 הספר יקבל סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span>
+              💡 {v.staffDef} {v.staffFem ? "תקבל" : "יקבל"} סיסמת ברירת מחדל: <span className="font-bold text-teal-700 tracking-widest">{DEFAULT_PASSWORD}</span>
             </p>
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">שם *</label>
                 <input value={newStaff.name} onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  placeholder="שם הספר" />
+                  placeholder={`שם ${v.staffDef}`} />
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">טלפון * <span className="text-red-500">(חובה)</span></label>

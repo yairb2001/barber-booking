@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +19,7 @@ type StaffWithPortfolio = {
 };
 
 export default function AdminPortfolioPage() {
+  const v = useVocab();
   const [staff, setStaff] = useState<StaffWithPortfolio[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState<string | null>(null); // staffId being uploaded
@@ -106,7 +108,7 @@ export default function AdminPortfolioPage() {
 
       {staff.length === 0 && (
         <div className="text-center py-16 text-slate-400 text-sm">
-          אין ספרים פעילים. הוסף ספרים קודם בהגדרות.
+          אין {v.staffPlural} {v.staffFem ? "פעילות" : "פעילים"}. הוסף {v.staffPlural} קודם בהגדרות.
         </div>
       )}
 

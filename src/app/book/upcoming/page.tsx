@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useG } from "@/components/VocabProvider";
 
 function getDayName(date: Date): string {
   const days = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -49,6 +50,7 @@ function BackArrow({ href }: { href: string }) {
 
 function UpcomingPageContent() {
   const slug = useSlug();
+  const g = useG();
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId") || "";
   const serviceId = searchParams.get("serviceId") || "";
@@ -136,7 +138,7 @@ function UpcomingPageContent() {
               style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>📅</div>
             <div className="text-center">
               <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>אין תורים פנויים בקרוב</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>נסה לבחור תאריך מאוחר יותר ביומן</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{g("נסה", "נסי")} לבחור תאריך מאוחר יותר ביומן</p>
             </div>
           </div>
         )}
@@ -151,7 +153,7 @@ function UpcomingPageContent() {
               style={{ color: "var(--text-sec)" }}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <span className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>בחר תאריך ספציפי</span>
+            <span className="text-[13px] font-bold" style={{ color: "var(--text-pri)" }}>{g("בחר", "בחרי")} תאריך ספציפי</span>
           </Link>
         )}
       </div>

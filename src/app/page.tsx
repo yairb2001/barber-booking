@@ -8,6 +8,7 @@ import BusinessSwitcher from "@/components/BusinessSwitcher";
 import { type Theme, darkSurfaceCss } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
+import { useVocab, useG } from "@/components/VocabProvider";
 import { captureAttribution } from "@/lib/attribution";
 import MetaPixel from "@/components/MetaPixel";
 
@@ -144,6 +145,7 @@ type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string 
 
 function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: string }) {
   const slug = useSlug();
+  const g = useG();
   const [active, setActive] = useState(0);
   const startX = useRef(0);
   const isDragging = useRef(false);
@@ -248,7 +250,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
                         </div>
                         <Link href={work.staffId ? publicHref(slug, `/book/service?staffId=${work.staffId}`) : publicHref(slug, "/book")} dir="rtl"
                           style={{ background: brand, borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0, marginBottom: 12 }}>
-                          קבע תור
+                          {g("קבע תור", "קבעי תור")}
                         </Link>
                       </div>
                     </div>
@@ -333,6 +335,8 @@ function SecLabel({ label, sub, action }: { label: string; sub?: string; action?
 // for comparison; the owner kept this classic page (9.10.2026).
 export default function HomePage() {
   const slug = useSlug();
+  const v = useVocab();
+  const g = useG();
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -494,9 +498,10 @@ export default function HomePage() {
 
   // Tapping the referral pill → invite another friend (share sheet / WhatsApp).
   const inviteFriend = async () => {
-    const url = window.location.origin + "/";
-    const bizName = business?.name || "מספרה";
-    const text = `קבעתי תור ב${bizName} 💈 ממליץ לך גם! קבע דרך הקישור:`;
+    // This business's home page, not the root's.
+    const url = window.location.origin + publicHref(slug, "/");
+    const bizName = business?.name || v.place;
+    const text = `קבעתי תור ב${bizName} ${v.emoji} ${g("ממליץ לך גם! קבע דרך הקישור:", "ממליצה לך גם! אפשר לקבוע דרך הקישור:")}`;
     if (typeof navigator !== "undefined" && navigator.share) {
       try { await navigator.share({ title: bizName, text, url }); return; } catch { /* cancelled */ }
     }
@@ -632,7 +637,7 @@ export default function HomePage() {
           <Link href={publicHref(slug, "/book")}
             className="flex-shrink-0 text-[12px] font-bold tracking-[0.1em] uppercase px-5 py-2 rounded-full text-white"
             style={{ background: brand }}>
-            קבע תור
+            {g("קבע תור", "קבעי תור")}
           </Link>
         </div>
       </header>
@@ -728,7 +733,7 @@ export default function HomePage() {
                       style={{ animation: "waHintIn 0.45s ease-out 1.2s both, waHintBob 2.6s ease-in-out 1.7s infinite" }}>
                       <span className="relative block rounded-xl px-3 py-1.5 text-[11px] font-bold text-white shadow-lg"
                         style={{ background: "#25D366", boxShadow: "0 6px 20px rgba(37,211,102,0.45)" }}>
-                        קבע תור דרך הוואטסאפ
+                        {g("קבע תור דרך הוואטסאפ", "קבעי תור דרך הוואטסאפ")}
                         <span className="absolute -top-1 left-4 h-2 w-2 rotate-45 rounded-[1px]" style={{ background: "#25D366" }} />
                       </span>
                     </a>
@@ -790,7 +795,7 @@ export default function HomePage() {
               </h1>
             );
           })()}
-          <p className="text-white/40 tracking-[0.5em] text-[10px] mb-8 uppercase">barbershop</p>
+          <p className="text-white/40 tracking-[0.5em] text-[10px] mb-8 uppercase">{({ barber_men: "barbershop", barber_women: "hair salon", nails: "nail studio", cosmetics: "beauty clinic" } as Record<string, string>)[v.type]}</p>
 
           <Link href={publicHref(slug, "/book")}
             className="inline-flex items-center gap-2 font-bold text-[13px] tracking-[0.15em] uppercase px-10 py-4 rounded-full text-white active:scale-95 transition-transform"
@@ -798,7 +803,7 @@ export default function HomePage() {
               background: brand,
               boxShadow: `0 8px 32px rgba(${brandRgb},0.5), 0 2px 8px rgba(0,0,0,0.3)`,
             }}>
-            קבע תור עכשיו
+            {g("קבע תור עכשיו", "קבעי תור עכשיו")}
           </Link>
         </div>
 
@@ -889,8 +894,8 @@ export default function HomePage() {
       {/* ── Stories as focus carousel — "העבודות שלנו" ── */}
       {!loading && stories.length > 0 && (
         <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface)" }}>
-          <SecLabel label="העבודות שלנו" sub="בחר סגנון"
-            action={<Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>}
+          <SecLabel label="העבודות שלנו" sub={g("בחר סגנון", "בחרי סגנון")}
+            action={<Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>{g("קבע תור", "קבעי תור")} →</Link>}
           />
           <PortfolioCarousel
             works={galleryStories.map(s => ({
@@ -993,7 +998,7 @@ export default function HomePage() {
                 <p className="text-[10.5px] text-white/85 leading-snug">
                   {reached
                     ? `הגעת ליעד — מגיעה לך ${referral.giftLabel}! 🎁`
-                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} מאיתנו 💈`}
+                    : `עוד ${remaining} ${remaining === 1 ? g("חבר", "חברה") : g("חברים", "חברות")} ו${referral.giftLabel} מאיתנו ${v.emoji}`}
                 </p>
                 <span className="flex items-center gap-0.5 text-[10.5px] font-bold text-white whitespace-nowrap flex-shrink-0">
                   הזמינו חבר
@@ -1010,9 +1015,9 @@ export default function HomePage() {
       {/* ── Staff — choose your barber ── */}
       {staff.length > 0 && (
         <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface-alt)" }}>
-          <SecLabel label="הספרים שלנו" sub="The Team"
+          <SecLabel label={`${v.staffPluralDef} שלנו`} sub="The Team"
             action={
-              <Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>קבע תור →</Link>
+              <Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>{g("קבע תור", "קבעי תור")} →</Link>
             }
           />
           <div className="flex gap-3 overflow-x-auto px-5 pb-2 snap-x" style={{ scrollbarWidth: "none" }}>
@@ -1059,7 +1064,7 @@ export default function HomePage() {
                     {slot ? (
                       <p className="text-[11px] font-semibold mt-0.5" style={{ color: brand }}>{slot.dayLabel} · {slot.time}</p>
                     ) : (
-                      <p className="text-[11px] text-slate-400 mt-0.5">לחץ לתאום תור</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{g("לחץ לתאום תור", "לחצי לתיאום תור")}</p>
                     )}
                   </div>
                 </Link>

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { shortDate, type PlanData } from "./shared";
+import { useVocab } from "@/components/VocabProvider";
 
 /**
  * "חבר מביא חבר" on the owner's plan screen (11.10.2026): his personal link,
@@ -9,6 +10,8 @@ import { shortDate, type PlanData } from "./shared";
  * month for every shop that starts paying (src/lib/referral.ts).
  */
 export default function Referral({ r }: { r: PlanData["referral"] }) {
+  // A salon or clinic owner brings "עסק", a barber brings "מספרה".
+  const barber = useVocab().place === "מספרה";
   const [copied, setCopied] = useState(false);
   const share = `היי, אני עובד עם צ'אטור. סוכן שעונה ללקוחות בוואטסאפ של המספרה וקובע להם תורים לבד. החודש הראשון חינם, שווה לך לנסות: ${r.link}`;
   async function copy() {
@@ -18,7 +21,7 @@ export default function Referral({ r }: { r: PlanData["referral"] }) {
   return (
     <section id="referral" className="bg-white rounded-2xl border border-teal-200 p-5 scroll-mt-4">
       <h2 className="font-semibold text-neutral-800">חבר מביא חבר</h2>
-      <p className="text-sm text-neutral-600 mt-1 leading-relaxed">מכיר בעל מספרה שזה יעזור לו? שלח לו את הקישור שלך. <b>על כל מספרה שתביא, כשהיא מתחילה לשלם, אתה מקבל חודש חינם.</b></p>
+      <p className="text-sm text-neutral-600 mt-1 leading-relaxed">מכיר בעל {barber ? "מספרה" : "עסק"} שזה יעזור לו? שלח לו את הקישור שלך. <b>על כל {barber ? "מספרה שתביא, כשהיא מתחילה" : "עסק שתביא, כשהוא מתחיל"} לשלם, אתה מקבל חודש חינם.</b></p>
       <div className="mt-3 flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
         <span className="flex-1 min-w-0 truncate text-sm text-neutral-700" dir="ltr">{r.link}</span>
         <button type="button" onClick={() => void copy()} className="shrink-0 text-sm font-semibold text-teal-700">{copied ? "הועתק" : "העתק"}</button>

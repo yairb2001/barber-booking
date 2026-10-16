@@ -24,3 +24,10 @@ export function useVocab(): Vocab {
 export function useBookingOrder(): BookingOrder {
   return useContext(OrderContext);
 }
+
+/** Addressing the customer: g("בחר", "בחרי") — feminine where the business's
+ *  customers are women (salon, nails, cosmetics); DOMINANT keeps the masculine. */
+export function useG(): (m: string, f: string) => string {
+  const fem = useContext(VocabContext).customerFem;
+  return (m, f) => (fem ? f : m);
+}

@@ -36,7 +36,15 @@ export async function getServerBusinessProfile(): Promise<{ type: string | null;
     return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b) };
   };
   try {
-    const slug = tenantSlugFromPathname(headers().get("x-pathname"));
+    // The admin area talks in the logged-in business's words (a nail studio's
+    // menu says מניקוריסטיות); the session header is set only by the middleware.
+    const path = headers().get("x-pathname") ?? "";
+    const sessionBiz = path.startsWith("/admin") ? headers().get("x-session-business-id") : null;
+    if (sessionBiz) {
+      const biz = await prisma.business.findUnique({ where: { id: sessionBiz }, select: { businessType: true, settings: true } });
+      if (biz) return out(biz);
+    }
+    const slug = tenantSlugFromPathname(path);
     if (slug) {
       const biz = await prisma.business.findUnique({ where: { slug }, select: { businessType: true, settings: true } });
       if (biz) return out(biz);

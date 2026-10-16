@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,7 @@ type Conv = { id: string; name: string; at: string | null; last: string };
 const STATUS: Record<string, string> = { new: "התקבל", in_review: "בבדיקה", applied: "טופל", dismissed: "נסגר" };
 
 export default function AgentFeedbackCard() {
+  const v = useVocab();
   const [items, setItems] = useState<Fb[]>([]);
   const [convs, setConvs] = useState<Conv[]>([]);
   const [text, setText] = useState("");
@@ -36,7 +38,7 @@ export default function AgentFeedbackCard() {
         <h2 className="font-semibold text-neutral-800">משהו שלא אהבת אצל הסוכן?</h2>
         <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">כתוב מה הוא עשה ומה היית רוצה במקום. אפשר לבחור שיחה מסוימת. אנחנו עוברים על זה כל יום ומתקנים.</p>
       </div>
-      <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder='למשל: "הוא הציע ללקוח תור אצל ספר אחר בלי לשאול, אני רוצה שישאל קודם"' className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+      <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder={`למשל: "הוא הציע ללקוח תור אצל ${v.staff} ${v.other} בלי לשאול, אני רוצה שישאל קודם"`} className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
       <select value={conv} onChange={e => setConv(e.target.value)} className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm bg-white">
         <option value="">על שיחה מסוימת? (לא חובה)</option>
         {convs.map(c => <option key={c.id} value={c.id}>{c.name} · {when(c.at)} · {c.last}</option>)}

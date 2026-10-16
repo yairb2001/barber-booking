@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useVocab } from "@/components/VocabProvider";
+import type { Vocab } from "@/lib/vocab";
 
 type StaffRow = {
   id: string;
@@ -16,14 +18,15 @@ type StaffRow = {
 // These columns are what getEffectivePermissions actually gates on at runtime,
 // so this table is the source of truth — not the business `settings` JSON.
 const PER_STAFF = [
-  { key: "canViewAllCalendars", short: "יומנים", label: "צפייה ביומנים של ספרים אחרים" },
-  { key: "canViewAllChats", short: "שיחות", label: "גישה לשיחות WhatsApp" },
-  { key: "canUseOwnerAgent", short: "סוכן מנהל", label: "שליחת פקודות ניהול לסוכן בוואטסאפ" },
+  { key: "canViewAllCalendars", short: "יומנים", label: (v: Vocab) => `צפייה ביומנים של ${v.staffPlural} ${v.staffFem ? "אחרות" : "אחרים"}` },
+  { key: "canViewAllChats", short: "שיחות", label: () => "גישה לשיחות WhatsApp" },
+  { key: "canUseOwnerAgent", short: "סוכן מנהל", label: () => "שליחת פקודות ניהול לסוכן בוואטסאפ" },
 ] as const;
 
 type PermKey = (typeof PER_STAFF)[number]["key"];
 
 export default function PermissionsPage() {
+  const v = useVocab();
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<StaffRow[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -107,8 +110,8 @@ export default function PermissionsPage() {
     <div className="p-6 sm:p-8 overflow-auto h-full">
       <Link href="/admin/settings" className="text-sm text-neutral-400 hover:text-neutral-600 transition mb-1 inline-block">← חזרה להגדרות</Link>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">👥 הרשאות ספרים</h1>
-        <p className="text-neutral-500 text-sm mt-1">מה כל ספר יכול לראות ולעשות במערכת</p>
+        <h1 className="text-2xl font-bold text-neutral-900">👥 הרשאות {v.staffPlural}</h1>
+        <p className="text-neutral-500 text-sm mt-1">מה כל {v.staff} {v.staffFem ? "יכולה" : "יכול"} לראות ולעשות במערכת</p>
       </div>
 
       {loading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
@@ -117,12 +120,12 @@ export default function PermissionsPage() {
           {/* ── Per-barber matrix ── */}
           <section className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
             <div className="px-5 py-3.5 border-b border-neutral-100">
-              <h2 className="font-semibold text-neutral-800">לפי ספר</h2>
+              <h2 className="font-semibold text-neutral-800">לפי {v.staff}</h2>
               <p className="text-xs text-neutral-400 mt-0.5">כל שינוי נשמר מיד</p>
             </div>
 
             {staff.length === 0 ? (
-              <p className="text-sm text-neutral-400 text-center py-10">אין ספרים פעילים</p>
+              <p className="text-sm text-neutral-400 text-center py-10">אין {v.staffPlural} {v.staffFem ? "פעילות" : "פעילים"}</p>
             ) : (
               <div className="p-3">
                 {/* Column headers + apply-to-all */}
@@ -134,7 +137,7 @@ export default function PermissionsPage() {
                       <button key={p.key}
                         onClick={() => setAll(p.key, !allOn)}
                         disabled={busy !== null}
-                        title={p.label}
+                        title={p.label(v)}
                         className="flex flex-col items-center gap-1 group disabled:opacity-50">
                         <span className="text-[10px] sm:text-[11px] text-neutral-500 text-center leading-tight">{p.short}</span>
                         <span className={`w-9 h-5 rounded-full relative transition-colors border-2 border-dashed ${allOn ? "bg-teal-100 border-teal-400" : "bg-neutral-100 border-neutral-300"} group-hover:border-teal-500`}>
@@ -161,7 +164,7 @@ export default function PermissionsPage() {
                           <button
                             onClick={() => setPerm(m.id, p.key, !m[p.key])}
                             disabled={busy !== null}
-                            title={p.label}
+                            title={p.label(v)}
                             className={`relative w-9 h-5 rounded-full transition-colors disabled:opacity-50 ${m[p.key] ? "bg-teal-600" : "bg-neutral-300"}`}>
                             <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${m[p.key] ? "right-0.5" : "left-0.5"}`} />
                           </button>
@@ -176,7 +179,7 @@ export default function PermissionsPage() {
                   {PER_STAFF.map(p => (
                     <div key={p.key} className="flex gap-2 text-[11px] leading-relaxed">
                       <dt className="text-neutral-500 font-medium shrink-0">{p.short}</dt>
-                      <dd className="text-neutral-400">{p.label}</dd>
+                      <dd className="text-neutral-400">{p.label(v)}</dd>
                     </div>
                   ))}
                 </dl>
@@ -188,7 +191,7 @@ export default function PermissionsPage() {
           <section className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
             <div className="px-5 py-3.5 border-b border-neutral-100">
               <h2 className="font-semibold text-neutral-800">חל על כל הצוות</h2>
-              <p className="text-xs text-neutral-400 mt-0.5">הגדרות שאין להן ערך נפרד לכל ספר</p>
+              <p className="text-xs text-neutral-400 mt-0.5">הגדרות שאין להן ערך נפרד לכל {v.staff}</p>
             </div>
             <div className="p-3 space-y-1">
               <label className="flex items-start gap-3 bg-neutral-50/70 rounded-xl px-3.5 py-3 cursor-pointer">
@@ -199,11 +202,11 @@ export default function PermissionsPage() {
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${staffManageOwnServices ? "right-0.5" : "left-0.5"}`} />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-neutral-800">כל ספר מנהל את השירותים שלו</p>
+                  <p className="text-sm font-semibold text-neutral-800">כל {v.staff} {v.staffFem ? "מנהלת" : "מנהל"} את השירותים {v.staffFem ? "שלה" : "שלו"}</p>
                   <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
                     {staffManageOwnServices
-                      ? "כל ספר יכול להוסיף, לערוך ולמחוק שירותים משלו, בלי תלות בשירותי המנהל."
-                      : "המנהל הראשי קובע את השירותים לכולם. הספרים בוחרים רק מתוך הרשימה הקיימת."}
+                      ? `כל ${v.staff} ${v.staffFem ? "יכולה" : "יכול"} להוסיף, לערוך ולמחוק שירותים ${v.staffFem ? "משלה" : "משלו"}, בלי תלות בשירותי המנהל.`
+                      : `המנהל הראשי קובע את השירותים לכולם. ${v.staffPluralDef} ${v.staffFem ? "בוחרות" : "בוחרים"} רק מתוך הרשימה הקיימת.`}
                   </p>
                 </div>
               </label>
@@ -216,9 +219,9 @@ export default function PermissionsPage() {
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${barbersCanViewAllCustomers ? "right-0.5" : "left-0.5"}`} />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-neutral-800">צפייה וקביעת תור לכל לקוחות המספרה</p>
+                  <p className="text-sm font-semibold text-neutral-800">צפייה וקביעת תור לכל לקוחות {v.placeDef}</p>
                   <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
-                    ספרים יוכלו לחפש ולקבוע תור לכל לקוח של העסק — לא רק ללקוחות שלהם
+                    {v.staffPlural} יוכלו לחפש ולקבוע תור לכל לקוח של העסק — לא רק ללקוחות {v.staffFem ? "שלהן" : "שלהם"}
                   </p>
                 </div>
               </label>
@@ -235,11 +238,11 @@ export default function PermissionsPage() {
                   <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${cancellationPolicyMode === "staff" ? "right-0.5" : "left-0.5"}`} />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-neutral-800">כל ספר קובע את מדיניות הביטולים שלו</p>
+                  <p className="text-sm font-semibold text-neutral-800">כל {v.staff} {v.staffFem ? "קובעת" : "קובע"} את מדיניות הביטולים {v.staffFem ? "שלה" : "שלו"}</p>
                   <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
                     {cancellationPolicyMode === "staff"
-                      ? "כל ספר קובע בהגדרות שלו כמה שעות מראש נדרשות לביטול. מי שלא הגדיר — הערך הכללי חל עליו."
-                      : "אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. הספרים לא יכולים לשנות אותו."}
+                      ? `כל ${v.staff} ${v.staffFem ? "קובעת" : "קובע"} בהגדרות ${v.staffFem ? "שלה" : "שלו"} כמה שעות מראש נדרשות לביטול. ${v.staffFem ? "מי שלא הגדירה — הערך הכללי חל עליה." : "מי שלא הגדיר — הערך הכללי חל עליו."}`
+                      : `אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. ${v.staffPluralDef} לא ${v.staffFem ? "יכולות" : "יכולים"} לשנות אותו.`}
                   </p>
                 </div>
               </label>

@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   // referral settings (never the raw settings blob), so the confirm page can
   // open the friend-picker for the owner's chosen source name.
   const referral = {
-    ...getReferralConfig(business.settings),          // enabled, goal, giftLabel
+    ...getReferralConfig(business.settings, business.businessType),          // enabled, goal, giftLabel
     friendSource: getReferralFriendSource(business.settings),
     sources: getReferralSources(business.settings),
   };

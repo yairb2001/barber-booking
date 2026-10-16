@@ -25,6 +25,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { vocabFor } from "@/lib/vocab";
 import { refreshReminders } from "@/lib/reminders-sweep";
 import type { Prisma } from "@prisma/client";
 import { sendMessage, swapProposalText, firstName } from "@/lib/messaging";
@@ -860,7 +861,10 @@ async function markLateArrivalNoShow(
     where: { businessId: bizId },
     select: { lateArrivalNoShowMessage: true },
   });
-  const message = (cfg?.lateArrivalNoShowMessage || DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE)
+  // The default in the staff member's gender ("לא אישרה" in a salon or studio).
+  const bizType = (await prisma.business.findUnique({ where: { id: bizId }, select: { businessType: true } }))?.businessType;
+  const fallback = vocabFor(bizType).staffFem ? DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE.replace("לא אישר את", "לא אישרה את") : DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE;
+  const message = (cfg?.lateArrivalNoShowMessage || fallback)
     .replace(/\{\{staff\}\}/g, proposal.primary.staff.name);
 
   await notifyRequester(bizId, proposal.requesterConversationId, proposal.primary.customer.phone, message);

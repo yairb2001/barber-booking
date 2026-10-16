@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       sortOrder: body.sortOrder ?? 0,
       category: typeof body.category === "string" && body.category.trim() ? body.category.trim() : null,
       priceFrom: body.priceFrom === true,
+      rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null),
     },
   });
   return NextResponse.json(service, { status: 201 });

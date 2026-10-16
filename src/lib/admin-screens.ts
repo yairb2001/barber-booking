@@ -5,6 +5,8 @@
  * path in words) and by the requests chat (a link becomes a button to the
  * screen). Mirrors the menu (AdminLayoutClient) and the settings hub.
  */
+import type { Vocab } from "@/lib/vocab";
+
 export type AdminScreen = { path: string; name: string; crumbs: string };
 
 export const ADMIN_SCREENS: AdminScreen[] = [
@@ -37,15 +39,25 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { path: "/admin/settings/marketing", name: "שיווק והפניות", crumbs: "הגדרות עסק ← שיווק ← שיווק והפניות" },
 ];
 
+/** The list in the shop's words: a nail studio's menu says מניקוריסטיות
+ *  where DOMINANT's says ספרים (16.10.2026). */
+export function adminScreensFor(v?: Vocab | null): AdminScreen[] {
+  if (!v || v.type === "barber_men") return ADMIN_SCREENS;
+  const w = (s: string) => s.split("ספרים").join(v.staffPlural);
+  return ADMIN_SCREENS.map(s => ({ ...s, name: w(s.name), crumbs: w(s.crumbs) }));
+}
+
 /** The screen a path belongs to (longest matching prefix), or null. */
-export function screenFor(path: string): AdminScreen | null {
+export function screenFor(path: string, v?: Vocab | null): AdminScreen | null {
   const clean = path.split(/[?#]/)[0].replace(/\/+$/, "") || "/admin";
   let best: AdminScreen | null = null;
-  for (const s of ADMIN_SCREENS) {
+  for (const s of adminScreensFor(v)) {
     if ((clean === s.path || clean.startsWith(`${s.path}/`)) && (!best || s.path.length > best.path.length)) best = s;
   }
   return best;
 }
 
 /** The list for a prompt: "path | how to get there". */
-export const SCREENS_FOR_PROMPT = ADMIN_SCREENS.map(s => `${s.path} | ${s.crumbs}`).join("\n");
+export function screensForPrompt(v?: Vocab | null): string {
+  return adminScreensFor(v).map(s => `${s.path} | ${s.crumbs}`).join("\n");
+}

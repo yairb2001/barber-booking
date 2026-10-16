@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useEffect, useRef, useState, useCallback } from "react";
 
@@ -28,6 +29,7 @@ function timeAgo(iso: string): string {
 }
 
 export default function NotificationsBell() {
+  const v = useVocab();
   const [open, setOpen] = useState(false);
   const [events, setEvents] = useState<FeedEvent[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
@@ -165,7 +167,7 @@ export default function NotificationsBell() {
           className="absolute left-0 mt-2 w-[320px] max-w-[88vw] max-h-[70vh] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-neutral-200 z-50">
           <div className="sticky top-0 bg-white px-4 py-3 border-b border-neutral-100 flex items-center justify-between">
             <span className="text-sm font-bold text-neutral-800">התראות</span>
-            <span className="text-[11px] text-neutral-400">{isOwner ? "כל הספרים" : "ההתראות שלך"}</span>
+            <span className="text-[11px] text-neutral-400">{isOwner ? `כל ${v.staffPluralDef}` : "ההתראות שלך"}</span>
           </div>
 
           {loading ? (

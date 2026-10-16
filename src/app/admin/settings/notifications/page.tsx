@@ -1,10 +1,12 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import NotificationSettings from "@/components/NotificationSettings";
 
 export default function NotificationsSettingsPage() {
+  const v = useVocab();
   const [loading, setLoading] = useState(true);
   const [ownerNotifyScope, setOwnerNotifyScope] = useState<"all" | "mine" | "off">("all");
   const [notifyScopeSaved, setNotifyScopeSaved] = useState(false);
@@ -48,15 +50,15 @@ export default function NotificationsSettingsPage() {
               <div>
                 <label className="text-sm text-neutral-800 font-semibold block">🔔 ההתראות שלי (מנהל ראשי)</label>
                 <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
-                  על אילו תורים לקבל התראות לנייד — של כל הספרים, רק שלך, או בכלל לא.
-                  הודעות וואטסאפ מגיעות לפי מי שמטפל: פנייה חדשה — לספר הקבוע של הלקוח (אין כזה → לכולם); תשובה בשיחה — רק למי שכתב ללקוח ב-24 השעות האחרונות. בקשות שינוי והסלמות ניהוליות ממשיכות להגיע כל עוד לא כבוי.
+                  על אילו תורים לקבל התראות לנייד — של כל {v.staffPluralDef}, רק שלך, או בכלל לא.
+                  הודעות וואטסאפ מגיעות לפי מי שמטפל: פנייה חדשה — ל{v.staff} {v.regular} של הלקוח (אין {v.such} → לכולם); תשובה בשיחה — רק למי שכתב ללקוח ב-24 השעות האחרונות. בקשות שינוי והסלמות ניהוליות ממשיכות להגיע כל עוד לא כבוי.
                 </p>
               </div>
               {notifyScopeSaved && <span className="text-[11px] text-green-700 font-semibold shrink-0">✓ נשמר</span>}
             </div>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { key: "all",  label: "כל הספרים", desc: "כל תור בעסק" },
+                { key: "all",  label: `כל ${v.staffPluralDef}`, desc: "כל תור בעסק" },
                 { key: "mine", label: "רק שלי",    desc: "רק היומן שלך" },
                 { key: "off",  label: "כבוי",      desc: "בלי התראות" },
               ] as const).map(opt => {

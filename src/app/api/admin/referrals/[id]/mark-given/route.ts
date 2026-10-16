@@ -22,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const business = await prisma.business.findUnique({
     where: { id: session.businessId },
-    select: { settings: true },
+    select: { settings: true, businessType: true },
   });
   if (!session.isOwner && !barbersCanSeeAllCustomers(business?.settings ?? null)) {
     return NextResponse.json({ error: "פעולה זו זמינה למנהל ראשי בלבד" }, { status: 403 });
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const referralCount = await prisma.customer.count({
     where: { businessId: session.businessId, referredById: customer.id },
   });
-  const config = getReferralConfig(business?.settings ?? null);
+  const config = getReferralConfig(business?.settings ?? null, business?.businessType);
   const unlocked = tiersUnlockedFor(referralCount, config);
 
   if (customer.referralTiersGiven >= unlocked) {

@@ -14,6 +14,7 @@
  */
 
 import { dayDistance } from "@/lib/day-distance";
+import { agentReplyForType } from "@/lib/type-wording";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicFor } from "@/lib/anthropic-clients";
 import { prisma } from "@/lib/prisma";
@@ -39,7 +40,7 @@ import { vocabFor, vocabOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { applyToolDescriptions } from "@/lib/agent/tool-descriptions";
+import { applyToolDescriptions, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
@@ -1819,7 +1820,7 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
   // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
   const flags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim() });
-  const pingTools = selectTools(AGENT_TOOLS, { v3: flags.v3, hasCatalog: !!catalogBlock });
+  const pingTools = selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock });
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
@@ -2496,7 +2497,7 @@ export async function runCustomerAgent(opts: {
     customerContext,
   });
   const promptV3 = promptFlags.v3;
-  const tools = sandbox?.toolsOverride ?? selectTools(AGENT_TOOLS, { v3: promptV3, hasCatalog: !!catalogBlock });
+  const tools = sandbox?.toolsOverride ?? selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock });
   const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
@@ -2663,6 +2664,8 @@ export async function runCustomerAgent(opts: {
   if (!assistantText.trim()) throw new Error("[agent] produced empty reply after all iterations + safety net");
 
   assistantText = correctHebrewWeekdayLabels(assistantText);
+  // A nail studio's customer reads "מאשרת?" and 💅, never 💈 (type-wording.ts).
+  assistantText = agentReplyForType(assistantText, biz.businessType);
   // A reply that copies its own instructions never goes out (prompt-guard.ts).
   assistantText = guardReply(assistantText, promptInstructions(promptParams), { agent: "shop", label: `${biz.name} · ${phone}`, businessId });
 

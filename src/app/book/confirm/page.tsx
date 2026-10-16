@@ -5,7 +5,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab } from "@/components/VocabProvider";
+import { useVocab, useG } from "@/components/VocabProvider";
 import { getStoredAttribution } from "@/lib/attribution";
 import { ConfirmNotices } from "@/components/BookingNotice";
 
@@ -25,6 +25,7 @@ type ProductInfo = {
 // each one — or dismiss and stay on the list.
 function LeaveWaitlistPrompt() {
   const slug = useSlug();
+  const g = useG();
   type Entry = { id: string; date: string; service: { name: string }; staff: { name: string } | null };
   const [entries, setEntries] = useState<Entry[]>([]);
   const [auth, setAuth] = useState<{ phone: string; token: string } | null>(null);
@@ -68,7 +69,7 @@ function LeaveWaitlistPrompt() {
         <div>
           <p className="text-[13px] font-semibold text-amber-900">להישאר ברשימת ההמתנה?</p>
           <p className="text-[12px] text-amber-700 mt-1 leading-relaxed">
-            עכשיו שקבעת תור — אפשר לצאת מימי ההמתנה שאתה רשום אליהם, או להישאר ולקבל הודעה אם יתפנה מקום מוקדם יותר.
+            עכשיו שקבעת תור — אפשר לצאת מימי ההמתנה {g("שאתה רשום", "שאת רשומה")} אליהם, או להישאר ולקבל הודעה אם יתפנה מקום מוקדם יותר.
           </p>
         </div>
       </div>
@@ -94,7 +95,7 @@ function LeaveWaitlistPrompt() {
       </div>
       <button onClick={() => setDismissed(true)}
         className="w-full mt-3 text-[12px] font-semibold text-amber-700 py-2">
-        השאר אותי ברשימה
+        {g("השאר אותי ברשימה", "השאירי אותי ברשימה")}
       </button>
     </div>
   );
@@ -109,6 +110,7 @@ function AddToCalendar({
   dateLabel?: string; price?: string;
 }) {
   const v = useVocab();
+  const g = useG();
   // Build tz-safe wall-clock timestamps from the appointment strings (no Date()
   // parsing → no device-timezone drift). Times are Israel local; we tag the
   // event with TZID=Asia/Jerusalem so it lands correctly on any device.
@@ -151,7 +153,7 @@ function AddToCalendar({
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-lg">📅</span>
-        <p className="text-[13px] font-bold text-slate-800">הוסף את התור ליומן</p>
+        <p className="text-[13px] font-bold text-slate-800">{g("הוסף", "הוסיפי")} את התור ליומן</p>
       </div>
       <div className="flex gap-2">
         <a href={googleUrl} target="_blank" rel="noopener noreferrer"
@@ -170,6 +172,8 @@ function AddToCalendar({
 // ── App teaser — shown after booking only when store links exist ───────────────
 function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playStoreUrl?: string }) {
   const hasLinks = !!(appStoreUrl || playStoreUrl);
+  const v = useVocab();
+  const g = useG();
   return (
     <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg, #0d4f4a 0%, #0f766e 100%)" }}>
       <div className="flex items-center gap-2 mb-3">
@@ -182,10 +186,10 @@ function AppTeaser({ appStoreUrl, playStoreUrl }: { appStoreUrl?: string; playSt
         ✓ לא תצטרך להזין קוד אימות בכל פעם
       </p>
       <p className="text-[12px] text-teal-100 leading-relaxed mb-1">
-        ✓ ראה תורים עתידיים ועדכונים בזמן אמת
+        ✓ {g("ראה", "ראי")} תורים עתידיים ועדכונים בזמן אמת
       </p>
       <p className="text-[12px] text-teal-100 leading-relaxed mb-4">
-        ✓ תוכנית חבר מביא חבר — כל 3 חברים = תספורת חינם
+        ✓ תוכנית חבר מביא חבר — כל 3 {g("חברים", "חברות")} = {v.treatment} חינם
       </p>
       {hasLinks ? (
         <div className="flex gap-2">
@@ -249,6 +253,7 @@ function SummaryRow({ label, value, large, compact }: { label: string; value: Re
 function ConfirmPageContent() {
   const slug = useSlug();
   const v = useVocab();
+  const g = useG();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -298,7 +303,7 @@ function ConfirmPageContent() {
   const [referrerSuggestions, setReferrerSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [referralOptions, setReferralOptions] = useState<string[]>([]);
   // Referral program config (owner can disable the whole thing).
-  const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string; goal2: number | null; giftLabel2: string | null }>({ enabled: true, goal: 3, giftLabel: "תספורת חינם", goal2: null, giftLabel2: null });
+  const [referralProgram, setReferralProgram] = useState<{ enabled: boolean; goal: number; giftLabel: string; goal2: number | null; giftLabel2: string | null }>({ enabled: true, goal: 3, giftLabel: `${v.treatment} חינם`, goal2: null, giftLabel2: null });
   // Which referral source opens the friend picker (owner-renamable).
   const [friendSource, setFriendSource] = useState<string | null>(null);
   // Returning referrer: their thank-you + progress meter.
@@ -341,7 +346,7 @@ function ConfirmPageContent() {
     const take = () => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ staffId, serviceId, date, time, token }) })
       .then(async r => {
         if (cancelled || r.status !== 409) return;
-        setError(from === "waitlist" ? "השעה הזו כבר נתפסה על ידי מישהו מהרשימה. אתה נשאר ברשימת ההמתנה." : "השעה הזו נתפסה הרגע על ידי לקוח אחר.");
+        setError(from === "waitlist" ? `השעה הזו כבר נתפסה על ידי מישהו מהרשימה. ${g("אתה נשאר", "את נשארת")} ברשימת ההמתנה.` : `השעה הזו נתפסה הרגע על ידי ${g("לקוח אחר", "לקוחה אחרת")}.`);
         const d = await fetch(apiWithSlug(`/api/slots?staffId=${staffId}&serviceId=${serviceId}&date=${date}`, slug)).then(x => x.json()).catch(() => null) as { slots?: string[] } | null;
         if (cancelled) return;
         const toM = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
@@ -450,7 +455,7 @@ function ConfirmPageContent() {
         setReferralProgram({
           enabled: ref.enabled !== false,
           goal: Number(ref.goal) > 0 ? Math.round(Number(ref.goal)) : 3,
-          giftLabel: (typeof ref.giftLabel === "string" && ref.giftLabel.trim()) ? ref.giftLabel.trim() : "תספורת חינם",
+          giftLabel: (typeof ref.giftLabel === "string" && ref.giftLabel.trim()) ? ref.giftLabel.trim() : `${v.treatment} חינם`,
           goal2: Number(ref.goal2) > 0 ? Math.round(Number(ref.goal2)) : null,
           giftLabel2: (typeof ref.giftLabel2 === "string" && ref.giftLabel2.trim()) ? ref.giftLabel2.trim() : null,
         });
@@ -552,7 +557,7 @@ function ConfirmPageContent() {
   const nameValid = isFullName(name);
 
   async function sendOtp() {
-    if (!phone) { setOtpError("הזן מספר טלפון תחילה"); return; }
+    if (!phone) { setOtpError(g("הזן מספר טלפון תחילה", "הזיני מספר טלפון תחילה")); return; }
     if (!nameValid) { setOtpError("נא להזין שם פרטי ושם משפחה"); return; }
     setOtpSending(true); setOtpError("");
     try {
@@ -563,12 +568,12 @@ function ConfirmPageContent() {
       const data = await res.json();
       if (!res.ok) setOtpError(data.error || "שגיאה בשליחת קוד");
       else setOtpSent(true);
-    } catch { setOtpError("שגיאת חיבור — נסה שוב"); }
+    } catch { setOtpError(g("שגיאת חיבור — נסה שוב", "שגיאת חיבור — נסי שוב")); }
     setOtpSending(false);
   }
 
   async function verifyOtp() {
-    if (!otpCode) { setOtpError("הזן את הקוד שקיבלת"); return; }
+    if (!otpCode) { setOtpError(g("הזן את הקוד שקיבלת", "הזיני את הקוד שקיבלת")); return; }
     setOtpVerifying(true); setOtpError("");
     try {
       const res = await fetch(apiWithSlug("/api/otp/verify", slug), {
@@ -588,7 +593,7 @@ function ConfirmPageContent() {
         // Save for future visits — cookie is set server-side, name goes to localStorage
         try { localStorage.setItem("bk_customer", JSON.stringify({ name: finalName, phone })); } catch { /* ignore */ }
       }
-    } catch { setOtpError("שגיאת חיבור — נסה שוב"); }
+    } catch { setOtpError(g("שגיאת חיבור — נסה שוב", "שגיאת חיבור — נסי שוב")); }
     setOtpVerifying(false);
   }
 
@@ -597,7 +602,7 @@ function ConfirmPageContent() {
   async function handleSubmit(existingDecision?: "additional" | "cancel") {
     if (!phone || !name) { setError("נא למלא טלפון ושם"); return; }
     if (!nameValid) { setError("נא להזין שם פרטי ושם משפחה"); return; }
-    if (!otpVerified && !testMode) { setError("נדרש אימות טלפון — שלח קוד אימות"); return; }
+    if (!otpVerified && !testMode) { setError(g("נדרש אימות טלפון — שלח קוד אימות", "נדרש אימות טלפון — שלחי קוד אימות")); return; }
     setSubmitting(true); setError(""); setExistingAppts(null);
     // Fold any selected products into the appointment note so the barber sees
     // the customer wants to buy them at the visit (paid in-shop).
@@ -807,7 +812,7 @@ function ConfirmPageContent() {
           )}
 
           <AddToCalendar
-            title={`תור לתספורת${businessName ? ` ב${businessName.toUpperCase()}` : ""}`}
+            title={`תור ל${v.treatment}${businessName ? ` ב${businessName.toUpperCase()}` : ""}`}
             staffName={searchParams.get("staffName") || ""}
             serviceName={searchParams.get("serviceName") || ""}
             date={successDate}
@@ -939,7 +944,7 @@ function ConfirmPageContent() {
                     <button onClick={sendOtp} disabled={otpSending || !phone || !nameValid}
                       className="w-full text-[13px] font-bold tracking-[0.1em] py-3 rounded-full border-2 transition-all disabled:opacity-40"
                       style={{ border: `2px solid var(--brand)`, color: "var(--brand)", background: "transparent" }}>
-                      {otpSending ? "שולח..." : "📲 שלח קוד אימות ב-WhatsApp"}
+                      {otpSending ? "שולח..." : g("📲 שלח קוד אימות ב-WhatsApp", "📲 שלחי קוד אימות ב-WhatsApp")}
                     </button>
                   </div>
                 ) : (
@@ -950,7 +955,7 @@ function ConfirmPageContent() {
                     {otpError && <p className="text-[12px] text-red-500 text-center">{otpError}</p>}
                     <input type="text" inputMode="numeric" maxLength={4}
                       value={otpCode} onChange={e => setOtpCode(e.target.value.replace(/\D/g,"").slice(0,4))}
-                      placeholder="הזן קוד 4 ספרות" dir="ltr"
+                      placeholder={g("הזן קוד 4 ספרות", "הזיני קוד 4 ספרות")} dir="ltr"
                       className={inputClass + " text-center font-mono tracking-[0.3em] text-xl"} />
                     <div className="flex gap-2">
                       <button onClick={verifyOtp} disabled={otpVerifying || otpCode.length < 4}
@@ -965,7 +970,7 @@ function ConfirmPageContent() {
                     </div>
                     <button onClick={sendOtp} disabled={otpSending}
                       className="w-full text-[11px] text-slate-400 hover:text-slate-600 transition">
-                      לא קיבלת? שלח שוב
+                      {g("לא קיבלת? שלח שוב", "לא קיבלת? שלחי שוב")}
                     </button>
                   </div>
                 )}
@@ -992,7 +997,7 @@ function ConfirmPageContent() {
                       fetch(apiWithSlug("/api/otp/clear-session", slug), { method: "POST" }).catch(() => {});
                     }}
                     className="text-[11px] text-slate-400 hover:text-slate-600 underline transition">
-                    לא אתה?
+                    {g("לא אתה?", "לא את?")}
                   </button>
                 )}
               </div>
@@ -1020,7 +1025,7 @@ function ConfirmPageContent() {
             className={inputClass + " appearance-none border-teal-200 focus:ring-teal-400"}
             style={{ WebkitAppearance: "none" }}
           >
-            <option value="">בחר...</option>
+            <option value="">{g("בחר...", "בחרי...")}</option>
             {referralOptions.map(src => <option key={src} value={src}>{src}</option>)}
           </select>
 
@@ -1049,7 +1054,7 @@ function ConfirmPageContent() {
                     type="text"
                     value={referrerQuery}
                     onChange={e => setReferrerQuery(e.target.value)}
-                    placeholder="הקלד את שם החבר..."
+                    placeholder={g("הקלד את שם החבר...", "הקלידי את שם החברה...")}
                     className={inputClass + " border-teal-200"}
                   />
                   {referrerSuggestions.length > 0 && (
@@ -1220,10 +1225,10 @@ function ConfirmPageContent() {
                 );
               })}
               {existingAppts.length > 1 && (
-                <p className="text-[11px] text-slate-400">סמן איזה תור להחליף — השאר יישארו כמו שהם</p>
+                <p className="text-[11px] text-slate-400">{g("סמן", "סמני")} איזה תור להחליף — השאר יישארו כמו שהם</p>
               )}
             </div>
-            <p className="text-[13px] text-slate-600 mb-4">מה תרצה לעשות?</p>
+            <p className="text-[13px] text-slate-600 mb-4">{g("מה תרצה לעשות?", "מה תרצי לעשות?")}</p>
             <div className="space-y-2">
               <button onClick={() => handleSubmit("additional")} disabled={submitting}
                 className="w-full text-[14px] font-bold py-3 rounded-full text-white shadow-md transition-all active:scale-[0.99] disabled:opacity-40"
@@ -1250,7 +1255,7 @@ function ConfirmPageContent() {
             <div className="text-3xl mb-2">✅</div>
             <h3 className="text-[16px] font-bold text-slate-800 mb-1">התור נקבע!</h3>
             <p className="text-[13px] text-slate-500 mb-5">
-              אתה עדיין רשום לרשימת ההמתנה ל{waitlistPrompt.entries[0]?.dateLabel}.
+              {g("אתה עדיין רשום", "את עדיין רשומה")} לרשימת ההמתנה ל{waitlistPrompt.entries[0]?.dateLabel}.
               <br />
               להסיר אותך מרשימת ההמתנה?
             </p>
@@ -1262,7 +1267,7 @@ function ConfirmPageContent() {
               </button>
               <button onClick={() => resolveWaitlist(false)} disabled={waitlistRemoving}
                 className="w-full text-[14px] font-semibold py-3 rounded-full text-slate-600 bg-slate-100 border border-slate-200 transition-all active:scale-[0.99] disabled:opacity-40">
-                לא, השאר אותי בהמתנה
+                {g("לא, השאר אותי בהמתנה", "לא, השאירי אותי בהמתנה")}
               </button>
             </div>
           </div>

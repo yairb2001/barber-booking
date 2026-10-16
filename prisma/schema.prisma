@@ -282,6 +282,8 @@ model Service {
   // for a price set at a consultation.
   category        String?
   priceFrom       Boolean  @default(false) @map("price_from")
+  /// The treatment's return pace in days (gel 21, laser 49): the rhythm nudge's date in beauty businesses.
+  rebookDays      Int?     @map("rebook_days")
   createdAt       DateTime @default(now()) @map("created_at")
 
   business        Business @relation(fields: [businessId], references: [id])

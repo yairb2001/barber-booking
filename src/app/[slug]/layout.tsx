@@ -31,7 +31,10 @@ export async function generateMetadata({
   const manifest = `/${params.slug}/manifest.webmanifest`;
   const biz = await getBusiness(params.slug);
   if (!biz) return { manifest };
+  // The tab and search title is the shop's own name, never the root's "DOMINANT Barbershop".
   return {
+    title: biz.name,
+    description: `זימון תורים - ${biz.name}`,
     manifest,
     appleWebApp: { capable: true, title: biz.name, statusBarStyle: "default" },
   };

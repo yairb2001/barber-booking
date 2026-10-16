@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
@@ -95,6 +96,7 @@ function dateSeparator(iso: string): string {
 }
 
 export default function ChatsPage() {
+  const v = useVocab();
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [selId, setSelId] = useState<string | null>(null);
   const router = useRouter();
@@ -505,7 +507,7 @@ export default function ChatsPage() {
                 </span>
               )}
               {!detail?.blocked && !!detail?.staffBlocks?.length && (
-                <span className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-amber-50 border-amber-200 text-amber-700" title="חסום אצל ספר מסוים — הסוכן מציג אותו כמלא">
+                <span className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-amber-50 border-amber-200 text-amber-700" title={`חסום אצל ${v.staff} ${v.staffFem ? "מסוימת" : "מסוים"} — הסוכן מציג אותו כמלא`}>
                   🚫 חסום מ{detail.staffBlocks.join(", ")}
                 </span>
               )}

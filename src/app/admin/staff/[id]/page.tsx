@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -55,6 +56,7 @@ function emptySchedule(): ScheduleDay[] {
 }
 
 export default function StaffSettingsPage() {
+  const v = useVocab();
   const { id } = useParams<{ id: string }>();
 
   const [staff, setStaff] = useState<StaffInfo | null>(null);
@@ -289,13 +291,13 @@ export default function StaffSettingsPage() {
   }
 
   if (loading) return <div className="p-8 text-neutral-400">טוען...</div>;
-  if (!staff) return <div className="p-8 text-red-500">ספר לא נמצא</div>;
+  if (!staff) return <div className="p-8 text-red-500">{v.staff} לא {v.staffFem ? "נמצאה" : "נמצא"}</div>;
 
   return (
     <div className="p-8 overflow-auto h-full max-w-3xl">
       {/* Back button */}
       <Link href="/admin/staff" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
-        ← ספרים
+        ← {v.staffPlural}
       </Link>
 
       {/* Header */}
@@ -313,7 +315,7 @@ export default function StaffSettingsPage() {
       {/* Tagline — short note shown under the barber's name in the booking screen */}
       <div className="mb-8 bg-white border border-neutral-200 rounded-2xl p-4">
         <p className="text-sm font-semibold text-neutral-800">הערה קצרה</p>
-        <p className="text-xs text-neutral-400 mt-0.5 mb-3">תוצג מתחת לשם של {staff.name} במסך בחירת הספר ללקוח. לדוגמה: ״מתמחה בתספורות קלאסיות״.</p>
+        <p className="text-xs text-neutral-400 mt-0.5 mb-3">תוצג מתחת לשם של {staff.name} במסך בחירת {v.staffDef} ללקוח. לדוגמה: ״{v.type === "barber_men" ? "מתמחה בתספורות קלאסיות" : `מתמחה ב${v.defaultService}`}״.</p>
         <div className="flex items-center gap-2">
           <input
             value={tagline}
@@ -350,7 +352,7 @@ export default function StaffSettingsPage() {
       {/* ── Tab: Services ── */}
       {activeTab === "services" && (
         <div className="space-y-3">
-          <p className="text-xs text-neutral-400 mb-4">בחר אילו שירותים {staff.name} מציע. ניתן לקבוע מחיר/משך מותאמים.</p>
+          <p className="text-xs text-neutral-400 mb-4">בחר אילו שירותים {staff.name} {v.staffFem ? "מציעה" : "מציע"}. ניתן לקבוע מחיר/משך מותאמים.</p>
 
           {/* Shared (owner-managed) services — toggle on/off + custom price/duration */}
           {services.filter(s => !s.owned).map(svc => (
@@ -679,16 +681,16 @@ export default function StaffSettingsPage() {
       {activeTab === "permissions" && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-5">
           <p className="text-xs text-neutral-400">
-            הגדר מה {staff.name} רשאי לראות ולעשות במערכת.
+            הגדר מה {staff.name} {v.staffFem ? "רשאית" : "רשאי"} לראות ולעשות במערכת.
           </p>
 
           {/* canViewAllCalendars toggle */}
           <div className="flex items-start gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200">
             <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">📅 צפייה ביומנים של כל הספרים</p>
+              <p className="text-sm font-semibold text-slate-900">📅 צפייה ביומנים של כל {v.staffPluralDef}</p>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                כשמופעל — {staff.name} יכול לראות את כל העמודות ביומן, לא רק את שלו.
-                מתאים לספר בכיר או מנהל שצריך לתאם בין כולם.
+                כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לראות את כל העמודות ביומן, לא רק את {v.staffFem ? "שלה" : "שלו"}.
+                מתאים ל{v.staff} {v.staffFem ? "בכירה או מנהלת שצריכה" : "בכיר או מנהל שצריך"} לתאם בין כולם.
               </p>
             </div>
             <button
@@ -705,8 +707,8 @@ export default function StaffSettingsPage() {
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">💬 צפייה בכל השיחות</p>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                כשמופעל — {staff.name} יכול לראות את כל שיחות הוואטסאפ של העסק, לא רק של לקוחות שלו.
-                מתאים לספר בכיר שמטפל בלקוחות של אחרים.
+                כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לראות את כל שיחות הוואטסאפ של העסק, לא רק של לקוחות {v.staffFem ? "שלה" : "שלו"}.
+                מתאים ל{v.staff} {v.staffFem ? "בכירה שמטפלת" : "בכיר שמטפל"} בלקוחות של אחרים.
               </p>
             </div>
             <button
@@ -724,7 +726,7 @@ export default function StaffSettingsPage() {
               <div className="flex-1">
                 <p className="text-sm font-semibold text-slate-900">🤖 סוכן אישי בוואטסאפ</p>
                 <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                  כשמופעל — {staff.name} יכול לשלוח פקודות ניהול לסוכן בוואטסאפ (להחליף תורים, לבטל,
+                  כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לשלוח פקודות ניהול לסוכן בוואטסאפ (להחליף תורים, לבטל,
                   לשלוח הודעה לכל לקוחות היום). לבעלים יש גישה תמיד; הפעל בזהירות — זו סמכות מלאה.
                 </p>
               </div>

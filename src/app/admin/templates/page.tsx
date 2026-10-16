@@ -3,29 +3,33 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { TEMPLATE_DEFS, splitMessageParts, type TemplateKey } from "@/lib/messaging";
+import { forType } from "@/lib/type-wording";
+import { useVocab } from "@/components/VocabProvider";
+import type { Vocab } from "@/lib/vocab";
 
 // ── Sample-data generator for the live preview ───────────────────────────────
 // Renders a realistic-looking message so the admin can see how their template
 // will appear before sending it to a real customer.
-function applyPreview(template: string): string {
+function applyPreview(template: string, v: Vocab, businessName: string): string {
+  const barber = v.type === "barber_men";
   const sample: Record<string, string> = {
-    name:           "אבי", // first name only — matches what {{name}} sends in real messages
-    business:       "DOMINANT",
+    name:           v.customerFem ? "מיכל" : "אבי", // first name only — matches what {{name}} sends in real messages
+    business:       businessName || "DOMINANT",
     date:           "ראשון, 5 במאי",
     time:           "14:30",
     end_time:       "15:00",
-    staff:          "אוריה",
-    service:        "תספורת + זקן",
+    staff:          barber ? "אוריה" : "שירן",
+    service:        barber ? "תספורת + זקן" : v.defaultService,
     price:          "90",
     address_line:   "\n📍 דרך השלום 12, ראשון לציון",
     current_date:   "ראשון, 5 במאי",
     current_time:   "14:30",
     proposed_date:  "שני, 6 במאי",
     proposed_time:  "16:00",
-    proposed_staff: "יאיר הרוש",
+    proposed_staff: barber ? "יאיר הרוש" : "נועה",
     delay_minutes:  "15",
     slot:           "תור פנוי בבוקר",
-    staff_line:     "💈 אצל אוריה\n",
+    staff_line:     barber ? "💈 אצל אוריה\n" : `${v.emoji} אצל שירן\n`,
     booking_link:   "https://dominant.co.il/book",
     cancel_link:    "https://dominant.co.il/book/my-appointments",
     cancel_line:    "לצפייה או ביטול תור:\nhttps://dominant.co.il/book/my-appointments",
@@ -150,6 +154,9 @@ type EditorState = {
 };
 
 export default function MessagesHubPage() {
+  const v = useVocab();
+  const vtype = v.type;
+  const [bizName, setBizName] = useState("");
   const keys = Object.keys(TEMPLATE_DEFS) as TemplateKey[];
   const [tab, setTab] = useState<TabKey>("appointment");
   useEffect(() => {
@@ -174,6 +181,7 @@ export default function MessagesHubPage() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (!data) { setLoading(false); return; }
+        if (typeof data.name === "string") setBizName(data.name);
         try {
           setFeatures(typeof data.features === "string" ? JSON.parse(data.features) : (data.features || {}));
         } catch { setFeatures({}); }
@@ -182,7 +190,7 @@ export default function MessagesHubPage() {
           for (const k of keys) {
             const def = TEMPLATE_DEFS[k];
             const stored: string | null = data[def.field] ?? null;
-            const value = stored ?? def.default;
+            const value = stored ?? forType(def.default, vtype);
             next[k] = { value, initialValue: value, saving: false, saved: false };
           }
           return next;
@@ -217,7 +225,7 @@ export default function MessagesHubPage() {
     const cur = byKey[k];
     setByKey(prev => ({ ...prev, [k]: { ...prev[k], saving: true, saved: false } }));
     // If user reset to default, send null so the server uses the built-in
-    const valueToSend = cur.value === def.default ? null : cur.value;
+    const valueToSend = cur.value === forType(def.default, vtype) ? null : cur.value;
     const res = await fetch("/api/admin/business", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -235,7 +243,7 @@ export default function MessagesHubPage() {
   function resetToDefault(k: TemplateKey) {
     const def = TEMPLATE_DEFS[k];
     if (!confirm("לאפס לתבנית ברירת המחדל? השינויים שלך יאבדו.")) return;
-    setByKey(prev => ({ ...prev, [k]: { ...prev[k], value: def.default, saved: false } }));
+    setByKey(prev => ({ ...prev, [k]: { ...prev[k], value: forType(def.default, vtype), saved: false } }));
   }
 
   /** Insert {{var}} at the textarea's cursor position. */
@@ -270,7 +278,7 @@ export default function MessagesHubPage() {
     const meta = MSG_META[k];
     const state = byKey[k];
     const isDirty = state.value !== state.initialValue;
-    const isDefault = state.value === def.default;
+    const isDefault = state.value === forType(def.default, vtype);
 
     // Enablement: an explicit toggle, a variant that follows its parent, or
     // "always sent" (action-triggered).
@@ -344,7 +352,7 @@ export default function MessagesHubPage() {
             rows={7}
             dir="rtl"
             className="w-full border border-neutral-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 font-mono leading-relaxed resize-y"
-            placeholder={def.default}
+            placeholder={forType(def.default, vtype)}
           />
           <p className="text-[10px] text-neutral-400 mt-1">{state.value.length} תווים</p>
         </div>
@@ -373,7 +381,7 @@ export default function MessagesHubPage() {
           <div className="px-5 py-4 border-t border-neutral-100 bg-emerald-50/40">
             <p className="text-[11px] text-emerald-800 font-semibold mb-2">תצוגה מקדימה (עם נתונים לדוגמה):</p>
             <div className="space-y-2">
-              {splitMessageParts(applyPreview(state.value)).map((part, i) => (
+              {splitMessageParts(applyPreview(state.value, v, bizName)).map((part, i) => (
                 <div key={i} className="bg-white rounded-xl border border-emerald-200 p-3 whitespace-pre-line text-sm leading-relaxed text-neutral-800 shadow-sm">
                   {part}
                 </div>

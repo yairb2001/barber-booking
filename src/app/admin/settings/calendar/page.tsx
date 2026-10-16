@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -11,6 +12,7 @@ function formatCancellationPolicyPreview(hours: number): string {
 }
 
 export default function CalendarBookingPage() {
+  const v = useVocab();
   const [loading, setLoading] = useState(true);
 
   const [bookingHorizonDays, setBookingHorizonDays] = useState(30);
@@ -300,17 +302,17 @@ export default function CalendarBookingPage() {
                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all ${cancellationPolicyMode === "staff" ? "right-0.5" : "left-0.5"}`} />
               </button>
               <div className="min-w-0">
-                <p className="text-sm font-semibold text-neutral-800">כל ספר קובע את הסף שלו</p>
+                <p className="text-sm font-semibold text-neutral-800">כל {v.staff} {v.staffFem ? "קובעת" : "קובע"} את הסף {v.staffFem ? "שלה" : "שלו"}</p>
                 <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
                   {cancellationPolicyMode === "staff"
-                    ? "כל ספר קובע בהגדרות שלו כמה שעות מראש נדרשות. מי שלא הגדיר — הערך הכללי למטה חל עליו."
-                    : "אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. הספרים לא יכולים לשנות אותו."}
+                    ? `כל ${v.staff} ${v.staffFem ? "קובעת" : "קובע"} בהגדרות ${v.staffFem ? "שלה" : "שלו"} כמה שעות מראש נדרשות. ${v.staffFem ? "מי שלא הגדירה — הערך הכללי למטה חל עליה." : "מי שלא הגדיר — הערך הכללי למטה חל עליו."}`
+                    : `אתה כמנהל ראשי קובע ערך אחד שחל על כל הצוות. ${v.staffPluralDef} לא ${v.staffFem ? "יכולות" : "יכולים"} לשנות אותו.`}
                 </p>
               </div>
             </div>
 
             <label className="text-xs text-neutral-500 block mb-1">
-              {cancellationPolicyMode === "staff" ? "ערך כללי (ברירת מחדל למי שלא הגדיר לעצמו)" : "מספר שעות מראש"}
+              {cancellationPolicyMode === "staff" ? (v.staffFem ? "ערך כללי (ברירת מחדל למי שלא הגדירה לעצמה)" : "ערך כללי (ברירת מחדל למי שלא הגדיר לעצמו)") : "מספר שעות מראש"}
             </label>
             <div className="flex items-center gap-3">
               <input

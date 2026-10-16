@@ -72,7 +72,7 @@ export type SetupField = {
  *  (`verticals`) or phrase its question / options differently per type. */
 type SetupFieldSpec = {
   key: string;
-  label: string;
+  label: string | ((v: Vocab) => string);
   group: string;
   type: SetupFieldType;
   core: boolean;
@@ -175,31 +175,33 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
   // ── D1. The shop's small things (10.10.2026, Yair: "לכל עסק יש את השיקולים שלו") ──
   {
     key: "kids", label: "ילדים", group: "כללים ופרטים", core: false, type: "text",
-    question: () => "מספרים ילדים? מגיל כמה ובכמה? (למשל: מגיל 3, תספורת ילד 50 ₪)",
+    question: v => v.type === "barber_men" ? "מספרים ילדים? מגיל כמה ובכמה? (למשל: מגיל 3, תספורת ילד 50 ₪)"
+      : v.type === "barber_women" ? "מספרים ילדות? מגיל כמה ובכמה? (למשל: מגיל 4, תספורת ילדה 80 ₪)"
+      : "מקבלים קטינות? מגיל כמה, ועם אישור הורה? (למשל: מגיל 14, עם אישור חתום של הורה)",
     compile: v => `ילדים: ${v}.`,
   },
   {
     key: "groupBooking", label: "כמה אנשים ברצף", group: "כללים ופרטים", core: false, type: "choice",
     options: () => ["כן, אחד אחרי השני", "רק אם שואלים", "לא, כל אחד קובע לבד"], default: () => "כן, אחד אחרי השני",
-    question: v => `${v.customer} רוצה לקבוע לכמה אנשים ברצף (אבא וילד, שני חברים)? כן / רק אם שואלים / לא`,
+    question: v => `${v.customer} רוצה לקבוע לכמה אנשים ברצף (${v.customerFem ? "אמא ובת, שתי חברות" : "אבא וילד, שני חברים"})? כן / רק אם שואלים / לא`,
     compile: v => v === "לא, כל אחד קובע לבד" ? "תור לכמה אנשים ברצף: לא קובעים, כל אחד קובע בעצמו." : v === "רק אם שואלים" ? "תור לכמה אנשים ברצף: רק אם הלקוח ביקש, אל תציע מיוזמתך." : "תור לכמה אנשים ברצף: אפשר, אחד אחרי השני.",
   },
   {
     key: "staffFull", label: "כשהמבוקש מלא", group: "כללים ופרטים", core: false, type: "choice",
-    options: v => [`להציע ${v.staff} אחר`, "רשימת המתנה", "לשאול מה עדיף"], default: () => "לשאול מה עדיף",
-    question: v => `${v.staffDef} ש${v.customer} ביקש מלא. מה עושים? ${v.staff} אחר / רשימת המתנה / לשאול`,
-    compile: (v, voc) => `כש${voc.staffDef} המבוקש מלא: ${v}.`,
+    options: v => [`להציע ${v.staff} ${v.other}`, "רשימת המתנה", "לשאול מה עדיף"], default: () => "לשאול מה עדיף",
+    question: v => `${v.staffDef} ש${v.customer} ${v.customerFem ? "ביקשה" : "ביקש"} ${v.staffFem ? "מלאה" : "מלא"}. מה עושים? ${v.staff} ${v.other} / רשימת המתנה / לשאול`,
+    compile: (v, voc) => `כש${voc.staffDef} ${voc.staffFem ? "המבוקשת מלאה" : "המבוקש מלא"}: ${v}.`,
   },
   {
     key: "lateTolerance", label: "איחור", group: "כללים ופרטים", core: false, type: "choice",
-    options: () => ["5 דקות", "10 דקות", "15 דקות", "תלוי בספר"], default: () => "10 דקות",
-    question: v => `כמה דקות איחור זה בסדר לפני שהתור הולך? 5 / 10 / 15 / תלוי ב${v.staffDef}`,
-    compile: v => v === "תלוי בספר" ? "איחור: תלוי בספר. עדכן אותו ואל תבטיח." : `איחור מקובל: עד ${v}. מעבר לזה עדכן את הספר ואל תבטיח שהתור נשמר.`,
+    options: v => ["5 דקות", "10 דקות", "15 דקות", `תלוי ב${v.staff}`], default: () => "10 דקות",
+    question: v => `כמה דקות איחור זה בסדר לפני שהתור הולך? 5 / 10 / 15 / תלוי ב${v.staff}`,
+    compile: (v, voc) => String(v).startsWith("תלוי ב") ? `איחור: תלוי ב${voc.staff}. עדכן ${voc.staffFem ? "אותה" : "אותו"} ואל תבטיח.` : `איחור מקובל: עד ${v}. מעבר לזה עדכן את ${voc.staffDef} ואל תבטיח שהתור נשמר.`,
   },
   {
-    key: "staffRules", label: "כללים לספר מסוים", group: "כללים ופרטים", core: false, type: "text", multiline: true,
-    question: v => `יש ${v.staff} עם שעות מיוחדות או שירות שרק הוא עושה? שורה לכל אחד (למשל: מוטי מתחיל ב־10:00, רק דני עושה צבע)`,
-    compile: v => `כללים לפי ${"ספר"}: ${String(v).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 10).join("; ")}.`,
+    key: "staffRules", label: v => `כללים ל${v.staff} ${v.staffFem ? "מסוימת" : "מסוים"}`, group: "כללים ופרטים", core: false, type: "text", multiline: true,
+    question: v => v.staffFem ? `יש ${v.staff} עם שעות מיוחדות או טיפול שרק היא עושה? שורה לכל אחת (למשל: נועה מתחילה ב־10:00, רק שירן עושה בנייה)` : `יש ${v.staff} עם שעות מיוחדות או שירות שרק הוא עושה? שורה לכל אחד (למשל: מוטי מתחיל ב־10:00, רק דני עושה צבע)`,
+    compile: (v, voc) => `כללים לפי ${voc.staff}: ${String(v).split(/\n+/).map(x => x.trim()).filter(Boolean).slice(0, 10).join("; ")}.`,
   },
   {
     key: "businessRules", label: "כללים של העסק", group: "כללים ופרטים", core: false, type: "text", multiline: true,
@@ -247,8 +249,8 @@ const FIELD_HELP: Record<string, (v: Vocab) => string> = {
   walkin: () => "מה הסוכן עונה למי ששואל אם אפשר לבוא בלי לקבוע מראש.",
   location: () => "הסוכן שולח את זה למי ששואל איך מגיעים או איפה חונים.",
   payment: () => "מה הסוכן עונה למי ששואל איך משלמים.",
-  kids: () => "מה הסוכן עונה כששואלים על תספורת לילד: מאיזה גיל ובכמה.",
-  groupBooking: () => "למשל אבא וילד: האם הסוכן קובע להם תורים צמודים, אחד אחרי השני.",
+  kids: v => v.type === "barber_men" ? "מה הסוכן עונה כששואלים על תספורת לילד: מאיזה גיל ובכמה." : v.type === "barber_women" ? "מה הסוכן עונה כששואלים על תספורת לילדה: מאיזה גיל ובכמה." : "מה הסוכן עונה כששואלים על טיפול לקטינה: מאיזה גיל ואם צריך אישור הורה.",
+  groupBooking: v => `למשל ${v.customerFem ? "אמא ובת" : "אבא וילד"}: האם הסוכן קובע להם תורים צמודים, אחד אחרי השני.`,
   staffFull: v => `מה הסוכן עושה כש${v.staffDef} ש${v.customer} ${v.customerFem ? "ביקשה תפוס בזמן שהיא רוצה" : "ביקש תפוס בזמן שהוא רוצה"}.`,
   lateTolerance: v => `מה הסוכן עונה ל${v.customer} ${v.customerFem ? "שכותבת שהיא מאחרת" : "שכותב שהוא מאחר"}: עד כמה זה בסדר.`,
   staffRules: v => `דברים שנכונים רק ל${v.staff} אחד, כדי שהסוכן לא יקבע טעות. שורה לכל ${v.staff}.`,
@@ -265,7 +267,7 @@ export function setupFieldsFor(type: BusinessType | string | null | undefined, v
   return SETUP_FIELD_SPECS
     .filter(f => !f.verticals || f.verticals.includes(v.type))
     .map(f => ({
-      key: f.key, label: f.label, group: f.group, type: f.type, core: f.core,
+      key: f.key, label: typeof f.label === "function" ? f.label(v) : f.label, group: f.group, type: f.type, core: f.core,
       question: f.questionByType?.[v.type] ?? f.question(v),
       options: f.options?.(v),
       multiline: f.multiline,

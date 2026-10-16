@@ -305,7 +305,7 @@ function TeamDatePageContent() {
               style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>📅</div>
             <div className="text-center">
               <p className="text-sm font-semibold" style={{ color: "var(--text-pri)" }}>אין תורים פנויים ביום זה</p>
-              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>נסה לבחור תאריך אחר ביומן</p>
+              <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>{v.tryVerb} לבחור תאריך אחר ביומן</p>
             </div>
           </div>
         )}

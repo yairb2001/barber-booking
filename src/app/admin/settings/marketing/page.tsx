@@ -1,15 +1,18 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export default function MarketingReferralsPage() {
+  const v = useVocab();
+  const defaultGift = `${v.treatment} חינם`;
   const [loading, setLoading] = useState(true);
 
   // Referral program ("חבר מביא חבר")
   const [referralEnabled, setReferralEnabled] = useState(true);
   const [referralGoal, setReferralGoal] = useState(3);
-  const [referralGift, setReferralGift] = useState("תספורת חינם");
+  const [referralGift, setReferralGift] = useState(defaultGift);
   // Optional second, bigger tier — e.g. goal2=6 → a bigger gift on top of the
   // first. Blank goal2 = tier 2 off (single repeating milestone, as before).
   const [referralGoal2, setReferralGoal2] = useState("");
@@ -60,7 +63,7 @@ export default function MarketingReferralsPage() {
         settingsPatch: {
           referralProgramEnabled: referralEnabled,
           referralGoal: goal,
-          referralGiftLabel: referralGift.trim() || "תספורת חינם",
+          referralGiftLabel: referralGift.trim() || defaultGift,
           referralGoal2: goal2Valid ? goal2Num : null,
           referralGiftLabel2: goal2Valid ? referralGift2.trim() : null,
         },
@@ -175,12 +178,12 @@ export default function MarketingReferralsPage() {
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">המתנה</label>
                 <input value={referralGift} onChange={e => setReferralGift(e.target.value)}
-                  placeholder="תספורת חינם"
+                  placeholder={defaultGift}
                   className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
               </div>
             </div>
             <p className="text-[11px] text-neutral-400 mt-2">
-              לדוגמה: כל {Math.max(1, referralGoal)} חברים = {referralGift.trim() || "תספורת חינם"}.
+              לדוגמה: כל {Math.max(1, referralGoal)} חברים = {referralGift.trim() || defaultGift}.
             </p>
 
             <div className={`mt-4 pt-4 border-t border-neutral-100 transition-opacity ${referralEnabled ? "" : "opacity-40 pointer-events-none"}`}>
@@ -196,7 +199,7 @@ export default function MarketingReferralsPage() {
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">המתנה ברמה 2</label>
                   <input value={referralGift2} onChange={e => setReferralGift2(e.target.value)}
-                    placeholder="למשל: מוצר לשיער + תספורת חינם"
+                    placeholder={`למשל: ${v.type === "nails" || v.type === "cosmetics" ? "מוצר טיפוח" : "מוצר לשיער"} + ${defaultGift}`}
                     className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                 </div>
               </div>

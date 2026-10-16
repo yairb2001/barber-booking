@@ -498,7 +498,7 @@ export async function POST(request: NextRequest) {
 
   // Send thank-you to the referrer (fire-and-forget) — only when the referral
   // program is switched on by the owner.
-  const referralConfig = getReferralConfig(business?.settings ?? null);
+  const referralConfig = getReferralConfig(business?.settings ?? null, business?.businessType);
   if (referrerRecord && business && referralConfig.enabled) {
     // How many friends has the referrer now brought in (including this one)?
     const referralCount = await prisma.customer.count({

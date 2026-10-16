@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useEffect, useState } from "react";
 import AgentBehaviorSettings from "./AgentBehaviorSettings";
@@ -56,6 +57,7 @@ type Conversation = {
 
 
 export default function AdminAgentPage() {
+  const v = useVocab();
   const [tab, setTab] = useState<"config" | "conversations">("config");
   const [config, setConfig] = useState<Config | null>(null);
   const [saving, setSaving] = useState(false);
@@ -338,11 +340,11 @@ export default function AdminAgentPage() {
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="font-semibold text-neutral-800">אישור ספר להחלפות תור</h2>
+                <h2 className="font-semibold text-neutral-800">אישור {v.staff} להחלפות תור</h2>
                 <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
-                  כשפעיל — לפני שהסוכן מציע ללקוח אחר להחליף תור, הוא שולח לספר בקשת אישור (כן/לא).
+                  כשפעיל — לפני שהסוכן מציע ללקוח אחר להחליף תור, הוא שולח ל{v.staff} בקשת אישור (כן/לא).
                   <br />
-                  כשכבוי — הסוכן פונה ישירות ללקוח שבשעה המבוקשת ומסדר את ההחלפה לבד, בלי לשאול את הספר.
+                  כשכבוי — הסוכן פונה ישירות ללקוח שבשעה המבוקשת ומסדר את ההחלפה לבד, בלי לשאול את {v.staffDef}.
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -365,11 +367,11 @@ export default function AdminAgentPage() {
           <div className="bg-white rounded-2xl border border-neutral-200 p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="font-semibold text-neutral-800">הצעת ספר אחר באותה שעה בדיוק</h2>
+                <h2 className="font-semibold text-neutral-800">הצעת {v.staff} {v.other} באותה שעה בדיוק</h2>
                 <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
-                  כשפעיל — גם כשלקוח מבקש ספר מסוים והשעה תפוסה אצלו, הסוכן בודק אם לספר אחר יש בדיוק את אותה שעה פנויה ומציע את זה כאפשרות נוספת.
+                  כשפעיל — גם כשלקוח מבקש {v.staff} {v.staffFem ? "מסוימת" : "מסוים"} והשעה תפוסה {v.staffFem ? "אצלה" : "אצלו"}, הסוכן בודק אם ל{v.staff} {v.other} יש בדיוק את אותה שעה פנויה ומציע את זה כאפשרות נוספת.
                   <br />
-                  אם אין ספר אחר פנוי באותה שעה בדיוק — לא מוצע כלום, כרגיל.
+                  אם אין {v.staff} {v.other} {v.free} באותה שעה בדיוק — לא מוצע כלום, כרגיל.
                 </p>
               </div>
               <div className="flex items-center gap-3 shrink-0">
@@ -394,7 +396,7 @@ export default function AdminAgentPage() {
               <div>
                 <h2 className="font-semibold text-neutral-800">מדיניות איחור לתור</h2>
                 <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
-                  כשפעיל — לקוח שמודיע שהוא מתעכב מקבל טיפול אוטומטי: בתוך זמן הסבלנות זה עובר חלק (הספר רק מתעדכן), מעבר לזה הסוכן שואל את הספר אם לאשר את האיחור.
+                  כשפעיל — לקוח שמודיע שהוא מתעכב מקבל טיפול אוטומטי: בתוך זמן הסבלנות זה עובר חלק ({v.staffDef} רק {v.staffFem ? "מתעדכנת" : "מתעדכן"}), מעבר לזה הסוכן שואל את {v.staffDef} אם לאשר את האיחור.
                   <br />
                   כשכבוי — אין תהליך מיוחד, הסוכן פשוט מגיב באופן טבעי.
                 </p>
@@ -430,7 +432,7 @@ export default function AdminAgentPage() {
                     dir="ltr"
                   />
                   <span className="text-[11px] text-neutral-400 block mt-1">
-                    עד כמה דקות איחור זה עדיין בסדר — הסוכן רק מעדכן את הספר, בלי לבקש אישור.
+                    עד כמה דקות איחור זה עדיין בסדר — הסוכן רק מעדכן את {v.staffDef}, בלי לבקש אישור.
                   </span>
                 </label>
 
@@ -438,9 +440,9 @@ export default function AdminAgentPage() {
                   <div>
                     <h3 className="text-sm font-medium text-neutral-700">הצעת החלפה עם התור הבא</h3>
                     <p className="text-xs text-neutral-400 mt-0.5 leading-relaxed">
-                      כשפעיל — אם הספר לא מאשר את האיחור, ונשאר מספיק זמן עד השעה המקורית, הסוכן מציע ללקוח להחליף עם מי שהתור שלו אחריו (באישור הספר והלקוח השני).
+                      כשפעיל — אם {v.staffDef} לא {v.staffFem ? "מאשרת" : "מאשר"} את האיחור, ונשאר מספיק זמן עד השעה המקורית, הסוכן מציע ללקוח להחליף עם מי שהתור שלו אחריו (באישור {v.staffDef} והלקוח השני).
                       <br />
-                      כשכבוי — אם הספר לא מאשר, התור פשוט נחשב הברזה.
+                      כשכבוי — אם {v.staffDef} לא {v.staffFem ? "מאשרת" : "מאשר"}, התור פשוט נחשב הברזה.
                     </p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
@@ -485,12 +487,12 @@ export default function AdminAgentPage() {
                   <textarea
                     value={config.lateArrivalNoShowMessage ?? ""}
                     onChange={e => setConfig(c => c ? { ...c, lateArrivalNoShowMessage: e.target.value } : c)}
-                    placeholder="לצערי {{staff}} לא אישר את האיחור, אז מבחינתנו זה נחשב הברזה — ואנחנו בדרך כלל מחייבים תשלום מלא במקרה כזה. מומלץ להגיע בזמן בפעם הבאה 🙏"
+                    placeholder={v.staffFem ? "לצערי {{staff}} לא אישרה את האיחור, אז מבחינתנו זה נחשב הברזה — ואנחנו בדרך כלל מחייבים תשלום מלא במקרה כזה. מומלץ להגיע בזמן בפעם הבאה 🙏" : "לצערי {{staff}} לא אישר את האיחור, אז מבחינתנו זה נחשב הברזה — ואנחנו בדרך כלל מחייבים תשלום מלא במקרה כזה. מומלץ להגיע בזמן בפעם הבאה 🙏"}
                     rows={3}
                     className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   />
                   <span className="text-[11px] text-neutral-400 block mt-1">
-                    ריק = ברירת המחדל שמוצגת כדוגמה מעל. {"{{staff}}"} יוחלף בשם הספר. התור גם מסומן בפועל כהברזה במערכת, לא רק ההודעה הזו.
+                    ריק = ברירת המחדל שמוצגת כדוגמה מעל. {"{{staff}}"} יוחלף בשם {v.staffDef}. התור גם מסומן בפועל כהברזה במערכת, לא רק ההודעה הזו.
                   </span>
                 </label>
               </div>

@@ -4,6 +4,7 @@ import { dayDistance } from "@/lib/day-distance";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
+import { useG } from "@/components/VocabProvider";
 import { localISODate } from "@/lib/utils";
 
 type Appt = {
@@ -57,6 +58,7 @@ function dateLabel(iso: string): { weekday: string; full: string; rel: string; r
 
 export default function MyAppointmentsPage() {
   const slug = useSlug();
+  const g = useG();
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState("");
   const [name, setName]       = useState("");
@@ -146,19 +148,19 @@ export default function MyAppointmentsPage() {
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
-        setLoginError(d?.error || "שליחת הקוד נכשלה, נסה שוב");
+        setLoginError(d?.error || g("שליחת הקוד נכשלה, נסה שוב", "שליחת הקוד נכשלה, נסי שוב"));
         setLoginBusy(false);
         return;
       }
       setLoginStep("code");
     } catch {
-      setLoginError("שליחת הקוד נכשלה, נסה שוב");
+      setLoginError(g("שליחת הקוד נכשלה, נסה שוב", "שליחת הקוד נכשלה, נסי שוב"));
     }
     setLoginBusy(false);
   }
 
   async function verifyLoginOtp() {
-    if (loginCode.replace(/\D/g, "").length < 4) { setLoginError("הזן את הקוד בן 4 הספרות"); return; }
+    if (loginCode.replace(/\D/g, "").length < 4) { setLoginError(g("הזן את הקוד בן 4 הספרות", "הזיני את הקוד בן 4 הספרות")); return; }
     setLoginBusy(true);
     setLoginError("");
     try {
@@ -182,7 +184,7 @@ export default function MyAppointmentsPage() {
       setError(ok ? "" : "load-failed");
       setLoading(false);
     } catch {
-      setLoginError("האימות נכשל, נסה שוב");
+      setLoginError(g("האימות נכשל, נסה שוב", "האימות נכשל, נסי שוב"));
       setLoginBusy(false);
     }
   }
@@ -231,7 +233,7 @@ export default function MyAppointmentsPage() {
         body: JSON.stringify({ appointmentId: a.id, phone: auth.phone, token: auth.token, date: moveDate, startTime: time }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) { setMoveError(data?.error || "ההזזה נכשלה, נסה שוב"); setMoveBusy(null); return; }
+      if (!res.ok) { setMoveError(data?.error || g("ההזזה נכשלה, נסה שוב", "ההזזה נכשלה, נסי שוב")); setMoveBusy(null); return; }
       setUpcoming(prev => prev.map(x => x.id === a.id ? { ...x, date: moveDate + "T00:00:00.000Z", startTime: data.startTime, endTime: data.endTime } : x)
         .sort((x, y) => x.date.localeCompare(y.date) || x.startTime.localeCompare(y.startTime)));
       setMoveDone(a.id); setMoveId(null); setMoveBusy(null);
@@ -252,7 +254,7 @@ export default function MyAppointmentsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setCancelError(data?.error || "הביטול נכשל, נסה שוב");
+        setCancelError(data?.error || g("הביטול נכשל, נסה שוב", "הביטול נכשל, נסי שוב"));
         setCancellingId(null);
         return;
       }
@@ -261,7 +263,7 @@ export default function MyAppointmentsPage() {
       setConfirmId(null);
       setCancellingId(null);
     } catch {
-      setCancelError("הביטול נכשל, נסה שוב");
+      setCancelError(g("הביטול נכשל, נסה שוב", "הביטול נכשל, נסי שוב"));
       setCancellingId(null);
     }
   }
@@ -331,11 +333,11 @@ export default function MyAppointmentsPage() {
           <div className="text-center mb-6">
             <div className="text-5xl mb-4">🔒</div>
             <p className="text-[16px] font-bold mb-1" style={{ color: "var(--text-pri)" }}>
-              {loginStep === "phone" ? "כניסה לתורים שלך" : "הזן את קוד האימות"}
+              {loginStep === "phone" ? "כניסה לתורים שלך" : g("הזן את קוד האימות", "הזיני את קוד האימות")}
             </p>
             <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
               {loginStep === "phone"
-                ? "הזן את מספר הטלפון שאיתו קבעת — נשלח לך קוד אימות"
+                ? g("הזן את מספר הטלפון שאיתו קבעת — נשלח לך קוד אימות", "הזיני את מספר הטלפון שאיתו קבעת — נשלח לך קוד אימות")
                 : `שלחנו קוד בן 4 ספרות ל-${loginPhone}`}
             </p>
           </div>
@@ -360,7 +362,7 @@ export default function MyAppointmentsPage() {
                   disabled={loginBusy}
                   className="w-full py-3.5 rounded-2xl font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
                   style={{ background: "var(--brand)" }}>
-                  {loginBusy ? "שולח…" : "שלח לי קוד"}
+                  {loginBusy ? "שולח…" : g("שלח לי קוד", "שלחי לי קוד")}
                 </button>
               </>
             ) : (
@@ -397,7 +399,7 @@ export default function MyAppointmentsPage() {
             <div className="mt-6 text-center">
               <Link href={publicHref(slug, "/book")}
                 className="text-[13px] font-semibold" style={{ color: "var(--text-muted)" }}>
-                עדיין לא קבעת תור? קבע עכשיו
+                {g("עדיין לא קבעת תור? קבע עכשיו", "עדיין לא קבעת תור? קבעי עכשיו")}
               </Link>
             </div>
           </div>
@@ -414,7 +416,7 @@ export default function MyAppointmentsPage() {
           <button onClick={() => location.reload()}
             className="px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
             style={{ background: "var(--brand)" }}>
-            נסה שוב
+            {g("נסה שוב", "נסי שוב")}
           </button>
         </div>
       )}
@@ -470,14 +472,14 @@ export default function MyAppointmentsPage() {
                             disabled={cancellingId === a.id}
                             className="flex-1 py-2.5 rounded-xl text-[13px] font-bold text-white active:scale-95 transition-transform disabled:opacity-60"
                             style={{ background: "#dc2626" }}>
-                            {cancellingId === a.id ? "מבטל…" : "כן, בטל תור"}
+                            {cancellingId === a.id ? "מבטל…" : g("כן, בטל תור", "כן, בטלי תור")}
                           </button>
                           <button
                             onClick={() => { setConfirmId(null); setCancelError(""); }}
                             disabled={cancellingId === a.id}
                             className="flex-1 py-2.5 rounded-xl text-[13px] font-bold active:scale-95 transition-transform disabled:opacity-60"
                             style={{ background: "var(--bg-alt)", color: "var(--text-sec)", border: "1px solid var(--divider)" }}>
-                            השאר תור
+                            {g("השאר תור", "השאירי תור")}
                           </button>
                         </div>
                       </div>
@@ -559,7 +561,7 @@ export default function MyAppointmentsPage() {
               <Link href={publicHref(slug, "/book")}
                 className="inline-block px-6 py-3 rounded-2xl font-bold text-white active:scale-95 transition-transform"
                 style={{ background: "var(--brand)" }}>
-                קבע תור
+                {g("קבע תור", "קבעי תור")}
               </Link>
             </div>
           )}

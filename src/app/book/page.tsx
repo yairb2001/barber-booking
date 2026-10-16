@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NoticePopup, useBookingNotices, generalKey, staffKey, seen, markSeen, type NoticeItem } from "@/components/BookingNotice";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab, useBookingOrder } from "@/components/VocabProvider";
+import { useVocab, useBookingOrder, useG } from "@/components/VocabProvider";
 import TreatmentList from "@/components/booking/TreatmentList";
 
 type QuickSlot = {
@@ -60,6 +60,7 @@ function BackArrow({ href }: { href: string }) {
 export default function ChooseBarberPage() {
   const slug = useSlug();
   const v = useVocab();
+  const g = useG();
   // Treatment first (16.10.2026): the treatments replace the staff grid and the quick slots.
   const serviceFirst = useBookingOrder() === "service";
   const [staff, setStaff] = useState<Staff[]>([]);
@@ -77,7 +78,7 @@ export default function ChooseBarberPage() {
   const notices = useBookingNotices(slug);
   const [notice, setNotice] = useState<{ items: NoticeItem[]; href?: string } | null>(null);
   useEffect(() => {
-    if (notices?.general && !seen(generalKey(notices.general))) setNotice({ items: [{ key: generalKey(notices.general), title: "הודעה מהמספרה", text: notices.general }] });
+    if (notices?.general && !seen(generalKey(notices.general))) setNotice({ items: [{ key: generalKey(notices.general), title: `הודעה מ${v.placeDef}`, text: notices.general }] });
   }, [notices]);
   const onPick = (e: React.MouseEvent) => {
     if (!notices || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
@@ -149,10 +150,11 @@ export default function ChooseBarberPage() {
 
   // Tapping the referral pill → invite another friend (share sheet / WhatsApp).
   const inviteFriend = async () => {
-    const url = window.location.origin + "/";
-    const text = `קבעתי כאן תור 💈 ממליץ לך גם! קבע דרך הקישור:`;
+    // This business's home page, not the root's (a slugged shop used to share DOMINANT's).
+    const url = window.location.origin + publicHref(slug, "/");
+    const text = `קבעתי כאן תור ${v.emoji} ${g("ממליץ לך גם! קבע דרך הקישור:", "ממליצה לך גם! אפשר לקבוע דרך הקישור:")}`;
     if (typeof navigator !== "undefined" && navigator.share) {
-      try { await navigator.share({ title: "DOMINANT", text, url }); return; } catch { /* cancelled */ }
+      try { await navigator.share({ text, url }); return; } catch { /* cancelled */ }
     }
     window.open(`https://wa.me/?text=${encodeURIComponent(text + " " + url)}`, "_blank");
   };
@@ -224,7 +226,7 @@ export default function ChooseBarberPage() {
                 <p className="text-[10.5px] text-white/85 leading-snug">
                   {reached
                     ? `הגעת ליעד — מגיעה לך ${referral.giftLabel}! 🎁`
-                    : `עוד ${remaining} ${remaining === 1 ? "חבר" : "חברים"} ו${referral.giftLabel} מאיתנו 💈`}
+                    : `עוד ${remaining} ${remaining === 1 ? g("חבר", "חברה") : g("חברים", "חברות")} ו${referral.giftLabel} מאיתנו ${v.emoji}`}
                 </p>
                 <span className="flex items-center gap-0.5 text-[10.5px] font-bold text-white whitespace-nowrap flex-shrink-0">
                   הזמינו חבר
@@ -252,8 +254,8 @@ export default function ChooseBarberPage() {
             </p>
             <p className="text-[13px] mt-1.5 leading-relaxed" style={{ color: "var(--text-sec)" }}>
               {referral.referralCount >= referral.goal
-                ? `הבאת ${referral.referralCount} חברים — מגיעה לך ${referral.giftLabel}! דבר איתנו 💈`
-                : `חבר נוסף שהמלצת עליו קבע תור! כבר הבאת ${referral.referralCount} מתוך ${referral.goal} ל${referral.giftLabel} 🎁`}
+                ? `הבאת ${referral.referralCount} ${g("חברים", "חברות")} — מגיעה לך ${referral.giftLabel}! ${g("דבר", "דברי")} איתנו ${v.emoji}`
+                : `${g("חבר נוסף שהמלצת עליו קבע", "חברה נוספת שהמלצת עליה קבעה")} תור! כבר הבאת ${referral.referralCount} מתוך ${referral.goal} ל${referral.giftLabel} 🎁`}
             </p>
             <button onClick={() => setReferralPop(false)}
               className="mt-5 w-full py-3 rounded-full text-[13px] font-bold text-white"
@@ -447,7 +449,7 @@ export default function ChooseBarberPage() {
                     href={publicHref(slug, `/book/service?staffId=${member.id}`)}
                     className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-center py-1.5 active:opacity-80"
                     style={{ background: "rgba(255,255,255,0.14)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 14 }}>
-                    <span className="text-[10px] font-semibold text-white">קבע תור</span>
+                    <span className="text-[10px] font-semibold text-white">{g("קבע תור", "קבעי תור")}</span>
                   </Link>
                 )}
               </div>

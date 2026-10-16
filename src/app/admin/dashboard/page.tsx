@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import NewCustomersRetentionCard from "./RetentionCard";
+import { useVocab } from "@/components/VocabProvider";
 
 // ── Agent package meter: a percentage and what the agent did. No tokens, no
 // money (10.10.2026: token counts can be converted back to our cost). ────────
@@ -62,6 +63,7 @@ type NudgeGroup = {
 
 /** "הגיע הזמן לתור" — two tabs: regulars (2+ visits) and new customers (one visit). Two different stories, two different numbers. */
 function RhythmNudgeCard({ regular, nu, monthLabel }: { regular: NudgeGroup; nu: NudgeGroup; monthLabel: string }) {
+  const v = useVocab();
   const [tab, setTab] = useState<"regular" | "new">(regular.customers || !nu.customers ? "regular" : "new");
   const g = tab === "regular" ? regular : nu;
   const pct = (n: number) => (g.booked ? Math.round((n / g.booked) * 100) : 0);
@@ -104,12 +106,12 @@ function RhythmNudgeCard({ regular, nu, monthLabel }: { regular: NudgeGroup; nu:
           <div className="flex h-2 rounded-full overflow-hidden bg-neutral-100 mb-1.5">
             <div className="bg-teal-500" style={{ width: `${pct(g.by.self)}%` }} title="לבד, דרך הקישור" />
             <div className="bg-sky-400" style={{ width: `${pct(g.by.agent)}%` }} title="דרך הסוכן" />
-            <div className="bg-neutral-400" style={{ width: `${pct(g.by.admin)}%` }} title="אצל ספר" />
+            <div className="bg-neutral-400" style={{ width: `${pct(g.by.admin)}%` }} title={`אצל ${v.staff}`} />
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-neutral-600 mb-2">
             <span><span className="inline-block w-2 h-2 rounded-full bg-teal-500 ml-1 align-middle" />לבד דרך הקישור <b>{g.by.self}</b></span>
             <span><span className="inline-block w-2 h-2 rounded-full bg-sky-400 ml-1 align-middle" />ענו לסוכן <b>{g.by.agent}</b></span>
-            <span><span className="inline-block w-2 h-2 rounded-full bg-neutral-400 ml-1 align-middle" />קבע ספר <b>{g.by.admin}</b></span>
+            <span><span className="inline-block w-2 h-2 rounded-full bg-neutral-400 ml-1 align-middle" />{v.staffFem ? "קבעה" : "קבע"} {v.staff} <b>{g.by.admin}</b></span>
             {speed && <span className="text-neutral-400 mr-auto">{speed}</span>}
           </div>
         </>
@@ -878,22 +880,23 @@ function ProductSalesCard({ rows, totals }: {
 
 // ── DeepDataCard — total + per-barber unique customers (all-time) ──────────────
 function DeepDataCard({ total, perStaff }: { total: number; perStaff: Analytics["staffUniqueCustomers"] }) {
+  const v = useVocab();
   const max = perStaff.reduce((m, s) => Math.max(m, s.uniqueCustomers), 0);
   return (
     <div className="bg-white rounded-2xl border border-neutral-200 p-5">
       <div className="mb-4">
         <h3 className="font-semibold text-neutral-800 text-sm">📊 נתונים מעמקים</h3>
-        <p className="text-xs text-neutral-400 mt-0.5">לקוחות שונים שירתנו במספרה — כל הזמנים</p>
+        <p className="text-xs text-neutral-400 mt-0.5">לקוחות שונים שירתנו ב{v.place} — כל הזמנים</p>
       </div>
       <div className="bg-slate-50 rounded-xl p-4 mb-4 text-center">
         <p className="text-3xl font-bold text-teal-600">{total}</p>
         <p className="text-xs text-neutral-500 mt-1">סה״כ לקוחות ייחודיים</p>
       </div>
       {perStaff.length === 0 ? (
-        <p className="text-sm text-neutral-400 text-center py-2">אין נתונים פר-ספר</p>
+        <p className="text-sm text-neutral-400 text-center py-2">אין נתונים פר-{v.staff}</p>
       ) : (
         <div className="space-y-3">
-          <p className="text-[11px] text-neutral-400">פר-ספר (לקוח ששירתו כמה ספרים נספר אצל כל אחד)</p>
+          <p className="text-[11px] text-neutral-400">פר-{v.staff} (לקוח ששירתו כמה {v.staffPlural} נספר אצל כל {v.staffFem ? "אחת" : "אחד"})</p>
           {perStaff.map(s => (
             <div key={s.staffId}>
               <div className="flex justify-between text-sm mb-1">
@@ -1222,6 +1225,7 @@ function useDebounce<T>(value: T, delay = 500): T {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
+  const v = useVocab();
   const now      = new Date();
   const todayISO = now.toISOString().split("T")[0];
 
@@ -1431,7 +1435,7 @@ export default function Dashboard() {
             <>
               <button onClick={() => setSelStaff(null)}
                 className={`px-3 py-1 rounded-full text-xs font-medium border transition ${!selStaff ? "bg-teal-600 border-teal-600 text-white" : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"}`}>
-                כל הספרים
+                כל {v.staffPluralDef}
               </button>
               {allStaff.map(s => (
                 <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
@@ -1441,7 +1445,7 @@ export default function Dashboard() {
               ))}
               <button onClick={toggleShowDepartedDash}
                 className="px-3 py-1 rounded-full text-xs font-medium border border-dashed border-neutral-300 text-neutral-400 hover:text-neutral-600 hover:border-neutral-400 transition">
-                {loadingDepartedDash ? "טוען..." : showDepartedDash ? "▲ עזבו" : "▼ הצג ספרים שעזבו"}
+                {loadingDepartedDash ? "טוען..." : showDepartedDash ? "▲ עזבו" : `▼ הצג ${v.staffPlural} שעזבו`}
               </button>
               {showDepartedDash && departedStaffDash.map(s => (
                 <button key={s.id} onClick={() => setSelStaff(p => p === s.id ? null : s.id)}
@@ -1578,7 +1582,7 @@ export default function Dashboard() {
           {!isFutureMonth && a.calls && a.calls.total > 0 && (
             <div className="bg-white rounded-2xl border border-neutral-200 p-4">
               <div className="flex items-baseline justify-between mb-3">
-                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">📞 שיחות למספרה — {monthLabel}</h2>
+                <h2 className="text-[11px] font-semibold text-neutral-400 uppercase">📞 שיחות ל{v.place} — {monthLabel}</h2>
                 <span className={`text-2xl font-extrabold ${a.calls.missedRate >= 40 ? "text-red-600" : a.calls.missedRate >= 20 ? "text-amber-600" : "text-neutral-800"}`}>{a.calls.missedRate}%<span className="text-xs font-semibold text-neutral-400 mr-1">לא נענו</span></span>
               </div>
               <div className="grid grid-cols-3 gap-2 text-center mb-3">
@@ -1607,7 +1611,7 @@ export default function Dashboard() {
                 </div>
                 <div className="bg-neutral-50 rounded-xl py-2">
                   <p className="text-lg font-bold text-neutral-800">{a.cancellations.byStaffCount}</p>
-                  <p className="text-[10px] text-neutral-500">ביטלו ספרים</p>
+                  <p className="text-[10px] text-neutral-500">ביטלו {v.staffPlural}</p>
                 </div>
                 <div className="bg-red-50 rounded-xl py-2">
                   <p className="text-lg font-bold text-red-700">{a.cancellations.late}</p>
@@ -1654,7 +1658,7 @@ export default function Dashboard() {
           {/* ── Per-barber simple cards (owners, no filter) ── */}
           {isOwner && !selStaff && a.staffSummary.length > 1 && (
             <div>
-              <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2">✂️ לפי ספר — {monthLabel}</h2>
+              <h2 className="text-[11px] font-semibold text-neutral-400 uppercase mb-2">✂️ לפי {v.staff} — {monthLabel}</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {a.staffSummary.map(row => (
                   <button key={row.staffId}

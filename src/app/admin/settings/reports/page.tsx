@@ -9,32 +9,37 @@ import {
   type ReportKind,
   type ReportsConfig,
 } from "@/lib/messaging/reports-config";
+import { useVocab } from "@/components/VocabProvider";
+import type { Vocab } from "@/lib/vocab";
 
-const META: Record<ReportKind, { icon: string; title: string; when: string; ownerDesc: string; staffDesc: string }> = {
+// A function of the vocabulary: "כל ספר מקבל…" / "כל מניקוריסטית מקבלת…".
+const metaFor = (v: Vocab): Record<ReportKind, { icon: string; title: string; when: string; ownerDesc: string; staffDesc: string }> => ({
   daily: {
     icon: "🌙",
     title: "סיכום יומי",
     when: "כל ערב בסוף היום",
-    ownerDesc: "כמה לקוחות, מחזור, תפוסה, פירוט פר ספר ומה צפוי מחר",
-    staffDesc: "כל ספר מקבל את המספרים שלו בלבד מהיום",
+    ownerDesc: `כמה לקוחות, מחזור, תפוסה, פירוט פר ${v.staff} ומה צפוי מחר`,
+    staffDesc: `כל ${v.staff} ${v.staffFem ? "מקבלת" : "מקבל"} את המספרים ${v.staffFem ? "שלה" : "שלו"} בלבד מהיום`,
   },
   weekly: {
     icon: "📅",
     title: "סיכום שבועי",
     when: "כל יום ראשון בבוקר",
     ownerDesc: "השבוע מול השבוע שעבר — תורים, מחזור, תפוסה ולקוחות חדשים",
-    staffDesc: "כל ספר מקבל את השבוע שלו, כולל אחוז לקוחות חוזרים",
+    staffDesc: `כל ${v.staff} ${v.staffFem ? "מקבלת" : "מקבל"} את השבוע ${v.staffFem ? "שלה" : "שלו"}, כולל אחוז לקוחות חוזרים`,
   },
   monthly: {
     icon: "📈",
     title: "סיכום חודשי",
     when: "ב-1 בכל חודש",
     ownerDesc: "החודש שעבר מול קודמיו, שירותים מובילים ולקוחות שאבדו/חזרו",
-    staffDesc: "כל ספר מקבל את החודש שלו",
+    staffDesc: `כל ${v.staff} ${v.staffFem ? "מקבלת" : "מקבל"} את החודש ${v.staffFem ? "שלה" : "שלו"}`,
   },
-};
+});
 
 export default function ReportsSettingsPage() {
+  const v = useVocab();
+  const META = metaFor(v);
   const [cfg, setCfg] = useState<ReportsConfig>(REPORT_DEFAULTS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +109,7 @@ export default function ReportsSettingsPage() {
                 <div className="p-3 space-y-2">
                   {([
                     { who: "owner" as const, label: "אליי", desc: m.ownerDesc },
-                    { who: "staff" as const, label: "לכל ספר — המספרים שלו", desc: m.staffDesc },
+                    { who: "staff" as const, label: `לכל ${v.staff} — המספרים ${v.staffFem ? "שלה" : "שלו"}`, desc: m.staffDesc },
                   ]).map(row => (
                     <div key={row.who} className="bg-neutral-50/70 rounded-xl px-3.5 py-3">
                       <div className="flex items-start gap-3">

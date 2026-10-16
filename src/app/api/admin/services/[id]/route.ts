@@ -21,6 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.showDuration !== undefined && { showDuration: body.showDuration }),
       ...(body.category !== undefined && { category: typeof body.category === "string" && body.category.trim() ? body.category.trim() : null }),
       ...(body.priceFrom !== undefined && { priceFrom: body.priceFrom === true }),
+      ...(body.rebookDays !== undefined && { rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null) }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },
   });

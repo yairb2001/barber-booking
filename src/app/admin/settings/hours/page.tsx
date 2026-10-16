@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -193,6 +194,7 @@ function StaffScheduleEditor({ staff, onSaved }: { staff: StaffMember; onSaved?:
 }
 
 export default function WorkingHoursPage() {
+  const v = useVocab();
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   const [staffLoading, setStaffLoading] = useState(true);
 
@@ -206,7 +208,7 @@ export default function WorkingHoursPage() {
       <Link href="/admin/settings" className="text-sm text-neutral-400 hover:text-neutral-600 transition mb-1 inline-block">← חזרה להגדרות</Link>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-neutral-900">🗓️ שעות עבודה</h1>
-        <p className="text-neutral-500 text-sm mt-1">הגדר שעות עבודה קבועות לכל ספר. לשינויים חד-פעמיים — לחץ על כותרת היום ביומן.</p>
+        <p className="text-neutral-500 text-sm mt-1">הגדר שעות עבודה קבועות לכל {v.staff}. לשינויים חד-פעמיים — לחץ על כותרת היום ביומן.</p>
       </div>
 
       {staffLoading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (

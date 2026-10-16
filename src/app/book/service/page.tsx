@@ -87,6 +87,7 @@ function BackArrow({ href }: { href: string }) {
 
 function ChooseServicePageContent() {
   const slug = useSlug();
+  const v = useVocab();
   const searchParams = useSearchParams();
   const staffId = searchParams.get("staffId");
   const [services, setServices] = useState<Service[]>([]);
@@ -140,7 +141,7 @@ function ChooseServicePageContent() {
       {/* ── Page subtitle ── */}
       <div className="px-4 pt-6 pb-3">
         <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>שירותים</p>
-        <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>בחר שירות</h2>
+        <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>{v.choose} שירות</h2>
       </div>
 
       {/* ── Services list ── */}

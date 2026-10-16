@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -38,6 +39,7 @@ function firstOfMonthISO() {
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function MarketingInsightsPage() {
+  const v = useVocab();
   const [data,    setData]    = useState<InsightsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState(false);
@@ -162,7 +164,7 @@ export default function MarketingInsightsPage() {
         {/* Barber filter — shown only when staff list available */}
         {data && data.staffList.length > 0 && (
           <div>
-            <p className="text-xs text-neutral-500 mb-2 font-medium">סינון לפי ספר</p>
+            <p className="text-xs text-neutral-500 mb-2 font-medium">סינון לפי {v.staff}</p>
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setStaffId("")}
@@ -172,7 +174,7 @@ export default function MarketingInsightsPage() {
                     : "bg-white border-neutral-200 text-neutral-600 hover:border-slate-300"
                 }`}
               >
-                כל הספרים
+                כל {v.staffPluralDef}
               </button>
               {data.staffList.map(s => (
                 <button

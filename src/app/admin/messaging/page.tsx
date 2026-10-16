@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useState, useEffect } from "react";
 
@@ -58,6 +59,7 @@ function buildParams(staffId: string, category: FilterCategory, opts: {
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 export default function MessagingPage() {
+  const v = useVocab();
   const [tab, setTab] = useState<"send" | "history">("send");
 
   // Auth / role
@@ -162,7 +164,7 @@ export default function MessagingPage() {
   // Human-readable summary of current filter
   function filterSummary() {
     if (preset) return preset.label;
-    const who = staffId ? (allStaff.find(s => s.id === staffId)?.name || "ספר") : "כל הלקוחות";
+    const who = staffId ? (allStaff.find(s => s.id === staffId)?.name || v.staff) : "כל הלקוחות";
     if (category === "all")      return who;
     if (category === "upcoming") return `${who} · ממתינים לתור — ${UPCOMING_OPTIONS.find(o => o.value === upcoming)?.label}`;
     if (category === "active")   return `${who} · פעילים — ${daysLabel(activeDays)}`;
@@ -355,7 +357,7 @@ export default function MessagingPage() {
                   <VarChip token="{{date}}"    label="תאריך התור"  onInsert={insertToken} />
                   <VarChip token="{{time}}"    label="שעת התור"    onInsert={insertToken} />
                   <VarChip token="{{service}}" label="שם השירות"   onInsert={insertToken} />
-                  <VarChip token="{{staff}}"   label="שם הספר"     onInsert={insertToken} />
+                  <VarChip token="{{staff}}"   label={`שם ${v.staffDef}`} onInsert={insertToken} />
                 </>
               )}
             </div>
@@ -369,7 +371,7 @@ export default function MessagingPage() {
               </p>
               {category === "upcoming" ? (
                 <p className="text-teal-600">
-                  💡 פרטי התור (תאריך, שעה, שירות, ספר) זמינים כי בחרת בקהל “ממתינים לתור”.
+                  💡 פרטי התור (תאריך, שעה, שירות, {v.staff}) זמינים כי בחרת בקהל “ממתינים לתור”.
                 </p>
               ) : (
                 <p className="text-amber-600">

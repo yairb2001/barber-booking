@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 import { insightsSummaryLine, usualLine, type CustomerInsights } from "@/lib/customer-insights";
 
 import { useEffect, useState } from "react";
@@ -466,6 +467,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
   onChanged: () => void;
   onDeleted: () => void;
 }) {
+  const v = useVocab();
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [editingName, setEditingName] = useState(false);
@@ -559,7 +561,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
 
   const convertToStaff = async () => {
     if (!detail) return;
-    if (!confirm(`להפוך את ${detail.name} לספר/מנהל?\n\nסיסמת ברירת מחדל: 12345678`)) return;
+    if (!confirm(`להפוך את ${detail.name} ל${v.staff}/${v.staffFem ? "מנהלת" : "מנהל"}?\n\nסיסמת ברירת מחדל: 12345678`)) return;
     setBusy(true);
     const r = await fetch("/api/admin/staff/from-customer", {
       method: "POST",
@@ -572,7 +574,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
       alert(j.error || "שגיאה בהמרה");
       return;
     }
-    alert(`✅ ${detail.name} הפך לספר! סיסמה זמנית: 12345678`);
+    alert(`✅ ${detail.name} ${v.staffFem ? "הפכה" : "הפך"} ל${v.staff}! סיסמה זמנית: 12345678`);
     onClose();
   };
 
@@ -756,7 +758,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
               {/* Milestone 2: 3 referrals = free haircut */}
               <div>
                 <div className="flex justify-between text-xs text-neutral-500 mb-1">
-                  <span>✂️ תספורת חינם</span>
+                  <span>✂️ {v.treatment} חינם</span>
                   <span>{Math.min(detail.rewards.confirmedReferrals, 3)}/3 חברים</span>
                 </div>
                 <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
@@ -766,7 +768,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
                   />
                 </div>
                 {detail.rewards.freeHaircutEarned && (
-                  <p className="text-xs text-emerald-600 mt-1 font-medium">✅ הושג! הלקוח זכאי לתספורת חינם</p>
+                  <p className="text-xs text-emerald-600 mt-1 font-medium">✅ הושג! הלקוח זכאי ל{v.treatment} חינם</p>
                 )}
               </div>
             </div>
@@ -801,7 +803,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
         <div className="px-5 pb-3">
           <button onClick={convertToStaff} disabled={busy}
             className="w-full bg-teal-50 text-teal-700 hover:bg-teal-100 border border-teal-200 rounded-xl py-2.5 text-sm font-medium">
-            🔄 הפוך לקוח לספר / מנהל
+            🔄 הפוך לקוח ל{v.staff} / {v.staffFem ? "מנהלת" : "מנהל"}
           </button>
         </div>
 
@@ -810,7 +812,7 @@ function CustomerDetailModal({ id, onClose, onChanged, onDeleted }: {
           <div className="px-5 pb-3">
             <button onClick={() => setStaffBlockOpen(v => !v)}
               className="w-full flex items-center justify-between text-sm text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-xl py-2.5 px-3">
-              <span>🚫 חסימה אצל ספר מסוים{(detail.blockedStaffIds?.length ?? 0) > 0 ? ` (${detail.blockedStaffIds.length})` : ""}</span>
+              <span>🚫 חסימה אצל {v.staff} {v.staffFem ? "מסוימת" : "מסוים"}{(detail.blockedStaffIds?.length ?? 0) > 0 ? ` (${detail.blockedStaffIds.length})` : ""}</span>
               <span className="text-xs">{staffBlockOpen ? "▲" : "▼"}</span>
             </button>
             {staffBlockOpen && (
@@ -900,6 +902,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const v = useVocab();
   const [allStaff, setAllStaff] = useState<StaffItem[]>([]);
   const [allServices, setAllServices] = useState<ServiceItem[]>([]);
   const [staffId, setStaffId] = useState("");
@@ -999,7 +1002,7 @@ function RecurringModal({ customerId, customerName, onClose, onSaved }: {
 
         <div className="p-5 space-y-4">
           <div>
-            <label className="text-xs text-neutral-500 block mb-1">ספר</label>
+            <label className="text-xs text-neutral-500 block mb-1">{v.staff}</label>
             <select value={staffId} onChange={e => setStaffId(e.target.value)}
               className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm">
               {allStaff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}

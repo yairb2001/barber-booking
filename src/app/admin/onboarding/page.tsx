@@ -30,7 +30,7 @@ const DEFAULT_HOURS: Hours = [0, 1, 2, 3, 4].map(() => ({ on: true, start: "09:0
 const SIGNUP_DEFAULT_NAME = "המספרה שלי";
 
 type Member = { id?: string; name: string; phone: string };
-type Svc = { id?: string; name: string; price: string; duration: string; category?: string; priceFrom?: boolean };
+type Svc = { id?: string; name: string; price: string; duration: string; category?: string; priceFrom?: boolean; rebookDays?: number };
 
 /** First setup asks only what shapes most chats: the must-answer ones and the tone. */
 const isMainQuestion = (f: SetupField) => f.core || f.key === "tone";
@@ -130,7 +130,7 @@ export default function OnboardingPage() {
   }, []);
 
   // Starter catalog once we know the type (only when the shop has no services yet).
-  useEffect(() => { setServices(s => s.length ? s : vocab.serviceCatalog.map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom }))); }, [vocab]);
+  useEffect(() => { setServices(s => s.length ? s : vocab.serviceCatalog.map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom, rebookDays: x.rebookDays }))); }, [vocab]);
 
   const saveProgress = useCallback(async (nextStep: number, nextDone: string[], extra?: Record<string, unknown>) => {
     try { await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboarding: { step: nextStep, doneSteps: nextDone, hours, ...extra } }) }); } catch { /* best effort */ }
@@ -212,7 +212,7 @@ export default function OnboardingPage() {
       const out: Svc[] = [];
       for (const s of valid) {
         if (s.id) { out.push(s); continue; }
-        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, category: s.category ?? null, priceFrom: !!s.priceFrom, sortOrder: valid.indexOf(s) }) });
+        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, category: s.category ?? null, priceFrom: !!s.priceFrom, rebookDays: s.rebookDays ?? null, sortOrder: valid.indexOf(s) }) });
         if (!r.ok) { setError(`יצירת ${s.name} נכשלה`); setBusy(false); return; }
         out.push({ ...s, id: (await r.json()).id });
       }

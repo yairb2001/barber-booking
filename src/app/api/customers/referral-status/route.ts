@@ -37,9 +37,9 @@ export async function GET(req: NextRequest) {
 
   const business = await prisma.business.findUnique({
     where: { id: businessId },
-    select: { settings: true },
+    select: { settings: true, businessType: true },
   });
-  const config = getReferralConfig(business?.settings ?? null);
+  const config = getReferralConfig(business?.settings ?? null, business?.businessType);
 
   // Program turned off by the owner → don't surface anything.
   if (!config.enabled) return NextResponse.json({ ok: false, enabled: false });

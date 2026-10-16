@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
@@ -45,6 +46,7 @@ function formatDate(iso: string) {
 }
 
 export default function MarketingDeepPage() {
+  const v = useVocab();
   const [allStaff, setAllStaff] = useState<Staff[]>([]);
   const [isOwner, setIsOwner] = useState(true);
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
@@ -363,11 +365,11 @@ export default function MarketingDeepPage() {
         {/* Staff filter — owner only */}
         {isOwner && allStaff.length > 0 && (
           <div>
-            <p className="text-xs text-neutral-500 font-medium mb-2">ספר</p>
+            <p className="text-xs text-neutral-500 font-medium mb-2">{v.staff}</p>
             <div className="flex flex-wrap gap-2">
               <button onClick={() => setSelStaff("")}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${!selStaff ? "bg-teal-600 text-white border-teal-600" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`}>
-                כל הספרים
+                כל {v.staffPluralDef}
               </button>
               {allStaff.map(s => (
                 <button key={s.id} onClick={() => setSelStaff(s.id)}
@@ -557,7 +559,7 @@ export default function MarketingDeepPage() {
 
       {/* Legend */}
       <p className="text-xs text-neutral-400 text-center pb-4">
-        לקוח קבוע = מי שקבע 3 תורים או יותר {selStaff ? `אצל ${allStaff.find(s => s.id === selStaff)?.name}` : "במספרה"}
+        לקוח קבוע = מי שקבע 3 תורים או יותר {selStaff ? `אצל ${allStaff.find(s => s.id === selStaff)?.name}` : `ב${v.place}`}
         {period === "month" ? " החודש" : period === "custom" ? ` בין ${formatDate(from)} ל-${formatDate(to)}` : " (כל הזמנים)"}
       </p>
     </div>

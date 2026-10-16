@@ -20,6 +20,7 @@ import { phonesWithinOutreachCap } from "@/lib/outreach-cap";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { recordNudgeOffer } from "@/lib/agent/booking-proposals";
+import { forType } from "@/lib/type-wording";
 
 // ── Settings (Business.settings.rhythmNudge) ─────────────────────────────────
 export type RhythmSettings = {
@@ -208,7 +209,7 @@ function freeInWindow(index: AvailabilityIndex, date: string, staffId: string | 
 export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean; onlyCustomerIds?: string[]; businessId?: string; force?: boolean; /** tests: ignore due-date timing for the listed customers */ ignoreTiming?: boolean } = {}): Promise<RunResult[]> {
   const biz = await prisma.business.findMany({
     where: opts.businessId ? { id: opts.businessId } : {},
-    select: { id: true, name: true, slug: true, settings: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeSecondTakenTemplate: true, rhythmNudgeNewTemplate: true },
+    select: { id: true, name: true, slug: true, settings: true, businessType: true, rhythmNudgeTemplate: true, rhythmNudgeSecondTemplate: true, rhythmNudgeSecondTakenTemplate: true, rhythmNudgeNewTemplate: true },
   });
   const results: RunResult[] = [];
   const { date: todayISO } = getBusinessNow();
@@ -261,6 +262,18 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       if (ins.avgIntervalDays && ins.visits >= 2) intervals.push(ins.avgIntervalDays);
     }
     if (intervals.length) { intervals.sort((a, b) => a - b); shopMedian = intervals[Math.floor(intervals.length / 2)]; }
+    // Beauty (16.10.2026): each treatment has its own pace (gel 3 weeks, root
+    // color 5, laser 6 to 8), so the last visit's treatment sets the date. A
+    // men's barbershop keeps the customer's own rhythm, as before.
+    const paceById = new Map<string, number>();
+    if ((b.businessType ?? "barber_men") !== "barber_men") {
+      for (const s of await prisma.service.findMany({ where: { businessId: b.id, rebookDays: { not: null } }, select: { id: true, rebookDays: true } })) paceById.set(s.id, s.rebookDays!);
+    }
+    /** The shortest pace among the treatments of the last visit (gel and pedicure → gel's 3 weeks). */
+    const lastVisitPace = (appts: { date: Date; status: string; serviceId: string | null }[], lastISO: string): number | null => {
+      const paces = appts.filter(a => a.date.toISOString().slice(0, 10) === lastISO && !a.status.startsWith("cancelled") && a.status !== "no_show" && a.serviceId && paceById.has(a.serviceId)).map(a => paceById.get(a.serviceId!)!);
+      return paces.length ? Math.min(...paces) : null;
+    };
     res.shopMedianDays = shopMedian;
     const todayUTC = new Date(todayISO + "T00:00:00.000Z");
 
@@ -279,7 +292,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       if (isNew && !cfg.includeNewCustomers) { skip("one_visit"); continue; }
       if (!ins.lastVisitAt) { skip("no_last_visit"); continue; }
 
-      const interval = ins.avgIntervalDays || cfg.newCustomerDays || shopMedian;
+      const interval = (paceById.size ? lastVisitPace(c.appointments, ins.lastVisitAt) : null) || ins.avgIntervalDays || cfg.newCustomerDays || shopMedian;
       const dueISO = addDaysISO(ins.lastVisitAt, interval);
       const daysToDue = Math.round((new Date(dueISO + "T00:00:00Z").getTime() - todayUTC.getTime()) / DAY);
       if (daysToDue < -RELEASE_AFTER_DAYS) { skip("released_6w"); continue; }
@@ -380,7 +393,8 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         : variant === "second_taken" ? (b.rhythmNudgeSecondTakenTemplate || DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE)
         : variant === "new" ? (b.rhythmNudgeNewTemplate || DEFAULT_RHYTHM_NEW_TEMPLATE)
         : (b.rhythmNudgeTemplate || DEFAULT_RHYTHM_TEMPLATE);
-      const body = applyTemplate(tmpl, vars);
+      // In the shop's words already here, so the dry-run preview is what is sent.
+      const body = forType(applyTemplate(tmpl, vars), b.businessType);
 
       res.planned.push({ customerId: c.id, name: c.name, phone, kind, variant, reason, daysToDue, staffMode: mixed ? "mixed" : "regular", slots, body, serviceId });
     }

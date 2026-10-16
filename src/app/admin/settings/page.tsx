@@ -3,13 +3,16 @@ import { BUILD_LABEL } from "@/lib/build-id";
 
 import Link from "next/link";
 import PlanSummary from "./PlanSummary";
+import { useVocab } from "@/components/VocabProvider";
+import type { Vocab } from "@/lib/vocab";
 
 type Card = { href: string; icon: string; title: string; desc: string };
 type Group = { label: string; icon: string; tint: string; cards: Card[] };
 
 // Four groups, rendered as four open panels — the categories are visible as
 // containers, but every setting is still one click away (no drill-down level).
-const GROUPS: Group[] = [
+// A function of the vocabulary so a nail studio reads "מניקוריסטיות", not "ספרים".
+const groupsFor = (v: Vocab): Group[] => [
   {
     label: "זהות העסק",
     icon: "🏢",
@@ -29,11 +32,11 @@ const GROUPS: Group[] = [
     tint: "bg-indigo-50 text-indigo-700 border-indigo-100",
     cards: [
       { href: "/admin/settings/calendar", icon: "📅", title: "יומן ותורים", desc: "טווח הזמנה, זמן מראש, שעות תצוגה ומדיניות ביטולים" },
-      { href: "/admin/settings/notices", icon: "📢", title: "הודעה חשובה ללקוחות", desc: "פופ-אפ בקביעת תור: הודעה כללית והודעה לכל ספר" },
-      { href: "/admin/settings/hours", icon: "🗓️", title: "שעות עבודה", desc: "לוח שעות והפסקות לכל ספר" },
-      { href: "/admin/settings/permissions", icon: "👥", title: "הרשאות ספרים", desc: "מה ספרים יכולים לראות ולעשות" },
-      { href: "/admin/staff", icon: "✂️", title: "ספרים", desc: "ניהול צוות, גישה ופרופילים" },
-      { href: "/admin/services", icon: "💈", title: "שירותים", desc: "קטלוג השירותים — שם, מחיר, משך" },
+      { href: "/admin/settings/notices", icon: "📢", title: "הודעה חשובה ללקוחות", desc: `פופ-אפ בקביעת תור: הודעה כללית והודעה לכל ${v.staff}` },
+      { href: "/admin/settings/hours", icon: "🗓️", title: "שעות עבודה", desc: `לוח שעות והפסקות לכל ${v.staff}` },
+      { href: "/admin/settings/permissions", icon: "👥", title: `הרשאות ${v.staffPlural}`, desc: `מה ${v.staffPlural} ${v.staffFem ? "יכולות" : "יכולים"} לראות ולעשות` },
+      { href: "/admin/staff", icon: "✂️", title: v.staffPlural, desc: "ניהול צוות, גישה ופרופילים" },
+      { href: "/admin/services", icon: v.emoji, title: "שירותים", desc: "קטלוג השירותים — שם, מחיר, משך" },
     ],
   },
   {
@@ -58,6 +61,8 @@ const GROUPS: Group[] = [
 ];
 
 export default function SettingsHubPage() {
+  const v = useVocab();
+  const GROUPS = groupsFor(v);
   return (
     <div className="p-6 sm:p-8 overflow-auto h-full">
       <div className="mb-6">

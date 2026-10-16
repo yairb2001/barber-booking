@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -15,12 +16,15 @@ type Service = {
   ownerStaffId?: string | null;
   category?: string | null;
   priceFrom?: boolean;
+  rebookDays?: number | null;
 };
 
 // category + "החל מ" (16.10.2026): grouping on the booking page, a price set at a consultation.
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false };
+// rebookDays: when she usually comes back for it, the "הגיע הזמן לתור" date (beauty types).
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "" };
 
 export default function AdminServicesPage() {
+  const v = useVocab();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -41,17 +45,18 @@ export default function AdminServicesPage() {
   async function save() {
     if (!form.name.trim() || !form.price) return;
     setSaving(true);
+    const payload = { ...form, rebookDays: parseInt(form.rebookDays) > 0 ? parseInt(form.rebookDays) : null };
     if (editing) {
       await fetch(`/api/admin/services/${editing.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
     } else {
       await fetch("/api/admin/services", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
     }
     setSaving(false);
@@ -87,6 +92,7 @@ export default function AdminServicesPage() {
       showDuration: s.showDuration,
       category: s.category ?? "",
       priceFrom: !!s.priceFrom,
+      rebookDays: s.rebookDays ? String(s.rebookDays) : "",
     });
     setShowAdd(true);
   }
@@ -110,8 +116,8 @@ export default function AdminServicesPage() {
       </div>
 
       <p className="text-xs text-neutral-400 bg-neutral-50 border border-neutral-200 rounded-xl px-3 py-2 mb-6 leading-relaxed">
-        * שירות חדש נוסף אוטומטית לכל הספרים בעסק. אם ספר מסוים לא מבצע שירות מסוים —
-        אפשר לכבות לו אותו נקודתית דרך פרופיל הספר (טאב &quot;שירותים&quot;), בלי למחוק אותו לכולם.
+        * שירות חדש נוסף אוטומטית לכל {v.staffPluralDef} בעסק. אם {v.staff} {v.staffFem ? "מסוימת" : "מסוים"} לא {v.staffFem ? "מבצעת" : "מבצע"} שירות מסוים —
+        אפשר לכבות {v.staffFem ? "לה" : "לו"} אותו נקודתית דרך פרופיל {v.staffDef} (טאב &quot;שירותים&quot;), בלי למחוק אותו לכולם.
       </p>
 
       {loading ? (
@@ -239,6 +245,20 @@ export default function AdminServicesPage() {
                   />
                 </div>
               </div>
+
+              {v.type !== "barber_men" && (
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">תזכורת לחזור אחרי (ימים) <span className="text-neutral-400">(למשל: ג&apos;ל 21, צבע שורש 35. ריק = לפי הקצב של {v.customer})</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.rebookDays}
+                    onChange={(e) => setForm((p) => ({ ...p, rebookDays: e.target.value }))}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    dir="ltr"
+                  />
+                </div>
+              )}
 
               {/* Visibility toggles */}
               <div className="space-y-2 pt-1">

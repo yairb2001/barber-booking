@@ -1,16 +1,19 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import type { Vocab } from "@/lib/vocab";
 
-const TILES = [
+const tilesFor = (v: Vocab) => [
   { href: "/admin/stories", icon: "📸", label: "סטוריז", desc: "תמונות זמניות עם תפוגה, מוצגות בדף הבית" },
   { href: "/admin/products", icon: "🛍️", label: "מוצרים", desc: "קטלוג מוצרים המוצג ללקוחות בדף הבית" },
   { href: "/admin/announcements", icon: "📢", label: "עדכונים", desc: "הודעות טקסט המוצגות ללקוחות" },
-  { href: "/admin/portfolio", icon: "🖼️", label: "גלריית עבודות", desc: "גלריית תמונות עבודה קבועה, לכל ספר" },
+  { href: "/admin/portfolio", icon: "🖼️", label: "גלריית עבודות", desc: `גלריית תמונות עבודה קבועה, לכל ${v.staff}` },
 ];
 
 export default function StorefrontContentPage() {
+  const v = useVocab();
   // The WhatsApp nudge bubble is a homepage element, so it's configured here
   // rather than on the WhatsApp settings page.
   const [whatsappBubbleEnabled, setWhatsappBubbleEnabled] = useState(true);
@@ -46,7 +49,7 @@ export default function StorefrontContentPage() {
 
       <div className="max-w-xl space-y-5">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {TILES.map(t => (
+          {tilesFor(v).map(t => (
             <Link key={t.href} href={t.href}
               className="flex items-start gap-3 bg-white border border-neutral-200 rounded-2xl px-4 py-4 hover:border-teal-300 hover:bg-teal-50/50 hover:shadow-sm transition group">
               <span className="text-2xl">{t.icon}</span>

@@ -5,6 +5,7 @@
  * definitions in customer-agent.ts (same names, same schemas). The pre-stage-B
  * wording lives in git history (commit 89b3845 and earlier).
  */
+import type { Vocab } from "@/lib/vocab";
 /** Same names and schemas as AGENT_TOOLS — only the wording is shorter. */
 export const TOOL_DESCRIPTIONS: Record<string, { description: string; params?: Record<string, string> }> = {
   get_services: {
@@ -78,4 +79,34 @@ export function applyToolDescriptions<T extends { name: string; description?: st
     // keep everything else (incl. the cache_control on the last tool) as is
     return { ...t, description: trim.description, input_schema: schema, ...(i === tools.length - 1 ? {} : {}) } as T;
   });
+}
+
+/**
+ * The tools in the business's words (16.10.2026): a nail studio's agent reads
+ * "מניקוריסטית", never "ספר", so it never says "ספר" to a customer. A men's
+ * barbershop gets the tools untouched (same bytes, same prompt cache).
+ */
+export function toolsForType<T extends { description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
+  if (v.type === "barber_men") return tools;
+  const f = v.staffFem;
+  const word = (w: string) => new RegExp(`(^|[^א-ת])${w}(?![א-ת])`, "g");
+  const swap = (s: string) => s
+    .split("כמה ספרים צריכים להיות פנויים").join(`כמה ${v.staffPlural} ${f ? "צריכות להיות פנויות" : "צריכים להיות פנויים"}`)
+    .split("כמה ספרים פנויים").join(`כמה ${v.staffPlural} ${v.freePlural}`)
+    .split("הספרים שפנויים").join(`${v.staffPluralDef} ש${v.freePlural}`)
+    .split("ספר אחר").join(`${v.staff} ${v.other}`)
+    .split("ספר מסוים").join(`${v.staff} ${f ? "מסוימת" : "מסוים"}`)
+    .split("אותו ספר").join(`${f ? "אותה" : "אותו"} ${v.staff}`)
+    .split("איזה ספר").join(`${f ? "איזו" : "איזה"} ${v.staff}`)
+    .replace(word("הספרים"), (_m, p: string) => p + v.staffPluralDef)
+    .replace(word("ספרים"), (_m, p: string) => p + v.staffPlural)
+    .replace(word("הספר"), (_m, p: string) => p + v.staffDef)
+    .replace(word("לספר"), (_m, p: string) => `${p}ל${v.staff}`)
+    .replace(word("ספר"), (_m, p: string) => p + v.staff);
+  const deep = (x: unknown): unknown => {
+    if (Array.isArray(x)) return x.map(deep);
+    if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, val]) => [k, k === "description" && typeof val === "string" ? swap(val) : deep(val)]));
+    return x;
+  };
+  return tools.map(t => ({ ...t, ...(t.description ? { description: swap(t.description) } : {}), input_schema: deep(t.input_schema) }));
 }

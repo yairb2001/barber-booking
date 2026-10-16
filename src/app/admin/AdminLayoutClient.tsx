@@ -8,6 +8,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useNativeShell } from "@/lib/native/useNativeShell";
 import { ConnectBox } from "@/components/WhatsAppQrPanel";
+import { useVocab } from "@/components/VocabProvider";
 
 type NavItem = {
   href: string;
@@ -73,6 +74,7 @@ const bottomNavBarber: NavItem[] = [
 
 export default function AdminLayoutClient({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const v = useVocab();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null; setupTasks?: { key: string; text: string; action: string; href: string; external?: boolean }[] } | null>(null);
@@ -289,7 +291,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
           <div>
             <div className="text-slate-900 font-bold text-base tracking-tight truncate">{bizTitle}</div>
             <div className="text-slate-500 text-xs">
-              {me ? (isOwner ? "מנהל ראשי" : `שלום ${me.staff?.name || "ספר"}`) : "ניהול מספרה"}
+              {me ? (isOwner ? "מנהל ראשי" : `שלום ${me.staff?.name || v.staff}`) : `ניהול ${v.place}`}
             </div>
           </div>
           <button

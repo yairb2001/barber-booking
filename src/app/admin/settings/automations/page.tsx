@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
@@ -520,6 +521,7 @@ type RhythmCfg = { enabled: boolean; leadDays: number; earlyWindowDays: number; 
 const RHYTHM_DEFAULTS: RhythmCfg = { enabled: false, leadDays: 2, earlyWindowDays: 7, fillThreshold: 2, secondNudge: true, includeNewCustomers: false, excludedStaffIds: [], notBefore: null, newCustomerDays: null, quietAfterActivityDays: 3, shortRhythmDays: 14, shortRhythmLateDays: 1 };
 
 function RhythmNudgeCard() {
+  const v = useVocab();
   const [cfg, setCfg] = useState<RhythmCfg>(RHYTHM_DEFAULTS);
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -574,7 +576,7 @@ function RhythmNudgeCard() {
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-neutral-800">✂️ הגיע הזמן לתור</h2>
           <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-            כל בוקר ב-10:00 (לא בשבת): לקוח שלפי הקצב שלו הגיע הזמן לתספורת ואין לו תור מקבל הודעה אחת עם 3 שעות פנויות אצל הספר הקבוע שלו, ושאלה מה נוח. תשובה חופשית מגיעה לסוכן. שליחה בפעימה של דקה.
+            כל בוקר ב-10:00 (לא בשבת): לקוח שלפי הקצב שלו הגיע הזמן ל{v.treatment} ואין לו תור מקבל הודעה אחת עם 3 שעות פנויות אצל {v.staffDef} {v.regular} שלו, ושאלה מה נוח. תשובה חופשית מגיעה לסוכן. שליחה בפעימה של דקה.
           </p>
           {saved && <span className="text-xs text-emerald-600">✓ נשמר</span>}
         </div>
@@ -600,7 +602,7 @@ function RhythmNudgeCard() {
             <span>מתי? אחרי</span>
             <button onClick={() => save({ ...cfg, newCustomerDays: null })}
               className={`px-2.5 py-1 rounded-full border ${cfg.newCustomerDays === null ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-600 border-neutral-200"}`}>
-              הקצב החציוני של המספרה{median !== null ? ` (${median} ימים)` : ""}
+              הקצב החציוני של {v.placeDef}{median !== null ? ` (${median} ימים)` : ""}
             </button>
             <span>או</span>
             <input type="number" min={1} max={120} value={cfg.newCustomerDays ?? ""} placeholder="ימים"
@@ -680,6 +682,7 @@ function RhythmNudgeCard() {
 type CallCfg = { enabled: boolean; newMissed: boolean; newAnswered: boolean; knownMissedUpcoming: boolean; knownMissed: boolean };
 const CALL_DEFAULTS: CallCfg = { enabled: false, newMissed: true, newAnswered: true, knownMissedUpcoming: true, knownMissed: true };
 function CallAutomationCard() {
+  const v = useVocab();
   const [cfg, setCfg] = useState<CallCfg>(CALL_DEFAULTS);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -734,7 +737,7 @@ function CallAutomationCard() {
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold text-neutral-800">📞 התקשרת? אני כאן</h2>
           <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">
-            מי שמתקשר למספר המספרה מקבל הודעה בווצאפ מיד בסיום השיחה — לפי מי הוא ואם ענינו. הודעה אחת למספר ל-24 שעות, לא לחסומים, לא בשבת. דורש טלפון אנדרואיד עם MacroDroid שמדווח על השיחות (ההוראות למטה).
+            מי שמתקשר למספר {v.placeDef} מקבל הודעה בווצאפ מיד בסיום השיחה — לפי מי הוא ואם ענינו. הודעה אחת למספר ל-24 שעות, לא לחסומים, לא בשבת. דורש טלפון אנדרואיד עם MacroDroid שמדווח על השיחות (ההוראות למטה).
           </p>
           {saved && <span className="text-xs text-emerald-600">✓ נשמר</span>}
         </div>
@@ -744,7 +747,7 @@ function CallAutomationCard() {
         {row("newMissed", "מספר חדש — לא ענינו", "הסוכן מציג את עצמו, 3 שעות פנויות אצל כולם, קישור לאתר, \"תכתוב לי כאן\"")}
         {row("newAnswered", "מספר חדש — ענינו", "הצגה ניטרלית של הסוכן + קישור. אתם מבקשים שם בשיחה וקובעים מהצ׳אט")}
         {row("knownMissedUpcoming", "לקוח קיים עם תור ב-24 שעות — לא ענינו", "מזכיר את התור: מאחר / להזיז / לבטל")}
-        {row("knownMissed", "לקוח קיים בלי תור קרוב — לא ענינו", "\"אני כאן לכל דבר\" + פוש לספר הקבוע שלו (אין → לכולם)")}
+        {row("knownMissed", "לקוח קיים בלי תור קרוב — לא ענינו", `"אני כאן לכל דבר" + פוש ל${v.staff} ${v.regular} שלו (אין → לכולם)`)}
         <p className="text-[11px] text-neutral-400">לקוח קיים שענינו לו — לא מקבל כלום.</p>
       </div>
 
@@ -758,12 +761,12 @@ function CallAutomationCard() {
         </div>
         {guideOpen && (
           <div className="rounded-xl bg-amber-50/60 border border-amber-200 p-3 text-xs text-neutral-700 space-y-2 leading-relaxed">
-            <p className="font-semibold text-neutral-800">פעם אחת, ~15 דקות, על טלפון אנדרואיד עם ה-SIM של המספרה</p>
+            <p className="font-semibold text-neutral-800">פעם אחת, ~15 דקות, על טלפון אנדרואיד עם ה-SIM של {v.placeDef}</p>
             <ol className="list-decimal pr-4 space-y-1.5">
               <li>מתקינים <a href="https://play.google.com/store/apps/details?id=com.arlosoft.macrodroid" target="_blank" rel="noreferrer" className="text-teal-700 underline font-semibold">MacroDroid</a> (חינם). מאשרים לו הרשאות טלפון, ובהגדרות הסוללה: MacroDroid → ללא הגבלה.</li>
               <li>לוחצים למטה על <b>"הצג כתובת וסוד"</b>.</li>
               <li>ב-MacroDroid יוצרים 3 מאקרו — <b>לא ענינו</b>, <b>ענינו</b>, <b>חזרנו אליו</b>. לכל אחד: הטריגר שכתוב לידו, ופעולה "בקשת HTTP" שממלאים מהתיבה למטה (יש כפתור העתקה לכל שדה).</li>
-              <li><b>בדיקה</b>: הכפתור למטה עם המספר שלך → אמור להגיע ווצאפ. ואז שיחה אמיתית למספרה בלי לענות → הלשונית 📞 בצ׳אטים מראה אותה.</li>
+              <li><b>בדיקה</b>: הכפתור למטה עם המספר שלך → אמור להגיע ווצאפ. ואז שיחה אמיתית ל{v.place} בלי לענות → הלשונית 📞 בצ׳אטים מראה אותה.</li>
               <li>מתג ראשי <b>ON</b>.</li>
             </ol>
             <p className="text-neutral-500">הטלפון חייב להיות דלוק ומחובר לאינטרנט. אייפון לא מתאים — אפל לא נותנת לאפליקציות לראות שיחות.</p>

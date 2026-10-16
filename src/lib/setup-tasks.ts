@@ -12,6 +12,7 @@
  * any other phone will do.
  */
 import { prisma } from "@/lib/prisma";
+import { vocabOf } from "@/lib/vocab";
 import { computeSetup } from "@/lib/crm/setup-progress";
 import { testerPhones, TEST_NOTE } from "@/lib/agent/test-mode";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -22,7 +23,7 @@ const TRY_TEXT = "היי, אפשר לקבוע תור?";
 const local = (p: string) => p.replace(/^972/, "0");
 
 export async function setupTasksFor(businessId: string): Promise<SetupTask[]> {
-  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { onboardingCompletedAt: true, activatedAt: true, settings: true, phone: true, whatsappNumber: true } });
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { onboardingCompletedAt: true, activatedAt: true, settings: true, phone: true, whatsappNumber: true, businessType: true } });
   if (!biz?.onboardingCompletedAt) return [];
   // A shop whose agent already booked a real customer is past all of this (cheap check, every page load).
   try { if (JSON.parse(biz.settings ?? "{}")?.setupProgress?.live) return []; } catch { /* go on */ }
@@ -32,7 +33,7 @@ export async function setupTasksFor(businessId: string): Promise<SetupTask[]> {
 
   const tasks: SetupTask[] = [];
   if (!done("business")) tasks.push({ key: "business", text: "שעות הפתיחה עוד לא הוגדרו", action: "להגדרה", href: "/admin/settings/hours" });
-  if (!done("team")) tasks.push({ key: "team", text: "עוד לא הוספת את הספרים", action: "להוספה", href: "/admin/staff" });
+  if (!done("team")) tasks.push({ key: "team", text: `עוד לא הוספת את ${vocabOf(biz).staffPluralDef}`, action: "להוספה", href: "/admin/staff" });
   if (!done("services")) tasks.push({ key: "services", text: "עוד אין שירותים ומחירים", action: "להוספה", href: "/admin/services" });
   if (!done("agent")) tasks.push({ key: "agent", text: "הגדרות הסוכן לא הושלמו", action: "להשלמה", href: "/admin/agent" });
   if (!done("whatsapp")) {

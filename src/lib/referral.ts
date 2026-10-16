@@ -13,6 +13,8 @@
  * renaming "חבר הביא חבר" → "המלצה של חבר" doesn't break the reward flow.
  */
 
+import { vocabFor } from "@/lib/vocab";
+
 // Legacy default — kept for backward-compat with existing customer rows.
 export const REFERRAL_SOURCE = "חבר הביא חבר";
 
@@ -85,13 +87,15 @@ export const REFERRAL_DEFAULTS: ReferralConfig = {
  * Resolve the referral config from a Business.settings value.
  * Accepts the raw JSON string, an already-parsed object, or null/undefined.
  */
-export function getReferralConfig(settings: string | Record<string, unknown> | null | undefined): ReferralConfig {
+export function getReferralConfig(settings: string | Record<string, unknown> | null | undefined, businessType?: string | null): ReferralConfig {
+  // The default gift in the business's words: "טיפול חינם" in a salon or clinic.
+  const defaults = { ...REFERRAL_DEFAULTS, giftLabel: `${vocabFor(businessType).treatment} חינם` };
   let s: Record<string, unknown> = {};
   try {
     if (typeof settings === "string") s = settings ? JSON.parse(settings) : {};
     else if (settings && typeof settings === "object") s = settings;
   } catch {
-    return { ...REFERRAL_DEFAULTS };
+    return defaults;
   }
 
   const goalNum = Number(s.referralGoal);
@@ -105,7 +109,7 @@ export function getReferralConfig(settings: string | Record<string, unknown> | n
     // default ON — only an explicit `false` disables it
     enabled: s.referralProgramEnabled !== false,
     goal,
-    giftLabel: gift || REFERRAL_DEFAULTS.giftLabel,
+    giftLabel: gift || defaults.giftLabel,
     // Tier 2 only exists if it's a real number STRICTLY past tier 1 — a bad/
     // equal value silently falls back to "no second tier" rather than erroring.
     goal2: goal2Num > goal ? Math.round(goal2Num) : null,

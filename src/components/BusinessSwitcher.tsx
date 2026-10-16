@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useVocab } from "@/components/VocabProvider";
 
 type Result = { slug: string; name: string; logoUrl: string | null; matchedStaffName: string | null };
 
@@ -20,6 +21,9 @@ export default function BusinessSwitcher({
   currentSlug: string | null;
   variant?: "text" | "text-light";
 }) {
+  const v = useVocab();
+  // A barbershop finds "another barbershop"; a studio or clinic, "another business".
+  const other = v.place === "מספרה" ? "מספרה אחרת" : "עסק אחר";
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [results, setResults] = useState<Result[]>([]);
@@ -48,14 +52,14 @@ export default function BusinessSwitcher({
           onClick={() => setOpen(true)}
           className="text-[10px] text-white/50 hover:text-white/80 transition"
         >
-          חיפוש מספרה אחרת
+          חיפוש {other}
         </button>
       ) : (
         <button
           onClick={() => setOpen(true)}
           className="text-[12px] text-neutral-400 underline underline-offset-2 hover:text-neutral-600 transition"
         >
-          🔍 חיפוש מספרה אחרת
+          🔍 חיפוש {other}
         </button>
       )}
 
@@ -85,7 +89,7 @@ export default function BusinessSwitcher({
                 autoFocus
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="שם ספר או שם מספרה..."
+                placeholder={`שם ${v.staff} או שם ${v.place === "מספרה" ? "מספרה" : "העסק"}...`}
                 className="flex-1 text-sm outline-none placeholder:text-neutral-400"
               />
               <button

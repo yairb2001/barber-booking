@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -17,6 +18,7 @@ type Story = {
 };
 
 export default function AdminStoriesPage() {
+  const v = useVocab();
   const [stories, setStories] = useState<Story[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -185,7 +187,7 @@ export default function AdminStoriesPage() {
                     <span className="text-xs font-semibold text-slate-700">{story.staff.name}</span>
                   </div>
                 ) : (
-                  <p className="text-xs text-slate-400 mb-1">ללא שיוך לספר</p>
+                  <p className="text-xs text-slate-400 mb-1">ללא שיוך ל{v.staff}</p>
                 )}
                 {story.caption && (
                   <p className="text-sm text-neutral-600 truncate">{story.caption}</p>
@@ -231,7 +233,7 @@ export default function AdminStoriesPage() {
               {/* Staff picker — owner only */}
               {isOwner && staffList.length > 0 && (
                 <div>
-                  <label className="text-xs text-neutral-500 block mb-1.5">שייך לספר</label>
+                  <label className="text-xs text-neutral-500 block mb-1.5">שייך ל{v.staff}</label>
                   <select
                     value={newStaffId}
                     onChange={e => setNewStaffId(e.target.value)}

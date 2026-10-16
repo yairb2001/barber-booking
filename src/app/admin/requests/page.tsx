@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { VoiceBubble, VoiceComposer } from "@/components/Voice";
 import { screenFor } from "@/lib/admin-screens";
+import { useVocab } from "@/components/VocabProvider";
 
 /**
  * Requests and improvements (15.10.2026, Yair: "צאט של בקשות מה חסר לך או מה
@@ -19,6 +20,7 @@ const SCREEN_RE = /(?:https?:\/\/[^\s/]+)?(\/admin(?:\/[^\s,)"'״]*)?)/g;
 const URL_RE = /(https?:\/\/[^\s]+)/g;
 
 function Body({ text, mine }: { text: string; mine: boolean }) {
+  const v = useVocab();
   const paths: string[] = [];
   const rest = text
     .replace(SCREEN_RE, (_m, path: string) => { const p = path.replace(/[.:]+$/, ""); if (!paths.includes(p)) paths.push(p); return ""; })
@@ -37,7 +39,7 @@ function Body({ text, mine }: { text: string; mine: boolean }) {
         <div className="flex flex-wrap gap-1.5 mt-2">
           {paths.map(p => (
             <Link key={p} href={p} className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-semibold ${mine ? "bg-white/20 text-white" : "bg-teal-600 text-white"}`}>
-              {screenFor(p)?.name ?? "פתח את המסך"} ←
+              {screenFor(p, v)?.name ?? "פתח את המסך"} ←
             </Link>
           ))}
         </div>

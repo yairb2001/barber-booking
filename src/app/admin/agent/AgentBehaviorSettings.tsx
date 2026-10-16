@@ -1,4 +1,5 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import { useEffect, useState } from "react";
 import {
@@ -15,6 +16,7 @@ import {
  *   2. Personal WhatsApp agent (owner commands) — master + owner-self switches.
  */
 export default function AgentBehaviorSettings() {
+  const v = useVocab();
   const [loading, setLoading] = useState(true);
 
   // Link-first
@@ -269,7 +271,7 @@ export default function AgentBehaviorSettings() {
         </div>
 
         <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between">
-          <span className="text-[12px] text-neutral-700">👥 הרשאה למנהלי משנה (פר ספר)</span>
+          <span className="text-[12px] text-neutral-700">👥 הרשאה למנהלי משנה (פר {v.staff})</span>
           <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
             ניהול גישות ←
           </a>

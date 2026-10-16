@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { barColor, n, shortDate, type PlanData } from "./plan/shared";
+import { useVocab } from "@/components/VocabProvider";
 
 /**
  * Top of the settings hub (10.10.2026, Yair: "איפה הוא רואה את המסלול?"):
@@ -10,6 +11,7 @@ import { barColor, n, shortDate, type PlanData } from "./plan/shared";
  * else gets a 403 from the API and sees nothing.
  */
 export default function PlanSummary() {
+  const barber = useVocab().place === "מספרה";
   const [d, setD] = useState<PlanData | null>(null);
   useEffect(() => { fetch("/api/admin/plan", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(setD).catch(() => {}); }, []);
   if (!d) return null;
@@ -45,7 +47,7 @@ export default function PlanSummary() {
     </Link>
     {/* "חבר מביא חבר" (11.10.2026): one line under the plan, to the link and the count. */}
     <Link href="/admin/settings/plan#referral" className="flex items-center justify-between gap-3 max-w-4xl mb-4 rounded-2xl border border-teal-200 bg-teal-50 px-5 py-3 hover:border-teal-400 transition">
-      <span className="text-sm text-teal-900 min-w-0"><b>חבר מביא חבר:</b> חודש חינם על כל מספרה שתביא{d.referral?.earned ? ` · הרווחת ${d.referral.earned}` : ""}</span>
+      <span className="text-sm text-teal-900 min-w-0"><b>חבר מביא חבר:</b> חודש חינם על כל {barber ? "מספרה" : "עסק"} שתביא{d.referral?.earned ? ` · הרווחת ${d.referral.earned}` : ""}</span>
       <span className="text-sm text-teal-700 shrink-0">לקישור שלי ←</span>
     </Link>
     </>

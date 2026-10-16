@@ -1,10 +1,12 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import NotificationSettings from "@/components/NotificationSettings";
 
 export default function BarberNotificationsPage() {
+  const v = useVocab();
   const [myId, setMyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +32,7 @@ export default function BarberNotificationsPage() {
           // Scoped to this barber's own device list + toggles.
           <NotificationSettings endpoint={`/api/admin/staff/${myId}`} />
         ) : (
-          <p className="text-sm text-neutral-400 text-center py-10">לא נמצא פרופיל ספר מקושר לחשבון הזה.</p>
+          <p className="text-sm text-neutral-400 text-center py-10">לא נמצא פרופיל {v.staff} מקושר לחשבון הזה.</p>
         )}
       </div>
     </div>

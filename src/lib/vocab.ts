@@ -75,13 +75,18 @@ export type Vocab = {
   defaultService: string;
   /** A couple of typical services, for the setup question's hint. */
   serviceExamples: string;
+  /** The type's emoji in messages (💈 in a men's barbershop) and its word for a
+   *  visit ("תספורת" / "טיפול"), e.g. the referral gift "טיפול חינם". */
+  emoji: string;
+  treatment: string;
   /** Whether street slang ("אחי") is an allowed address style (decision #9: barber_men only). */
   slangAllowed: boolean;
   /** Starter catalog the setup wizard offers (market prices, editable). Beauty
    *  types (16.10.2026): by category, "החל מ" where the price is set at a
    *  consultation; from Israeli price guides (דפי זהב, מידרג), durations by
-   *  common practice. */
-  serviceCatalog: { name: string; price: number; duration: number; category?: string; priceFrom?: boolean }[];
+   *  common practice. rebookDays: when she usually comes back for it (root
+   *  5 weeks, gel 3, laser 6 to 8), for the "הגיע הזמן לתור" nudge. */
+  serviceCatalog: { name: string; price: number; duration: number; category?: string; priceFrom?: boolean; rebookDays?: number }[];
 };
 
 const BASE: Record<BusinessType, Vocab> = {
@@ -93,6 +98,7 @@ const BASE: Record<BusinessType, Vocab> = {
     works: "עובד", writes: "כותב", none: "אף ספר",
     customer: "לקוח", customerPlural: "לקוחות", customerFem: false, choose: "בחר", tryVerb: "נסה", knows: "ידע",
     defaultService: "תספורת + זקן", serviceExamples: "תספורת, תספורת + זקן, זקן",
+    emoji: "💈", treatment: "תספורת",
     slangAllowed: true,
     serviceCatalog: [{ name: "תספורת", price: 80, duration: 30 }, { name: "תספורת + זקן", price: 110, duration: 45 }, { name: "עיצוב זקן", price: 40, duration: 20 }, { name: "תספורת מספריים", price: 120, duration: 40 }, { name: "תספורת ילד", price: 60, duration: 25 }],
   },
@@ -104,23 +110,24 @@ const BASE: Record<BusinessType, Vocab> = {
     works: "עובדת", writes: "כותבת", none: "אף ספרית",
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "תספורת", serviceExamples: "תספורת, פן, צבע, גוונים",
+    emoji: "💇‍♀️", treatment: "טיפול",
     slangAllowed: false,
     serviceCatalog: [
-      { category: "תספורות", name: "תספורת", price: 160, duration: 50 },
-      { category: "תספורות", name: "תספורת ילדות", price: 100, duration: 30 },
-      { category: "תספורות", name: "פוני", price: 30, duration: 15 },
+      { category: "תספורות", name: "תספורת", price: 160, duration: 50, rebookDays: 49 },
+      { category: "תספורות", name: "תספורת ילדות", price: 100, duration: 30, rebookDays: 56 },
+      { category: "תספורות", name: "פוני", price: 30, duration: 15, rebookDays: 28 },
       { category: "עיצוב", name: "פן קצר", price: 70, duration: 30 },
       { category: "עיצוב", name: "פן ארוך", price: 110, duration: 45 },
       { category: "עיצוב", name: "בייביליס", price: 180, duration: 45 },
       { category: "עיצוב", name: "תסרוקת ערב", price: 350, duration: 60, priceFrom: true },
-      { category: "צבע", name: "צבע שורש", price: 200, duration: 80 },
-      { category: "צבע", name: "צבע מלא", price: 300, duration: 100, priceFrom: true },
-      { category: "צבע", name: "גוונים חלקיים", price: 400, duration: 130, priceFrom: true },
-      { category: "צבע", name: "גוונים מלאים", price: 600, duration: 170, priceFrom: true },
-      { category: "צבע", name: "בלייאז'", price: 700, duration: 210, priceFrom: true },
+      { category: "צבע", name: "צבע שורש", price: 200, duration: 80, rebookDays: 35 },
+      { category: "צבע", name: "צבע מלא", price: 300, duration: 100, priceFrom: true, rebookDays: 42 },
+      { category: "צבע", name: "גוונים חלקיים", price: 400, duration: 130, priceFrom: true, rebookDays: 56 },
+      { category: "צבע", name: "גוונים מלאים", price: 600, duration: 170, priceFrom: true, rebookDays: 70 },
+      { category: "צבע", name: "בלייאז'", price: 700, duration: 210, priceFrom: true, rebookDays: 90 },
       { category: "צבע", name: "שטיפת צבע", price: 200, duration: 45 },
-      { category: "טיפולים", name: "החלקת קרטין", price: 900, duration: 180, priceFrom: true },
-      { category: "טיפולים", name: "החלקה אורגנית", price: 1200, duration: 240, priceFrom: true },
+      { category: "טיפולים", name: "החלקת קרטין", price: 900, duration: 180, priceFrom: true, rebookDays: 105 },
+      { category: "טיפולים", name: "החלקה אורגנית", price: 1200, duration: 240, priceFrom: true, rebookDays: 105 },
       { category: "ייעוץ", name: "ייעוץ צבע", price: 0, duration: 15 },
     ],
   },
@@ -132,16 +139,17 @@ const BASE: Record<BusinessType, Vocab> = {
     works: "עובדת", writes: "כותבת", none: "אף מניקוריסטית",
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "מניקור ג'ל", serviceExamples: "מניקור ג'ל, בנייה, מילוי, פדיקור",
+    emoji: "💅", treatment: "טיפול",
     slangAllowed: false,
     serviceCatalog: [
-      { category: "ג'ל", name: "מניקור ג'ל", price: 120, duration: 60 },
-      { category: "ג'ל", name: "לק ג'ל ברגליים", price: 110, duration: 50 },
-      { category: "בנייה", name: "בניית ציפורניים", price: 250, duration: 110 },
-      { category: "בנייה", name: "מילוי", price: 170, duration: 80 },
+      { category: "ג'ל", name: "מניקור ג'ל", price: 120, duration: 60, rebookDays: 21 },
+      { category: "ג'ל", name: "לק ג'ל ברגליים", price: 110, duration: 50, rebookDays: 28 },
+      { category: "בנייה", name: "בניית ציפורניים", price: 250, duration: 110, rebookDays: 21 },
+      { category: "בנייה", name: "מילוי", price: 170, duration: 80, rebookDays: 21 },
       { category: "בנייה", name: "הסרת ג'ל או בנייה", price: 45, duration: 25 },
-      { category: "מניקור ופדיקור", name: "מניקור קלאסי", price: 110, duration: 40 },
-      { category: "מניקור ופדיקור", name: "פדיקור ספא", price: 170, duration: 60 },
-      { category: "מניקור ופדיקור", name: "פדיקור רפואי", price: 200, duration: 60 },
+      { category: "מניקור ופדיקור", name: "מניקור קלאסי", price: 110, duration: 40, rebookDays: 14 },
+      { category: "מניקור ופדיקור", name: "פדיקור ספא", price: 170, duration: 60, rebookDays: 28 },
+      { category: "מניקור ופדיקור", name: "פדיקור רפואי", price: 200, duration: 60, rebookDays: 28 },
       { category: "תוספות", name: "עיטור לציפורן", price: 10, duration: 10 },
       { category: "תוספות", name: "פרנץ'", price: 40, duration: 15 },
       { category: "תוספות", name: "תיקון ציפורן", price: 15, duration: 10 },
@@ -155,21 +163,22 @@ const BASE: Record<BusinessType, Vocab> = {
     works: "עובדת", writes: "כותבת", none: "אף קוסמטיקאית",
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "טיפול פנים", serviceExamples: "טיפול פנים, הסרת שיער, עיצוב גבות",
+    emoji: "✨", treatment: "טיפול",
     slangAllowed: false,
     serviceCatalog: [
-      { category: "פנים", name: "טיפול פנים", price: 380, duration: 75 },
-      { category: "פנים", name: "טיפול פנים לאקנה", price: 450, duration: 90 },
-      { category: "גבות וריסים", name: "עיצוב גבות", price: 70, duration: 25 },
-      { category: "גבות וריסים", name: "צביעת גבות", price: 50, duration: 15 },
-      { category: "גבות וריסים", name: "הרמת גבות", price: 250, duration: 50 },
-      { category: "גבות וריסים", name: "הרמת ריסים", price: 250, duration: 60 },
-      { category: "שעווה", name: "שעווה שפם", price: 40, duration: 10 },
-      { category: "שעווה", name: "שעווה בתי שחי", price: 60, duration: 15 },
-      { category: "שעווה", name: "שעווה רגליים מלאות", price: 180, duration: 45 },
-      { category: "לייזר", name: "לייזר אזור קטן", price: 150, duration: 15, priceFrom: true },
-      { category: "לייזר", name: "לייזר רגליים", price: 350, duration: 50, priceFrom: true },
-      { category: "איפור קבוע", name: "גבות בשיטת השערה", price: 1500, duration: 170, priceFrom: true },
-      { category: "איפור קבוע", name: "אייליינר קבוע", price: 1200, duration: 120, priceFrom: true },
+      { category: "פנים", name: "טיפול פנים", price: 380, duration: 75, rebookDays: 35 },
+      { category: "פנים", name: "טיפול פנים לאקנה", price: 450, duration: 90, rebookDays: 28 },
+      { category: "גבות וריסים", name: "עיצוב גבות", price: 70, duration: 25, rebookDays: 21 },
+      { category: "גבות וריסים", name: "צביעת גבות", price: 50, duration: 15, rebookDays: 28 },
+      { category: "גבות וריסים", name: "הרמת גבות", price: 250, duration: 50, rebookDays: 49 },
+      { category: "גבות וריסים", name: "הרמת ריסים", price: 250, duration: 60, rebookDays: 49 },
+      { category: "שעווה", name: "שעווה שפם", price: 40, duration: 10, rebookDays: 21 },
+      { category: "שעווה", name: "שעווה בתי שחי", price: 60, duration: 15, rebookDays: 28 },
+      { category: "שעווה", name: "שעווה רגליים מלאות", price: 180, duration: 45, rebookDays: 35 },
+      { category: "לייזר", name: "לייזר אזור קטן", price: 150, duration: 15, priceFrom: true, rebookDays: 35 },
+      { category: "לייזר", name: "לייזר רגליים", price: 350, duration: 50, priceFrom: true, rebookDays: 49 },
+      { category: "איפור קבוע", name: "גבות בשיטת השערה", price: 1500, duration: 170, priceFrom: true, rebookDays: 42 },
+      { category: "איפור קבוע", name: "אייליינר קבוע", price: 1200, duration: 120, priceFrom: true, rebookDays: 42 },
       { category: "ייעוץ", name: "ייעוץ ובדיקת רגישות", price: 0, duration: 20 },
     ],
   },

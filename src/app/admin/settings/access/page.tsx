@@ -1,9 +1,11 @@
 "use client";
+import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
 export default function AccessSecurityPage() {
+  const v = useVocab();
   const [loading, setLoading] = useState(true);
 
   // Owner login phone
@@ -107,13 +109,13 @@ export default function AccessSecurityPage() {
               </button>
             </div>
             <div className="mt-3 pt-3 border-t border-neutral-100 flex items-center justify-between">
-              <span className="text-[12px] text-neutral-700">👥 מנהלים משניים (ספרים עם גישה)</span>
+              <span className="text-[12px] text-neutral-700">👥 מנהלים משניים ({v.staffPlural} עם גישה)</span>
               <a href="/admin/staff" className="text-[12px] font-semibold text-slate-700 hover:text-slate-900 underline underline-offset-2">
                 ניהול גישות ←
               </a>
             </div>
             <p className="text-[10px] text-neutral-500 mt-1.5 leading-relaxed">
-              כל ספר שתגדיר לו סיסמה (דרך עמוד הצוות) יוכל להיכנס עם הטלפון והסיסמה שלו.
+              כל {v.staff} שתגדיר {v.staffFem ? "לה" : "לו"} סיסמה (דרך עמוד הצוות) {v.staffFem ? "תוכל" : "יוכל"} להיכנס עם הטלפון והסיסמה {v.staffFem ? "שלה" : "שלו"}.
             </p>
           </div>
 
