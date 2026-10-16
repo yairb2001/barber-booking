@@ -21,9 +21,11 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   }
 
   const [allServices, staffServices, business] = await Promise.all([
-    // Shared pool (ownerStaffId = null) + services owned by this barber.
+    // Shared pool (ownerStaffId = null) + services owned by this barber — of THIS
+    // business only (16.10.2026: it listed every business's services, ~20 at a
+    // new shop, DOMINANT's included).
     prisma.service.findMany({
-      where: { OR: [{ ownerStaffId: null }, { ownerStaffId: params.id }] },
+      where: { businessId: session.businessId, OR: [{ ownerStaffId: null }, { ownerStaffId: params.id }] },
       orderBy: { sortOrder: "asc" },
     }),
     prisma.staffService.findMany({ where: { staffId: params.id } }),
@@ -146,6 +148,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   // ── Default: toggle a shared service on/off for this barber ──
   const { serviceId, enabled, customPrice, customDuration, customName, customDescription, customNote } = body;
+  // Only a service of the caller's own business can be turned on for a team member.
+  const ownSvc = await prisma.service.findFirst({ where: { id: String(serviceId ?? ""), businessId: session!.businessId }, select: { id: true } });
+  if (!ownSvc) return NextResponse.json({ error: "שירות לא נמצא" }, { status: 404 });
 
   // Normalize the per-barber name/description/note overrides: blank → null (use the shared service value).
   const normName = typeof customName === "string" && customName.trim() ? customName.trim() : null;
