@@ -10,6 +10,7 @@
 // block in the admin calendar. The holder himself still sees it as free.
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
+import { bookedBusy } from "@/lib/availability/shape";
 
 /** How long a closure alternative stays locked for the customer it was offered to. */
 export const CLOSURE_HOLD_MINUTES = 60;
@@ -103,10 +104,12 @@ export async function slotIsFree(p: { staffId: string; dateISO: string; startTim
   const day = new Date(p.dateISO + "T00:00:00.000Z"), dayEnd = new Date(day.getTime() + 86_400_000);
   const s = toMin(p.startTime), e = toMin(p.endTime);
   const [booked, holds] = await Promise.all([
-    prisma.appointment.findMany({ where: { staffId: p.staffId, date: { gte: day, lt: dayEnd }, status: { in: ["pending", "confirmed"] } }, select: { startTime: true, endTime: true } }),
+    prisma.appointment.findMany({ where: { staffId: p.staffId, date: { gte: day, lt: dayEnd }, status: { in: ["pending", "confirmed"] } }, select: { startTime: true, endTime: true, busySegments: true, bufferAfterMin: true } }),
     activeHolds({ staffIds: [p.staffId], from: day, to: day, exemptHolderKeys: [p.holderKey] }),
   ]);
-  return ![...booked, ...holds].some(b => s < toMin(b.endTime) && e > toMin(b.startTime));
+  // A booking blocks only its busy parts (stage B: processing frees the staff, cleaning keeps her busy).
+  const busy = [...booked.flatMap(bookedBusy), ...holds.map(h => ({ s: toMin(h.startTime), e: toMin(h.endTime) }))];
+  return !busy.some(b => s < b.e && e > b.s);
 }
 
 /** Old expired rows are useless; sweep them opportunistically. */

@@ -14,6 +14,8 @@
  */
 
 import { dayDistance } from "@/lib/day-distance";
+import { writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { bookingRecord } from "@/lib/availability/shape";
 import { agentReplyForType } from "@/lib/type-wording";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicFor } from "@/lib/anthropic-clients";
@@ -970,9 +972,12 @@ export async function execTool(
         // If two requests race past the availability guard above, the DB will
         // reject the second one with a unique-violation (P2002) instead of
         // silently creating a double-booking.
+        // Stage B: under the staff-day lock, checked once more by intervals
+        // (cleaning, processing, a booking that started at another minute), and
+        // the treatment's shape recorded on the booking.
         let appt;
         try {
-          appt = await prisma.appointment.create({
+          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] } }], tx => tx.appointment.create({
             data: {
               businessId: bizId,
               customerId: customer.id,
@@ -986,12 +991,13 @@ export async function execTool(
               referralSource: "whatsapp_agent",
               source:    "agent",
               note:      note || null,
+              ...bookingRecord(eff.shape),
             },
-          });
+          }));
         } catch (err: unknown) {
-          // Unique-violation = slot was grabbed by another customer between the
-          // guard check and this insert. Tell the model to offer an alternative.
-          if ((err as { code?: string }).code === "P2002") {
+          // The slot was grabbed by another customer between the guard check and
+          // this insert. Tell the model to offer an alternative.
+          if (err instanceof SlotRefused) {
             return `שגיאה: השעה ${startTime} ב-${date} אצל ${staff.name} נתפסה הרגע ע"י לקוח אחר. קרא ל-find_next_available כדי לראות מה פנוי ולהציע ללקוח חלופה.`;
           }
           throw err;

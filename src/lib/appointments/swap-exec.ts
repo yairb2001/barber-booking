@@ -15,6 +15,9 @@ import { prisma } from "@/lib/prisma";
 import { refreshReminders } from "@/lib/reminders-sweep";
 import { sendMessage, swapConfirmationText, appointmentMovedText, firstName } from "@/lib/messaging";
 import { timeToMinutes } from "@/lib/utils";
+import { writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { shapeOfBooking } from "@/lib/availability/shape";
+import { staffBlocks } from "@/lib/availability/engine";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 
 const HEBREW_DATE_OPTS: Intl.DateTimeFormatOptions = {
@@ -158,22 +161,25 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
       endTime:   minToTime(timeToMinutes(proposal.targetStartTime) + pDur),
     };
 
+    // Stage B: the target is checked again under the staff-day lock (it may have
+    // been taken since the proposal), by the booking's own busy parts; the
+    // customer's own holds (the closure alternatives offered to him) don't count.
     try {
-      await prisma.$transaction([
-        prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
-        prisma.swapProposal.update({
+      await writeChecked([{ staffId: newPrimary.staffId, dateISO: newPrimary.date.toISOString().slice(0, 10), startTime: newPrimary.startTime, shape: shapeOfBooking(p), ignoreAppointmentIds: [p.id], holds: { exemptCustomerId: p.customerId } }], async tx => {
+        await tx.appointment.update({ where: { id: p.id }, data: newPrimary });
+        await tx.swapProposal.update({
           where: { id: proposal.id },
           data:  { status: "approved", approvedAt: new Date() },
-        }),
-        prisma.swapProposal.updateMany({
+        });
+        await tx.swapProposal.updateMany({
           where: {
             primaryAppointmentId: p.id,
             status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
             id: { not: proposal.id },
           },
           data: { status: "cancelled" },
-        }),
-      ]);
+        });
+      });
     } catch (err) {
       // Most likely a unique-violation (P2002) from the partial active-slot index
       // — the target slot was taken between proposal and execution. Return a
@@ -249,24 +255,38 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
   // appointment occupies, then move the primary in, then move the candidate to
   // its final slot. All inside one transaction → atomic and rollback-safe.
   const PARK_DATE = new Date(0); // 1970-01-01 — guaranteed-free sentinel slot
+  // Stage B: both new places checked under the lock of both staff-days — against
+  // everyone else, and against each other (a longer booking moving into a
+  // shorter one's place may reach into the other's new time).
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const pShape = shapeOfBooking(p), cShape = shapeOfBooking(c);
+  const both = [p.id, c.id];
+  const exempt = { exemptHolderKeys: [] as string[] };
   try {
-    await prisma.$transaction([
-      prisma.appointment.update({ where: { id: c.id }, data: { date: PARK_DATE } }),
-      prisma.appointment.update({ where: { id: p.id }, data: newPrimary }),
-      prisma.appointment.update({ where: { id: c.id }, data: newCandidate }),
-      prisma.swapProposal.update({
+    await writeChecked([
+      { staffId: newPrimary.staffId, dateISO: iso(newPrimary.date), startTime: newPrimary.startTime, shape: pShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: p.customerId } },
+      { staffId: newCandidate.staffId, dateISO: iso(newCandidate.date), startTime: newCandidate.startTime, shape: cShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: c.customerId } },
+    ], async tx => {
+      if (newPrimary.staffId === newCandidate.staffId && iso(newPrimary.date) === iso(newCandidate.date)) {
+        const a = staffBlocks(pShape, timeToMinutes(newPrimary.startTime)), b = staffBlocks(cShape, timeToMinutes(newCandidate.startTime));
+        if (a.some(x => b.some(y => x.s < y.e && x.e > y.s))) throw new SlotRefused({ ok: false, reason: "busy" });
+      }
+      await tx.appointment.update({ where: { id: c.id }, data: { date: PARK_DATE } });
+      await tx.appointment.update({ where: { id: p.id }, data: newPrimary });
+      await tx.appointment.update({ where: { id: c.id }, data: newCandidate });
+      await tx.swapProposal.update({
         where: { id: proposal.id },
         data:  { status: "approved", approvedAt: new Date() },
-      }),
-      prisma.swapProposal.updateMany({
+      });
+      await tx.swapProposal.updateMany({
         where: {
           primaryAppointmentId: p.id,
           status: { in: ["pending_response", "accepted_by_customer", "pending_staff_approval", "queued_next"] },
           id: { not: proposal.id },
         },
         data: { status: "cancelled" },
-      }),
-    ]);
+      });
+    });
   } catch (err) {
     // Slot taken between proposal and execution (P2002) or any other DB error —
     // fail cleanly so callers apologize; never throw (would leak to the agent).

@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { activeHolds, holderKeyForWeb, releaseHolds } from "@/lib/slot-holds";
+import { checkSlot, writeChecked, SlotRefused, verdictText } from "@/lib/availability/guard";
+import { shapeOf, bookingRecord } from "@/lib/availability/shape";
+import { shapeLength } from "@/lib/availability/engine";
+import { holderKeyForWeb, releaseHolds } from "@/lib/slot-holds";
 import { rateLimit } from "@/lib/rate-limit";
 import { authSecret } from "@/lib/jwt-secret";
 import { NextRequest, NextResponse } from "next/server";
@@ -101,7 +104,10 @@ export async function POST(request: NextRequest) {
 
   const duration = staffService.customDuration || staffService.service.durationMinutes;
   const price = staffService.customPrice || staffService.service.price;
-  const endTime = minutesToTime(timeToMinutes(startTime) + duration);
+  // The treatment's shape (processing, cleaning): the booking records it, and the
+  // guard checks every busy part of it (src/lib/availability/guard.ts).
+  const shape = shapeOf(staffService.service, duration);
+  const endTime = minutesToTime(timeToMinutes(startTime) + shapeLength(shape));
 
   // Get business (we need the business_id)
   const staff = await prisma.staff.findUnique({
@@ -241,37 +247,16 @@ export async function POST(request: NextRequest) {
   // allow a double-booking onto an already-taken slot.
   const dayEnd = new Date(dateObj.getTime() + 24 * 60 * 60 * 1000);
 
-  // Get existing appointments for the day and check for a time overlap
-  const existingAppointments = await prisma.appointment.findMany({
-    where: {
-      staffId,
-      date: { gte: dateObj, lt: dayEnd },
-      status: { in: ["pending", "confirmed"] },
-    },
-  });
-
-  const overlap = existingAppointments.some((apt) => {
-    const aptStart = timeToMinutes(apt.startTime);
-    const aptEnd = timeToMinutes(apt.endTime);
-    const newStart = timeToMinutes(startTime);
-    const newEnd = timeToMinutes(endTime);
-    return newStart < aptEnd && newEnd > aptStart;
-  });
-
-  if (overlap) {
-    return NextResponse.json(
-      { error: "הסלוט כבר תפוס, נסה שעה אחרת" },
-      { status: 409 }
-    );
-  }
-
-  // A slot the closure wizard is holding for another (displaced) customer is
-  // taken until the hold expires — the customer it was offered to may book it.
+  // Is the time still bookable? Every busy part of the treatment against the
+  // day's bookings and live holds (the closure wizard's, another visitor's
+  // confirm screen; the customer's own don't count), and — a request can skip
+  // the page — inside working hours, off breaks, not past, within the horizon
+  // and the lead time (15 minutes' grace for a slow confirm screen). Checked
+  // again under the lock right before the write.
   const webHoldKey = typeof body.holdToken === "string" && /^[\w-]{8,64}$/.test(body.holdToken) ? holderKeyForWeb(body.holdToken) : null;
-  const held = await activeHolds({ staffIds: [staffId], from: dateObj, to: dateObj, exemptCustomerId: customer?.id ?? null, exemptHolderKeys: [webHoldKey] });
-  if (held.some(h => timeToMinutes(startTime) < timeToMinutes(h.endTime) && timeToMinutes(endTime) > timeToMinutes(h.startTime))) {
-    return NextResponse.json({ error: "הסלוט כבר תפוס, נסה שעה אחרת" }, { status: 409 });
-  }
+  const slotCheck = { staffId, dateISO: date, startTime, shape, holds: { exemptCustomerId: customer?.id ?? null, exemptHolderKeys: [webHoldKey] }, customer: { leadGraceMinutes: 15 } };
+  const verdict = await checkSlot(prisma, slotCheck);
+  if (!verdict.ok) return NextResponse.json({ error: verdictText(verdict) }, { status: 409 });
 
   // ── Existing-appointment guard ───────────────────────────────────────────────
   // If this customer already has upcoming appointment(s), don't silently create a
@@ -340,27 +325,35 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Create appointment
-  const appointment = await prisma.appointment.create({
-    data: {
-      businessId: staff.businessId,
-      customerId: customer.id,
-      staffId,
-      serviceId,
-      date: dateObj,
-      startTime,
-      endTime,
-      price,
-      status: "confirmed",
-      referralSource,
-      note: (typeof note === "string" && note.trim()) ? note.trim() : null,
-      source: "customer", // customer booked via the public site
-    },
-    include: {
-      staff: { select: { name: true } },
-      service: { select: { name: true } },
-    },
-  });
+  // Create appointment — under the staff-day lock, after one more check, so
+  // two customers can never land on the same time (src/lib/availability/guard.ts).
+  let appointment;
+  try {
+    appointment = await writeChecked([slotCheck], tx => tx.appointment.create({
+      data: {
+        businessId: staff.businessId,
+        customerId: customer.id,
+        staffId,
+        serviceId,
+        date: dateObj,
+        startTime,
+        endTime,
+        price,
+        status: "confirmed",
+        referralSource,
+        note: (typeof note === "string" && note.trim()) ? note.trim() : null,
+        source: "customer", // customer booked via the public site
+        ...bookingRecord(shape),
+      },
+      include: {
+        staff: { select: { name: true } },
+        service: { select: { name: true } },
+      },
+    }));
+  } catch (e) {
+    if (e instanceof SlotRefused) return NextResponse.json({ error: verdictText(e.verdict) }, { status: 409 });
+    throw e;
+  }
   // The visitor's confirm-screen hold has done its job.
   if (webHoldKey) await releaseHolds({ holderKey: webHoldKey });
 

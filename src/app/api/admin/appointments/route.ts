@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { writeChecked, SlotRefused, isSlotTaken } from "@/lib/availability/guard";
+import { shapeOf, bookingRecord, bookedBusy } from "@/lib/availability/shape";
+import { staffBlocks } from "@/lib/availability/engine";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { sendMessage, confirmationText, hasFeature, applyTemplate, firstName, cancelLine, formatBusinessName, DEFAULT_WALK_IN_TEMPLATE, DEFAULT_FIRST_BOOKING_TEMPLATE, mirrorToConversation } from "@/lib/messaging";
@@ -198,6 +202,8 @@ export async function POST(req: NextRequest) {
   const [sh, sm] = body.startTime.split(":").map(Number);
   const startMins    = sh * 60 + sm;
   const endTotalMins = startMins + duration;
+  // The treatment's shape at this length (processing, cleaning — stage B).
+  const shape = shapeOf(service, duration);
   const endTime = `${String(Math.floor(endTotalMins / 60)).padStart(2, "0")}:${String(endTotalMins % 60).padStart(2, "0")}`;
 
   const dateObj = new Date(body.date.split("T")[0] + "T00:00:00.000Z");
@@ -242,13 +248,12 @@ export async function POST(req: NextRequest) {
         date: { gte: dateObj, lt: dayEnd },
         status: { in: ["pending", "confirmed"] },
       },
-      select: { id: true, startTime: true, endTime: true, customer: { select: { name: true } } },
+      select: { id: true, startTime: true, endTime: true, busySegments: true, bufferAfterMin: true, customer: { select: { name: true } } },
     });
-    const conflict = existing.find(apt => {
-      const aStart = timeToMinutes(apt.startTime);
-      const aEnd   = timeToMinutes(apt.endTime);
-      return startMins < aEnd && endTotalMins > aStart;
-    });
+    // By busy parts, not start-to-end: a stylist is free while a color processes,
+    // and busy while she cleans after a treatment.
+    const mine = staffBlocks(shape, startMins);
+    const conflict = existing.find(apt => bookedBusy(apt).some(b => mine.some(m => m.s < b.e && m.e > b.s)));
     if (conflict) {
       return NextResponse.json(
         {
@@ -260,7 +265,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const appointment = await prisma.appointment.create({
+  const createIt = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.create({
     data: {
       businessId: business.id,
       customerId: customer.id,
@@ -275,9 +280,23 @@ export async function POST(req: NextRequest) {
       note: body.note || null,
       walkIn: !!body.walkIn,
       source: "admin", // staff added it in the calendar — don't notify
+      ...bookingRecord(shape),
     },
     include: { customer: true, staff: true, service: true },
   });
+  // Without "override": under the staff-day lock and checked once more, so a
+  // customer booking that landed a second ago can't be overwritten. Holds don't
+  // stop the owner (as before).
+  let appointment;
+  try {
+    appointment = body.override
+      ? await createIt(prisma)
+      : await writeChecked([{ staffId, dateISO: dateObj.toISOString().slice(0, 10), startTime: body.startTime, shape, holds: false }], tx => createIt(tx));
+  } catch (e) {
+    if (e instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו נתפסה הרגע. להמשיך בכל זאת?", conflict: true }, { status: 409 });
+    if (isSlotTaken(e)) return NextResponse.json({ error: "כבר יש תור שמתחיל בדיוק בשעה הזו אצל אותו איש צוות.", conflict: true }, { status: 409 });
+    throw e;
+  }
 
   // Keep re-engagement eligibility in sync — see the same update in the
   // WhatsApp agent's booking path (Yair, 2026-08-17). A new appointment also

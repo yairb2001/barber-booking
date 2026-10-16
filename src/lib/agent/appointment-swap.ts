@@ -25,6 +25,8 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { checkSlot, writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { shapeOfBooking, bookingRecord } from "@/lib/availability/shape";
 import { vocabOf } from "@/lib/vocab";
 import { refreshReminders } from "@/lib/reminders-sweep";
 import type { Prisma } from "@prisma/client";
@@ -337,15 +339,25 @@ export async function requestAppointmentMove(opts: {
   // ── Step 1: free slot at the SAME barber → relocate in place ───────────────
   const sameAvail = await computeDayAvailability(bizId, targetDate, appt.staffId, appt.serviceId);
   const sameSlots = sameAvail.find(s => s.staffId === appt.staffId)?.slots ?? [];
-  if (sameSlots.includes(targetStartTime)) {
-    await prisma.appointment.update({
-      where: { id: appt.id },
-      data: {
-        date: dateOnly(targetDate),
-        startTime: targetStartTime,
-        endTime: computeEndTime(targetDate, targetStartTime, duration),
-      },
-    });
+  // Stage B: the appointment keeps the shape it was booked with; its own current
+  // slot doesn't block a same-day shift (the list above counts it as taken).
+  const ownShape = shapeOfBooking(appt);
+  const ownCheck = { staffId: appt.staffId, dateISO: targetDate, startTime: targetStartTime, shape: ownShape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId } };
+  const sameOk = sameSlots.includes(targetStartTime) || (apptDateIso === targetDate && (await checkSlot(prisma, { ...ownCheck, customer: {} })).ok);
+  if (sameOk) {
+    try {
+      await writeChecked([ownCheck], tx => tx.appointment.update({
+        where: { id: appt.id },
+        data: {
+          date: dateOnly(targetDate),
+          startTime: targetStartTime,
+          endTime: computeEndTime(targetDate, targetStartTime, duration),
+        },
+      }));
+    } catch (e) {
+      if (!(e instanceof SlotRefused)) throw e;
+      return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} נתפסה הרגע אצל ${appt.staff.name}. קרא ל-get_available_slots והצע שעה אחרת.`;
+    }
     await refreshReminders([appt.id]);
     return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${appt.staff.name} (אותו ספר). אשר ללקוח שזה סודר.`;
   }
@@ -356,16 +368,22 @@ export async function requestAppointmentMove(opts: {
     const freeOther = allAvail.find(s => s.staffId !== appt.staffId && s.slots.includes(targetStartTime));
     if (freeOther) {
       const eff = await resolveStaffService(freeOther.staffId, appt.serviceId, appt.service.name, appt.service.durationMinutes, appt.price);
-      await prisma.appointment.update({
-        where: { id: appt.id },
-        data: {
-          staffId: freeOther.staffId,
-          date: dateOnly(targetDate),
-          startTime: targetStartTime,
-          endTime: computeEndTime(targetDate, targetStartTime, eff.duration),
-          price: eff.price,
-        },
-      });
+      try {
+        await writeChecked([{ staffId: freeOther.staffId, dateISO: targetDate, startTime: targetStartTime, shape: eff.shape, holds: { exemptCustomerId: appt.customerId } }], tx => tx.appointment.update({
+          where: { id: appt.id },
+          data: {
+            staffId: freeOther.staffId,
+            date: dateOnly(targetDate),
+            startTime: targetStartTime,
+            endTime: computeEndTime(targetDate, targetStartTime, eff.duration),
+            price: eff.price,
+            ...bookingRecord(eff.shape),
+          },
+        }));
+      } catch (e) {
+        if (!(e instanceof SlotRefused)) throw e;
+        return `❌ לא בוצעה העברה — אל תגיד ללקוח שהתור הועבר. השעה ${targetStartTime} נתפסה הרגע אצל ${freeOther.name}. קרא ל-get_available_slots והצע שעה אחרת.`;
+      }
       await refreshReminders([appt.id]);
       return `✅ העברתי את התור של ${firstName(appt.customer.name)} ל-${hebDate(dateOnly(targetDate))} בשעה ${targetStartTime} אצל ${freeOther.name}. אמור ללקוח שאצל ${appt.staff.name} לא היה פנוי באותה שעה, אז קבעתי אצל ${freeOther.name} — ושאל אם זה מתאים לו.`;
     }
@@ -726,16 +744,22 @@ export async function handleStaffApprovalReply(
     const iso = proposal.targetDate.toISOString().slice(0, 10);
     const avail = await computeDayAvailability(bizId, iso, proposal.targetStaffId, proposal.primary.serviceId);
     const slots = avail.find(s => s.staffId === proposal.targetStaffId)?.slots ?? [];
-    if (slots.includes(proposal.targetStartTime)) {
+    const tDate = proposal.targetDate, tStart = proposal.targetStartTime, tStaff = proposal.targetStaffId;
+    let moved = false;
+    if (slots.includes(tStart)) {
       const dur = timeToMinutes(proposal.primary.endTime) - timeToMinutes(proposal.primary.startTime);
-      await prisma.appointment.update({
-        where: { id: proposal.primaryAppointmentId },
-        data: {
-          date: proposal.targetDate,
-          startTime: proposal.targetStartTime,
-          endTime: computeEndTime(iso, proposal.targetStartTime, dur),
-        },
-      });
+      // Stage B: under the staff-day lock, checked again by its own busy parts.
+      try {
+        await writeChecked([{ staffId: tStaff, dateISO: iso, startTime: tStart, shape: shapeOfBooking(proposal.primary), ignoreAppointmentIds: [proposal.primaryAppointmentId], holds: { exemptCustomerId: proposal.primary.customerId } }], tx => tx.appointment.update({
+          where: { id: proposal.primaryAppointmentId },
+          data: { date: tDate, startTime: tStart, endTime: computeEndTime(iso, tStart, dur) },
+        }));
+        moved = true;
+      } catch (e) {
+        if (!(e instanceof SlotRefused)) throw e;
+      }
+    }
+    if (moved) {
       await refreshReminders([proposal.primaryAppointmentId]);
       await prisma.swapProposal.update({ where: { id: proposal.id }, data: { status: "approved", approvedAt: new Date() } });
       await notifyRequester(

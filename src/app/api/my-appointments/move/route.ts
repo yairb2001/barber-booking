@@ -14,6 +14,9 @@
  * barber/owner, and sends the customer the "appointment moved" message.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { shapeOfBooking } from "@/lib/availability/shape";
+import { shapeLength } from "@/lib/availability/engine";
 import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 import { refreshReminders } from "@/lib/reminders-sweep";
@@ -23,7 +26,6 @@ import { pushToStaff, pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { sendMessage, appointmentMovedText } from "@/lib/messaging";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE } from "@/lib/cancellation-policy";
-import { computeDayAvailability } from "@/lib/agent/availability";
 import { timeToMinutes, minutesToTime, getBusinessNow } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -64,34 +66,22 @@ export async function POST(req: NextRequest) {
   const policy = await checkCancellationWindow({ businessId: appt.businessId, staffId: appt.staffId, apptDate: appt.date, startTime: appt.startTime, bookedAt: appt.createdAt });
   if (policy.blocked) return NextResponse.json({ error: CANCELLATION_WINDOW_MESSAGE(policy.minHours) }, { status: 400 });
 
-  // New slot must be genuinely available (schedule, breaks, horizon, lead time,
-  // other bookings) — the same truth the booking page shows. The appointment
-  // being moved is excluded implicitly only if it isn't on the new day; when
-  // moving within the same day we allow its own current slot to count as free.
-  const avail = await computeDayAvailability(appt.businessId, date, appt.staffId, appt.serviceId);
-  const open = new Set(avail.find(a => a.staffId === appt.staffId)?.slots ?? []);
-  if (!open.has(startTime) && date === oldDateStr) {
-    // Recompute ignoring this appointment's own block (same-day shift).
-    const dayStart = new Date(date + "T00:00:00.000Z");
-    const others = await prisma.appointment.findMany({
-      where: { staffId: appt.staffId, date: { gte: dayStart, lt: new Date(dayStart.getTime() + 86_400_000) }, status: { in: ["pending", "confirmed"] }, id: { not: appt.id } },
-      select: { startTime: true, endTime: true },
-    });
-    const dur = appt.service.durationMinutes;
-    const s = timeToMinutes(startTime), e = s + dur;
-    const clash = others.some(o => s < timeToMinutes(o.endTime) && e > timeToMinutes(o.startTime));
-    const oldS = timeToMinutes(appt.startTime), oldE = timeToMinutes(appt.endTime);
-    // Only accept if it overlaps the appointment's own old window (that's why availability hid it) and nothing else.
-    if (!clash && s < oldE && e > oldS) open.add(startTime);
-  }
-  if (!open.has(startTime)) return NextResponse.json({ error: "השעה הזו כבר לא פנויה — בחר שעה אחרת", slotTaken: true }, { status: 409 });
-
-  const duration = timeToMinutes(appt.endTime) - timeToMinutes(appt.startTime) || appt.service.durationMinutes;
-  const endTime = minutesToTime(timeToMinutes(startTime) + duration);
+  // The new time must be genuinely bookable — working hours, breaks, horizon,
+  // lead time, other bookings by their real busy parts, live holds — with this
+  // appointment's own current slot not counting against it, and its own
+  // length and shape as booked (not the service's base length).
+  const shape = shapeOfBooking(appt);
   const oldDate = appt.date, oldStart = appt.startTime;
   const newDate = new Date(date + "T00:00:00.000Z");
+  const endTime = minutesToTime(timeToMinutes(startTime) + shapeLength(shape));
+  const check = { staffId: appt.staffId, dateISO: date, startTime, shape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId }, customer: { leadGraceMinutes: 15 } };
+  try {
+    await writeChecked([check], tx => tx.appointment.update({ where: { id: appt.id }, data: { date: newDate, startTime, endTime, confirmedAt: null } }));
+  } catch (e) {
+    if (e instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו כבר לא פנויה — בחר שעה אחרת", slotTaken: true }, { status: 409 });
+    throw e;
+  }
 
-  await prisma.appointment.update({ where: { id: appt.id }, data: { date: newDate, startTime, endTime, confirmedAt: null } });
   // Reminders were enqueued for the OLD time — drop the ones not yet sent so the
   // sweep re-creates them for the new time.
   await refreshReminders([appt.id]);

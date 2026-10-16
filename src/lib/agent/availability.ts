@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { gridOf, shapeOf, type ShapedService } from "@/lib/availability/shape";
+import type { Shape } from "@/lib/availability/engine";
 import { staffChoiceOf } from "@/lib/vocab";
 import { activeHolds } from "@/lib/slot-holds";
 import {
@@ -34,6 +35,9 @@ export async function computeDayAvailability(
   const dateObj = new Date(date + "T00:00:00.000Z");
   const dayOfWeek = getDayOfWeekISO(date); // UTC-safe — immune to server timezone
   const nowBiz = getBusinessNow();
+  // A day that already passed is never bookable by a customer (the agent could
+  // book yesterday: the list was the whole day's grid). Admin tools may still.
+  if (!opts.ignoreLimits && date < nowBiz.date) return [];
 
   let staffList = await prisma.staff.findMany({
     where: { businessId: bizId, isAvailable: true, ...(inputStaffId ? { id: inputStaffId } : {}) },
@@ -257,7 +261,7 @@ export async function resolveStaffService(
   reqName: string,
   reqDuration: number,
   reqPrice: number,
-): Promise<{ duration: number; price: number }> {
+): Promise<{ duration: number; price: number; shape: Shape }> {
   const ss =
     (await prisma.staffService.findUnique({
       where: { staffId_serviceId: { staffId, serviceId } },
@@ -271,9 +275,15 @@ export async function resolveStaffService(
       where: { staffId, service: { durationMinutes: reqDuration } },
       include: { service: true },
     }));
-  if (!ss) return { duration: reqDuration, price: reqPrice };
+  // The shape (processing, cleaning) of the treatment as this barber does it — stage B.
+  if (!ss) {
+    const req = await prisma.service.findUnique({ where: { id: serviceId }, select: { segments: true, bufferAfterMin: true } });
+    return { duration: reqDuration, price: reqPrice, shape: shapeOf(req, reqDuration) };
+  }
+  const duration = ss.customDuration ?? ss.service.durationMinutes;
   return {
-    duration: ss.customDuration ?? ss.service.durationMinutes,
+    duration,
     price:    ss.customPrice ?? ss.service.price,
+    shape:    shapeOf(ss.service, duration),
   };
 }

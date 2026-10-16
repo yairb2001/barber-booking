@@ -36,6 +36,8 @@ export async function GET(request: Request) {
 
   const date = new Date(dateStr + "T00:00:00.000Z"); // UTC midnight
   const dayOfWeek = getDayOfWeekISO(dateStr);       // always UTC – immune to server TZ
+  // A day that already passed has no slots (it used to return the whole grid).
+  if (dateStr < getBusinessNow().date) return NextResponse.json({ slots: [] });
 
   // Get service duration (check for custom duration)
   const staffService = await prisma.staffService.findUnique({

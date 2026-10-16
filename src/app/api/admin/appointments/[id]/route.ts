@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { writeChecked, SlotRefused, isSlotTaken } from "@/lib/availability/guard";
+import { shapeOf, shapeOfBooking, resizeShape, bookingRecord, bookedBusy } from "@/lib/availability/shape";
+import { staffBlocks } from "@/lib/availability/engine";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { refreshReminders } from "@/lib/reminders-sweep";
 import { notifyWaitlistForCancellation } from "@/lib/waitlist-notify";
@@ -219,9 +223,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     body.startTime !== undefined || body.endTime !== undefined || body.durationMinutes !== undefined ||
     body.date !== undefined || body.staffId !== undefined || body.serviceId !== undefined;
 
+  // The shape the edited booking will occupy (stage B): a new service or
+  // another barber takes that treatment's shape; the same treatment keeps what
+  // it recorded, stretched if the owner changed its length.
+  const nextLen = timeToMinutes(nextEndTime) - timeToMinutes(nextStartTime);
+  let nextShape = resizeShape(shapeOfBooking(before), nextLen);
+  if (timingChanged && (body.serviceId !== undefined || staffChanged) && nextServiceId) {
+    const svc = await prisma.service.findUnique({ where: { id: nextServiceId }, select: { segments: true, bufferAfterMin: true } });
+    nextShape = shapeOf(svc, nextLen);
+  }
+  if (timingChanged) Object.assign(data, bookingRecord(nextShape));
+
   if (timingChanged && !body.override) {
     const startMins = timeToMinutes(nextStartTime);
-    const endMins   = timeToMinutes(nextEndTime);
     const others = await prisma.appointment.findMany({
       where: {
         id: { not: params.id },
@@ -229,13 +243,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         date: nextDate,
         status: { in: ["pending", "confirmed"] },
       },
-      select: { startTime: true, endTime: true, customer: { select: { name: true } } },
+      select: { startTime: true, endTime: true, busySegments: true, bufferAfterMin: true, customer: { select: { name: true } } },
     });
-    const conflict = others.find(apt => {
-      const aStart = timeToMinutes(apt.startTime);
-      const aEnd   = timeToMinutes(apt.endTime);
-      return startMins < aEnd && endMins > aStart;
-    });
+    const mine = staffBlocks(nextShape, startMins);
+    const conflict = others.find(apt => bookedBusy(apt).some(b => mine.some(m => m.s < b.e && m.e > b.s)));
     if (conflict) {
       return NextResponse.json(
         {
@@ -249,12 +260,18 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   let appointment;
   try {
-    appointment = await prisma.appointment.update({
+    const updateIt = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.update({
       where: { id: params.id },
       data,
       include: { customer: true, staff: true, service: true },
     });
+    // A move without "override": under the staff-day lock, checked once more.
+    appointment = timingChanged && !body.override
+      ? await writeChecked([{ staffId: nextStaffId, dateISO: nextDate.toISOString().slice(0, 10), startTime: nextStartTime, shape: nextShape, ignoreAppointmentIds: [params.id], holds: false }], tx => updateIt(tx))
+      : await updateIt(prisma);
   } catch (err) {
+    if (err instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו נתפסה הרגע. להמשיך בכל זאת?", conflict: true }, { status: 409 });
+    if (isSlotTaken(err)) return NextResponse.json({ error: "כבר יש תור שמתחיל בדיוק בשעה הזו אצל אותו איש צוות.", conflict: true }, { status: 409 });
     console.error("[PATCH /appointments/:id] prisma error:", err);
     const msg = err instanceof Error ? err.message : "שגיאת מסד נתונים";
     return NextResponse.json({ error: msg }, { status: 500 });

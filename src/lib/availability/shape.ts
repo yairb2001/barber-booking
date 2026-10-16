@@ -89,3 +89,31 @@ export function gridOf(biz: { businessType?: string | null; settings?: string | 
   if (Number.isFinite(n) && n >= 5 && n <= 60) return { mode: "fixed", step: Math.round(n) };
   return (biz?.businessType ?? "barber_men") === "barber_men" ? { mode: "legacy" } : { mode: "fixed", step: 15 };
 }
+
+/** A booked row back to a shape (a move keeps what it recorded when booked). */
+export function shapeOfBooking(a: BookedRow): Shape {
+  const len = toMin(a.endTime) - toMin(a.startTime);
+  const bufferAfter = Math.max(0, a.bufferAfterMin ?? 0);
+  let parts: { o: number; m: number }[] = [];
+  try { parts = a.busySegments ? (JSON.parse(a.busySegments) as { o: number; m: number }[]) : []; } catch { parts = []; }
+  if (!Array.isArray(parts) || !parts.length) return { segs: [{ m: len, staffBusy: true }], bufferAfter };
+  const segs: Seg[] = [];
+  let t = 0;
+  for (const p of [...parts].sort((x, y) => x.o - y.o)) {
+    if (p.o > t) segs.push({ m: p.o - t, staffBusy: false });
+    segs.push({ m: p.m, staffBusy: true });
+    t = p.o + p.m;
+  }
+  if (t < len) segs.push({ m: len - t, staffBusy: false });
+  return { segs, bufferAfter };
+}
+
+/** A shape at another length (an owner resizing a booking): the last segment
+ *  takes the difference, or one block if that would empty it. */
+export function resizeShape(sh: Shape, len: number): Shape {
+  const diff = len - sh.segs.reduce((t, x) => t + x.m, 0);
+  if (diff === 0) return sh;
+  const last = sh.segs[sh.segs.length - 1];
+  if (last.m + diff <= 0) return { segs: [{ m: len, staffBusy: true }], bufferAfter: sh.bufferAfter };
+  return { segs: [...sh.segs.slice(0, -1), { ...last, m: last.m + diff }], bufferAfter: sh.bufferAfter };
+}

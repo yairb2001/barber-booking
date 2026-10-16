@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { checkSlot, writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { strictServices } from "@/lib/agent/availability";
+import { shapeOf, bookingRecord } from "@/lib/availability/shape";
 import { enqueueMessage, sendMessage, applyTemplate, firstName, formatBusinessName, DEFAULT_WAITLIST_NOTIFY_TEMPLATE } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { parseYesNo } from "@/lib/agent/appointment-swap";
@@ -207,16 +210,27 @@ async function triggerWaitlist(opts: {
   // Cached per serviceId since staffId/date are fixed for this whole call but
   // different waitlist entries can be waiting for different services.
   const dateIso = dayStart.toISOString().slice(0, 10);
-  const availabilityByService = new Map<string, Promise<Set<string>>>();
+  // Stage B: checked by the freed time itself, not by membership in the day's
+  // generated list — a cancelled 10:00 between a 9:00–9:40 booking and the rest
+  // of the day sits off that list's grid (9:40, 10:10…) and was never offered.
+  const openByService = new Map<string, Promise<boolean>>();
   const isSlotStillOpen = async (serviceId: string): Promise<boolean> => {
-    let pending = availabilityByService.get(serviceId);
+    let pending = openByService.get(serviceId);
     if (!pending) {
-      pending = computeDayAvailability(businessId, dateIso, staffId, serviceId).then(
-        avail => new Set(avail.find(a => a.staffId === staffId)?.slots ?? []),
-      );
-      availabilityByService.set(serviceId, pending);
+      pending = (async () => {
+        const [ss, svc, biz] = await Promise.all([
+          prisma.staffService.findUnique({ where: { staffId_serviceId: { staffId, serviceId } }, select: { customDuration: true } }),
+          prisma.service.findUnique({ where: { id: serviceId }, select: { durationMinutes: true, segments: true, bufferAfterMin: true } }),
+          prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true } }),
+        ]);
+        if (!svc) return false;
+        if (!ss && strictServices(biz?.businessType)) return false; // she doesn't do this treatment
+        const v = await checkSlot(prisma, { staffId, dateISO: dateIso, startTime: startTime!, shape: shapeOf(svc, ss?.customDuration ?? svc.durationMinutes), customer: {} });
+        return v.ok;
+      })();
+      openByService.set(serviceId, pending);
     }
-    return (await pending).has(startTime!);
+    return pending;
   };
 
   // "In turns" (settings.waitlistCascade): one person at a time in sign-up
@@ -355,26 +369,31 @@ async function autoBookWaitlistEntry(
   startTime: string,
 ): Promise<boolean> {
   const ss = await prisma.staffService.findFirst({ where: { staffId, serviceId: entry.serviceId }, select: { customDuration: true, customPrice: true } });
-  const svc = await prisma.service.findUnique({ where: { id: entry.serviceId }, select: { durationMinutes: true, price: true, name: true } });
+  const svc = await prisma.service.findUnique({ where: { id: entry.serviceId }, select: { durationMinutes: true, price: true, name: true, segments: true, bufferAfterMin: true } });
   if (!svc) return false;
   const duration = ss?.customDuration ?? svc.durationMinutes;
   const price = ss?.customPrice ?? svc.price;
   const startMin = timeToMinutes(startTime);
   const endTime = minutesToTime(startMin + duration);
+  const shape = shapeOf(svc, duration);
 
-  // The freed slot must still be open for the WHOLE service duration.
+  // The freed slot must still be open for the WHOLE treatment — checked under
+  // the staff-day lock (stage B), by its busy parts, with the customer's rules.
   const dateIso = dayStart.toISOString().slice(0, 10);
-  const avail = await computeDayAvailability(business.id, dateIso, staffId, entry.serviceId);
-  const open = new Set(avail.find(a => a.staffId === staffId)?.slots ?? []);
-  if (!open.has(startTime)) return false;
-
-  const appt = await prisma.appointment.create({
-    data: {
-      businessId: business.id, customerId: entry.customerId, staffId, serviceId: entry.serviceId,
-      date: dayStart, startTime, endTime, status: "confirmed", price, source: "waitlist",
-    },
-    include: { staff: { select: { name: true } } },
-  });
+  let appt;
+  try {
+    appt = await writeChecked([{ staffId, dateISO: dateIso, startTime, shape, holds: { exemptCustomerId: entry.customerId }, customer: {} }], tx => tx.appointment.create({
+      data: {
+        businessId: business.id, customerId: entry.customerId, staffId, serviceId: entry.serviceId,
+        date: dayStart, startTime, endTime, status: "confirmed", price, source: "waitlist",
+        ...bookingRecord(shape),
+      },
+      include: { staff: { select: { name: true } } },
+    }));
+  } catch (e) {
+    if (e instanceof SlotRefused) return false;
+    throw e;
+  }
   await prisma.waitlist.update({ where: { id: entry.id }, data: { status: "booked", notifiedAt: new Date() } });
 
   const dateLabel = dayStart.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" });

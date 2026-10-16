@@ -12,6 +12,9 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { writeChecked, SlotRefused, isSlotTaken } from "@/lib/availability/guard";
+import { shapeOfBooking, resizeShape, bookingRecord } from "@/lib/availability/shape";
+import type { Prisma } from "@prisma/client";
 import { recordAgentUsage } from "@/lib/agent/usage";
 import { prisma } from "@/lib/prisma";
 import { refreshReminders } from "@/lib/reminders-sweep";
@@ -328,16 +331,23 @@ export async function execOwnerTool(
       }
 
       // Atomic swap of times (date + start + end). Each keeps its own staff/service.
-      await prisma.$transaction([
-        prisma.appointment.update({
-          where: { id: a1.id },
-          data: { date: a2.date, startTime: a2.startTime, endTime: a2.endTime },
-        }),
-        prisma.appointment.update({
-          where: { id: a2.id },
-          data: { date: a1.date, startTime: a1.startTime, endTime: a1.endTime },
-        }),
-      ]);
+      // Stage B: under both staff-days' locks; a booking keeps its own busy
+      // parts, so the slot it lands in is checked against everyone else's. The
+      // first is parked a moment so the active-slot index never sees both at once.
+      const iso = (d: Date) => d.toISOString().slice(0, 10);
+      try {
+        await writeChecked([
+          { staffId: a1.staffId, dateISO: iso(a2.date), startTime: a2.startTime, shape: resizeShape(shapeOfBooking(a1), timeToMinutes(a2.endTime) - timeToMinutes(a2.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false },
+          { staffId: a2.staffId, dateISO: iso(a1.date), startTime: a1.startTime, shape: resizeShape(shapeOfBooking(a2), timeToMinutes(a1.endTime) - timeToMinutes(a1.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false },
+        ], async tx => {
+          await tx.appointment.update({ where: { id: a2.id }, data: { date: new Date(0) } });
+          await tx.appointment.update({ where: { id: a1.id }, data: { date: a2.date, startTime: a2.startTime, endTime: a2.endTime } });
+          await tx.appointment.update({ where: { id: a2.id }, data: { date: a1.date, startTime: a1.startTime, endTime: a1.endTime } });
+        });
+      } catch (e) {
+        if (e instanceof SlotRefused) return "שגיאה: ההחלפה מתנגשת בתור אחר ביומן (אחד התורים ארוך יותר מהמקום שהוא עובר אליו). בדוק את היומן עם get_schedule.";
+        throw e;
+      }
       await refreshReminders([a1.id, a2.id]);
 
       // Notify both customers immediately (they need to know now, not via drip).
@@ -443,13 +453,16 @@ export async function execOwnerTool(
 
       const newDate = new Date(`${newDateIso}T00:00:00.000Z`);
       try {
-        await prisma.appointment.update({
+        // Without force: under the staff-day lock, checked again by busy parts.
+        const update = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.update({
           where: { id: appt.id },
           data: { date: newDate, startTime: newTime, endTime: newEnd },
         });
+        if (force) await update(prisma);
+        else await writeChecked([{ staffId: appt.staffId, dateISO: newDateIso, startTime: newTime, shape: shapeOfBooking(appt), ignoreAppointmentIds: [appt.id], holds: false }], tx => update(tx));
         await refreshReminders([appt.id]);
       } catch (err: unknown) {
-        if ((err as { code?: string }).code === "P2002") {
+        if (err instanceof SlotRefused || isSlotTaken(err)) {
           return `שגיאה: ${newTime} ב-${newDateIso} כבר תפוס אצל ${appt.staff.name}. הצע שעה אחרת או החלפה.`;
         }
         throw err;
@@ -544,16 +557,19 @@ export async function execOwnerTool(
 
       let appt;
       try {
-        appt = await prisma.appointment.create({
+        const create = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.create({
           data: {
-            businessId, customerId: customer.id, staffId: effStaffId, serviceId,
+            businessId, customerId: customer!.id, staffId: effStaffId, serviceId,
             date: apptDate, startTime: time, endTime,
             status: "confirmed", price: eff.price,
             referralSource: "owner_agent", source: "admin",
+            ...bookingRecord(eff.shape),
           },
         });
+        // Without force: under the staff-day lock, checked again by busy parts.
+        appt = force ? await create(prisma) : await writeChecked([{ staffId: effStaffId, dateISO: date, startTime: time, shape: eff.shape, holds: false }], tx => create(tx));
       } catch (err: unknown) {
-        if ((err as { code?: string }).code === "P2002") {
+        if (err instanceof SlotRefused || isSlotTaken(err)) {
           return `שגיאה: ${time} ב-${date} כבר תפוס אצל ${staff.name}. הצע שעה אחרת.`;
         }
         throw err;

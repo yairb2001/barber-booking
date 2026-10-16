@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { timeToMinutes } from "@/lib/utils";
+import { writeChecked, SlotRefused } from "@/lib/availability/guard";
+import { shapeOf, bookingRecord } from "@/lib/availability/shape";
 
 function fmtTime(mins: number): string {
   return `${String(Math.floor(mins / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`;
@@ -29,6 +30,7 @@ export async function generateOccurrences(
   const startMins = sh * 60 + sm;
   const endMins = startMins + duration;
   const endTime = fmtTime(endMins);
+  const shape = shapeOf(rule.service, duration);
 
   // First occurrence = first dayOfWeek match on/after the rule's startDate.
   const first = new Date(rule.startDate);
@@ -56,24 +58,12 @@ export async function generateOccurrences(
       continue;
     }
 
-    // Conflict with another appointment in this barber's calendar?
-    const existing = await prisma.appointment.findMany({
-      where: { staffId: rule.staffId, date: dayUTC, status: { in: ["pending", "confirmed"] } },
-      select: { startTime: true, endTime: true },
-    });
-    const conflict = existing.some((apt) => {
-      const aStart = timeToMinutes(apt.startTime);
-      const aEnd = timeToMinutes(apt.endTime);
-      return startMins < aEnd && endMins > aStart;
-    });
-    if (conflict) {
-      skipped++;
-      cursor.setUTCDate(cursor.getUTCDate() + 7 * freq);
-      continue;
-    }
-
-    await prisma.appointment.create({
+    // Conflict with another appointment in this barber's calendar? Checked by
+    // busy parts under the staff-day lock (stage B); a clash skips this date.
+    try {
+      await writeChecked([{ staffId: rule.staffId, dateISO: dayUTC.toISOString().slice(0, 10), startTime: rule.startTime, shape, holds: false }], tx => tx.appointment.create({
       data: {
+        ...bookingRecord(shape),
         businessId: rule.businessId,
         customerId: rule.customerId,
         staffId: rule.staffId,
@@ -87,7 +77,13 @@ export async function generateOccurrences(
         recurringId: rule.id,
         source: "recurring", // standing appt set by staff — don't notify
       },
-    });
+      }));
+    } catch (e) {
+      if (!(e instanceof SlotRefused)) throw e;
+      skipped++;
+      cursor.setUTCDate(cursor.getUTCDate() + 7 * freq);
+      continue;
+    }
     created++;
     cursor.setUTCDate(cursor.getUTCDate() + 7 * freq);
   }
