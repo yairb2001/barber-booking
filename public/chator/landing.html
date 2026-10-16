@@ -277,4 +277,4 @@ document.getElementById('leadform').addEventListener('submit', async e => {
   try { await fetch('/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (_) {}
   f.innerHTML = '<p style="font-weight:800">קיבלנו ✓ נחזור אליך תוך שעות ספורות. בינתיים, אפשר לכתוב לה בעצמך.</p>';
 });
-</script></body></html>
+</script><script>/* חבר מביא חבר (16.10.2026): /for-business?ref=<shop> → the signup buttons keep the ref */(function(){try{var r=new URLSearchParams(location.search).get('ref');if(!r)return;document.querySelectorAll('a[href^="/signup"]').forEach(function(a){var u=new URL(a.getAttribute('href'),location.origin);u.searchParams.set('ref',r);a.setAttribute('href',u.pathname+u.search);});}catch(e){}})();</script></body></html>

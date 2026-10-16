@@ -26,6 +26,12 @@ export function referralLink(slug: string): string {
   return `${origin}/signup?ref=${encodeURIComponent(slug)}`;
 }
 
+/** The sales page with the same ref (16.10.2026): its "להקים בעצמי" buttons carry it to /signup. */
+export function referralPageLink(slug: string): string {
+  const origin = process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app";
+  return `${origin}/for-business?ref=${encodeURIComponent(slug)}`;
+}
+
 /** The shop behind a ?ref= link, or the shop whose owner has this phone. */
 export async function findReferrer(input: { ref?: unknown; phone?: unknown }, excludeId?: string): Promise<{ id: string; name: string; source: "link" | "phone" } | null> {
   const ok = (id: string) => id !== excludeId && id !== DEMO_BUSINESS_ID;
@@ -92,13 +98,14 @@ export async function rewardReferral(referredId: string): Promise<void> {
   }
 }
 
-export type ReferralStats = { link: string; friends: { name: string; paying: boolean; at: string }[]; earned: number; applied: number };
+export type ReferralStats = { link: string; pageLink: string; friends: { name: string; paying: boolean; at: string }[]; earned: number; applied: number };
 
 export async function referralStats(b: { id: string; slug: string }): Promise<ReferralStats> {
   const rows = await prisma.businessReferral.findMany({ where: { referrerId: b.id }, orderBy: { createdAt: "desc" }, take: 50 });
   const names = new Map((await prisma.business.findMany({ where: { id: { in: rows.map(r => r.referredId) } }, select: { id: true, name: true } })).map(x => [x.id, x.name]));
   return {
     link: referralLink(b.slug),
+    pageLink: referralPageLink(b.slug),
     friends: rows.map(r => ({ name: shopName(names.get(r.referredId)) ?? "מספרה חדשה", paying: !!r.rewardedAt, at: r.createdAt.toISOString() })),
     earned: rows.filter(r => r.rewardedAt).length,
     applied: rows.filter(r => r.appliedAt).length,

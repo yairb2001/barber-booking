@@ -13,7 +13,7 @@ export type PlanData = {
   monthlyPrice: number | null;
   requested: Record<string, string>;
   payUrl: string | null;
-  referral: { link: string; friends: { name: string; paying: boolean; at: string }[]; earned: number; applied: number };
+  referral: { link: string; pageLink?: string; friends: { name: string; paying: boolean; at: string }[]; earned: number; applied: number };
   free: { name: string; messages: Meter; aiPct: number; level: "ok" | "warn" | "blocked" } | null;
 };
 
