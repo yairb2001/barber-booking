@@ -12,6 +12,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { formatBusinessName } from "@/lib/messaging";
 import { writeChecked, SlotRefused, isSlotTaken } from "@/lib/availability/guard";
 import { shapeOfBooking, resizeShape, bookingRecord } from "@/lib/availability/shape";
 import type { Prisma } from "@prisma/client";
@@ -363,7 +364,7 @@ export async function execOwnerTool(
           ? `מ-${fromTime} ל-${toTime}`
           : `ל-${hebDayLabel(toDateIso)} בשעה ${toTime}`;
         const body =
-          `היי ${firstName(appt.customer.name)}, עדכון לגבי התור שלך ב-DOMINANT — ` +
+          `היי ${firstName(appt.customer.name)}, עדכון לגבי התור שלך ב-${await shopDisplayName(businessId)} — ` +
           `הוא הועבר ${when}. נתראה!`;
         const res = await sendMessage({
           businessId,
@@ -478,7 +479,7 @@ export async function execOwnerTool(
           businessId,
           customerPhone: appt.customer.phone,
           kind: "appointment_moved",
-          body: `היי ${firstName(appt.customer.name)}, עדכון לגבי התור שלך ב-DOMINANT — הוא הועבר ${when}. נתראה!`,
+          body: `היי ${firstName(appt.customer.name)}, עדכון לגבי התור שלך ב-${await shopDisplayName(businessId)} — הוא הועבר ${when}. נתראה!`,
         });
         notified = res.ok;
       }
@@ -581,7 +582,7 @@ export async function execOwnerTool(
           businessId,
           customerPhone: customer.phone,
           kind: "confirmation",
-          body: `היי ${firstName(customer.name)}, נקבע לך תור ב-DOMINANT ל-${hebDayLabel(date)} בשעה ${time} — ${service.name} אצל ${staff.name}. נתראה!`,
+          body: `היי ${firstName(customer.name)}, נקבע לך תור ב-${await shopDisplayName(businessId)} ל-${hebDayLabel(date)} בשעה ${time} — ${service.name} אצל ${staff.name}. נתראה!`,
         });
         notified = res.ok;
       }
@@ -610,7 +611,7 @@ export async function execOwnerTool(
       if (notifyCustomer && appt.customer.phone) {
         const dateIso = new Date(appt.date).toISOString().slice(0, 10);
         const body =
-          `היי ${firstName(appt.customer.name)}, התור שלך ב-DOMINANT ל-${hebDayLabel(dateIso)} ` +
+          `היי ${firstName(appt.customer.name)}, התור שלך ב-${await shopDisplayName(businessId)} ל-${hebDayLabel(dateIso)} ` +
           `בשעה ${appt.startTime} בוטל${reason ? ` (${reason})` : ""}. ` +
           `מוזמן לתאם תור חדש מתי שנוח לך.`;
         const res = await sendMessage({
@@ -1005,11 +1006,11 @@ export async function execOwnerTool(
         targetDate = new Date(`${newDateIso}T00:00:00.000Z`);
         targetStartTime = newTime;
         msgKind = "move_proposal";
-        body = `היי ${firstName(appt.customer.name)}, רצינו לבדוק — אפשר להעביר את התור שלך ב-DOMINANT ל-${hebDayLabel(newDateIso)} בשעה ${newTime}? עני/ה כן או לא 🙏`;
+        body = `היי ${firstName(appt.customer.name)}, רצינו לבדוק — אפשר להעביר את התור שלך ב-${await shopDisplayName(businessId)} ל-${hebDayLabel(newDateIso)} בשעה ${newTime}? עני/ה כן או לא 🙏`;
       } else if (type === "cancel") {
         const reason = ((input.reason as string) || "").trim();
         msgKind = "cancel_proposal";
-        body = `היי ${firstName(appt.customer.name)}, לגבי התור שלך ב-DOMINANT ל-${hebDayLabel(curDateIso)} בשעה ${appt.startTime}${reason ? ` — ${reason}` : ""}. צריך לבטל אותו — בסדר מצידך? כן/לא 🙏`;
+        body = `היי ${firstName(appt.customer.name)}, לגבי התור שלך ב-${await shopDisplayName(businessId)} ל-${hebDayLabel(curDateIso)} בשעה ${appt.startTime}${reason ? ` — ${reason}` : ""}. צריך לבטל אותו — בסדר מצידך? כן/לא 🙏`;
       } else {
         const candId = (input.swap_with_appointment_id as string) || "";
         if (!candId) return "שגיאה: לסוג swap צריך swap_with_appointment_id.";
@@ -1021,7 +1022,7 @@ export async function execOwnerTool(
         candidateAppointmentId = cand.id;
         customerPhone = cand.customer.phone; // the CANDIDATE is the one asked
         msgKind = "swap_proposal";
-        body = `היי ${firstName(cand.customer.name)}, אפשר להעביר את שעת התור שלך ב-DOMINANT מ-${cand.startTime} ל-${appt.startTime}? כן/לא 🙏`;
+        body = `היי ${firstName(cand.customer.name)}, אפשר להעביר את שעת התור שלך ב-${await shopDisplayName(businessId)} מ-${cand.startTime} ל-${appt.startTime}? כן/לא 🙏`;
       }
 
       if (!customerPhone) return "שגיאה: ללקוח אין מספר טלפון לשליחת הבקשה.";
@@ -1304,4 +1305,12 @@ export async function runOwnerAgent(opts: {
     await sendMessage({ businessId, customerPhone: phone, kind: "agent_reply", body: bubbles[i] });
     if (i < bubbles.length - 1) await new Promise(r => setTimeout(r, 600));
   }
+}
+
+/** The shop's name in a message to its customer (it said "DOMINANT" for every
+ *  business); a trailing "Barbershop" is dropped, as on the home page. */
+async function shopDisplayName(businessId: string): Promise<string> {
+  const b = await prisma.business.findUnique({ where: { id: businessId }, select: { name: true } });
+  const full = formatBusinessName(b?.name ?? "");
+  return full.replace(/\s*(barber\s*shop|ברברשופ)\s*$/i, "").trim() || full || "העסק";
 }
