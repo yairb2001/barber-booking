@@ -90,6 +90,8 @@ export async function GET(req: NextRequest) {
     cancellationPolicyText: undefined, // raw override — resolved message exposed instead
     cancellationPolicyMessage: formatCancellationPolicyMessage(business.minCancellationHours, business.cancellationPolicyText),
     referral,      // resolved referral config (enabled/goal/giftLabel/friendSource)
+    // Group classes (16.10.2026): the home page shows a "שיעורים" button.
+    hasClasses: (await prisma.classType.count({ where: { businessId: business.id, isActive: true } })) > 0,
     socialLinks,
     theme,         // full palette object: bg, brand, fontDisplay, etc.
     themeId: theme.id,

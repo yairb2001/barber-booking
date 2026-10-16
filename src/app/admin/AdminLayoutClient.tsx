@@ -15,6 +15,8 @@ type NavItem = {
   label: string;
   icon: string;
   exact?: boolean;
+  /** Group classes (16.10.2026): shown only to a business that has them. */
+  requiresClasses?: boolean;
   ownerOnly?: boolean;
   barberOnly?: boolean;
   requiresChats?: boolean;  // only shown when business.chatsEnabled === true
@@ -42,6 +44,7 @@ const BARBER_SETTINGS_SUB_PATHS = [
 // Sidebar — flat list. Everything that's a sub-page of settings is reached from inside /admin/settings.
 const navItems: NavItem[] = [
   { href: "/admin",              label: "יומן",           icon: "📅", exact: true },
+  { href: "/admin/classes",      label: "שיעורים",        icon: "🧘", requiresClasses: true },
   { href: "/admin/dashboard",    label: "דאשבורד",        icon: "📊" },
   { href: "/admin/chats",        label: "שיחות",          icon: "💬", requiresChats: true },
   { href: "/admin/notifications", label: "התראות",        icon: "🔔" },
@@ -77,7 +80,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const v = useVocab();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null; setupTasks?: { key: string; text: string; action: string; href: string; external?: boolean }[] } | null>(null);
+  const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; hasClasses?: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null; setupTasks?: { key: string; text: string; action: string; href: string; external?: boolean }[] } | null>(null);
   // Header title = the logged-in business (each shop sees its own name — this was
   // hard-coded "DOMINANT" for everyone); the product name until /me answers.
   const bizTitle = me?.businessName?.trim() || "Chator";
@@ -204,6 +207,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     if (item.requiresChats && !showChats) return false;
     if (item.requiresReferral && !referralEnabled) return false;
     if (item.superOnly && !me?.isSuperAdmin) return false;
+    if (item.requiresClasses && !me?.hasClasses) return false;
     return true;
   });
   // Bottom nav: only show "שיחות" if feature enabled — otherwise drop in favor of fallback

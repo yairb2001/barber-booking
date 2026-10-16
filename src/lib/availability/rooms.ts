@@ -32,18 +32,23 @@ export async function loadRoomCalendar(db: Db, businessId: string | null | undef
   const ids = rooms.map(r => r.id);
   const order = new Map(ids.map((id, i) => [id, i]));
   const from = new Date(fromISO + "T00:00:00.000Z"), to = new Date(toISO + "T00:00:00.000Z");
-  const [links, appts] = await Promise.all([
+  const [links, appts, classes] = await Promise.all([
     db.serviceRoom.findMany({ where: { roomId: { in: ids } }, select: { serviceId: true, roomId: true } }),
     db.appointment.findMany({
       where: { roomId: { in: ids }, date: { gte: from, lt: new Date(to.getTime() + 86_400_000) }, status: { in: ["pending", "confirmed"] } },
       select: { id: true, roomId: true, date: true, startTime: true, endTime: true, bufferAfterMin: true },
+    }),
+    // A group class in a room takes it too (16.10.2026).
+    db.classSession.findMany({
+      where: { roomId: { in: ids }, date: { gte: from, lt: new Date(to.getTime() + 86_400_000) }, status: "scheduled" },
+      select: { id: true, roomId: true, date: true, startTime: true, endTime: true },
     }),
   ]);
   const serviceRooms = new Map<string, string[]>();
   for (const l of links) serviceRooms.set(l.serviceId, [...(serviceRooms.get(l.serviceId) ?? []), l.roomId]);
   serviceRooms.forEach(list => list.sort((a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0)));
   const busy = new Map<string, { id: string; iv: Iv }[]>();
-  for (const a of appts) {
+  for (const a of [...appts, ...classes.map(c => ({ ...c, bufferAfterMin: 0 }))]) {
     const k = `${a.roomId}|${a.date.toISOString().slice(0, 10)}`;
     busy.set(k, [...(busy.get(k) ?? []), { id: a.id, iv: { s: toMin(a.startTime), e: toMin(a.endTime) + Math.max(0, a.bufferAfterMin ?? 0) } }]);
   }

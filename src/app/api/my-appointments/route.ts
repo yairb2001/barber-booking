@@ -3,6 +3,7 @@ import { authSecret } from "@/lib/jwt-secret";
 import { prisma } from "@/lib/prisma";
 import { jwtVerify } from "jose";
 import { fallbackBusiness } from "@/lib/tenant";
+import { canCancelUntil } from "@/lib/classes";
 
 
 /**
@@ -128,5 +129,18 @@ export async function GET(req: NextRequest) {
     orderBy: { date: "asc" },
   });
 
-  return NextResponse.json({ upcoming, past, customer, waitlist });
+  // Group classes (16.10.2026): her spots and places in line from today on.
+  const classRows = await prisma.classBooking.findMany({
+    where: { customerId: customer.id, status: { in: ["booked", "waitlist"] }, session: { status: "scheduled", date: { gte: todayDate } } },
+    select: { id: true, status: true, createdAt: true, sessionId: true, session: { select: { date: true, startTime: true, endTime: true, classType: { select: { name: true, cancelHours: true } } } } },
+    orderBy: [{ session: { date: "asc" } }, { session: { startTime: "asc" } }],
+  });
+  const classes = await Promise.all(classRows.map(async c => ({
+    id: c.id, status: c.status, name: c.session.classType.name, cancelHours: c.session.classType.cancelHours,
+    date: c.session.date.toISOString().slice(0, 10), startTime: c.session.startTime, endTime: c.session.endTime,
+    canCancel: c.status === "waitlist" || canCancelUntil(c.session.date.toISOString().slice(0, 10), c.session.startTime, c.session.classType.cancelHours),
+    position: c.status === "waitlist" ? 1 + await prisma.classBooking.count({ where: { sessionId: c.sessionId, status: "waitlist", createdAt: { lt: c.createdAt } } }) : undefined,
+  })));
+
+  return NextResponse.json({ upcoming, past, customer, waitlist, classes });
 }

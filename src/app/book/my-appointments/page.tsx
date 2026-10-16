@@ -27,6 +27,9 @@ type WaitlistEntry = {
   service: { id: string; name: string };
 };
 
+// A spot in a group class, or a place in its line (16.10.2026).
+type ClassEntry = { id: string; status: string; name: string; date: string; startTime: string; endTime: string; cancelHours: number; canCancel: boolean; position?: number };
+
 // ── Back arrow (matches the booking flow style) ──────────────────────────────
 function BackArrow({ href }: { href: string }) {
   const onBack = useSmartBack(href);
@@ -65,6 +68,9 @@ export default function MyAppointmentsPage() {
   const [upcoming, setUpcoming] = useState<Appt[]>([]);
   const [past, setPast]         = useState<Appt[]>([]);
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>([]);
+  const [classes, setClasses]   = useState<ClassEntry[]>([]);
+  const [leavingClassId, setLeavingClassId] = useState<string | null>(null);
+  const [classError, setClassError] = useState("");
   // Auth credentials kept for follow-up actions (e.g. cancelling a booking).
   const [auth, setAuth]       = useState<{ phone: string; token: string } | null>(null);
   // Cancellation flow state
@@ -91,6 +97,7 @@ export default function MyAppointmentsPage() {
     setUpcoming(Array.isArray(data.upcoming) ? data.upcoming : []);
     setPast(Array.isArray(data.past) ? data.past : []);
     setWaitlist(Array.isArray(data.waitlist) ? data.waitlist : []);
+    setClasses(Array.isArray(data.classes) ? data.classes : []);
     if (data?.customer?.name) setName(String(data.customer.name).split(" ")[0]);
     return true;
   }
@@ -268,6 +275,19 @@ export default function MyAppointmentsPage() {
     }
   }
 
+  // Give up a class spot (or its line), within the class's cancel window.
+  async function handleLeaveClass(c: ClassEntry) {
+    if (!auth) return;
+    if (!confirm(c.status === "waitlist" ? `לצאת מרשימת ההמתנה של ${c.name}?` : `לבטל את ההרשמה ל${c.name} ב-${c.startTime}?`)) return;
+    setLeavingClassId(c.id); setClassError("");
+    try {
+      const res = await fetch(apiWithSlug("/api/classes/cancel", slug), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bookingId: c.id, phone: auth.phone, token: auth.token }) });
+      if (res.ok) setClasses(prev => prev.filter(x => x.id !== c.id));
+      else setClassError((await res.json().catch(() => ({})))?.error || "הביטול נכשל");
+    } catch { setClassError("הביטול נכשל"); }
+    setLeavingClassId(null);
+  }
+
   // Leave a waitlist day.
   async function handleLeaveWaitlist(id: string) {
     if (!auth) return;
@@ -305,7 +325,8 @@ export default function MyAppointmentsPage() {
           <p className="text-[12px] leading-tight mt-0.5" style={{ color: "var(--text-muted)" }}>
             {upcoming.length > 0
               ? `יש לך ${upcoming.length} ${upcoming.length === 1 ? "תור עתידי" : "תורים עתידיים"}`
-              : "אין לך תורים עתידיים כרגע"}
+              : classes.length ? "" : "אין לך תורים עתידיים כרגע"}
+            {classes.length > 0 && `${upcoming.length ? " · " : "יש לך "}${classes.length === 1 ? "שיעור אחד" : `${classes.length} שיעורים`}`}
           </p>
         </div>
       )}
@@ -549,7 +570,7 @@ export default function MyAppointmentsPage() {
                 );
               })}
             </div>
-          ) : (
+          ) : classes.length ? null : (
             <div className="text-center pt-12 pb-6">
               <div className="text-5xl mb-4">📅</div>
               <p className="text-[15px] font-semibold mb-1" style={{ color: "var(--text-pri)" }}>
@@ -563,6 +584,46 @@ export default function MyAppointmentsPage() {
                 style={{ background: "var(--brand)" }}>
                 {g("קבע תור", "קבעי תור")}
               </Link>
+            </div>
+          )}
+
+          {/* ── Group classes ── */}
+          {classes.length > 0 && (
+            <div className={upcoming.length ? "mt-8" : ""}>
+              <p className="text-[10px] tracking-[0.3em] uppercase font-medium mb-3 px-1" style={{ color: "var(--text-muted)" }}>
+                שיעורים
+              </p>
+              <div className="space-y-2">
+                {classes.map(c => {
+                  const dl = dateLabel(c.date);
+                  const waiting = c.status === "waitlist";
+                  return (
+                    <div key={c.id} className="rounded-2xl p-4 relative overflow-hidden"
+                      style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
+                      <div className="absolute top-0 bottom-0 right-0 w-1" style={{ background: waiting ? "#f59e0b" : "var(--brand)" }} />
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-bold truncate" style={{ color: "var(--text-pri)" }}>{c.name}</p>
+                          <p className="text-[12px] mt-1 truncate" style={{ color: "var(--text-sec)" }}>{dl.weekday}, {dl.full} · {dl.rel}</p>
+                          {waiting && <p className="text-[11px] mt-1" style={{ color: "#b45309" }}>ברשימת המתנה{c.position ? ` (מקום ${c.position})` : ""}. אם יתפנה מקום נרשום אותך ונעדכן ב-WhatsApp</p>}
+                        </div>
+                        <span className="text-[15px] font-bold flex-shrink-0" dir="ltr" style={{ color: "var(--text-pri)" }}>{c.startTime}</span>
+                      </div>
+                      <div className="mt-3 pt-3 flex justify-end" style={{ borderTop: "1px solid var(--divider)" }}>
+                        {c.canCancel ? (
+                          <button onClick={() => handleLeaveClass(c)} disabled={leavingClassId === c.id}
+                            className="text-[12px] font-semibold px-3 py-1.5 rounded-lg active:scale-95 transition-transform disabled:opacity-60" style={{ color: "#dc2626" }}>
+                            {leavingClassId === c.id ? "מבטל…" : waiting ? "יציאה מרשימת ההמתנה" : "ביטול ההרשמה"}
+                          </button>
+                        ) : (
+                          <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>ביטול אפשרי עד {c.cancelHours} שעות לפני. לביטול עכשיו צריך לפנות לעסק</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {classError && <p className="text-[12px] mt-2 text-red-600 px-1">{classError}</p>}
             </div>
           )}
 

@@ -421,7 +421,7 @@ function WorkingOverlay({ staff, dow, override, beyondHorizon, staffId, date, on
 //    for everyone else (booking pages, agent) until it expires; shown here so
 //    the barber knows why it looks free but customers can't take it. Taps pass
 //    through: the barber can still book over it by hand. ──
-type SlotHoldBlock = { id: string; staffId: string; date: string; startTime: string; endTime: string; expiresAt: string; customerName: string | null; source?: "closure" | "whatsapp" | "web" };
+type SlotHoldBlock = { id: string; staffId: string; date: string; startTime: string; endTime: string; expiresAt: string; customerName: string | null; source?: "closure" | "whatsapp" | "web" | "class"; className?: string; booked?: number; capacity?: number };
 function HoldBlocks({ holds, staffId, date, hourHeight, calStart }: { holds: SlotHoldBlock[]; staffId: string; date: string; hourHeight: number; calStart: number }) {
   const now = Date.now();
   const mine = holds.filter(h => h.staffId === staffId && h.date === date && new Date(h.expiresAt).getTime() > now);
@@ -431,6 +431,15 @@ function HoldBlocks({ holds, staffId, date, hourHeight, calStart }: { holds: Slo
       {mine.map(h => {
         const top = apptTop(h.startTime, hourHeight, calStart);
         const height = ((toMin(h.endTime) - toMin(h.startTime)) / 60) * hourHeight;
+        // A group class (16.10.2026): its name and how full, not a lock.
+        if (h.source === "class") return (
+          <div key={h.id} title={`שיעור ${h.className} · ${h.booked}/${h.capacity} נרשמו`}
+            className="absolute left-0.5 right-0.5 rounded-lg border border-teal-300 bg-teal-50/95 text-teal-800 pointer-events-none z-[5] flex flex-col items-center justify-center overflow-hidden"
+            style={{ top, height }}>
+            {height >= 14 && <span className="text-[10px] font-semibold leading-none px-1 truncate max-w-full">🧘 {h.className}</span>}
+            {height >= 30 && <span className="text-teal-600 text-[9px] leading-none mt-0.5">{h.booked}/{h.capacity} נרשמו</span>}
+          </div>
+        );
         const until = new Date(h.expiresAt).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
         const who = h.customerName ? h.customerName.split(" ")[0] : "לקוח";
         // Short holds (agent proposal / confirm screen) read "בקביעה"; the closure wizard's "שמור ל…".

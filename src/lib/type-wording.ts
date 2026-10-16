@@ -119,6 +119,7 @@ const SYSTEM_KINDS = new Set<MessageKind>([
   "rhythm_nudge", "rhythm_nudge_2", "rhythm_nudge_new",
   "call_new_missed", "call_new_answered", "call_known_missed_upcoming", "call_known_missed",
   "greeting_link", "link_nudge", "agent_unavailable",
+  "class_booked", "class_waitlist", "class_promoted", "class_cancelled",
 ]);
 
 export function adaptsKind(kind: MessageKind): boolean {

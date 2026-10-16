@@ -42,6 +42,7 @@ type BusinessInfo = {
   whatsappPrefill?: string | null;
   whatsappBubbleEnabled?: boolean;
   socialLinks: { whatsapp?: string; instagram?: string; facebook?: string; tiktok?: string; waze?: string };
+  hasClasses?: boolean;
 };
 
 // ── Stories viewer ─────────────────────────────────────────────────────────────
@@ -808,6 +809,15 @@ export default function HomePage() {
             }}>
             {g("קבע תור עכשיו", "קבעי תור עכשיו")}
           </Link>
+          {/* Group classes (16.10.2026): only a business that has them. */}
+          {business?.hasClasses && (
+            <div className="mt-3">
+              <Link href={publicHref(slug, "/book/classes")} className="inline-flex items-center gap-2 font-bold text-[12px] tracking-[0.15em] px-8 py-3 rounded-full text-white/90 active:scale-95 transition-transform"
+                style={{ border: "1.5px solid rgba(255,255,255,0.5)", background: "rgba(255,255,255,0.08)" }}>
+                שיעורים
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* ── QUICK SLOTS — inside hero, visible without scrolling ── */}

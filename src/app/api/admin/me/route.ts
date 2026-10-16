@@ -165,7 +165,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Group classes (16.10.2026): the menu shows "שיעורים" only to a business that has them.
+  const hasClasses = (await prisma.classType.count({ where: { businessId: session.businessId, isActive: true } })) > 0;
   const res = NextResponse.json({
+    hasClasses,
     roleChanged: !!reissue,
     trialEnding,
     setupTasks,

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateOccurrences, FOREVER_HORIZON_WEEKS } from "@/lib/recurring";
+import { materializeSessions } from "@/lib/classes";
 
 /**
  * Cron endpoint — keeps "forever" recurring rules (endDate == null) rolling forward.
@@ -34,5 +35,12 @@ export async function GET(req: NextRequest) {
     skipped += res.skipped;
   }
 
-  return NextResponse.json({ ok: true, rules: rules.length, created, skipped });
+  // Group classes (16.10.2026): every business with a weekly schedule keeps
+  // its sessions made CLASS_HORIZON_DAYS ahead (each blocks its trainer).
+  let sessions = 0;
+  for (const b of await prisma.classType.findMany({ where: { isActive: true }, select: { businessId: true }, distinct: ["businessId"] })) {
+    sessions += await materializeSessions(b.businessId).catch(() => 0);
+  }
+
+  return NextResponse.json({ ok: true, rules: rules.length, created, skipped, sessions });
 }

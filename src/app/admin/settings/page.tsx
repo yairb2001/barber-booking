@@ -38,6 +38,7 @@ const groupsFor = (v: Vocab): Group[] => [
       { href: "/admin/staff", icon: "✂️", title: v.staffPlural, desc: "ניהול צוות, גישה ופרופילים" },
       { href: "/admin/services", icon: v.emoji, title: "שירותים", desc: "קטלוג השירותים — שם, מחיר, משך" },
       ...(v.type !== "barber_men" ? [{ href: "/admin/settings/rooms", icon: "🚪", title: "חדרים", desc: "באיזה חדר נעשה כל טיפול (פנימי)" }] : []),
+      ...(v.type !== "barber_men" ? [{ href: "/admin/settings/classes", icon: "🧘", title: "שיעורים קבוצתיים", desc: "שיעורים עם מקומות ומערכת שעות" }] : []),
     ],
   },
   {

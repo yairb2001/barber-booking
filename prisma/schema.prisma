@@ -128,6 +128,8 @@ model Business {
   staff          Staff[]
   services       Service[]
   rooms          Room[]
+  classTypes     ClassType[]
+  classSessions  ClassSession[]
   customers      Customer[]
   appointments   Appointment[]
   waitlist       Waitlist[]
@@ -373,6 +375,7 @@ model Customer {
   deletedAt         DateTime? @map("deleted_at")
 
   business          Business   @relation(fields: [businessId], references: [id])
+  classBookings  ClassBooking[]
   referredBy        Customer?  @relation("CustomerReferral", fields: [referredById], references: [id])
   referrals         Customer[] @relation("CustomerReferral")
   appointments      Appointment[]
@@ -1472,4 +1475,90 @@ model ShortLink {
   createdAt  DateTime @default(now()) @map("created_at")
 
   @@map("short_links")
+}
+
+// === שיעורים קבוצתיים (16.10.2026) ===
+// A class type, its weekly schedule, the dated sessions made from it, and who
+// booked a spot or waits for one. A session blocks its trainer through a slot
+// hold (holder "class:<sessionId>") and its room through the room calendar.
+model ClassType {
+  id              String   @id @default(uuid())
+  businessId      String   @map("business_id")
+  name            String
+  description     String?
+  durationMinutes Int      @map("duration_minutes")
+  capacity        Int
+  price           Float    @default(0)
+  staffId         String?  @map("staff_id")
+  roomId          String?  @map("room_id")
+  /// Up to how many hours before it a spot can be cancelled.
+  cancelHours     Int      @default(6) @map("cancel_hours")
+  isActive        Boolean  @default(true) @map("is_active")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  business  Business        @relation(fields: [businessId], references: [id])
+  schedules ClassSchedule[]
+  sessions  ClassSession[]
+
+  @@index([businessId])
+  @@map("class_types")
+}
+
+model ClassSchedule {
+  id          String   @id @default(uuid())
+  classTypeId String   @map("class_type_id")
+  dayOfWeek   Int      @map("day_of_week") // 0 = Sunday
+  startTime   String   @map("start_time")
+  /// Null = the class type's trainer.
+  staffId     String?  @map("staff_id")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  classType ClassType @relation(fields: [classTypeId], references: [id])
+
+  @@index([classTypeId])
+  @@map("class_schedules")
+}
+
+model ClassSession {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  classTypeId String   @map("class_type_id")
+  scheduleId  String?  @map("schedule_id")
+  date        DateTime
+  startTime   String   @map("start_time")
+  endTime     String   @map("end_time")
+  staffId     String?  @map("staff_id")
+  roomId      String?  @map("room_id")
+  capacity    Int
+  /// scheduled | cancelled
+  status      String   @default("scheduled")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business  Business       @relation(fields: [businessId], references: [id])
+  classType ClassType      @relation(fields: [classTypeId], references: [id])
+  bookings  ClassBooking[]
+
+  @@unique([scheduleId, date])
+  @@index([businessId, date])
+  @@map("class_sessions")
+}
+
+model ClassBooking {
+  id          String    @id @default(uuid())
+  sessionId   String    @map("session_id")
+  customerId  String    @map("customer_id")
+  /// booked | waitlist | cancelled | attended | no_show
+  status      String    @default("booked")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  promotedAt  DateTime? @map("promoted_at")
+
+  session  ClassSession @relation(fields: [sessionId], references: [id])
+  customer Customer     @relation(fields: [customerId], references: [id])
+
+  @@index([sessionId])
+  @@index([customerId])
+  @@map("class_bookings")
 }

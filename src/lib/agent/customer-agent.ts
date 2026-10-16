@@ -14,6 +14,8 @@
  */
 
 import { dayDistance } from "@/lib/day-distance";
+import { sessionsBetween, bookSpot, cancelSpot, canCancelUntil, hasActiveClasses } from "@/lib/classes";
+import { notifyClass } from "@/lib/class-messages";
 import { loadDayContext, findVisitOptions, checkVisit } from "@/lib/availability/visit";
 import { writeChecked, SlotRefused } from "@/lib/availability/guard";
 import { bookingRecord } from "@/lib/availability/shape";
@@ -407,6 +409,22 @@ const BASE_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    // Group classes (16.10.2026): only a business that has classes gets these three (toolsForType).
+    name: "get_classes",
+    description: "השיעורים הקבוצתיים הקרובים עם מספר המקומות שנשארו, ומה הלקוח כבר רשום אליו. לשאלות כמו 'יש מקום בפילאטיס מחר?'.",
+    input_schema: { type: "object" as const, properties: { fromDate: { type: "string", description: "YYYY-MM-DD (ברירת מחדל: היום)" }, days: { type: "number", description: "כמה ימים קדימה (עד 14, ברירת מחדל 7)" } }, required: [] },
+  },
+  {
+    name: "book_class",
+    description: "רושם את הלקוח לשיעור (sessionId מ-get_classes). שיעור מלא → רשימת המתנה, ועולה אוטומטית כשמתפנה מקום. קרא רק אחרי שהלקוח אמר בבירור שהוא רוצה את השיעור הזה.",
+    input_schema: { type: "object" as const, properties: { sessionId: { type: "string" }, customerName: { type: "string", description: "שם מלא — רק ללקוח חדש" } }, required: ["sessionId"] },
+  },
+  {
+    name: "cancel_class",
+    description: "מבטל את ההרשמה של הלקוח לשיעור (sessionId מ-get_classes). המקום עובר לראשון ברשימת ההמתנה.",
+    input_schema: { type: "object" as const, properties: { sessionId: { type: "string" } }, required: ["sessionId"] },
+  },
+  {
     // Visits (16.10.2026): only beauty businesses get this tool (toolsForType).
     name: "find_visit_times",
     description:
@@ -611,18 +629,21 @@ export function selectTools(all: Anthropic.Tool[], o: { v3: boolean; hasCatalog:
   return all.filter(t => !V3_DROP.has(t.name) || (!o.hasCatalog && (t.name === "get_staff_list" || t.name === "get_services")));
 }
 
+/** Only a business that runs group classes sees these (16.10.2026). */
+const CLASS_TOOLS = new Set(["get_classes", "book_class", "cancel_class"]);
+
 /** "No" to cancelling or to the waitlist takes the tool away, not only the wording (16.10.2026).
  *  Stable per business, so the cached prefix stays stable; the cache marker sits on the last tool. */
-export function toolsForSwitches(tools: Anthropic.Tool[], setupConfig: string | null | undefined): Anthropic.Tool[] {
+export function toolsForSwitches(tools: Anthropic.Tool[], setupConfig: string | null | undefined, hasClasses = false): Anthropic.Tool[] {
   const sw = agentSwitches(setupConfig);
-  return tools.filter(t => !(t.name === "cancel_appointment" && !sw.allowCancel) && !(t.name === "join_waitlist" && !sw.offerWaitlist));
+  return tools.filter(t => !(t.name === "cancel_appointment" && !sw.allowCancel) && !(t.name === "join_waitlist" && !sw.offerWaitlist) && (hasClasses || !CLASS_TOOLS.has(t.name)));
 }
 
 // ─── Tool executors ────────────────────────────────────────────────────────────
 
 /** Tools that change the world — simulated in sandbox (owner test) runs. */
 const MUTATING_TOOLS = new Set([
-  "book_appointment", "book_for_customer", "cancel_appointment", "join_waitlist", "move_appointment",
+  "book_appointment", "book_for_customer", "cancel_appointment", "book_class", "cancel_class", "join_waitlist", "move_appointment",
   "request_appointment_change", "request_appointment_move", "swap_appointments", "escalate_to_human",
   "send_to_customer", "send_to_customers", "send_to_today_customers", "save_setup_field", "report_running_late", "ask_owner",
 ]);
@@ -837,6 +858,46 @@ export async function execTool(
       // times where >= count barbers are genuinely free at the same slot, each
       // tagged with its staffId. The model cannot fabricate a barber+time pair
       // because the only pairs it ever sees are real overlaps.
+      // ── Group classes (16.10.2026) ────────────────────────────────────────────
+      case "get_classes": {
+        const today = getBusinessNow().date;
+        const from = input.fromDate && /^\d{4}-\d{2}-\d{2}$/.test(input.fromDate) ? input.fromDate : today;
+        const days = Math.min(14, Math.max(1, Number(input.days) || 7));
+        const rows = (await sessionsBetween(bizId, from, addDaysISO(from, days - 1))).filter(r => r.date > today || (r.date === today && r.startTime > getBusinessNow().time));
+        if (!rows.length) return `אין שיעורים בין ${from} ל-${addDaysISO(from, days - 1)}.`;
+        const cust = await callerCustomerId(bizId, callerPhone);
+        const mine = cust ? await prisma.classBooking.findMany({ where: { customerId: cust, sessionId: { in: rows.map(r => r.id) }, status: { in: ["booked", "waitlist"] } }, select: { sessionId: true, status: true } }) : [];
+        return rows.map(r => {
+          const m = mine.find(x => x.sessionId === r.id);
+          const left = r.capacity - r.booked;
+          return `${dayLabelWithDistance(r.date)} ${r.startTime}–${r.endTime} ${r.name}${r.staffName ? ` עם ${r.staffName}` : ""}${r.price ? ` ₪${r.price}` : ""} — ${left > 0 ? `נשארו ${left} מקומות` : `מלא (${r.waiting} בהמתנה)`}${m ? (m.status === "booked" ? " · הלקוח רשום" : " · הלקוח ברשימת ההמתנה") : ""} [sessionId: ${r.id}]`;
+        }).join("\n");
+      }
+      case "book_class": {
+        const sess = await prisma.classSession.findFirst({ where: { id: input.sessionId, businessId: bizId }, select: { id: true, startTime: true, date: true, classType: { select: { name: true } } } });
+        if (!sess) return "שגיאה: לא מצאתי את השיעור. קרא ל-get_classes והשתמש ב-sessionId שחזר.";
+        const phone = normalizeIsraeliPhone(callerPhone);
+        let customer = await prisma.customer.findFirst({ where: { businessId: bizId, OR: [{ phone }, { phone: phone.replace(/^972/, "0") }] }, select: { id: true } });
+        if (!customer) {
+          const nm = String(input.customerName ?? "").trim();
+          if (nm.split(/\s+/).length < 2) return "שגיאה: לקוח חדש — שאל אותו את השם המלא שלו וקרא שוב עם customerName.";
+          customer = await prisma.customer.create({ data: { businessId: bizId, phone, name: nm, referralSource: "whatsapp_agent" }, select: { id: true } });
+        }
+        const r = await bookSpot(sess.id, customer.id);
+        const what = `${sess.classType.name} ${dayLabelWithDistance(sess.date.toISOString().slice(0, 10))} ב-${sess.startTime}`;
+        if (!r.ok) return r.reason === "already" ? `הלקוח כבר ${r.status === "waitlist" ? "ברשימת ההמתנה של" : "רשום ל"}${what}.` : r.reason === "past" ? "השיעור כבר התחיל. הצע את השיעור הבא (get_classes)." : "השיעור הזה כבר לא פעיל. הצע אחר (get_classes).";
+        return r.status === "booked" ? `✅ נרשם ל${what}. אמור לו שזה סגור.` : `⏳ השיעור מלא — הלקוח ברשימת ההמתנה (מקום ${r.position}). אמור לו שאם יתפנה מקום הוא יירשם אוטומטית ויקבל הודעה.`;
+      }
+      case "cancel_class": {
+        const cust = await callerCustomerId(bizId, callerPhone);
+        const b = cust ? await prisma.classBooking.findFirst({ where: { customerId: cust, sessionId: input.sessionId, status: { in: ["booked", "waitlist"] }, session: { businessId: bizId } }, select: { id: true, session: { select: { date: true, startTime: true, classType: { select: { name: true, cancelHours: true } } } } } }) : null;
+        if (!b) return "הלקוח לא רשום לשיעור הזה (בדוק עם get_classes).";
+        if (!canCancelUntil(b.session.date.toISOString().slice(0, 10), b.session.startTime, b.session.classType.cancelHours)) return `אי אפשר לבטל פחות מ-${b.session.classType.cancelHours} שעות לפני השיעור. אמור לו את זה בעדינות, ואם הוא מתעקש — escalate_to_human.`;
+        const r = await cancelSpot(b.id);
+        if (r.promoted) await notifyClass("class_promoted", { sessionId: input.sessionId, customerId: r.promoted.customerId });
+        return `✅ ההרשמה ל${b.session.classType.name} בוטלה.`;
+      }
+
       // ── find_visit_times (16.10.2026): several treatments in a row ──────────
       case "find_visit_times": {
         const raw = (input as Record<string, unknown>).treatments;
@@ -1779,6 +1840,25 @@ function correctHebrewWeekdayLabels(text: string): string {
  *  Here it costs ~1K cached tokens (~$0.0003 per call). A catalog too big for
  *  the prefix (many rooms/services) returns "" and the tools stay the source. */
 export async function buildCatalogBlock(businessId: string): Promise<string> {
+  // Group classes ride after the catalog; a business without classes gets the same bytes as before.
+  const [core, classes] = await Promise.all([catalogCore(businessId), classesBlock(businessId)]);
+  return classes ? (core ? `${core}\n${classes}` : classes) : core;
+}
+
+/** The classes a business runs, in the cached prefix (16.10.2026): what, how long, when, the cancel window. */
+async function classesBlock(businessId: string): Promise<string> {
+  const types = await prisma.classType.findMany({ where: { businessId, isActive: true }, orderBy: { createdAt: "asc" }, include: { schedules: { where: { isActive: true }, orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }] } } });
+  if (!types.length) return "";
+  const days = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  const lines = types.map(t => {
+    const when = t.schedules.map(r => `${days[r.dayOfWeek]} ${r.startTime}`).join(", ");
+    const d = (t.description ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+    return `• ${t.name} ${t.durationMinutes} דק׳${t.price ? ` ${t.price}₪` : ""}, עד ${t.capacity} משתתפים${when ? ` — ${when}` : ""}${t.cancelHours ? ` (ביטול עד ${t.cancelHours} שעות לפני)` : ""}${d ? `: ${d}` : ""}`;
+  });
+  return `שיעורים קבוצתיים (לא תור אישי: מקומות פנויים → get_classes, הרשמה → book_class, ביטול → cancel_class. שיעור מלא → רשימת המתנה שעולה לבד):\n${lines.join("\n").slice(0, 1500)}`;
+}
+
+async function catalogCore(businessId: string): Promise<string> {
   const [staff, services] = await Promise.all([
     prisma.staff.findMany({
       where: { businessId, isAvailable: true },
@@ -1935,13 +2015,13 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   let settings: Record<string, unknown> = {};
   if (biz.settings) { try { settings = JSON.parse(biz.settings); } catch { /* ignore */ } }
   if (settings.aiProvider === "openai") return null; // nothing to warm on that path
-  const [catalogBlock, bookingLink] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz)]);
+  const [catalogBlock, bookingLink, withClasses] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz), hasActiveClasses(businessId)]);
   const systemPrompt = buildSystemPrompt({ ...stablePromptParams(biz, agentConfig, catalogBlock, bookingLink), now: nowLabel() });
   // The cached prefix is tools + stable system block — the ping must send the
   // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
   // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
   const flags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim() });
-  const pingTools = toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock }), agentConfig?.setupConfig);
+  const pingTools = toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock }), agentConfig?.setupConfig, withClasses);
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
@@ -2608,7 +2688,7 @@ export async function runCustomerAgent(opts: {
 
   // Stable (cached) inputs come from ONE helper shared with the keep-warm ping,
   // so both build the identical prefix (setup-interview block, FAQs, catalog).
-  const [catalogBlock, bookingLink] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz)]);
+  const [catalogBlock, bookingLink, withClasses] = await Promise.all([buildCatalogBlock(businessId), buildBookingLink(biz), hasActiveClasses(businessId)]);
   const setupForPrompt = sandbox?.setupOverride ? JSON.stringify(sandbox.setupOverride) : agentConfig?.setupConfig ?? null;
   const configForPrompt = sandbox?.promptOverride
     ? { agentName: agentConfig?.agentName ?? null, systemPrompt: sandbox.promptOverride, setupConfig: setupForPrompt, faqs: agentConfig?.faqs ?? [] }
@@ -2622,7 +2702,7 @@ export async function runCustomerAgent(opts: {
     customerContext,
   });
   const promptV3 = promptFlags.v3;
-  const tools = sandbox?.toolsOverride ?? toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock }), setupForPrompt);
+  const tools = sandbox?.toolsOverride ?? toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock }), setupForPrompt, withClasses);
   const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
@@ -2670,7 +2750,7 @@ export async function runCustomerAgent(opts: {
       conversationId: conversation.id,
       phone,
       model: openaiModel,
-      tools: AGENT_TOOLS,
+      tools: withClasses ? AGENT_TOOLS : AGENT_TOOLS.filter(t => !CLASS_TOOLS.has(t.name)),
       execTool,
     });
   } else {
