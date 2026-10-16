@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 import { setServiceRooms } from "@/lib/availability/rooms";
+import { syncServiceStaff } from "@/lib/service-staff";
 
 export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
@@ -41,10 +42,10 @@ export async function GET(req: NextRequest) {
       NOT: { name: "שירות זמני", isVisible: false },
     },
     orderBy: { sortOrder: "asc" },
-    include: { rooms: { select: { roomId: true } } },
+    include: { rooms: { select: { roomId: true } }, staffServices: { select: { staffId: true } } },
   });
-  // roomIds: the rooms each treatment may use (rooms, 16.10.2026).
-  return NextResponse.json(services.map(({ rooms, ...s }) => ({ ...s, roomIds: rooms.map(r => r.roomId) })));
+  // roomIds: the rooms each treatment may use (rooms, 16.10.2026); staffIds: who performs it.
+  return NextResponse.json(services.map(({ rooms, staffServices, ...s }) => ({ ...s, roomIds: rooms.map(r => r.roomId), staffIds: staffServices.map(x => x.staffId) })));
 }
 
 
@@ -75,5 +76,9 @@ export async function POST(req: NextRequest) {
     },
   });
   await setServiceRooms(service.id, business.id, body.roomIds);
+  // Who performs it — default (no list sent): every active staff member, as the form promises.
+  const staffIds = Array.isArray(body.staffIds) ? body.staffIds
+    : (await prisma.staff.findMany({ where: { businessId: business.id, isActive: true }, select: { id: true } })).map(s => s.id);
+  await syncServiceStaff(service.id, business.id, staffIds);
   return NextResponse.json(service, { status: 201 });
 }

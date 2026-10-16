@@ -20,22 +20,26 @@ type Service = {
   segments?: string | null;
   bufferAfterMin?: number;
   upsellIds?: string | null;
+  staffIds?: string[];
 };
+type StaffLite = { id: string; name: string };
 const upsellOf = (s: Service): string[] => { try { const x = s.upsellIds ? JSON.parse(s.upsellIds) : []; return Array.isArray(x) ? x : []; } catch { return []; } };
 
-/** "[work, wait, work]" from a service's segments, when it has that form. */
-function procOf(s: Service): [number, number, number] | null {
+/** "[work, wait, work, (wait, work)…]" from a service's segments, when it has that
+ *  form (owner, 16.10.2026: a second wait and another round of work can be added). */
+function procOf(s: Service): number[] | null {
   try {
     const x = s.segments ? (JSON.parse(s.segments) as { m: number; busy: boolean }[]) : null;
-    return x && x.length === 3 && x[0].busy && !x[1].busy && x[2].busy ? [x[0].m, x[1].m, x[2].m] : null;
+    return x && x.length >= 3 && x.length % 2 === 1 && x.every((g, i) => g.busy === (i % 2 === 0)) ? x.map(g => g.m) : null;
   } catch { return null; }
 }
+const waitsOf = (s: Service) => (procOf(s) ?? []).filter((_, i) => i % 2 === 1);
 
 // category + "החל מ" (16.10.2026): grouping on the booking page, a price set at a consultation.
 // rebookDays: when she usually comes back for it, the "הגיע הזמן לתור" date (beauty types).
 // Stage B (16.10.2026): cleaning after the treatment, and a wait inside it
 // (color processing: work → the stylist is free → work again).
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segA: "", segB: "", segC: "", upsellIds: [] as string[] };
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segs: ["", "", ""] as string[], upsellIds: [] as string[], staffIds: [] as string[] };
 
 export default function AdminServicesPage() {
   const v = useVocab();
@@ -45,6 +49,7 @@ export default function AdminServicesPage() {
   const [editing, setEditing] = useState<Service | null>(null);
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
+  const [team, setTeam] = useState<StaffLite[]>([]);
 
   async function load() {
     const data = await fetch("/api/admin/services").then((r) => r.json());
@@ -54,21 +59,24 @@ export default function AdminServicesPage() {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    fetch("/api/admin/staff").then(r => (r.ok ? r.json() : [])).then((d: StaffLite[]) => setTeam(Array.isArray(d) ? d.map(x => ({ id: x.id, name: x.name })) : [])).catch(() => {});
+  }, []);
 
   async function save() {
     if (!form.name.trim() || !form.price) return;
     setSaving(true);
-    const segs = [form.segA, form.segB, form.segC].map(x => parseInt(x));
-    const procOk = form.proc && segs.every(x => x > 0);
-    const { proc: _p, segA: _a, segB: _b, segC: _c, ...rest } = form;
-    void _p; void _a; void _b; void _c;
+    const segs = form.segs.map(x => parseInt(x));
+    const procOk = form.proc && segs.length >= 3 && segs.every(x => x > 0);
+    const { proc: _p, segs: _s, ...rest } = form;
+    void _p; void _s;
     const payload = {
       ...rest,
       rebookDays: parseInt(form.rebookDays) > 0 ? parseInt(form.rebookDays) : null,
       bufferAfterMin: parseInt(form.bufferAfterMin) > 0 ? parseInt(form.bufferAfterMin) : 0,
-      segments: procOk ? JSON.stringify([{ m: segs[0], busy: true }, { m: segs[1], busy: false }, { m: segs[2], busy: true }]) : null,
-      ...(procOk ? { durationMinutes: String(segs[0] + segs[1] + segs[2]) } : {}),
+      segments: procOk ? JSON.stringify(segs.map((m, i) => ({ m, busy: i % 2 === 0 }))) : null,
+      ...(procOk ? { durationMinutes: String(segs.reduce((t, x) => t + x, 0)) } : {}),
     };
     if (editing) {
       await fetch(`/api/admin/services/${editing.id}`, {
@@ -119,10 +127,9 @@ export default function AdminServicesPage() {
       rebookDays: s.rebookDays ? String(s.rebookDays) : "",
       bufferAfterMin: s.bufferAfterMin ? String(s.bufferAfterMin) : "",
       proc: !!procOf(s),
-      segA: procOf(s) ? String(procOf(s)![0]) : "",
-      segB: procOf(s) ? String(procOf(s)![1]) : "",
-      segC: procOf(s) ? String(procOf(s)![2]) : "",
+      segs: procOf(s) ? procOf(s)!.map(String) : ["", "", ""],
       upsellIds: upsellOf(s),
+      staffIds: s.staffIds ?? [],
     });
     setShowAdd(true);
   }
@@ -138,7 +145,7 @@ export default function AdminServicesPage() {
           <p className="text-neutral-500 text-sm mt-1">{services.length} שירותים</p>
         </div>
         <button
-          onClick={() => { setEditing(null); setForm(empty); setShowAdd(true); }}
+          onClick={() => { setEditing(null); setForm({ ...empty, staffIds: team.map(t => t.id) }); setShowAdd(true); }}
           className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
         >
           + שירות חדש
@@ -167,7 +174,7 @@ export default function AdminServicesPage() {
                     <span className="font-medium text-neutral-800">₪{s.price}</span>
                     <span className="mx-1.5 text-neutral-300">·</span>
                     <span>{s.durationMinutes} דק׳</span>
-                    {procOf(s) && <><span className="mx-1.5 text-neutral-300">·</span><span>המתנה {procOf(s)![1]} דק׳</span></>}
+                    {procOf(s) && <><span className="mx-1.5 text-neutral-300">·</span><span>המתנה {waitsOf(s).join(" + ")} דק׳</span></>}
                     {!!s.bufferAfterMin && <><span className="mx-1.5 text-neutral-300">·</span><span>ניקוי {s.bufferAfterMin} דק׳</span></>}
                   </div>
                 </div>
@@ -296,17 +303,41 @@ export default function AdminServicesPage() {
                   {form.proc && (
                     <div>
                       <div className="grid grid-cols-3 gap-2">
-                        {([["segA", "עבודה"], ["segB", "המתנה"], ["segC", "עבודה אחרי"]] as const).map(([k, label]) => (
-                          <div key={k}>
-                            <label className="text-[11px] text-neutral-500 block mb-1">{label} (דק׳)</label>
-                            <input type="number" min="5" step="5" value={form[k]} onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.value }))}
+                        {form.segs.map((val, i) => (
+                          <div key={i}>
+                            <label className="text-[11px] text-neutral-500 block mb-1">{i % 2 === 1 ? "המתנה" : i === 0 ? "עבודה" : "עבודה אחרי"} (דק׳)</label>
+                            <input type="number" min="5" step="5" value={val} onChange={(e) => setForm((p) => ({ ...p, segs: p.segs.map((x, j) => (j === i ? e.target.value : x)) }))}
                               className="w-full border border-neutral-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" dir="ltr" />
                           </div>
                         ))}
                       </div>
-                      <p className="text-[11px] text-neutral-500 mt-1.5">המשך הכולל יתעדכן לסכום: {[form.segA, form.segB, form.segC].reduce((t, x) => t + (parseInt(x) || 0), 0)} דק׳.</p>
+                      <div className="flex items-center gap-3 mt-2">
+                        <button type="button" onClick={() => setForm(p => ({ ...p, segs: [...p.segs, "", ""] }))} className="text-xs font-semibold text-teal-700">+ עוד המתנה ועבודה</button>
+                        {form.segs.length > 3 && (
+                          <button type="button" onClick={() => setForm(p => ({ ...p, segs: p.segs.slice(0, -2) }))} className="text-xs text-neutral-400">הסר את האחרונה</button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-neutral-500 mt-1.5">המשך הכולל יתעדכן לסכום: {form.segs.reduce((t, x) => t + (parseInt(x) || 0), 0)} דק׳.</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {team.length > 0 && (
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1.5">מי מהצוות מבצע את השירות</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {team.map(t => {
+                      const on = form.staffIds.includes(t.id);
+                      return (
+                        <button key={t.id} type="button" onClick={() => setForm(p => ({ ...p, staffIds: on ? p.staffIds.filter(i => i !== t.id) : [...p.staffIds, t.id] }))}
+                          className={`px-3 py-1 rounded-full text-xs border transition ${on ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-600"}`}>
+                          {on ? "✓ " : ""}{t.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.staffIds.length === 0 && <p className="text-[11px] text-amber-700 mt-1">אף אחד לא נבחר — אי אפשר יהיה לקבוע את השירות הזה.</p>}
                 </div>
               )}
 
