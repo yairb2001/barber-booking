@@ -236,11 +236,15 @@ export default function AdminServicesPage() {
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">תיאור</label>
-                <input
+                <textarea
                   value={form.description}
                   onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+                  rows={2}
+                  placeholder="מה כלול, למי זה מתאים, כמה זמן מחזיק"
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
+                {/* 16.10.2026, Yair: the agent answers "what is it" from here. */}
+                <p className="text-[11px] text-neutral-400 mt-1">הסוכן קורא את התיאור: כשלקוח שואל מה זה או מה כלול, הוא מפרט מכאן.</p>
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">קטגוריה <span className="text-neutral-400">(למשל: צבע, ג'ל, פנים)</span></label>

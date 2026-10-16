@@ -19,6 +19,10 @@
 
 import { vocabFor, type BusinessType, type Vocab } from "@/lib/vocab";
 
+/** The defaultService answer that means "show the list and ask" (16.10.2026). Words that ask for a list count too. */
+export const SERVICE_LIST = "להציג רשימת שירותים";
+export const isServiceList = (v: unknown) => typeof v === "string" && (v.trim() === SERVICE_LIST || /רשימ/.test(v));
+
 export type SetupFieldType = "choice" | "text" | "bool";
 
 /** Keys the compact template (prompt-template.ts) renders into its own
@@ -114,12 +118,15 @@ const SETUP_FIELD_SPECS: SetupFieldSpec[] = [
   },
 
   // ── B. Booking defaults ──
+  // A service to assume, or SERVICE_LIST: show the services and ask (16.10.2026, Yair).
   {
     key: "defaultService", label: "שירות ברירת מחדל", group: "ברירות מחדל", core: true, type: "text",
     default: v => v.defaultService,
-    question: v => `כש${v.customer} ${v.customerFem ? "כותבת" : "כותב"} 'רוצה תור' בלי לפרט — לאיזה שירות לקבוע כברירת מחדל? (למשל: ${v.serviceExamples})`,
-    questionByType: { barber_men: "כשלקוח כותב 'רוצה תור' בלי לפרט — לאיזה שירות לקבוע כברירת מחדל? (רוב המספרות: תספורת + זקן)" },
-    compile: (v, voc) => `כש${voc.customer} לא ${voc.customerFem ? "מציינת" : "מציין"} שירות, הנח ש${voc.customerFem ? "היא רוצה" : "הוא רוצה"}: ${v}.`,
+    question: v => `כש${v.customer} ${v.customerFem ? "כותבת" : "כותב"} 'רוצה תור' בלי לפרט: לאיזה שירות לקבוע, או "${SERVICE_LIST}"? (למשל: ${v.serviceExamples})`,
+    questionByType: { barber_men: `כשלקוח כותב 'רוצה תור' בלי לפרט: לאיזה שירות לקבוע, או "${SERVICE_LIST}"? (רוב המספרות: תספורת + זקן)` },
+    compile: (v, voc) => isServiceList(v)
+      ? `כש${voc.customer} לא ${voc.customerFem ? "מציינת" : "מציין"} שירות, שאל איזה שירות והצג את רשימת השירותים עם המחירים.`
+      : `כש${voc.customer} לא ${voc.customerFem ? "מציינת" : "מציין"} שירות, הנח ש${voc.customerFem ? "היא רוצה" : "הוא רוצה"}: ${v}.`,
   },
   {
     key: "barberAssign", label: "שיבוץ כשלא ביקשו מישהו", group: "ברירות מחדל", core: true, type: "choice",

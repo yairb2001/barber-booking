@@ -8,6 +8,8 @@
  * "שמור", versioned in AgentSetupHistory, any version can be put back.
  */
 
+import { SERVICE_LIST, isServiceList } from "@/lib/agent/setup-fields";
+
 export type SetupFieldDTO = {
   key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool";
   options: string[] | null; default: string | boolean | null; core: boolean; multiline: boolean;
@@ -97,11 +99,15 @@ export default function AgentSetupCard({ fields, answers, onChange, history, onR
                   />
                 ) : (
                   <input
-                    value={typeof answers[f.key] === "string" ? String(answers[f.key]) : ""}
+                    value={typeof answers[f.key] === "string" && !(f.key === "defaultService" && isServiceList(answers[f.key])) ? String(answers[f.key]) : ""}
                     onChange={e => onChange(f.key, e.target.value)}
                     className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                    placeholder={typeof f.default === "string" ? f.default : ""}
+                    placeholder={f.key === "defaultService" && isServiceList(answers[f.key]) ? "או שם של שירות" : typeof f.default === "string" ? f.default : ""}
                   />
+                )}
+                {/* A default service, or show the list and ask (16.10.2026). */}
+                {f.key === "defaultService" && (
+                  <button type="button" onClick={() => onChange(f.key, isServiceList(answers[f.key]) ? null : SERVICE_LIST)} className={chip(isServiceList(answers[f.key]))}>{SERVICE_LIST}</button>
                 )}
                 {!has && f.type !== "text" && f.default !== null && <p className="text-[11px] text-neutral-400">עדיין לא נבחר, כרגע עובד לפי ברירת המחדל</p>}
                 {has && f.type !== "text" && (

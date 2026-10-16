@@ -37,7 +37,7 @@ import { pushChatEvent } from "@/lib/native/chat-push";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
-import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
+import { isServiceList, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
 import { vocabFor, vocabOf, staffChoiceOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
@@ -1781,7 +1781,7 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
         staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
       },
     }),
-    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true } }),
+    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true } }),
   ]);
   const [biz, schedules] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true, businessType: true, settings: true } }),
@@ -1813,7 +1813,19 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
   const twins = Array.from(byFirst.entries()).filter(([, names]) => names.length > 1)
     .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
   const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
-  return block.length > 4500 ? (info ? `פרטי העסק: ${info}` : "") : block;
+  if (block.length > 4500) return info ? `פרטי העסק: ${info}` : "";
+  // What each service includes, from its description on the services screen
+  // (16.10.2026, Yair: "לכתוב בתיאור של השירות שהסוכן ימשוך נתונים"). Once per
+  // service, not per staff member, within its own small budget.
+  let desc = "";
+  for (const sv of services) {
+    const d = (sv.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!d) continue;
+    const line = `\n• ${sv.name}: ${d}`;
+    if (desc.length + line.length > 1500) break;
+    desc += line;
+  }
+  return desc ? `${block}\nתיאורי השירותים (לקוח שואל מה זה או מה כלול → פרט מכאן, לא מהדמיון):${desc}` : block;
 }
 
 /** The business-level inputs of the CACHED prefix — one place, so the customer
@@ -1876,7 +1888,8 @@ export function assignRuleFor(biz: { settings?: string | null }, v: Vocab): stri
  *  the setup-interview answer, else the vocabulary default of the business type. */
 export function defaultServiceName(biz: { businessType?: string | null; settings?: string | null }, agentConfig: { setupConfig: string | null } | null): string {
   if (agentConfig?.setupConfig) {
-    try { const s = JSON.parse(agentConfig.setupConfig) as SetupConfig; if (typeof s.defaultService === "string" && s.defaultService.trim()) return s.defaultService.trim(); } catch { /* ignore */ }
+    // "Show the list" is not a service name: the availability falls back to the business's default (16.10.2026).
+    try { const s = JSON.parse(agentConfig.setupConfig) as SetupConfig; if (typeof s.defaultService === "string" && s.defaultService.trim() && !isServiceList(s.defaultService)) return s.defaultService.trim(); } catch { /* ignore */ }
   }
   return vocabOf(biz).defaultService;
 }

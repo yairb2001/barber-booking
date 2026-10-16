@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { vocabFor, type Vocab } from "@/lib/vocab";
-import { setupFieldsFor, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
+import { setupFieldsFor, SERVICE_LIST, isServiceList, type SetupField, type SetupConfig } from "@/lib/agent/setup-fields";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 
@@ -343,8 +343,10 @@ export default function OnboardingPage() {
           // A long default (who gets escalated) shows whole, not cut off on a phone.
           <textarea value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} rows={2} placeholder={f.default} />
         ) : (
-          <input value={String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={typeof f.default === "string" ? f.default : hint} />
+          <input value={f.key === "defaultService" && isServiceList(setup[f.key]) ? "" : String(setup[f.key] ?? "")} onChange={e => setSetup(s => ({ ...s, [f.key]: e.target.value }))} className={input} placeholder={f.key === "defaultService" && isServiceList(setup[f.key]) ? "או שם של שירות" : typeof f.default === "string" ? f.default : hint} />
         )}
+        {/* A default service, or show the list and ask (16.10.2026). */}
+        {f.key === "defaultService" && (() => { const on = isServiceList(setup[f.key]); return <button type="button" onClick={() => setSetup(s => ({ ...s, [f.key]: on ? "" : SERVICE_LIST }))} className={`${chip(on)} mt-1.5`} style={on ? { background: C.petrol } : {}}>{SERVICE_LIST}</button>; })()}
       </Field>
     );
   };
