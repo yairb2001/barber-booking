@@ -842,7 +842,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     // block (pan-y); switch to "none" only once THIS block is actively dragged, so
     // the drag captures movement instead of scrolling. The switch happens at
     // long-press time — before any finger movement — so it's in place in time.
-    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} ${parts ? "z-[5]" : "z-10"} ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute flex flex-col ${short && !parts ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} ${parts ? "z-[5]" : "z-10"} ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
