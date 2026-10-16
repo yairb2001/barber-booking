@@ -61,6 +61,8 @@ export async function POST(req: NextRequest) {
       isVisible: body.isVisible ?? true,
       showDuration: body.showDuration ?? true,
       sortOrder: body.sortOrder ?? 0,
+      category: typeof body.category === "string" && body.category.trim() ? body.category.trim() : null,
+      priceFrom: body.priceFrom === true,
     },
   });
   return NextResponse.json(service, { status: 201 });

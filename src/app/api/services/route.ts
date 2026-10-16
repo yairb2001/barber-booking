@@ -60,7 +60,7 @@ export async function GET(request: Request) {
       where: { isVisible: true, businessId: resolvedBusinessId, staffServices: { some: { staff: { isActive: true, isAvailable: true } } } },
       orderBy: { sortOrder: "asc" },
       select: {
-        id: true, name: true, description: true, price: true, durationMinutes: true, showDuration: true, note: true, sortOrder: true,
+        id: true, name: true, description: true, price: true, durationMinutes: true, showDuration: true, note: true, sortOrder: true, category: true, priceFrom: true,
         staffServices: { where: { staff: { isActive: true, isAvailable: true } }, select: { customPrice: true, customDuration: true } },
       },
     });

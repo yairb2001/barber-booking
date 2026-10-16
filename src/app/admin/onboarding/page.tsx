@@ -30,7 +30,7 @@ const DEFAULT_HOURS: Hours = [0, 1, 2, 3, 4].map(() => ({ on: true, start: "09:0
 const SIGNUP_DEFAULT_NAME = "המספרה שלי";
 
 type Member = { id?: string; name: string; phone: string };
-type Svc = { id?: string; name: string; price: string; duration: string };
+type Svc = { id?: string; name: string; price: string; duration: string; category?: string; priceFrom?: boolean };
 
 /** First setup asks only what shapes most chats: the must-answer ones and the tone. */
 const isMainQuestion = (f: SetupField) => f.core || f.key === "tone";
@@ -130,7 +130,7 @@ export default function OnboardingPage() {
   }, []);
 
   // Starter catalog once we know the type (only when the shop has no services yet).
-  useEffect(() => { setServices(s => s.length ? s : vocab.serviceCatalog.map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration) }))); }, [vocab]);
+  useEffect(() => { setServices(s => s.length ? s : vocab.serviceCatalog.map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom }))); }, [vocab]);
 
   const saveProgress = useCallback(async (nextStep: number, nextDone: string[], extra?: Record<string, unknown>) => {
     try { await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboarding: { step: nextStep, doneSteps: nextDone, hours, ...extra } }) }); } catch { /* best effort */ }
@@ -212,7 +212,7 @@ export default function OnboardingPage() {
       const out: Svc[] = [];
       for (const s of valid) {
         if (s.id) { out.push(s); continue; }
-        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30 }) });
+        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, category: s.category ?? null, priceFrom: !!s.priceFrom, sortOrder: valid.indexOf(s) }) });
         if (!r.ok) { setError(`יצירת ${s.name} נכשלה`); setBusy(false); return; }
         out.push({ ...s, id: (await r.json()).id });
       }
@@ -461,7 +461,10 @@ export default function OnboardingPage() {
           {/* The name gets the full width (it was cut off on a phone), price and minutes under it. */}
           <div className="space-y-2">
             {services.map((s, i) => (
-              <div key={i} className="rounded-2xl border border-slate-200 p-2">
+              <div key={i}>
+              {/* Beauty catalogs come by category (16.10.2026). */}
+              {s.category && s.category !== services[i - 1]?.category && <p className="text-[12px] font-semibold mt-3 mb-1.5" style={{ color: C.petrol }}>{s.category}</p>}
+              <div className="rounded-2xl border border-slate-200 p-2">
                 <div className="flex items-center gap-2">
                   <input value={s.name} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} placeholder="שם השירות" disabled={!!s.id} />
                   {!s.id ? <button type="button" onClick={() => setServices(a => a.filter((_, j) => j !== i))} className="shrink-0 w-8 text-slate-400" aria-label="מחק שירות">✕</button> : <span className="shrink-0 w-8 text-center text-emerald-500 text-sm">✓</span>}
@@ -471,7 +474,9 @@ export default function OnboardingPage() {
                   <span>₪</span>
                   <input value={s.duration} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, duration: e.target.value } : x))} className={`${num} ms-3`} type="number" inputMode="numeric" dir="ltr" disabled={!!s.id} aria-label="דקות" />
                   <span>דקות</span>
+                  {s.priceFrom && <span className="ms-auto text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.mist, color: C.petrol }}>החל מ</span>}
                 </div>
+              </div>
               </div>
             ))}
           </div>

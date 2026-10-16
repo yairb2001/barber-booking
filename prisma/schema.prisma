@@ -278,6 +278,10 @@ model Service {
   isVisible       Boolean  @default(true) @map("is_visible")
   showDuration    Boolean  @default(true) @map("show_duration")
   sortOrder       Int      @default(0) @map("sort_order")
+  // Beauty businesses (16.10.2026): grouping on the booking page, and "החל מ"
+  // for a price set at a consultation.
+  category        String?
+  priceFrom       Boolean  @default(false) @map("price_from")
   createdAt       DateTime @default(now()) @map("created_at")
 
   business        Business @relation(fields: [businessId], references: [id])

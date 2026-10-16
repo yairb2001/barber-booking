@@ -77,8 +77,11 @@ export type Vocab = {
   serviceExamples: string;
   /** Whether street slang ("אחי") is an allowed address style (decision #9: barber_men only). */
   slangAllowed: boolean;
-  /** Starter catalog the setup wizard offers (market prices, editable). */
-  serviceCatalog: { name: string; price: number; duration: number }[];
+  /** Starter catalog the setup wizard offers (market prices, editable). Beauty
+   *  types (16.10.2026): by category, "החל מ" where the price is set at a
+   *  consultation; from Israeli price guides (דפי זהב, מידרג), durations by
+   *  common practice. */
+  serviceCatalog: { name: string; price: number; duration: number; category?: string; priceFrom?: boolean }[];
 };
 
 const BASE: Record<BusinessType, Vocab> = {
@@ -102,7 +105,24 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "תספורת", serviceExamples: "תספורת, פן, צבע, גוונים",
     slangAllowed: false,
-    serviceCatalog: [{ name: "תספורת", price: 150, duration: 45 }, { name: "פן", price: 120, duration: 40 }, { name: "צבע", price: 300, duration: 90 }, { name: "גוונים", price: 450, duration: 150 }],
+    serviceCatalog: [
+      { category: "תספורות", name: "תספורת", price: 160, duration: 50 },
+      { category: "תספורות", name: "תספורת ילדות", price: 100, duration: 30 },
+      { category: "תספורות", name: "פוני", price: 30, duration: 15 },
+      { category: "עיצוב", name: "פן קצר", price: 70, duration: 30 },
+      { category: "עיצוב", name: "פן ארוך", price: 110, duration: 45 },
+      { category: "עיצוב", name: "בייביליס", price: 180, duration: 45 },
+      { category: "עיצוב", name: "תסרוקת ערב", price: 350, duration: 60, priceFrom: true },
+      { category: "צבע", name: "צבע שורש", price: 200, duration: 80 },
+      { category: "צבע", name: "צבע מלא", price: 300, duration: 100, priceFrom: true },
+      { category: "צבע", name: "גוונים חלקיים", price: 400, duration: 130, priceFrom: true },
+      { category: "צבע", name: "גוונים מלאים", price: 600, duration: 170, priceFrom: true },
+      { category: "צבע", name: "בלייאז'", price: 700, duration: 210, priceFrom: true },
+      { category: "צבע", name: "שטיפת צבע", price: 200, duration: 45 },
+      { category: "טיפולים", name: "החלקת קרטין", price: 900, duration: 180, priceFrom: true },
+      { category: "טיפולים", name: "החלקה אורגנית", price: 1200, duration: 240, priceFrom: true },
+      { category: "ייעוץ", name: "ייעוץ צבע", price: 0, duration: 15 },
+    ],
   },
   nails: {
     type: "nails", typeLabel: "סטודיו ציפורניים", placeKind: "סטודיו לציפורניים",
@@ -113,7 +133,19 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "מניקור ג'ל", serviceExamples: "מניקור ג'ל, בנייה, מילוי, פדיקור",
     slangAllowed: false,
-    serviceCatalog: [{ name: "מניקור ג'ל", price: 120, duration: 60 }, { name: "בנייה", price: 250, duration: 120 }, { name: "מילוי", price: 180, duration: 90 }, { name: "פדיקור", price: 150, duration: 60 }],
+    serviceCatalog: [
+      { category: "ג'ל", name: "מניקור ג'ל", price: 120, duration: 60 },
+      { category: "ג'ל", name: "לק ג'ל ברגליים", price: 110, duration: 50 },
+      { category: "בנייה", name: "בניית ציפורניים", price: 250, duration: 110 },
+      { category: "בנייה", name: "מילוי", price: 170, duration: 80 },
+      { category: "בנייה", name: "הסרת ג'ל או בנייה", price: 45, duration: 25 },
+      { category: "מניקור ופדיקור", name: "מניקור קלאסי", price: 110, duration: 40 },
+      { category: "מניקור ופדיקור", name: "פדיקור ספא", price: 170, duration: 60 },
+      { category: "מניקור ופדיקור", name: "פדיקור רפואי", price: 200, duration: 60 },
+      { category: "תוספות", name: "עיטור לציפורן", price: 10, duration: 10 },
+      { category: "תוספות", name: "פרנץ'", price: 40, duration: 15 },
+      { category: "תוספות", name: "תיקון ציפורן", price: 15, duration: 10 },
+    ],
   },
   cosmetics: {
     type: "cosmetics", typeLabel: "מכון קוסמטיקה", placeKind: "מכון קוסמטיקה",
@@ -124,7 +156,22 @@ const BASE: Record<BusinessType, Vocab> = {
     customer: "לקוחה", customerPlural: "לקוחות", customerFem: true, choose: "בחרי", tryVerb: "נסי", knows: "תדע",
     defaultService: "טיפול פנים", serviceExamples: "טיפול פנים, הסרת שיער, עיצוב גבות",
     slangAllowed: false,
-    serviceCatalog: [{ name: "טיפול פנים", price: 350, duration: 75 }, { name: "עיצוב גבות", price: 80, duration: 20 }, { name: "הסרת שיער בשעווה", price: 150, duration: 45 }],
+    serviceCatalog: [
+      { category: "פנים", name: "טיפול פנים", price: 380, duration: 75 },
+      { category: "פנים", name: "טיפול פנים לאקנה", price: 450, duration: 90 },
+      { category: "גבות וריסים", name: "עיצוב גבות", price: 70, duration: 25 },
+      { category: "גבות וריסים", name: "צביעת גבות", price: 50, duration: 15 },
+      { category: "גבות וריסים", name: "הרמת גבות", price: 250, duration: 50 },
+      { category: "גבות וריסים", name: "הרמת ריסים", price: 250, duration: 60 },
+      { category: "שעווה", name: "שעווה שפם", price: 40, duration: 10 },
+      { category: "שעווה", name: "שעווה בתי שחי", price: 60, duration: 15 },
+      { category: "שעווה", name: "שעווה רגליים מלאות", price: 180, duration: 45 },
+      { category: "לייזר", name: "לייזר אזור קטן", price: 150, duration: 15, priceFrom: true },
+      { category: "לייזר", name: "לייזר רגליים", price: 350, duration: 50, priceFrom: true },
+      { category: "איפור קבוע", name: "גבות בשיטת השערה", price: 1500, duration: 170, priceFrom: true },
+      { category: "איפור קבוע", name: "אייליינר קבוע", price: 1200, duration: 120, priceFrom: true },
+      { category: "ייעוץ", name: "ייעוץ ובדיקת רגישות", price: 0, duration: 20 },
+    ],
   },
 };
 

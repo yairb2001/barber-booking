@@ -13,9 +13,12 @@ type Service = {
   showDuration: boolean;
   sortOrder: number;
   ownerStaffId?: string | null;
+  category?: string | null;
+  priceFrom?: boolean;
 };
 
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true };
+// category + "החל מ" (16.10.2026): grouping on the booking page, a price set at a consultation.
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false };
 
 export default function AdminServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
@@ -82,6 +85,8 @@ export default function AdminServicesPage() {
       durationMinutes: s.durationMinutes.toString(),
       isVisible: s.isVisible,
       showDuration: s.showDuration,
+      category: s.category ?? "",
+      priceFrom: !!s.priceFrom,
     });
     setShowAdd(true);
   }
@@ -199,6 +204,18 @@ export default function AdminServicesPage() {
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                 />
               </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">קטגוריה <span className="text-neutral-400">(למשל: צבע, ג'ל, פנים)</span></label>
+                <input
+                  value={form.category}
+                  onChange={(e) => setForm((p) => ({ ...p, category: e.target.value }))}
+                  list="service-categories"
+                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                />
+                <datalist id="service-categories">
+                  {Array.from(new Set(services.map(x => x.category).filter((c): c is string => !!c))).map(c => <option key={c} value={c} />)}
+                </datalist>
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs text-neutral-500 block mb-1">מחיר ₪ *</label>
@@ -242,6 +259,15 @@ export default function AdminServicesPage() {
                     className="accent-teal-600 w-4 h-4"
                   />
                   <span className="text-sm text-neutral-700">הצג משך זמן ללקוחות</span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.priceFrom}
+                    onChange={(e) => setForm((p) => ({ ...p, priceFrom: e.target.checked }))}
+                    className="accent-teal-600 w-4 h-4"
+                  />
+                  <span className="text-sm text-neutral-700">המחיר &quot;החל מ&quot; (נקבע סופית בייעוץ)</span>
                 </label>
               </div>
             </div>

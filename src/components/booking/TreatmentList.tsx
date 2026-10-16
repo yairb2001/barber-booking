@@ -13,10 +13,11 @@ import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
 type Treatment = {
   id: string; name: string; description: string | null; note: string | null; showDuration: boolean;
   priceMin: number; priceMax: number; durationMin: number; durationMax: number;
+  category: string | null; priceFrom: boolean;
 };
 
-export function priceLabel(min: number, max: number): string {
-  return min < max ? `החל מ־₪${min}` : `₪${min}`;
+export function priceLabel(min: number, max: number, from = false): string {
+  return from || min < max ? `החל מ־₪${min}` : `₪${min}`;
 }
 
 export default function TreatmentList() {
@@ -31,9 +32,20 @@ export default function TreatmentList() {
   }
   if (!items.length) return <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>אין כרגע טיפולים פתוחים לקביעה.</p>;
 
+  // Grouped by category, in the order the categories first appear (the catalog's order).
+  const groups: { name: string | null; items: Treatment[] }[] = [];
+  for (const t of items) {
+    const g = groups.find(x => x.name === (t.category ?? null));
+    if (g) g.items.push(t); else groups.push({ name: t.category ?? null, items: [t] });
+  }
+  const named = groups.some(g => g.name);
+
   return (
-    <div className="space-y-2.5">
-      {items.map(t => (
+    <div className="space-y-5">
+      {groups.map(g => (
+        <div key={g.name ?? "_"} className="space-y-2.5">
+          {named && <h3 className="text-[12px] font-semibold tracking-[0.15em]" style={{ color: "var(--brand)" }}>{g.name ?? "עוד"}</h3>}
+      {g.items.map(t => (
         <Link key={t.id} href={publicHref(slug, `/book/pro?serviceId=${t.id}`)}
           className="flex items-center rounded-2xl overflow-hidden active:scale-[0.99] transition-all"
           style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
@@ -49,13 +61,15 @@ export default function TreatmentList() {
               )}
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">
-              <p className={`${t.priceMin < t.priceMax ? "text-[15px]" : "text-[22px]"} font-bold leading-none`} style={{ color: "var(--brand)" }}>{priceLabel(t.priceMin, t.priceMax)}</p>
+              <p className={`${t.priceFrom || t.priceMin < t.priceMax ? "text-[15px]" : "text-[22px]"} font-bold leading-none`} style={{ color: "var(--brand)" }}>{priceLabel(t.priceMin, t.priceMax, t.priceFrom)}</p>
               <svg className="w-4 h-4 rotate-180 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} style={{ color: "var(--text-muted)" }}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </div>
           </div>
         </Link>
+      ))}
+        </div>
       ))}
     </div>
   );

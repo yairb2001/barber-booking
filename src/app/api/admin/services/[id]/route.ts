@@ -19,6 +19,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.durationMinutes !== undefined && { durationMinutes: parseInt(body.durationMinutes) }),
       ...(body.isVisible !== undefined && { isVisible: body.isVisible }),
       ...(body.showDuration !== undefined && { showDuration: body.showDuration }),
+      ...(body.category !== undefined && { category: typeof body.category === "string" && body.category.trim() ? body.category.trim() : null }),
+      ...(body.priceFrom !== undefined && { priceFrom: body.priceFrom === true }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },
   });
