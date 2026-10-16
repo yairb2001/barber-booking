@@ -1463,3 +1463,13 @@ model ServiceRoom {
   @@id([serviceId, roomId])
   @@map("service_rooms")
 }
+
+/// Short links in outgoing messages (16.10.2026): /s/<code> → url. See src/lib/short-links.ts.
+model ShortLink {
+  code       String   @id
+  url        String
+  businessId String?  @map("business_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("short_links")
+}

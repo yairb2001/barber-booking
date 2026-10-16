@@ -1,6 +1,7 @@
 import { dayDistance } from "@/lib/day-distance";
 import { getBusinessNow } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
+import { shortenOwnLinks } from "@/lib/short-links";
 import { DEFAULT_RHYTHM_TEMPLATE, DEFAULT_RHYTHM_SECOND_TEMPLATE, DEFAULT_RHYTHM_SECOND_TAKEN_TEMPLATE, DEFAULT_RHYTHM_NEW_TEMPLATE } from "@/lib/automations/rhythm-templates";
 import { DEFAULT_CALL_NEW_MISSED_TEMPLATE, DEFAULT_CALL_NEW_ANSWERED_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_UPCOMING_TEMPLATE, DEFAULT_CALL_KNOWN_MISSED_TEMPLATE } from "@/lib/automations/call-templates";
 import type { MessageKind, MessagingProvider, SendResult } from "./types";
@@ -352,6 +353,12 @@ export async function deliverMessageLog(
   // line of "---"). Send each part in order; stop at the first failure.
   // normalizeWhatsAppBold() fixes Hebrew-prefix-glued bold (ב*שם* → *בשם*) for
   // every outgoing message regardless of source.
+  // Long links to our app → /s/<code> (owner, 16.10.2026). The log keeps what was really sent.
+  const short = await shortenOwnLinks(log.body, business.id).catch(() => log.body);
+  if (short !== log.body) {
+    log = { ...log, body: short };
+    await prisma.messageLog.update({ where: { id: log.id }, data: { body: short } }).catch(() => {});
+  }
   const parts = splitMessageParts(normalizeWhatsAppBold(log.body));
   const sent: SendResult[] = [];
   for (const part of parts) {
