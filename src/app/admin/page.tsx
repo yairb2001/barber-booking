@@ -156,11 +156,11 @@ const apptH = (s: string, e: string, hh: number) =>
 // SIDE so they don't stack on top of each other. Returns a map id → { lane,
 // lanes } where `lanes` is how many columns the overlap-cluster needs and
 // `lane` is this appointment's column index (0-based).
-function computeApptLanes(appts: { id: string; startTime: string; endTime: string }[]): Record<string, { lane: number; lanes: number }> {
+function computeApptLanes(appts: { id: string; startTime: string; endTime: string }[]): Record<string, { lane: number; lanes: number; gapMin?: number }> {
   const items = appts
     .map(a => ({ id: a.id, start: toMin(a.startTime), end: toMin(a.endTime), lane: 0 }))
     .sort((x, y) => x.start - y.start || x.end - y.end);
-  const result: Record<string, { lane: number; lanes: number }> = {};
+  const result: Record<string, { lane: number; lanes: number; gapMin?: number }> = {};
   let cluster: typeof items = [];
   let columnsEnd: number[] = []; // end-minute of the last appt placed in each column
   let clusterEnd = -1;
@@ -185,6 +185,16 @@ function computeApptLanes(appts: { id: string; startTime: string; endTime: strin
     clusterEnd = Math.max(clusterEnd, it.end);
   }
   flush();
+  // Room below each block before the next one in its lane (owner, 16.10.2026:
+  // zoomed out, back-to-back 15-minute appointments were inflated to the
+  // minimum tappable height and drawn on top of each other). ApptBlock never
+  // grows past this.
+  for (const it of items) {
+    const r = result[it.id];
+    const next = items.filter(o => o !== it && o.start > it.start && (r.lanes === 1 || (result[o.id].lane === r.lane && result[o.id].lanes === r.lanes)))
+      .reduce((m, o) => Math.min(m, o.start), Infinity);
+    if (Number.isFinite(next)) r.gapMin = next - it.start;
+  }
   return result;
 }
 const nowPxFn = (hh: number, ds = DAY_START) => { const n = new Date(); return ((n.getHours() * 60 + n.getMinutes() - ds * 60) / 60) * hh; };
@@ -712,7 +722,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   isMoving: boolean; // true if THIS appointment is the one being moved → fade out the original
   swapState: ApptBlockSwapState;
   /** Side-by-side placement among overlapping appointments. */
-  lane?: { lane: number; lanes: number };
+  lane?: { lane: number; lanes: number; gapMin?: number };
 }) {
   const hh = React.useContext(HHCtx);
   // Appointments must anchor to the SAME calendar start hour as the grid, hour
@@ -720,7 +730,10 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   // everything except appointments, so breaks visually land on top of appts.
   const { start: calStart } = React.useContext(HourRangeCtx);
   const top = apptTop(appt.startTime, hh, calStart);
-  const height = apptH(appt.startTime, appt.endTime, hh);
+  // Inflated to stay tappable — but never into the next appointment below it.
+  const natural = ((toMin(appt.endTime) - toMin(appt.startTime)) / 60) * hh;
+  const room = lane?.gapMin !== undefined ? (lane.gapMin / 60) * hh - 1 : Infinity;
+  const height = Math.max(natural - 1, Math.min(apptH(appt.startTime, appt.endTime, hh), room));
   // When this appointment overlaps others, share the column width so they sit
   // beside each other instead of stacking. Otherwise use the full column.
   const lanes = lane && lane.lanes > 1 ? lane.lanes : 1;
@@ -734,7 +747,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   // name fits. Most names render at this size, so blocks stay visually uniform,
   // and a long name simply steps down a little instead of being truncated.
   const zoomFont = Math.max(9, Math.min(16, Math.round(10 + (hh - 28) * 0.08)));
-  const heightCap = Math.max(8, height - (veryShort ? 4 : 6));
+  // A sliver (zoomed out, back-to-back 15 min): the font fits the sliver instead of spilling over.
+  const heightCap = height < 12 ? Math.max(6, height - 1) : Math.max(8, height - (veryShort ? 4 : 6));
   let nameFont = Math.min(zoomFont, heightCap);
   if (lanes >= 3) nameFont = Math.min(nameFont, 11);
   // Allow the name to wrap to two lines on any block that isn't tiny. This is
