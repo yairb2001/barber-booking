@@ -53,6 +53,24 @@ export async function GET(request: Request) {
     return NextResponse.json(services);
   }
 
+  // Treatment first (16.10.2026): the visible services at least one bookable
+  // person does, with the price and duration range across them ("החל מ").
+  if (searchParams.get("offered") === "1") {
+    const rows = await prisma.service.findMany({
+      where: { isVisible: true, businessId: resolvedBusinessId, staffServices: { some: { staff: { isActive: true, isAvailable: true } } } },
+      orderBy: { sortOrder: "asc" },
+      select: {
+        id: true, name: true, description: true, price: true, durationMinutes: true, showDuration: true, note: true, sortOrder: true,
+        staffServices: { where: { staff: { isActive: true, isAvailable: true } }, select: { customPrice: true, customDuration: true } },
+      },
+    });
+    return NextResponse.json(rows.map(({ staffServices, ...s }) => {
+      const prices = staffServices.map(ss => ss.customPrice ?? s.price);
+      const durs = staffServices.map(ss => ss.customDuration ?? s.durationMinutes);
+      return { ...s, priceMin: Math.min(...prices), priceMax: Math.max(...prices), durationMin: Math.min(...durs), durationMax: Math.max(...durs), staffCount: staffServices.length };
+    }));
+  }
+
   // Get all visible services (scoped to business)
   const services = await prisma.service.findMany({
     where: { isVisible: true, businessId: resolvedBusinessId },

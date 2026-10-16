@@ -11,7 +11,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import ClientErrorListener from "@/components/ClientErrorListener";
 import { VocabProvider } from "@/components/VocabProvider";
-import { getServerTheme, getServerBusinessType } from "@/lib/server-theme";
+import { getServerTheme, getServerBusinessProfile } from "@/lib/server-theme";
 
 // ─── Theme fonts (each theme picks one for display + one for body) ──
 const frank = Frank_Ruhl_Libre({
@@ -97,13 +97,13 @@ export default async function RootLayout({
   const fontVars = `${frank.variable} ${bellefair.variable} ${suez.variable} ${rubik.variable} ${heebo.variable} ${assistant.variable}`;
   // Resolve the theme on the server so the first paint is already correct
   // (prevents the flash of the default gold theme before the client fetch).
-  const [theme, businessType] = await Promise.all([getServerTheme(), getServerBusinessType()]);
+  const [theme, profile] = await Promise.all([getServerTheme(), getServerBusinessProfile()]);
   return (
     <html lang="he" dir="rtl">
       <body className={`antialiased min-h-screen ${fontVars}`}>
         <ClientErrorListener />
         <ThemeProvider theme={theme}>
-          <VocabProvider type={businessType}>
+          <VocabProvider type={profile.type} vocab={profile.vocab} order={profile.order}>
             {children}
           </VocabProvider>
         </ThemeProvider>

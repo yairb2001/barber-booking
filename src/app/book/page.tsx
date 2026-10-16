@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { NoticePopup, useBookingNotices, generalKey, staffKey, seen, markSeen, type NoticeItem } from "@/components/BookingNotice";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab } from "@/components/VocabProvider";
+import { useVocab, useBookingOrder } from "@/components/VocabProvider";
+import TreatmentList from "@/components/booking/TreatmentList";
 
 type QuickSlot = {
   staffId: string;
@@ -59,6 +60,8 @@ function BackArrow({ href }: { href: string }) {
 export default function ChooseBarberPage() {
   const slug = useSlug();
   const v = useVocab();
+  // Treatment first (16.10.2026): the treatments replace the staff grid and the quick slots.
+  const serviceFirst = useBookingOrder() === "service";
   const [staff, setStaff] = useState<Staff[]>([]);
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   // Nearest available slot per barber (covers ALL barbers, not just the quick pool)
@@ -93,7 +96,7 @@ export default function ChooseBarberPage() {
   useEffect(() => {
     Promise.all([
       fetch(apiWithSlug("/api/staff", slug)).then(r => r.json()),
-      fetch(apiWithSlug("/api/quick-slots", slug)).then(r => r.json()),
+      serviceFirst ? Promise.resolve([]) : fetch(apiWithSlug("/api/quick-slots", slug)).then(r => r.json()),
     ])
       .then(([staffData, slots]: [Staff[], QuickSlot[]]) => {
         setStaff(staffData);
@@ -102,7 +105,7 @@ export default function ChooseBarberPage() {
 
         // Fetch the nearest available slot for EVERY barber (in parallel),
         // so even barbers outside the quick pool show their next opening.
-        if (Array.isArray(staffData)) {
+        if (Array.isArray(staffData) && !serviceFirst) {
           staffData.forEach((member) => {
             fetch(apiWithSlug(`/api/quick-slots?staffId=${member.id}`, slug))
               .then(r => r.ok ? r.json() : [])
@@ -164,7 +167,7 @@ export default function ChooseBarberPage() {
         <div className="flex items-center justify-between">
           <BackArrow href={publicHref(slug, "/")} />
           <h1 className="text-[13px] font-semibold tracking-[0.15em]" style={{ color: "var(--text-pri)" }}>
-            בחירת {v.staff}
+            {serviceFirst ? "קביעת תור" : `בחירת ${v.staff}`}
           </h1>
           {/* Step indicator intentionally omitted on the barber-selection screen — it's the entry step, no progress to show */}
           <div className="w-9" />
@@ -261,8 +264,15 @@ export default function ChooseBarberPage() {
         </div>
       )}
 
+      {serviceFirst && (
+        <div className="px-4 pt-6 pb-6">
+          <h2 className="text-xl font-semibold mb-3" style={{ color: "var(--text-pri)" }}>{v.choose} טיפול</h2>
+          <TreatmentList />
+        </div>
+      )}
+
       {/* ── Quick slots strip ── */}
-      {!loading && quickSlots.length > 0 && (
+      {!serviceFirst && !loading && quickSlots.length > 0 && (
         <div className="px-4 pt-5 pb-1">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2">
@@ -314,7 +324,7 @@ export default function ChooseBarberPage() {
       )}
 
       {/* ── Page title ── */}
-      {!loading && quickSlots.length === 0 && (
+      {!serviceFirst && !loading && quickSlots.length === 0 && (
         <div className="px-4 pt-6 pb-2">
           <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>הצוות שלנו</p>
           <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>{v.choose} את {v.staffDef} שלך</h2>
@@ -322,7 +332,7 @@ export default function ChooseBarberPage() {
       )}
 
       {/* ── Staff grid — compact, fits all on screen ── */}
-      <div className="px-3 pt-3 grid grid-cols-3 gap-2.5 pb-6">
+      {!serviceFirst && <div className="px-3 pt-3 grid grid-cols-3 gap-2.5 pb-6">
         {loading ? (
           [1, 2, 3, 4, 5, 6].map(i => (
             <div key={i} className="animate-pulse" style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--card)" }} />
@@ -445,7 +455,7 @@ export default function ChooseBarberPage() {
           })}
           </>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

@@ -41,6 +41,8 @@ type EligibleStaff = {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dateParam = searchParams.get("date");
+  // Treatment first (16.10.2026): "any" for THIS treatment, among everyone who does it.
+  const forcedServiceId = searchParams.get("serviceId");
   const fromStr = searchParams.get("from");
   const toStr = searchParams.get("to");
 
@@ -68,7 +70,9 @@ export async function GET(request: Request) {
   }
 
   const poolStaff = await prisma.staff.findMany({
-    where: { inQuickPool: true, isAvailable: true, ...bizScope },
+    where: forcedServiceId
+      ? { isActive: true, isAvailable: true, staffServices: { some: { serviceId: forcedServiceId } }, ...bizScope }
+      : { inQuickPool: true, isAvailable: true, ...bizScope },
     orderBy: { poolPriority: "asc" },
     select: {
       id: true,
@@ -84,9 +88,10 @@ export async function GET(request: Request) {
     .map(s => {
       const offered = new Set(s.staffServices.map(ss => ss.serviceId));
       // Prefer the returning customer's usual service if this barber offers it.
-      const svc =
-        (preferredServiceId && visibleServices.find(v => v.id === preferredServiceId && offered.has(v.id)))
-        || visibleServices.find(v => offered.has(v.id));
+      const svc = forcedServiceId
+        ? visibleServices.find(v => v.id === forcedServiceId && offered.has(v.id))
+        : (preferredServiceId && visibleServices.find(v => v.id === preferredServiceId && offered.has(v.id)))
+          || visibleServices.find(v => offered.has(v.id));
       if (!svc) return null;
       const ss = s.staffServices.find(x => x.serviceId === svc.id);
 

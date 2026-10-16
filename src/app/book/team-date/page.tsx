@@ -74,6 +74,9 @@ function TeamDatePageContent() {
   // confirm screen (a cold deep-link with no history) restore the day the
   // customer had picked, instead of snapping back to today.
   const [selectedDate, setSelectedDate] = useState<string>(() => searchParams.get("date") || formatDate(new Date()));
+  // Treatment first (16.10.2026): "any" among the people who do this treatment.
+  const forService = searchParams.get("serviceId");
+  const svcQ = forService ? `&serviceId=${encodeURIComponent(forService)}` : "";
   const [horizonDays, setHorizonDays] = useState(30);
   const [page, setPage] = useState(0);
   const [animDir, setAnimDir] = useState<"next" | "prev" | null>(null);
@@ -128,7 +131,7 @@ function TeamDatePageContent() {
   useEffect(() => {
     const from = formatDate(windowStart);
     const to = formatDate(windowEnd);
-    fetch(apiWithSlug(`/api/slots/team-by-date?from=${from}&to=${to}`, slug))
+    fetch(apiWithSlug(`/api/slots/team-by-date?from=${from}&to=${to}${svcQ}`, slug))
       .then(r => r.ok ? r.json() : { days: {} })
       .then((data: { days?: Record<string, boolean> }) => {
         setAvailability(prev => ({ ...prev, ...(data.days || {}) }));
@@ -141,7 +144,7 @@ function TeamDatePageContent() {
   useEffect(() => {
     if (!selectedDate) return;
     setLoading(true);
-    fetch(apiWithSlug(`/api/slots/team-by-date?date=${selectedDate}`, slug))
+    fetch(apiWithSlug(`/api/slots/team-by-date?date=${selectedDate}${svcQ}`, slug))
       .then(r => r.ok ? r.json() : { slots: [] })
       .then((data: { slots?: TeamSlot[] }) => {
         setSlots(data.slots || []);
@@ -168,7 +171,7 @@ function TeamDatePageContent() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href={publicHref(slug, "/book/team-upcoming")} />
+          <BackArrow href={publicHref(slug, forService ? `/book/pro?serviceId=${forService}` : "/book/team-upcoming")} />
           <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
             בחירת תאריך
           </h1>

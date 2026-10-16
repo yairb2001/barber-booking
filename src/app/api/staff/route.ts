@@ -10,8 +10,10 @@ export async function GET(req: NextRequest) {
   const resolvedBusinessId = await resolveBusinessId(req);
   if (!resolvedBusinessId) return NextResponse.json([]);
 
+  // Treatment first (16.10.2026): ?serviceId= → only the people who do it.
+  const serviceId = req.nextUrl.searchParams.get("serviceId");
   const staff = await prisma.staff.findMany({
-    where: { isAvailable: true, isActive: true, businessId: resolvedBusinessId },
+    where: { isAvailable: true, isActive: true, businessId: resolvedBusinessId, ...(serviceId ? { staffServices: { some: { serviceId } } } : {}) },
     orderBy: { sortOrder: "asc" },
     select: {
       id: true,
@@ -31,7 +33,9 @@ export async function GET(req: NextRequest) {
           caption: true,
         },
       },
-      staffServices: { take: 1, select: { serviceId: true } },
+      staffServices: serviceId
+        ? { where: { serviceId }, select: { serviceId: true, customPrice: true, customDuration: true, service: { select: { price: true, durationMinutes: true } } } }
+        : { take: 1, select: { serviceId: true, customPrice: true, customDuration: true, service: { select: { price: true, durationMinutes: true } } } },
     },
   });
 
@@ -42,8 +46,11 @@ export async function GET(req: NextRequest) {
   const result = staffWithServices.map(s => {
     let bookingConfig: Record<string, unknown> = {};
     try { if (s.settings) bookingConfig = JSON.parse(s.settings); } catch { /* ignore */ }
+    const forService = serviceId ? s.staffServices[0] : null;
     return {
       ...s,
+      // With ?serviceId: this person's own price and duration for that treatment.
+      ...(forService ? { servicePrice: forService.customPrice ?? forService.service.price, serviceDuration: forService.customDuration ?? forService.service.durationMinutes } : {}),
       staffServices: undefined, // don't expose
       settings: undefined, // don't expose raw JSON
       bookingHorizonDays:    bookingConfig.bookingHorizonDays    ?? null,

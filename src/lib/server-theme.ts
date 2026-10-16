@@ -3,6 +3,7 @@ import { headers, cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { resolveTheme, previewTheme, THEME_PREVIEW_COOKIE, type Theme } from "@/lib/themes";
 import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
+import { bookingOrderOf, type BookingOrder } from "@/lib/vocab";
 
 /**
  * Resolve the active business theme on the SERVER so the very first paint
@@ -24,20 +25,25 @@ import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
  * switches themes the server keeps serving the previously cached palette for
  * the first paint (stale) while the client fetch shows the new one → flash.
  */
-/** The current tenant's business type (vocabulary) — same resolution as the
- *  theme: slug from the pathname, else the fallback/root business. */
-export async function getServerBusinessType(): Promise<string | null> {
+/** The current tenant's type, word overrides and booking order — same
+ *  resolution as the theme: slug from the pathname, else the fallback/root
+ *  business. Only these go to the browser, never the raw settings. */
+export async function getServerBusinessProfile(): Promise<{ type: string | null; vocab: Record<string, string> | null; order: BookingOrder }> {
   noStore();
+  const out = (b: { businessType: string; settings: string | null } | null) => {
+    let vocab: Record<string, string> | null = null;
+    try { const s = b?.settings ? JSON.parse(b.settings) as { vocab?: unknown } : {}; if (s.vocab && typeof s.vocab === "object") vocab = s.vocab as Record<string, string>; } catch { /* none */ }
+    return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b) };
+  };
   try {
     const slug = tenantSlugFromPathname(headers().get("x-pathname"));
     if (slug) {
-      const biz = await prisma.business.findUnique({ where: { slug }, select: { businessType: true } });
-      if (biz) return biz.businessType;
+      const biz = await prisma.business.findUnique({ where: { slug }, select: { businessType: true, settings: true } });
+      if (biz) return out(biz);
     }
-    const business = await fallbackBusiness({ select: { businessType: true } });
-    return business?.businessType ?? null;
+    return out(await fallbackBusiness({ select: { businessType: true, settings: true } }));
   } catch {
-    return null;
+    return { type: null, vocab: null, order: "staff" };
   }
 }
 

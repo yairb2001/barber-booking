@@ -142,6 +142,22 @@ export function vocabFor(type: string | null | undefined, overrides?: Record<str
   return out;
 }
 
+/**
+ * The order of the booking screens (16.10.2026, Yair: "שמסך השירותים יהיה לפני
+ * מסך נותני השירות כי לא כל נותן שירות מבצע כל שירות"). "service" = the
+ * treatment first, then only the people who do it (every type but a men's
+ * barbershop); "staff" = the barber first, as DOMINANT works. settings.bookingOrder
+ * overrides the default.
+ */
+export type BookingOrder = "service" | "staff";
+export function bookingOrderOf(biz: { businessType?: string | null; settings?: string | null } | null | undefined): BookingOrder {
+  try {
+    const s = biz?.settings ? JSON.parse(biz.settings) as { bookingOrder?: unknown } : {};
+    if (s.bookingOrder === "service" || s.bookingOrder === "staff") return s.bookingOrder;
+  } catch { /* default by type */ }
+  return businessTypeOf(biz) === "barber_men" ? "staff" : "service";
+}
+
 /** vocabFor() straight from a business row: type column + settings.vocab overrides. */
 export function vocabOf(biz: { businessType?: string | null; settings?: string | null } | null | undefined): Vocab {
   let overrides: Record<string, unknown> | null = null;

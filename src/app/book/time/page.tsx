@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab } from "@/components/VocabProvider";
+import { useVocab, useBookingOrder } from "@/components/VocabProvider";
 import { israeliHoliday } from "@/lib/israeli-holidays";
 
 function formatDate(date: Date): string {
@@ -52,7 +52,8 @@ function monthYear(date: Date): string {
 // ── Step bar ───────────────────────────────────────────────────────────────────
 function StepBar({ step }: { step: number }) {
   const v = useVocab();
-  const steps = [v.staff, "שירות", "זמן"];
+  // Treatment first (16.10.2026): טיפול ← who ← time.
+  const steps = useBookingOrder() === "service" ? ["טיפול", v.staff, "זמן"] : [v.staff, "שירות", "זמן"];
   return (
     <div className="flex items-center gap-0">
       {steps.map((label, i) => {
@@ -251,6 +252,7 @@ function WaitlistSuccess({ dateLabel, onClose }: { dateLabel: string; onClose: (
 function ChooseTimePageContent() {
   const slug = useSlug();
   const searchParams = useSearchParams();
+  const serviceFirst = useBookingOrder() === "service";
   const staffId = searchParams.get("staffId") || "";
   const serviceId = searchParams.get("serviceId") || "";
 
@@ -396,7 +398,7 @@ function ChooseTimePageContent() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href={publicHref(slug, `/book/service?staffId=${staffId}`)} />
+          <BackArrow href={publicHref(slug, serviceFirst ? `/book/pro?serviceId=${serviceId}` : `/book/service?staffId=${staffId}`)} />
           <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
             בחירת תאריך ושעה
           </h1>
