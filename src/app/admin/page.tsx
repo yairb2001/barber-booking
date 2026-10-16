@@ -156,43 +156,52 @@ const apptH = (s: string, e: string, hh: number) =>
 // SIDE so they don't stack on top of each other. Returns a map id → { lane,
 // lanes } where `lanes` is how many columns the overlap-cluster needs and
 // `lane` is this appointment's column index (0-based).
-function computeApptLanes(appts: { id: string; startTime: string; endTime: string }[]): Record<string, { lane: number; lanes: number; gapMin?: number }> {
+/** The staff member's busy parts of an appointment, in minutes. A treatment
+ *  with a wait (busySegments, stage B) is busy only in its work parts. */
+function busyOf(a: { startTime: string; endTime: string; busySegments?: string | null }): [number, number][] {
+  const st = toMin(a.startTime);
+  try {
+    const parts = a.busySegments ? (JSON.parse(a.busySegments) as { o: number; m: number }[]) : null;
+    if (parts && parts.length) return parts.map(x => [st + x.o, st + x.o + x.m] as [number, number]);
+  } catch { /* one block */ }
+  return [[st, toMin(a.endTime)]];
+}
+
+function computeApptLanes(appts: { id: string; startTime: string; endTime: string; busySegments?: string | null }[]): Record<string, { lane: number; lanes: number; gapMin?: number }> {
+  // Two appointments clash only where their BUSY parts overlap (owner,
+  // 16.10.2026): one booked inside another's wait sits inside it, on top, in
+  // the same lane — not squeezed beside it.
   const items = appts
-    .map(a => ({ id: a.id, start: toMin(a.startTime), end: toMin(a.endTime), lane: 0 }))
+    .map(a => ({ id: a.id, start: toMin(a.startTime), end: toMin(a.endTime), busy: busyOf(a), lane: 0, comp: -1 }))
     .sort((x, y) => x.start - y.start || x.end - y.end);
+  const clash = (x: typeof items[number], y: typeof items[number]) => x.busy.some(([s1, e1]) => y.busy.some(([s2, e2]) => s1 < e2 && s2 < e1));
   const result: Record<string, { lane: number; lanes: number; gapMin?: number }> = {};
-  let cluster: typeof items = [];
-  let columnsEnd: number[] = []; // end-minute of the last appt placed in each column
-  let clusterEnd = -1;
-
-  const flush = () => {
-    const lanes = Math.max(columnsEnd.length, 1);
-    for (const it of cluster) result[it.id] = { lane: it.lane, lanes };
-    cluster = [];
-    columnsEnd = [];
-    clusterEnd = -1;
-  };
-
+  const placed: typeof items = [];
   for (const it of items) {
-    // If this appointment starts after everything in the current cluster has
-    // ended, the cluster is closed — finalize it before starting fresh.
-    if (cluster.length && it.start >= clusterEnd) flush();
-    let placed = columnsEnd.findIndex(end => end <= it.start);
-    if (placed === -1) { placed = columnsEnd.length; columnsEnd.push(it.end); }
-    else columnsEnd[placed] = it.end;
-    it.lane = placed;
-    cluster.push(it);
-    clusterEnd = Math.max(clusterEnd, it.end);
+    let lane = 0;
+    while (placed.some(o => o.lane === lane && clash(o, it))) lane++;
+    it.lane = lane;
+    placed.push(it);
   }
-  flush();
-  // Room below each block before the next one in its lane (owner, 16.10.2026:
-  // zoomed out, back-to-back 15-minute appointments were inflated to the
-  // minimum tappable height and drawn on top of each other). ApptBlock never
-  // grows past this.
+  // Clusters = appointments linked by clashes; each cluster shares one lane count.
+  let comp = 0;
+  for (const it of items) {
+    if (it.comp >= 0) continue;
+    const stack = [it]; it.comp = comp;
+    while (stack.length) { const x = stack.pop()!; for (const y of items) if (y.comp < 0 && clash(x, y)) { y.comp = comp; stack.push(y); } }
+    comp++;
+  }
+  for (const it of items) {
+    const lanes = Math.max(...items.filter(o => o.comp === it.comp).map(o => o.lane)) + 1;
+    result[it.id] = { lane: it.lane, lanes };
+  }
+  // Room below each block before the next busy part in its lane (owner,
+  // 16.10.2026: zoomed out, back-to-back 15-minute appointments were inflated
+  // to the minimum tappable height and drawn on top of each other).
   for (const it of items) {
     const r = result[it.id];
-    const next = items.filter(o => o !== it && o.start > it.start && (r.lanes === 1 || (result[o.id].lane === r.lane && result[o.id].lanes === r.lanes)))
-      .reduce((m, o) => Math.min(m, o.start), Infinity);
+    const sameLane = items.filter(o => o !== it && (r.lanes === 1 || result[o.id].lane === r.lane));
+    const next = sameLane.flatMap(o => o.busy.map(([b]) => b)).filter(b => b >= it.end).reduce((m, b) => Math.min(m, b), Infinity);
     if (Number.isFinite(next)) r.gapMin = next - it.start;
   }
   return result;
@@ -242,6 +251,8 @@ type Appt = {
   isFirstVisit?: boolean;   // ★ the customer's first appointment here (unless marked "known before")
   confirmedAt?: string | null; // customer replied "1" to the reminder (confirmations feature)
   customServiceName?: string | null;
+  /** Busy parts as offsets '[{"o":0,"m":30},…]' — a treatment with a wait (stage B). */
+  busySegments?: string | null;
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
   service: { id: string; name: string; durationMinutes: number };
@@ -742,15 +753,20 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const laneStyle: React.CSSProperties = lanes > 1
     ? { left: `calc(${(lane!.lane * 100) / lanes}% + 1px)`, width: `calc(${100 / lanes}% - 2px)` }
     : { left: 2, right: 2 };
-  const veryShort = height < 30;   // e.g. zoomed-out 30-min slot
-  const short = height < 46;
+  // A treatment with a wait: the work parts are solid, the wait is drawn
+  // hatched and marked free (owner chose option א, 16.10.2026). Text sizing
+  // follows the first work part, where the name sits.
+  const parts = (() => { try { const x = appt.busySegments ? (JSON.parse(appt.busySegments) as { o: number; m: number }[]) : null; return x && x.length > 1 ? x : null; } catch { return null; } })();
+  const sizeH = parts ? (parts[0].m / 60) * hh : height;
+  const veryShort = sizeH < 30;   // e.g. zoomed-out 30-min slot
+  const short = sizeH < 46;
   // Preferred name font — driven by the zoom level (hourHeight). This is the
   // MAX size; FitName auto-shrinks from here only as far as needed so the full
   // name fits. Most names render at this size, so blocks stay visually uniform,
   // and a long name simply steps down a little instead of being truncated.
   const zoomFont = Math.max(9, Math.min(16, Math.round(10 + (hh - 28) * 0.08)));
   // A sliver (zoomed out, back-to-back 15 min): the font fits the sliver instead of spilling over.
-  const heightCap = height < 12 ? Math.max(6, height - 1) : Math.max(8, height - (veryShort ? 4 : 6));
+  const heightCap = sizeH < 12 ? Math.max(6, sizeH - 1) : Math.max(8, sizeH - (veryShort ? 4 : 6));
   let nameFont = Math.min(zoomFont, heightCap);
   if (lanes >= 3) nameFont = Math.min(nameFont, 11);
   // Allow the name to wrap to two lines on any block that isn't tiny. This is
@@ -762,8 +778,8 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
   const subFont = Math.max(7, Math.round(nameFont * 0.8));
   // With a possible two-line name, require a bit more height before adding the
   // service/time lines so nothing gets cramped.
-  const showService = lanes < 3 && height > (nameLines === 2 ? 58 : 44);
-  const showTime    = lanes < 3 && height > (nameLines === 2 ? 76 : 60);
+  const showService = lanes < 3 && sizeH > (nameLines === 2 ? 58 : 44);
+  const showTime    = lanes < 3 && sizeH > (nameLines === 2 ? 76 : 60);
   const padClass = veryShort ? "px-1 py-0" : "px-1 py-0.5";
 
   // Long-press state — refs (no re-render)
@@ -826,7 +842,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
     // block (pan-y); switch to "none" only once THIS block is actively dragged, so
     // the drag captures movement instead of scrolling. The switch happens at
     // long-press time — before any finger movement — so it's in place in time.
-    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} z-10 ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
+    <div className={`no-touch-select absolute flex flex-col ${short ? "justify-center" : "justify-start"} ${veryShort ? "rounded-md" : "rounded-lg"} border cursor-pointer hover:opacity-85 transition-opacity overflow-hidden ${padClass} ${parts ? "z-[5]" : "z-10"} ${blockColor} ${isMoving ? "opacity-30" : ""} ${ringClass}`}
       style={{ top, height, touchAction: (isMoving || dragActive) ? "none" : "pan-y", ...laneStyle, ...extraStyle }}
       onClick={e => e.stopPropagation()}
       onPointerDown={e => {
@@ -864,6 +880,15 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
       {badge && (
         <span className={`absolute top-0.5 left-0.5 z-10 text-[9px] font-bold px-1 py-px rounded ${badge.cls}`}>{badge.text}</span>
       )}
+      {parts && parts.slice(0, -1).map((g, i) => {
+        const from = g.o + g.m, to = parts[i + 1].o, px = ((to - from) / 60) * hh;
+        return to > from ? (
+          <span key={i} className="absolute left-0 right-0 pointer-events-none flex items-center justify-center border-y border-dashed"
+            style={{ top: (from / 60) * hh, height: px, borderColor: "rgba(0,0,0,.18)", background: "repeating-linear-gradient(135deg, rgba(255,255,255,.88) 0 6px, rgba(255,255,255,.55) 6px 12px)" }}>
+            {px >= 14 && <span className="text-[10px] font-semibold opacity-80 truncate px-1">⏳ המתנה {to - from} דק׳ · פנוי</span>}
+          </span>
+        ) : null;
+      })}
       {appt.hiddenAt && (
         <span className="absolute inset-0 rounded-[inherit] bg-neutral-200/60 pointer-events-none flex items-start justify-center pt-0.5">
           <span className="text-[9px] font-bold text-neutral-600 bg-white/85 rounded px-1">מוסתר</span>
