@@ -5,6 +5,7 @@ import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { getPreferredServiceId } from "@/lib/preferred-service";
 import { getBlockStatus } from "@/lib/customer-block";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { staffChoiceOf } from "@/lib/vocab";
 import type { Shape } from "@/lib/availability/engine";
 import {
   generateSlots,
@@ -58,6 +59,8 @@ export async function GET(request: Request) {
     : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true, businessType: true, settings: true } });
   const leadMinutes = biz?.minBookingLeadMinutes ?? 0;
   const grid = gridOf(biz);
+  // "most" (settings, 16.10.2026): fill the fullest calendar first instead of spreading.
+  const fillFullest = staffChoiceOf(biz) === "most";
   const bizFirstLead = biz?.firstApptLeadMinutes ?? 0;
   const bizHorizon = biz?.bookingHorizonDays ?? 30;
 
@@ -276,6 +279,12 @@ export async function GET(request: Request) {
 
   const slots = distinctTimes.map(time => {
     const candidates = byTime.get(time)!;
+    if (fillFullest) {
+      // Whoever already has the most bookings that day (tiebreak: poolPriority, name).
+      const load = (s: EligibleStaff) => (apptsByKey.get(`${s.id}|${dateStr}`) || []).length;
+      const best = [...candidates].sort((a, b) => load(b) - load(a) || a.poolPriority - b.poolPriority || a.name.localeCompare(b.name))[0];
+      return { time, staffId: best.id, staffName: best.name, staffAvatar: best.avatarUrl, serviceId: best.svc.id, serviceName: best.svc.name, price: Number(best.svc.price), duration: best.svc.durationMinutes };
+    }
     // Pick the available barber who has the fewest assignments so far (tiebreak by
     // poolPriority, then name) → balanced rotation across the day.
     let best = candidates[0];

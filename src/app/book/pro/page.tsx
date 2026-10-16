@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab } from "@/components/VocabProvider";
+import { useVocab, useStaffChoice } from "@/components/VocabProvider";
 import { priceLabel } from "@/components/booking/TreatmentList";
 
 /**
@@ -30,11 +30,14 @@ function ProContent() {
   const v = useVocab();
   const router = useRouter();
   const serviceId = useSearchParams().get("serviceId") || "";
+  const auto = useStaffChoice() !== "customer";
   const [pros, setPros] = useState<Pro[] | null>(null);
   const [treatment, setTreatment] = useState<Treatment | null>(null);
 
   useEffect(() => {
     if (!serviceId) return;
+    // The system assigns who (settings): no choosing here, straight to the times.
+    if (auto) { router.replace(publicHref(slug, `/book/team-date?serviceId=${serviceId}`)); return; }
     Promise.all([
       fetch(apiWithSlug(`/api/staff?serviceId=${encodeURIComponent(serviceId)}`, slug)).then(r => (r.ok ? r.json() : [])),
       fetch(apiWithSlug("/api/services?offered=1", slug)).then(r => (r.ok ? r.json() : [])),
@@ -45,7 +48,7 @@ function ProContent() {
       if (list.length === 1) { router.replace(publicHref(slug, `/book/time?staffId=${list[0].id}&serviceId=${serviceId}`)); return; }
       setPros(list);
     }).catch(() => setPros([]));
-  }, [serviceId, slug, router]);
+  }, [serviceId, slug, router, auto]);
 
   return (
     <div className="min-h-screen pb-24" dir="rtl" style={{ background: "var(--bg)" }}>

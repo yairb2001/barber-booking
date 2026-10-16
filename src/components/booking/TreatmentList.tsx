@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
+import { useStaffChoice } from "@/components/VocabProvider";
 
 /**
  * Treatment first (16.10.2026, Yair: "שמסך השירותים יהיה לפני מסך נותני
@@ -22,6 +23,8 @@ export function priceLabel(min: number, max: number, from = false): string {
 
 export default function TreatmentList() {
   const slug = useSlug();
+  // The system assigns who (settings): straight from the treatment to the times.
+  const auto = useStaffChoice() !== "customer";
   const [items, setItems] = useState<Treatment[] | null>(null);
   useEffect(() => {
     fetch(apiWithSlug("/api/services?offered=1", slug)).then(r => (r.ok ? r.json() : [])).then(d => setItems(Array.isArray(d) ? d : [])).catch(() => setItems([]));
@@ -46,7 +49,7 @@ export default function TreatmentList() {
         <div key={g.name ?? "_"} className="space-y-2.5">
           {named && <h3 className="text-[12px] font-semibold tracking-[0.15em]" style={{ color: "var(--brand)" }}>{g.name ?? "עוד"}</h3>}
       {g.items.map(t => (
-        <Link key={t.id} href={publicHref(slug, `/book/pro?serviceId=${t.id}`)}
+        <Link key={t.id} href={publicHref(slug, auto ? `/book/team-date?serviceId=${t.id}` : `/book/pro?serviceId=${t.id}`)}
           className="flex items-center rounded-2xl overflow-hidden active:scale-[0.99] transition-all"
           style={{ background: "var(--card)", border: "1px solid var(--divider)", boxShadow: "0 2px 10px rgba(0,0,0,0.05)" }}>
           <div className="w-1 self-stretch flex-shrink-0" style={{ background: "var(--brand)" }} />

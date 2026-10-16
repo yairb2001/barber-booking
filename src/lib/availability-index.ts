@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { activeHolds } from "@/lib/slot-holds";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { staffChoiceOf } from "@/lib/vocab";
 
 export type StaffRow = { id: string; name: string; isAvailable: boolean; inQuickPool: boolean; leadMinutes: number; firstLeadMinutes: number };
 export type AvailabilityIndex = {
@@ -89,6 +90,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   };
   // "Any barber" = the quick pool (everyone if the business defined no pool).
   const pool = staff.some(s => s.inQuickPool) ? staff.filter(s => s.inQuickPool) : staff;
-  const staffByLoad = (dateISO: string) => [...pool].sort((a, b) => (booked.get(`${a.id}|${dateISO}`)?.length || 0) - (booked.get(`${b.id}|${dateISO}`)?.length || 0));
+  // Least booked first; "most" (settings.staffChoice) fills the fullest calendar first.
+  const dir = staffChoiceOf(biz) === "most" ? -1 : 1;
+  const staffByLoad = (dateISO: string) => [...pool].sort((a, b) => dir * ((booked.get(`${a.id}|${dateISO}`)?.length || 0) - (booked.get(`${b.id}|${dateISO}`)?.length || 0)));
   return { fromISO, toISO, staff, slots, staffByLoad };
 }

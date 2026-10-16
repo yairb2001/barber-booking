@@ -8,7 +8,7 @@ import BusinessSwitcher from "@/components/BusinessSwitcher";
 import { type Theme, darkSurfaceCss } from "@/lib/themes";
 import { useServerTheme } from "@/components/ThemeProvider";
 import { useSlug, apiWithSlug, publicHref } from "@/lib/public-nav";
-import { useVocab, useG } from "@/components/VocabProvider";
+import { useVocab, useG, useStaffChoice } from "@/components/VocabProvider";
 import { captureAttribution } from "@/lib/attribution";
 import MetaPixel from "@/components/MetaPixel";
 
@@ -146,6 +146,7 @@ type PortfolioWork = { imageUrl: string; staffName: string; staffAvatar: string 
 function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: string }) {
   const slug = useSlug();
   const g = useG();
+  const autoStaff = useStaffChoice() !== "customer";
   const [active, setActive] = useState(0);
   const startX = useRef(0);
   const isDragging = useRef(false);
@@ -248,7 +249,7 @@ function PortfolioCarousel({ works, brand }: { works: PortfolioWork[]; brand: st
                           )}
                           <span style={{ color: "#fff", fontSize: 12, fontWeight: 600, textAlign: "center", maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{work.staffName}</span>
                         </div>
-                        <Link href={work.staffId ? publicHref(slug, `/book/service?staffId=${work.staffId}`) : publicHref(slug, "/book")} dir="rtl"
+                        <Link href={work.staffId && !autoStaff ? publicHref(slug, `/book/service?staffId=${work.staffId}`) : publicHref(slug, "/book")} dir="rtl"
                           style={{ background: brand, borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textDecoration: "none", flexShrink: 0, marginBottom: 12 }}>
                           {g("קבע תור", "קבעי תור")}
                         </Link>
@@ -337,6 +338,8 @@ export default function HomePage() {
   const slug = useSlug();
   const v = useVocab();
   const g = useG();
+  // The system assigns who (settings): a staff card leads to booking, not to her own calendar.
+  const autoStaff = useStaffChoice() !== "customer";
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -1025,7 +1028,7 @@ export default function HomePage() {
               const slot = quickSlots.find(s => s.staffId === member.id);
               const hasToday = slot?.dayLabel === "היום";
               return (
-                <Link key={member.id} href={publicHref(slug, `/book/service?staffId=${member.id}`)}
+                <Link key={member.id} href={publicHref(slug, autoStaff ? "/book" : `/book/service?staffId=${member.id}`)}
                   className="flex-shrink-0 snap-start active:scale-[0.97] transition-transform rounded-2xl overflow-hidden bg-white border border-slate-200 shadow-sm"
                   style={{ width: 150 }}>
                   {/* Square avatar */}

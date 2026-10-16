@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
-import { useVocab } from "@/components/VocabProvider";
+import { useVocab, useStaffChoice } from "@/components/VocabProvider";
 import { israeliHoliday } from "@/lib/israeli-holidays";
 
 type TeamSlot = {
@@ -67,6 +67,7 @@ function BackArrow({ href }: { href: string }) {
 function TeamDatePageContent() {
   const slug = useSlug();
   const v = useVocab();
+  const autoStaff = useStaffChoice() !== "customer";
 
   const searchParams = useSearchParams();
   const [today] = useState(() => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; });
@@ -171,7 +172,7 @@ function TeamDatePageContent() {
       <div className="sticky top-0 z-20 px-4 py-3"
         style={{ background: "var(--header-bg)", backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)", borderBottom: "1px solid var(--divider)" }}>
         <div className="flex items-center justify-between">
-          <BackArrow href={publicHref(slug, forService ? `/book/pro?serviceId=${forService}` : "/book/team-upcoming")} />
+          <BackArrow href={publicHref(slug, forService ? (autoStaff ? "/book" : `/book/pro?serviceId=${forService}`) : "/book/team-upcoming")} />
           <h1 className="text-[13px] font-semibold tracking-[0.12em]" style={{ color: "var(--text-pri)" }}>
             בחירת תאריך
           </h1>

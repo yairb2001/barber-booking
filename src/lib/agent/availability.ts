@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { gridOf, shapeOf, type ShapedService } from "@/lib/availability/shape";
+import { staffChoiceOf } from "@/lib/vocab";
 import { activeHolds } from "@/lib/slot-holds";
 import {
   generateSlots,
@@ -192,7 +193,9 @@ export async function computeDayAvailability(
     if (slots.length) byStaff.push({ staffId: staff.id, name: staff.name, slots, load: booked.length });
   }
 
-  if (!inputStaffId) byStaff.sort((a, b) => a.load - b.load);
+  // Least booked first (spreads the work); a business that fills the fullest
+  // calendar first (settings.staffChoice "most") gets the busiest first.
+  if (!inputStaffId) byStaff.sort(staffChoiceOf(biz) === "most" ? (a, b) => b.load - a.load : (a, b) => a.load - b.load);
   return byStaff;
 }
 

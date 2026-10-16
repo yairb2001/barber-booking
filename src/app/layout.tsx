@@ -103,7 +103,7 @@ export default async function RootLayout({
       <body className={`antialiased min-h-screen ${fontVars}`}>
         <ClientErrorListener />
         <ThemeProvider theme={theme}>
-          <VocabProvider type={profile.type} vocab={profile.vocab} order={profile.order}>
+          <VocabProvider type={profile.type} vocab={profile.vocab} order={profile.order} staffChoice={profile.staffChoice}>
             {children}
           </VocabProvider>
         </ThemeProvider>

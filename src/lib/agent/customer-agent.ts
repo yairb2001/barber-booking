@@ -36,7 +36,7 @@ import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
-import { vocabFor, vocabOf, type Vocab } from "@/lib/vocab";
+import { vocabFor, vocabOf, staffChoiceOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
@@ -1770,9 +1770,23 @@ export function stablePromptParams(
     customSystemPrompt: custom || null,
     defaultBody,
     setupBlock,
+    assignRule: assignRuleFor(biz, vocab),
     faqs: agentConfig?.faqs ?? [],
     catalogBlock,
   };
+}
+
+/** When the system assigns the staff member (settings.staffChoice, 16.10.2026,
+ *  Yair: "לבחור רק שירות וזה נותן אצל מי שהכי פנוי או אצל מי שהכי מלא"): the
+ *  agent never asks who; availability already lists the right person first. */
+export function assignRuleFor(biz: { settings?: string | null }, v: Vocab): string {
+  const choice = staffChoiceOf(biz);
+  if (choice === "customer") return "";
+  const f = v.staffFem, c = v.customerFem;
+  const first = choice === "least" ? "הכי פנוי" + (f ? "ה" : "") : "הכי " + (f ? "מלאה" : "מלא");
+  return `שיבוץ ${v.staffPluralDef}: ${v.customer} לא ${c ? "בוחרת" : "בוחר"} אצל מי, רק ${v.treatment} ושעה. אל תשאל אצל מי ואל תציע ${v.staffPlural} לבחירה. ` +
+    `בשעה שנבחרה קבע אצל ${f ? "הראשונה" : "הראשון"} ברשימת השעות הפנויות ${f ? "שהשעה פנויה אצלה" : "שהשעה פנויה אצלו"}: הרשימה כבר מסודרת כך ${f ? "שהראשונה" : "שהראשון"} ${f ? "היא" : "הוא"} ${first} באותו יום. ` +
+    `רק אם ${v.customer} ${c ? "מבקשת" : "מבקש"} ${v.staff} ${f ? "מסוימת" : "מסוים"} ${f ? "בשמה" : "בשמו"}, אפשר לקבוע ${f ? "אצלה" : "אצלו"}. הכלל הזה גובר על כל הנחיה אחרת על בחירת ${v.staff}.`;
 }
 
 /** The service the default prompt assumes when a customer just says "רוצה תור":
@@ -1863,6 +1877,8 @@ export function buildSystemPrompt(params: {
   /** The compact template body (stablePromptParams) — used when there is no custom prompt. */
   defaultBody?: string;
   setupBlock?: string;
+  /** Who books whom when the system assigns the staff member (settings.staffChoice). */
+  assignRule?: string;
   faqs: Array<{ question: string; answer: string }>;
   catalogBlock?: string;
   now: string;
@@ -1884,6 +1900,8 @@ export function buildSystemPrompt(params: {
   if (params.setupBlock && !params.customSystemPrompt?.trim()) {
     stable += `\n\n${params.setupBlock}`;
   }
+  // The business's assignment rule wins over any prompt's "ask who" (empty when the customer chooses).
+  if (params.assignRule) stable += `\n\n${params.assignRule}`;
   if (params.faqs.length) {
     stable +=
       "\n\nמידע שיעזור לך לענות:\n" +

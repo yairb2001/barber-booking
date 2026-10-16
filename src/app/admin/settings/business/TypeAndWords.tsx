@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BUSINESS_TYPES, isBusinessType, vocabFor, type BusinessType } from "@/lib/vocab";
+import { BUSINESS_TYPES, definite, isBusinessType, vocabFor, type BusinessType } from "@/lib/vocab";
 
 /**
  * The kind of business and its own words (16.10.2026, Yair: "שדה בהגדרות שבו
@@ -11,7 +11,7 @@ import { BUSINESS_TYPES, isBusinessType, vocabFor, type BusinessType } from "@/l
  * team's, and how customers are addressed) can be switched. Empty = the type's
  * word. Saved into settings.vocab, which every screen, message and the agent read.
  */
-type Words = { staff?: string; staffPlural?: string; staffFem?: boolean; customerFem?: boolean };
+type Words = { staff?: string; staffPlural?: string; staffDef?: string; staffPluralDef?: string; staffFem?: boolean; customerFem?: boolean };
 
 const chip = (on: boolean) =>
   `px-3 py-1.5 rounded-full text-sm border transition ${on ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-600 hover:border-neutral-300"}`;
@@ -22,6 +22,9 @@ export default function TypeAndWords() {
   const [savedType, setSavedType] = useState<BusinessType | null>(null);
   const [staff, setStaff] = useState("");
   const [staffPlural, setStaffPlural] = useState("");
+  // "With ה": derived the Hebrew way (מאמני הכושר); the owner may write it her own way.
+  const [staffDef, setStaffDef] = useState("");
+  const [staffPluralDef, setStaffPluralDef] = useState("");
   const [staffFem, setStaffFem] = useState<boolean | null>(null);
   const [customerFem, setCustomerFem] = useState<boolean | null>(null);
   const [otherWords, setOtherWords] = useState<Record<string, unknown>>({});
@@ -36,6 +39,8 @@ export default function TypeAndWords() {
       const w = (d.settings?.vocab && typeof d.settings.vocab === "object" ? d.settings.vocab : {}) as Record<string, unknown>;
       setStaff(typeof w.staff === "string" ? w.staff : "");
       setStaffPlural(typeof w.staffPlural === "string" ? w.staffPlural : "");
+      setStaffDef(typeof w.staffDef === "string" ? w.staffDef : "");
+      setStaffPluralDef(typeof w.staffPluralDef === "string" ? w.staffPluralDef : "");
       setStaffFem(typeof w.staffFem === "boolean" ? w.staffFem : null);
       setCustomerFem(typeof w.customerFem === "boolean" ? w.customerFem : null);
       // Words this card doesn't edit stay as they are.
@@ -53,6 +58,8 @@ export default function TypeAndWords() {
   const words: Words = {
     ...(staff.trim() ? { staff: staff.trim() } : {}),
     ...(staffPlural.trim() ? { staffPlural: staffPlural.trim() } : {}),
+    ...(staffDef.trim() ? { staffDef: staffDef.trim() } : {}),
+    ...(staffPluralDef.trim() ? { staffPluralDef: staffPluralDef.trim() } : {}),
     ...(sFem !== base.staffFem ? { staffFem: sFem } : {}),
     ...(cFem !== base.customerFem ? { customerFem: cFem } : {}),
   };
@@ -93,6 +100,22 @@ export default function TypeAndWords() {
             className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
         </div>
       </div>
+
+      {(staff.trim() || staffPlural.trim() || staffDef || staffPluralDef) && (
+        <div className="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">עם ה׳ (אחד)</label>
+            <input value={staffDef} onChange={e => { setStaffDef(e.target.value); setSaved(false); }} placeholder={staff.trim() ? definite(staff) : base.staffDef}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          </div>
+          <div>
+            <label className="text-xs text-neutral-500 block mb-1">עם ה׳ (ביחד)</label>
+            <input value={staffPluralDef} onChange={e => { setStaffPluralDef(e.target.value); setSaved(false); }} placeholder={staffPlural.trim() ? definite(staffPlural) : base.staffPluralDef}
+              className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+          </div>
+          <p className="col-span-2 text-[11px] text-neutral-400 -mt-1">ריק = כמו שמופיע באפור. לשנות רק אם אומרים אחרת.</p>
+        </div>
+      )}
 
       <div className="mt-4 space-y-3">
         <div>

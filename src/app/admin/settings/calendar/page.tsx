@@ -2,6 +2,7 @@
 import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
+import BookingFlowCard from "./BookingFlowCard";
 import { useEffect, useState } from "react";
 
 // Mirrors formatCancellationPolicyMessage in src/lib/cancellation-policy.ts (kept
@@ -121,6 +122,8 @@ export default function CalendarBookingPage() {
 
       {loading ? <div className="text-center py-16 text-neutral-400">טוען...</div> : (
         <div className="space-y-5 max-w-xl">
+          <BookingFlowCard />
+
           <div className="bg-white rounded-2xl border border-neutral-200 p-6">
             <h2 className="font-semibold text-neutral-800 mb-4">יומן ותורים</h2>
             <div className="space-y-5">

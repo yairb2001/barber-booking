@@ -247,11 +247,29 @@ export function vocabFor(type: string | null | undefined, overrides?: Record<str
  */
 export type BookingOrder = "service" | "staff";
 export function bookingOrderOf(biz: { businessType?: string | null; settings?: string | null } | null | undefined): BookingOrder {
+  // The system assigns the staff member → the customer only picks the treatment.
+  if (staffChoiceOf(biz) !== "customer") return "service";
   try {
     const s = biz?.settings ? JSON.parse(biz.settings) as { bookingOrder?: unknown } : {};
     if (s.bookingOrder === "service" || s.bookingOrder === "staff") return s.bookingOrder;
   } catch { /* default by type */ }
   return businessTypeOf(biz) === "barber_men" ? "staff" : "service";
+}
+
+/**
+ * Who picks the staff member (16.10.2026, Yair: "לא לבחור נותן שירות אלא לבחור
+ * רק שירות וזה נותן אצל מי שהכי פנוי או אצל מי שהכי מלא"). settings.staffChoice:
+ * "customer" (default, as today) | "least" (the system books whoever is least
+ * booked that day, spreading the work) | "most" (whoever is most booked, filling
+ * one day before opening another's). Booking page and agent follow it.
+ */
+export type StaffChoice = "customer" | "least" | "most";
+export function staffChoiceOf(biz: { settings?: string | null } | null | undefined): StaffChoice {
+  try {
+    const v = biz?.settings ? (JSON.parse(biz.settings) as { staffChoice?: unknown }).staffChoice : undefined;
+    if (v === "least" || v === "most") return v;
+  } catch { /* default */ }
+  return "customer";
 }
 
 /** vocabFor() straight from a business row: type column + settings.vocab overrides. */

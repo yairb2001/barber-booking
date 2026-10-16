@@ -3,7 +3,7 @@ import { headers, cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { resolveTheme, previewTheme, THEME_PREVIEW_COOKIE, type Theme } from "@/lib/themes";
 import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
-import { bookingOrderOf, type BookingOrder } from "@/lib/vocab";
+import { bookingOrderOf, staffChoiceOf, type BookingOrder, type StaffChoice } from "@/lib/vocab";
 
 /**
  * Resolve the active business theme on the SERVER so the very first paint
@@ -28,12 +28,12 @@ import { bookingOrderOf, type BookingOrder } from "@/lib/vocab";
 /** The current tenant's type, word overrides and booking order — same
  *  resolution as the theme: slug from the pathname, else the fallback/root
  *  business. Only these go to the browser, never the raw settings. */
-export async function getServerBusinessProfile(): Promise<{ type: string | null; vocab: Record<string, unknown> | null; order: BookingOrder }> {
+export async function getServerBusinessProfile(): Promise<{ type: string | null; vocab: Record<string, unknown> | null; order: BookingOrder; staffChoice: StaffChoice }> {
   noStore();
   const out = (b: { businessType: string; settings: string | null } | null) => {
     let vocab: Record<string, unknown> | null = null;
     try { const s = b?.settings ? JSON.parse(b.settings) as { vocab?: unknown } : {}; if (s.vocab && typeof s.vocab === "object") vocab = s.vocab as Record<string, unknown>; } catch { /* none */ }
-    return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b) };
+    return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b), staffChoice: staffChoiceOf(b) };
   };
   try {
     // The admin area talks in the logged-in business's words (a nail studio's
@@ -51,7 +51,7 @@ export async function getServerBusinessProfile(): Promise<{ type: string | null;
     }
     return out(await fallbackBusiness({ select: { businessType: true, settings: true } }));
   } catch {
-    return { type: null, vocab: null, order: "staff" };
+    return { type: null, vocab: null, order: "staff", staffChoice: "customer" };
   }
 }
 
