@@ -165,8 +165,8 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
     // been taken since the proposal), by the booking's own busy parts; the
     // customer's own holds (the closure alternatives offered to him) don't count.
     try {
-      await writeChecked([{ staffId: newPrimary.staffId, dateISO: newPrimary.date.toISOString().slice(0, 10), startTime: newPrimary.startTime, shape: shapeOfBooking(p), ignoreAppointmentIds: [p.id], holds: { exemptCustomerId: p.customerId } }], async tx => {
-        await tx.appointment.update({ where: { id: p.id }, data: newPrimary });
+      await writeChecked([{ staffId: newPrimary.staffId, dateISO: newPrimary.date.toISOString().slice(0, 10), startTime: newPrimary.startTime, shape: shapeOfBooking(p), ignoreAppointmentIds: [p.id], holds: { exemptCustomerId: p.customerId }, room: { businessId: p.businessId, serviceId: p.serviceId } }], async (tx, rooms) => {
+        await tx.appointment.update({ where: { id: p.id }, data: { ...newPrimary, roomId: rooms[0] } });
         await tx.swapProposal.update({
           where: { id: proposal.id },
           data:  { status: "approved", approvedAt: new Date() },
@@ -264,16 +264,22 @@ export async function executeApprovedProposal(proposalId: string): Promise<ExecR
   const exempt = { exemptHolderKeys: [] as string[] };
   try {
     await writeChecked([
-      { staffId: newPrimary.staffId, dateISO: iso(newPrimary.date), startTime: newPrimary.startTime, shape: pShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: p.customerId } },
-      { staffId: newCandidate.staffId, dateISO: iso(newCandidate.date), startTime: newCandidate.startTime, shape: cShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: c.customerId } },
-    ], async tx => {
+      { staffId: newPrimary.staffId, dateISO: iso(newPrimary.date), startTime: newPrimary.startTime, shape: pShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: p.customerId }, room: { businessId: p.businessId, serviceId: p.serviceId } },
+      { staffId: newCandidate.staffId, dateISO: iso(newCandidate.date), startTime: newCandidate.startTime, shape: cShape, ignoreAppointmentIds: both, holds: { ...exempt, exemptCustomerId: c.customerId }, room: { businessId: c.businessId, serviceId: c.serviceId } },
+    ], async (tx, rooms) => {
+      // Both picked the same room at overlapping visits (each checked without the other): refuse.
+      if (rooms[0] && rooms[0] === rooms[1] && iso(newPrimary.date) === iso(newCandidate.date)) {
+        const occ = (t: string, sh: typeof pShape) => ({ s: timeToMinutes(t), e: timeToMinutes(t) + sh.segs.reduce((n, g) => n + g.m, 0) + sh.bufferAfter });
+        const a = occ(newPrimary.startTime, pShape), b = occ(newCandidate.startTime, cShape);
+        if (a.s < b.e && a.e > b.s) throw new SlotRefused({ ok: false, reason: "room" });
+      }
       if (newPrimary.staffId === newCandidate.staffId && iso(newPrimary.date) === iso(newCandidate.date)) {
         const a = staffBlocks(pShape, timeToMinutes(newPrimary.startTime)), b = staffBlocks(cShape, timeToMinutes(newCandidate.startTime));
         if (a.some(x => b.some(y => x.s < y.e && x.e > y.s))) throw new SlotRefused({ ok: false, reason: "busy" });
       }
       await tx.appointment.update({ where: { id: c.id }, data: { date: PARK_DATE } });
-      await tx.appointment.update({ where: { id: p.id }, data: newPrimary });
-      await tx.appointment.update({ where: { id: c.id }, data: newCandidate });
+      await tx.appointment.update({ where: { id: p.id }, data: { ...newPrimary, roomId: rooms[0] } });
+      await tx.appointment.update({ where: { id: c.id }, data: { ...newCandidate, roomId: rooms[1] } });
       await tx.swapProposal.update({
         where: { id: proposal.id },
         data:  { status: "approved", approvedAt: new Date() },

@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { activeHolds } from "@/lib/slot-holds";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 import { staffChoiceOf } from "@/lib/vocab";
 
 export type StaffRow = { id: string; name: string; isAvailable: boolean; inQuickPool: boolean; leadMinutes: number; firstLeadMinutes: number; horizonDays: number };
@@ -51,6 +52,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
   }));
   const svcDuration = new Map(services.map(s => [s.id, s.durationMinutes]));
   const svcRow = new Map(services.map(s => [s.id, s]));
+  // Rooms (16.10.2026): a time counts only if a room the treatment needs is free.
+  const roomCal = await loadRoomCalendar(prisma, businessId, fromISO, toISO);
   const grid = gridOf(biz);
   const staffDuration = new Map<string, number>(); // `${staffId}|${serviceId}` → minutes
   for (const s of staffRows) for (const ss of s.staffServices) staffDuration.set(`${s.id}|${ss.serviceId}`, ss.customDuration ?? svcDuration.get(ss.serviceId) ?? 30);
@@ -85,7 +88,8 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
       work = JSON.parse(sc.slots); breaks = sc.breaks ? JSON.parse(sc.breaks) : null;
     }
     const taken = booked.get(`${staffId}|${dateISO}`) || [];
-    let out = generateSlots(work, breaks, shapeOf(serviceId ? svcRow.get(serviceId) : null, duration), taken, grid);
+    const shape = shapeOf(serviceId ? svcRow.get(serviceId) : null, duration);
+    let out = generateSlots(work, breaks, shape, taken, grid).filter(roomFilter(roomCal, serviceId, dateISO, shape));
     if (dateISO === nowBiz.date) {
       const lead = taken.length === 0 ? Math.max(st.firstLeadMinutes, st.leadMinutes) : st.leadMinutes;
       out = out.filter(t => timeToMinutes(t) >= nowBiz.minutes + lead);

@@ -10,6 +10,7 @@ import {
   getDayOfWeekISO,
 } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -139,6 +140,8 @@ export async function GET(request: Request) {
   const scanDays = Math.min(MAX_SCAN_DAYS, Math.max(1, ...eligibleStaff.map(s => s.horizon)));
   const firstDate = new Date(todayStr + "T00:00:00.000Z");
   const lastDate = new Date(addDaysISO(todayStr, scanDays - 1) + "T00:00:00.000Z");
+  // Rooms (16.10.2026): a time counts only if a room the treatment needs is free.
+  const roomCal = await loadRoomCalendar(prisma, resolvedBusinessId, todayStr, addDaysISO(todayStr, scanDays - 1));
 
   const [schedules, overrides, appts] = await Promise.all([
     prisma.staffSchedule.findMany({
@@ -192,7 +195,7 @@ export async function GET(request: Request) {
       }
 
       const appointments = apptsByKey.get(`${staff.id}|${dateStr}`) || [];
-      let slots = generateSlots(scheduleSlots, breaks, staff.svc.shape, appointments, grid);
+      let slots = generateSlots(scheduleSlots, breaks, staff.svc.shape, appointments, grid).filter(roomFilter(roomCal, staff.svc.id, dateStr, staff.svc.shape));
       if (dayOffset === 0) {
         const effectiveLead = appointments.length === 0
           ? Math.max(staff.staffFirstLead, staff.staffLead)

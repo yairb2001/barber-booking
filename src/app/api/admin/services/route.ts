@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
+import { setServiceRooms } from "@/lib/availability/rooms";
 
 export async function GET(req: NextRequest) {
   // Barbers also need to read services (for the new appointment modal)
@@ -40,9 +41,13 @@ export async function GET(req: NextRequest) {
       NOT: { name: "שירות זמני", isVisible: false },
     },
     orderBy: { sortOrder: "asc" },
+    include: { rooms: { select: { roomId: true } } },
   });
-  return NextResponse.json(services);
+  // roomIds: the rooms each treatment may use (rooms, 16.10.2026).
+  return NextResponse.json(services.map(({ rooms, ...s }) => ({ ...s, roomIds: rooms.map(r => r.roomId) })));
 }
+
+
 
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);
@@ -68,5 +73,6 @@ export async function POST(req: NextRequest) {
       rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null),
     },
   });
+  await setServiceRooms(service.id, business.id, body.roomIds);
   return NextResponse.json(service, { status: 201 });
 }

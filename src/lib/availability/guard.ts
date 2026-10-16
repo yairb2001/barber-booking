@@ -20,6 +20,7 @@ import { activeHolds } from "@/lib/slot-holds";
 import { getBusinessNow, getDayOfWeekISO, timeToMinutes, addDaysISO } from "@/lib/utils";
 import { fitsAt, staffBlocks, shapeLength, type Iv, type Shape } from "@/lib/availability/engine";
 import { bookedBusy } from "@/lib/availability/shape";
+import { loadRoomCalendar, pickRoom } from "@/lib/availability/rooms";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -37,11 +38,14 @@ export type SlotCheck = {
    *  horizon and the lead time (minus `leadGraceMinutes`, for a customer who
    *  took a few minutes on the confirm screen). Admin writes leave it off. */
   customer?: { leadGraceMinutes?: number };
+  /** Rooms (16.10.2026): when the treatment needs a room, one of its rooms must
+   *  be free too; the verdict says which, and the writer stores it. */
+  room?: { businessId: string; serviceId: string | null | undefined; ignoreAppointmentIds?: string[] };
 };
 
 export type SlotVerdict =
-  | { ok: true }
-  | { ok: false; reason: "past" | "closed" | "outside" | "busy" | "hold" | "horizon" | "lead" };
+  | { ok: true; roomId?: string | null }
+  | { ok: false; reason: "past" | "closed" | "outside" | "busy" | "hold" | "horizon" | "lead" | "room" };
 
 const overlaps = (a: Iv, b: Iv) => a.s < b.e && a.e > b.s;
 const parse = (s: string | null | undefined): { start: string; end: string }[] => { try { const v = s ? JSON.parse(s) : []; return Array.isArray(v) ? v : []; } catch { return []; } };
@@ -108,6 +112,12 @@ export async function checkSlot(db: Db, c: SlotCheck): Promise<SlotVerdict> {
     const hv = held.map(x => ({ s: timeToMinutes(x.startTime), e: timeToMinutes(x.endTime) }));
     if (mine.some(m => hv.some(t => overlaps(m, t)))) return { ok: false, reason: "hold" };
   }
+  if (c.room) {
+    const cal = await loadRoomCalendar(db, c.room.businessId, c.dateISO, c.dateISO);
+    const roomId = pickRoom(cal, c.room.serviceId, c.dateISO, start, c.shape, c.room.ignoreAppointmentIds ?? c.ignoreAppointmentIds ?? []);
+    if (roomId === false) return { ok: false, reason: "room" };
+    return { ok: true, roomId };
+  }
   return { ok: true };
 }
 
@@ -134,14 +144,18 @@ export class SlotRefused extends Error {
  * Throws SlotRefused when a check fails or the database's active-slot index
  * says another booking got there first.
  */
-export async function writeChecked<T>(checks: SlotCheck[], write: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+export async function writeChecked<T>(checks: SlotCheck[], write: (tx: Prisma.TransactionClient, rooms: (string | null)[]) => Promise<T>): Promise<T> {
+  // Rooms are shared by the whole team: a check that may take one also locks the business's day.
+  const keys = checks.flatMap(c => [{ staffId: c.staffId, dateISO: c.dateISO }, ...(c.room ? [{ staffId: `rooms:${c.room.businessId}`, dateISO: c.dateISO }] : [])]);
   try {
-    return await withSlotLock(checks.map(c => ({ staffId: c.staffId, dateISO: c.dateISO })), async tx => {
+    return await withSlotLock(keys, async tx => {
+      const rooms: (string | null)[] = [];
       for (const c of checks) {
         const v = await checkSlot(tx, c);
         if (!v.ok) throw new SlotRefused(v);
+        rooms.push(v.roomId ?? null);
       }
-      return write(tx);
+      return write(tx, rooms);
     });
   } catch (e) {
     if (isSlotTaken(e)) throw new SlotRefused({ ok: false, reason: "busy" });

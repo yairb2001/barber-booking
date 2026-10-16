@@ -342,16 +342,17 @@ export async function requestAppointmentMove(opts: {
   // Stage B: the appointment keeps the shape it was booked with; its own current
   // slot doesn't block a same-day shift (the list above counts it as taken).
   const ownShape = shapeOfBooking(appt);
-  const ownCheck = { staffId: appt.staffId, dateISO: targetDate, startTime: targetStartTime, shape: ownShape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId } };
+  const ownCheck = { staffId: appt.staffId, dateISO: targetDate, startTime: targetStartTime, shape: ownShape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId }, room: { businessId: bizId, serviceId: appt.serviceId } };
   const sameOk = sameSlots.includes(targetStartTime) || (apptDateIso === targetDate && (await checkSlot(prisma, { ...ownCheck, customer: {} })).ok);
   if (sameOk) {
     try {
-      await writeChecked([ownCheck], tx => tx.appointment.update({
+      await writeChecked([ownCheck], (tx, rooms) => tx.appointment.update({
         where: { id: appt.id },
         data: {
           date: dateOnly(targetDate),
           startTime: targetStartTime,
           endTime: computeEndTime(targetDate, targetStartTime, duration),
+          roomId: rooms[0],
         },
       }));
     } catch (e) {
@@ -369,7 +370,7 @@ export async function requestAppointmentMove(opts: {
     if (freeOther) {
       const eff = await resolveStaffService(freeOther.staffId, appt.serviceId, appt.service.name, appt.service.durationMinutes, appt.price);
       try {
-        await writeChecked([{ staffId: freeOther.staffId, dateISO: targetDate, startTime: targetStartTime, shape: eff.shape, holds: { exemptCustomerId: appt.customerId } }], tx => tx.appointment.update({
+        await writeChecked([{ staffId: freeOther.staffId, dateISO: targetDate, startTime: targetStartTime, shape: eff.shape, holds: { exemptCustomerId: appt.customerId }, room: { businessId: bizId, serviceId: appt.serviceId, ignoreAppointmentIds: [appt.id] } }], (tx, rooms) => tx.appointment.update({
           where: { id: appt.id },
           data: {
             staffId: freeOther.staffId,
@@ -378,6 +379,7 @@ export async function requestAppointmentMove(opts: {
             endTime: computeEndTime(targetDate, targetStartTime, eff.duration),
             price: eff.price,
             ...bookingRecord(eff.shape),
+            roomId: rooms[0],
           },
         }));
       } catch (e) {
@@ -750,9 +752,9 @@ export async function handleStaffApprovalReply(
       const dur = timeToMinutes(proposal.primary.endTime) - timeToMinutes(proposal.primary.startTime);
       // Stage B: under the staff-day lock, checked again by its own busy parts.
       try {
-        await writeChecked([{ staffId: tStaff, dateISO: iso, startTime: tStart, shape: shapeOfBooking(proposal.primary), ignoreAppointmentIds: [proposal.primaryAppointmentId], holds: { exemptCustomerId: proposal.primary.customerId } }], tx => tx.appointment.update({
+        await writeChecked([{ staffId: tStaff, dateISO: iso, startTime: tStart, shape: shapeOfBooking(proposal.primary), ignoreAppointmentIds: [proposal.primaryAppointmentId], holds: { exemptCustomerId: proposal.primary.customerId }, room: { businessId: bizId, serviceId: proposal.primary.serviceId } }], (tx, rooms) => tx.appointment.update({
           where: { id: proposal.primaryAppointmentId },
-          data: { date: tDate, startTime: tStart, endTime: computeEndTime(iso, tStart, dur) },
+          data: { date: tDate, startTime: tStart, endTime: computeEndTime(iso, tStart, dur), roomId: rooms[0] },
         }));
         moved = true;
       } catch (e) {

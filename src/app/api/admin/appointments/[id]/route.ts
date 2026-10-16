@@ -260,14 +260,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   let appointment;
   try {
-    const updateIt = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.update({
+    const updateIt = (db: Prisma.TransactionClient | typeof prisma, roomId?: string | null) => db.appointment.update({
       where: { id: params.id },
-      data,
+      data: roomId === undefined ? data : { ...data, roomId },
       include: { customer: true, staff: true, service: true },
     });
     // A move without "override": under the staff-day lock, checked once more.
     appointment = timingChanged && !body.override
-      ? await writeChecked([{ staffId: nextStaffId, dateISO: nextDate.toISOString().slice(0, 10), startTime: nextStartTime, shape: nextShape, ignoreAppointmentIds: [params.id], holds: false }], tx => updateIt(tx))
+      ? await writeChecked([{ staffId: nextStaffId, dateISO: nextDate.toISOString().slice(0, 10), startTime: nextStartTime, shape: nextShape, ignoreAppointmentIds: [params.id], holds: false, room: { businessId: before.businessId, serviceId: nextServiceId } }], (tx, rooms) => updateIt(tx, rooms[0]))
       : await updateIt(prisma);
   } catch (err) {
     if (err instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו נתפסה הרגע. להמשיך בכל זאת?", conflict: true }, { status: 409 });

@@ -65,6 +65,7 @@ export async function GET(req: NextRequest) {
       customer: { select: { id: true, name: true, phone: true, referralSource: true, notificationPrefs: true, knownBefore: true } },
       staff: { select: { id: true, name: true } },
       service: { select: { id: true, name: true, durationMinutes: true, price: true } },
+      room: { select: { name: true } }, // rooms (16.10.2026): shown on the booking
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
@@ -265,7 +266,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const createIt = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.create({
+  const createIt = (db: Prisma.TransactionClient | typeof prisma, roomId: string | null = null) => db.appointment.create({
     data: {
       businessId: business.id,
       customerId: customer.id,
@@ -281,6 +282,7 @@ export async function POST(req: NextRequest) {
       walkIn: !!body.walkIn,
       source: "admin", // staff added it in the calendar — don't notify
       ...bookingRecord(shape),
+      roomId,
     },
     include: { customer: true, staff: true, service: true },
   });
@@ -291,7 +293,7 @@ export async function POST(req: NextRequest) {
   try {
     appointment = body.override
       ? await createIt(prisma)
-      : await writeChecked([{ staffId, dateISO: dateObj.toISOString().slice(0, 10), startTime: body.startTime, shape, holds: false }], tx => createIt(tx));
+      : await writeChecked([{ staffId, dateISO: dateObj.toISOString().slice(0, 10), startTime: body.startTime, shape, holds: false, room: { businessId: business.id, serviceId } }], (tx, rooms) => createIt(tx, rooms[0]));
   } catch (e) {
     if (e instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו נתפסה הרגע. להמשיך בכל זאת?", conflict: true }, { status: 409 });
     if (isSlotTaken(e)) return NextResponse.json({ error: "כבר יש תור שמתחיל בדיוק בשעה הזו אצל אותו איש צוות.", conflict: true }, { status: 409 });

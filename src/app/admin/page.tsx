@@ -245,6 +245,8 @@ type Appt = {
   customer: { id: string; name: string; phone: string; referralSource: string | null };
   staff: { id: string; name: string };
   service: { id: string; name: string; durationMinutes: number };
+  /** The room the system booked (rooms, 16.10.2026); none for most businesses. */
+  room?: { name: string } | null;
   recurringId?: string | null;
 };
 type Customer = { id: string; name: string; phone: string };
@@ -884,7 +886,7 @@ function ApptBlock({ appt, colorClass, onClick, onLongPress, isMoving, swapState
           so the complete name fits (wrapping to up to `nameLines` lines); it is
           never cut off with an ellipsis. */}
       <FitName name={appt.customer.name} max={nameFont} min={7} maxLines={nameLines} />
-      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.customServiceName || appt.service.name}</p>}
+      {showService && <p className="opacity-70 truncate" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.customServiceName || appt.service.name}{appt.room ? ` · ${appt.room.name}` : ""}</p>}
       {showTime && <p className="opacity-60 truncate" dir="ltr" style={{ fontSize: subFont, lineHeight: 1.15 }}>{appt.startTime}</p>}
     </div>
   );
@@ -2430,6 +2432,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
           <div className="flex items-center gap-2 flex-wrap min-w-0">
             <h3 className="font-bold text-base text-white truncate">{appt.customServiceName || appt.service.name}</h3>
             <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${meta.badgeClass}`}>{meta.label}</span>
+            {appt.room && <span className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 bg-white/20 text-white">🚪 {appt.room.name}</span>}
             {confirmationsOn && !appt.status.startsWith("cancelled") && appt.status !== "no_show" && (
               <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${appt.confirmedAt ? "bg-white/25 text-white" : "bg-white/15 text-white/80 border border-dashed border-white/60"}`}
                 title={appt.confirmedAt ? "הלקוח אישר את התור בתשובה לתזכורת" : "הלקוח עדיין לא אישר את התור"}>

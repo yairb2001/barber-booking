@@ -12,6 +12,7 @@ import {
   getDayOfWeekISO,
 } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 
 // How far ahead we are willing to scan when a barber is fully booked in the near
 // term. Bounded so a pathological "booked solid" barber can't make us scan
@@ -184,6 +185,8 @@ export async function computeQuickSlots(opts: {
   const staffIds = scopedPoolStaff.map(s => s.id);
   const firstDate = new Date(todayStr + "T00:00:00.000Z");
   const lastDate = new Date(addDaysISO(todayStr, Math.max(0, maxHorizon - 1)) + "T00:00:00.000Z");
+  // Rooms (16.10.2026): a time counts only if a room the treatment needs is free.
+  const roomCal = await loadRoomCalendar(prisma, resolvedBusinessId, todayStr, addDaysISO(todayStr, Math.max(0, maxHorizon - 1)));
 
   // ── Bulk-fetch everything we need for the whole window in 3 queries ──────────
   // (The old version issued an override + schedule + appointments query PER day
@@ -269,7 +272,7 @@ export async function computeQuickSlots(opts: {
       const price = staff.svc.price;
       const appointments = apptsByKey.get(`${staff.id}|${dateStr}`) || [];
 
-      const slots = generateSlots(scheduleSlots, breaks, staff.svc.shape, appointments, grid);
+      const slots = generateSlots(scheduleSlots, breaks, staff.svc.shape, appointments, grid).filter(roomFilter(roomCal, staff.svc.id, dateStr, staff.svc.shape));
 
       // When no appointments yet today, the next slot is the first of the day.
       const effectiveLead = appointments.length === 0

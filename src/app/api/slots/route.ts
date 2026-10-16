@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 import { gridOf, shapeOf } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 import type { Grid } from "@/lib/availability/engine";
 import { getBlockStatus } from "@/lib/customer-block";
 
@@ -134,7 +135,10 @@ export async function GET(request: Request) {
     select: { startTime: true, endTime: true, busySegments: true, bufferAfterMin: true },
   }), { staffIds: [staffId], from: dayStart, to: dayStart });
 
-  let slots = generateSlots(scheduleSlots, breaks, shapeOf(staffService.service, duration), appointments, grid);
+  const shape = shapeOf(staffService.service, duration);
+  // Rooms (16.10.2026): only times a room this treatment needs is free.
+  const roomCal = await loadRoomCalendar(prisma, staffService.service.businessId, dateStr, dateStr);
+  let slots = generateSlots(scheduleSlots, breaks, shape, appointments, grid).filter(roomFilter(roomCal, serviceId, dateStr, shape));
 
   // Filter out past slots + honor min-lead-time when the requested date is today.
   // ⚠️  The JSON.parse for staff settings lives in its own try/catch so that a

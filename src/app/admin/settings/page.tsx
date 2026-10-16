@@ -37,6 +37,7 @@ const groupsFor = (v: Vocab): Group[] => [
       { href: "/admin/settings/permissions", icon: "👥", title: `הרשאות ${v.staffPlural}`, desc: `מה ${v.staffPlural} ${v.staffFem ? "יכולות" : "יכולים"} לראות ולעשות` },
       { href: "/admin/staff", icon: "✂️", title: v.staffPlural, desc: "ניהול צוות, גישה ופרופילים" },
       { href: "/admin/services", icon: v.emoji, title: "שירותים", desc: "קטלוג השירותים — שם, מחיר, משך" },
+      ...(v.type !== "barber_men" ? [{ href: "/admin/settings/rooms", icon: "🚪", title: "חדרים", desc: "באיזה חדר נעשה כל טיפול (פנימי)" }] : []),
     ],
   },
   {

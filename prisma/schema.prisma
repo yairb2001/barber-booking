@@ -127,6 +127,7 @@ model Business {
 
   staff          Staff[]
   services       Service[]
+  rooms          Room[]
   customers      Customer[]
   appointments   Appointment[]
   waitlist       Waitlist[]
@@ -293,6 +294,7 @@ model Service {
   business        Business @relation(fields: [businessId], references: [id])
   staffServices   StaffService[]
   appointments    Appointment[]
+  rooms           ServiceRoom[]
   waitlist        Waitlist[]
   recurringAppointments RecurringAppointment[]
 
@@ -408,6 +410,8 @@ model Appointment {
   busySegments   String?  @map("busy_segments")
   /// Cleaning recorded with the booking (the staff member is busy until end + this).
   bufferAfterMin Int      @default(0) @map("buffer_after_min")
+  /// The room the system picked (rooms, 16.10.2026); null = no room needed.
+  roomId         String?  @map("room_id")
   status         String   @default("confirmed") // pending, confirmed, cancelled_by_customer, cancelled_by_staff, completed, no_show
   price          Float
   // Ad-hoc "temporary service" (שירות זמני): when the barber picks a variable
@@ -450,6 +454,7 @@ model Appointment {
   customer       Customer @relation(fields: [customerId], references: [id])
   staff          Staff    @relation(fields: [staffId], references: [id])
   service        Service  @relation(fields: [serviceId], references: [id])
+  room           Room?    @relation(fields: [roomId], references: [id])
   recurring      RecurringAppointment? @relation(fields: [recurringId], references: [id])
 
   swapsAsPrimary   SwapProposal[] @relation("SwapPrimary")
@@ -1421,4 +1426,34 @@ model ShopRequest {
   @@index([businessId, createdAt])
   @@index([fromChator, seenAt])
   @@map("shop_requests")
+}
+
+// === חדרים (16.10.2026) ===
+// Internal: a treatment may need one of some rooms (a laser room); the system
+// offers a time only when such a room is free and keeps the one it picked.
+model Room {
+  id          String   @id @default(uuid())
+  businessId  String   @map("business_id")
+  name        String
+  sortOrder   Int      @default(0) @map("sort_order")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  business     Business      @relation(fields: [businessId], references: [id])
+  services     ServiceRoom[]
+  appointments Appointment[]
+
+  @@index([businessId])
+  @@map("rooms")
+}
+
+model ServiceRoom {
+  serviceId String @map("service_id")
+  roomId    String @map("room_id")
+
+  service Service @relation(fields: [serviceId], references: [id])
+  room    Room    @relation(fields: [roomId], references: [id])
+
+  @@id([serviceId, roomId])
+  @@map("service_rooms")
 }

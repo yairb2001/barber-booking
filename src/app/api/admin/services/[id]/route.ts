@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwner } from "@/lib/session";
+import { setServiceRooms } from "@/lib/availability/rooms";
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const guard = requireOwner(req);
@@ -27,6 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },
   });
+  await setServiceRooms(service.id, session.businessId, body.roomIds);
   return NextResponse.json(service);
 }
 

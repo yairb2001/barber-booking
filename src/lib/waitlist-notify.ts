@@ -382,11 +382,12 @@ async function autoBookWaitlistEntry(
   const dateIso = dayStart.toISOString().slice(0, 10);
   let appt;
   try {
-    appt = await writeChecked([{ staffId, dateISO: dateIso, startTime, shape, holds: { exemptCustomerId: entry.customerId }, customer: {} }], tx => tx.appointment.create({
+    appt = await writeChecked([{ staffId, dateISO: dateIso, startTime, shape, holds: { exemptCustomerId: entry.customerId }, customer: {}, room: { businessId: business.id, serviceId: entry.serviceId } }], (tx, rooms) => tx.appointment.create({
       data: {
         businessId: business.id, customerId: entry.customerId, staffId, serviceId: entry.serviceId,
         date: dayStart, startTime, endTime, status: "confirmed", price, source: "waitlist",
         ...bookingRecord(shape),
+        roomId: rooms[0],
       },
       include: { staff: { select: { name: true } } },
     }));

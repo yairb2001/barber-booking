@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
   // and the lead time (15 minutes' grace for a slow confirm screen). Checked
   // again under the lock right before the write.
   const webHoldKey = typeof body.holdToken === "string" && /^[\w-]{8,64}$/.test(body.holdToken) ? holderKeyForWeb(body.holdToken) : null;
-  const slotCheck = { staffId, dateISO: date, startTime, shape, holds: { exemptCustomerId: customer?.id ?? null, exemptHolderKeys: [webHoldKey] }, customer: { leadGraceMinutes: 15 } };
+  const slotCheck = { staffId, dateISO: date, startTime, shape, holds: { exemptCustomerId: customer?.id ?? null, exemptHolderKeys: [webHoldKey] }, customer: { leadGraceMinutes: 15 }, room: { businessId: staff.businessId, serviceId } };
   const verdict = await checkSlot(prisma, slotCheck);
   if (!verdict.ok) return NextResponse.json({ error: verdictText(verdict) }, { status: 409 });
 
@@ -329,7 +329,7 @@ export async function POST(request: NextRequest) {
   // two customers can never land on the same time (src/lib/availability/guard.ts).
   let appointment;
   try {
-    appointment = await writeChecked([slotCheck], tx => tx.appointment.create({
+    appointment = await writeChecked([slotCheck], (tx, rooms) => tx.appointment.create({
       data: {
         businessId: staff.businessId,
         customerId: customer.id,
@@ -344,6 +344,7 @@ export async function POST(request: NextRequest) {
         note: (typeof note === "string" && note.trim()) ? note.trim() : null,
         source: "customer", // customer booked via the public site
         ...bookingRecord(shape),
+        roomId: rooms[0],
       },
       include: {
         staff: { select: { name: true } },

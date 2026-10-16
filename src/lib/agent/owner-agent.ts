@@ -338,12 +338,18 @@ export async function execOwnerTool(
       const iso = (d: Date) => d.toISOString().slice(0, 10);
       try {
         await writeChecked([
-          { staffId: a1.staffId, dateISO: iso(a2.date), startTime: a2.startTime, shape: resizeShape(shapeOfBooking(a1), timeToMinutes(a2.endTime) - timeToMinutes(a2.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false },
-          { staffId: a2.staffId, dateISO: iso(a1.date), startTime: a1.startTime, shape: resizeShape(shapeOfBooking(a2), timeToMinutes(a1.endTime) - timeToMinutes(a1.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false },
-        ], async tx => {
+          { staffId: a1.staffId, dateISO: iso(a2.date), startTime: a2.startTime, shape: resizeShape(shapeOfBooking(a1), timeToMinutes(a2.endTime) - timeToMinutes(a2.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false, room: { businessId, serviceId: a1.serviceId } },
+          { staffId: a2.staffId, dateISO: iso(a1.date), startTime: a1.startTime, shape: resizeShape(shapeOfBooking(a2), timeToMinutes(a1.endTime) - timeToMinutes(a1.startTime)), ignoreAppointmentIds: [a1.id, a2.id], holds: false, room: { businessId, serviceId: a2.serviceId } },
+        ], async (tx, rooms) => {
+          // Both took the same room at overlapping times (each checked without the other): refuse.
+          if (rooms[0] && rooms[0] === rooms[1] && iso(a1.date) === iso(a2.date)) {
+            const occ = (s: string, e: string, buf: number) => ({ s: timeToMinutes(s), e: timeToMinutes(e) + buf });
+            const x = occ(a2.startTime, a2.endTime, a1.bufferAfterMin ?? 0), y = occ(a1.startTime, a1.endTime, a2.bufferAfterMin ?? 0);
+            if (x.s < y.e && x.e > y.s) throw new SlotRefused({ ok: false, reason: "room" });
+          }
           await tx.appointment.update({ where: { id: a2.id }, data: { date: new Date(0) } });
-          await tx.appointment.update({ where: { id: a1.id }, data: { date: a2.date, startTime: a2.startTime, endTime: a2.endTime } });
-          await tx.appointment.update({ where: { id: a2.id }, data: { date: a1.date, startTime: a1.startTime, endTime: a1.endTime } });
+          await tx.appointment.update({ where: { id: a1.id }, data: { date: a2.date, startTime: a2.startTime, endTime: a2.endTime, roomId: rooms[0] } });
+          await tx.appointment.update({ where: { id: a2.id }, data: { date: a1.date, startTime: a1.startTime, endTime: a1.endTime, roomId: rooms[1] } });
         });
       } catch (e) {
         if (e instanceof SlotRefused) return "שגיאה: ההחלפה מתנגשת בתור אחר ביומן (אחד התורים ארוך יותר מהמקום שהוא עובר אליו). בדוק את היומן עם get_schedule.";
@@ -455,12 +461,12 @@ export async function execOwnerTool(
       const newDate = new Date(`${newDateIso}T00:00:00.000Z`);
       try {
         // Without force: under the staff-day lock, checked again by busy parts.
-        const update = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.update({
+        const update = (db: Prisma.TransactionClient | typeof prisma, roomId?: string | null) => db.appointment.update({
           where: { id: appt.id },
-          data: { date: newDate, startTime: newTime, endTime: newEnd },
+          data: { date: newDate, startTime: newTime, endTime: newEnd, ...(roomId !== undefined ? { roomId } : {}) },
         });
         if (force) await update(prisma);
-        else await writeChecked([{ staffId: appt.staffId, dateISO: newDateIso, startTime: newTime, shape: shapeOfBooking(appt), ignoreAppointmentIds: [appt.id], holds: false }], tx => update(tx));
+        else await writeChecked([{ staffId: appt.staffId, dateISO: newDateIso, startTime: newTime, shape: shapeOfBooking(appt), ignoreAppointmentIds: [appt.id], holds: false, room: { businessId, serviceId: appt.serviceId } }], (tx, rooms) => update(tx, rooms[0]));
         await refreshReminders([appt.id]);
       } catch (err: unknown) {
         if (err instanceof SlotRefused || isSlotTaken(err)) {
@@ -558,17 +564,18 @@ export async function execOwnerTool(
 
       let appt;
       try {
-        const create = (db: Prisma.TransactionClient | typeof prisma) => db.appointment.create({
+        const create = (db: Prisma.TransactionClient | typeof prisma, roomId: string | null = null) => db.appointment.create({
           data: {
             businessId, customerId: customer!.id, staffId: effStaffId, serviceId,
             date: apptDate, startTime: time, endTime,
             status: "confirmed", price: eff.price,
             referralSource: "owner_agent", source: "admin",
             ...bookingRecord(eff.shape),
+            roomId,
           },
         });
         // Without force: under the staff-day lock, checked again by busy parts.
-        appt = force ? await create(prisma) : await writeChecked([{ staffId: effStaffId, dateISO: date, startTime: time, shape: eff.shape, holds: false }], tx => create(tx));
+        appt = force ? await create(prisma) : await writeChecked([{ staffId: effStaffId, dateISO: date, startTime: time, shape: eff.shape, holds: false, room: { businessId, serviceId } }], (tx, rooms) => create(tx, rooms[0]));
       } catch (err: unknown) {
         if (err instanceof SlotRefused || isSlotTaken(err)) {
           return `שגיאה: ${time} ב-${date} כבר תפוס אצל ${staff.name}. הצע שעה אחרת.`;

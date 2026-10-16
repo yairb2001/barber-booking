@@ -977,7 +977,7 @@ export async function execTool(
         // the treatment's shape recorded on the booking.
         let appt;
         try {
-          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] } }], tx => tx.appointment.create({
+          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] }, room: { businessId: bizId, serviceId } }], (tx, rooms) => tx.appointment.create({
             data: {
               businessId: bizId,
               customerId: customer.id,
@@ -992,6 +992,7 @@ export async function execTool(
               source:    "agent",
               note:      note || null,
               ...bookingRecord(eff.shape),
+              roomId:    rooms[0],
             },
           }));
         } catch (err: unknown) {

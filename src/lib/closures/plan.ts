@@ -21,6 +21,7 @@ import { getBusinessNow, timeToMinutes, addDaysISO, getDayOfWeekISO, generateSlo
 import { gridOf, shapeOf, type BookedRow, type ShapedService } from "@/lib/availability/shape";
 import { LEGACY_GRID, type Grid, type Shape } from "@/lib/availability/engine";
 import { strictServices } from "@/lib/agent/availability";
+import { loadRoomCalendar, roomFilter, type RoomCalendar } from "@/lib/availability/rooms";
 
 export const LOYALTY_THRESHOLD = 0.7;
 /** How far around the closed date we look for alternatives (calendar days). */
@@ -146,6 +147,7 @@ class WindowAvail {
   private staffServices: { staffId: string; serviceId: string; customDuration: number | null; service: SvcRow }[] = [];
   private services = new Map<string, SvcRow>();
   private grid: Grid = LEGACY_GRID;
+  private rooms: RoomCalendar | null = null;
   private strict = false;
   private overrides = new Map<string, { isWorking: boolean; slots: string | null; breaks: string | null }>(); // staffId|date
   private schedules = new Map<string, { isWorking: boolean; slots: string; breaks: string | null }>();        // staffId|dow
@@ -185,6 +187,8 @@ class WindowAvail {
         }),
       ]);
       this.grid = gridOf(biz);
+      // Rooms (16.10.2026): an alternative is offered only when a room the treatment needs is free.
+      this.rooms = await loadRoomCalendar(prisma, this.businessId, this.from, this.to);
       this.strict = strictServices(biz?.businessType);
       this.staff = staff;
       this.staffServices = staffServices;
@@ -249,6 +253,7 @@ class WindowAvail {
       const shape = this.shape(st.id, serviceId);
       if (!shape) continue;
       let slots = generateSlots(scheduleSlots, breaks, shape, this.busy.get(`${st.id}|${date}`) ?? [], this.grid);
+      if (this.rooms) slots = slots.filter(roomFilter(this.rooms, serviceId, date, shape));
       if (nowBiz.date === date) slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes);
       if (slots.length) out.push({ staffId: st.id, name: st.name, slots });
     }

@@ -12,6 +12,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { gridOf, shapeOf, type ShapedService } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 import type { Shape } from "@/lib/availability/engine";
 import { staffChoiceOf } from "@/lib/vocab";
 import { activeHolds } from "@/lib/slot-holds";
@@ -69,6 +70,8 @@ export async function computeDayAvailability(
     : null;
 
   const byStaff: { staffId: string; name: string; slots: string[]; load: number }[] = [];
+  // Rooms (16.10.2026): a treatment that needs a room is offered only when one is free.
+  const roomCal = await loadRoomCalendar(prisma, inputServiceId ? bizId : null, date, date);
 
   for (const staff of staffList) {
     let cfg: Record<string, unknown> = {};
@@ -178,7 +181,8 @@ export async function computeDayAvailability(
     // agent told a closure customer "13:00 isn't free" about his own option.
     const holds = await activeHolds({ staffIds: [staff.id], from: dateObj, to: dateObj, exemptCustomerId: opts.exemptHoldsCustomerId, exemptHolderKeys: [opts.exemptHoldsHolderKey] });
 
-    let slots = generateSlots(scheduleSlots, breaks, shapeOf(shapeSvc, duration), [...booked, ...holds], grid);
+    const shape = shapeOf(shapeSvc, duration);
+    let slots = generateSlots(scheduleSlots, breaks, shape, [...booked, ...holds], grid).filter(roomFilter(roomCal, inputServiceId, date, shape));
 
     if (nowBiz.date === date && opts.ignoreLimits) {
       slots = slots.filter(s => timeToMinutes(s) >= nowBiz.minutes); // only the past is off-limits

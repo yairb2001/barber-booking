@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { resolveBusinessId, fallbackBusiness } from "@/lib/tenant";
 import { generateSlots, getDayOfWeekISO, timeToMinutes, getBusinessNow, addDaysISO } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow } from "@/lib/availability/shape";
+import { loadRoomCalendar, roomFilter } from "@/lib/availability/rooms";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,8 @@ export async function GET(request: Request) {
     : await fallbackBusiness({ select: { minBookingLeadMinutes: true, firstApptLeadMinutes: true, bookingHorizonDays: true, businessType: true, settings: true } });
   const grid = gridOf(biz);
   const shape = shapeOf(staffService.service, duration);
+  // Rooms (16.10.2026): only times a room this treatment needs is free.
+  const roomCal = await loadRoomCalendar(prisma, staffService.service.businessId, startStr, endStr);
   const leadMinutes = staffSettings.minBookingLeadMinutes !== undefined
     ? (isNaN(Number(staffSettings.minBookingLeadMinutes)) ? 0 : Number(staffSettings.minBookingLeadMinutes))
     : (biz?.minBookingLeadMinutes ?? 0);
@@ -104,7 +107,7 @@ export async function GET(request: Request) {
       breaks = sched.breaks ? safeArr(sched.breaks) : null;
     }
 
-    let slots = generateSlots(scheduleSlots, breaks, shape, apptsByDate.get(dateStr) || [], grid);
+    let slots = generateSlots(scheduleSlots, breaks, shape, apptsByDate.get(dateStr) || [], grid).filter(roomFilter(roomCal, serviceId, dateStr, shape));
 
     if (dateStr === nowBiz.date) {
       const dayAppts = apptsByDate.get(dateStr) || [];

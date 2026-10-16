@@ -74,9 +74,9 @@ export async function POST(req: NextRequest) {
   const oldDate = appt.date, oldStart = appt.startTime;
   const newDate = new Date(date + "T00:00:00.000Z");
   const endTime = minutesToTime(timeToMinutes(startTime) + shapeLength(shape));
-  const check = { staffId: appt.staffId, dateISO: date, startTime, shape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId }, customer: { leadGraceMinutes: 15 } };
+  const check = { staffId: appt.staffId, dateISO: date, startTime, shape, ignoreAppointmentIds: [appt.id], holds: { exemptCustomerId: appt.customerId }, customer: { leadGraceMinutes: 15 }, room: { businessId: appt.businessId, serviceId: appt.serviceId } };
   try {
-    await writeChecked([check], tx => tx.appointment.update({ where: { id: appt.id }, data: { date: newDate, startTime, endTime, confirmedAt: null } }));
+    await writeChecked([check], (tx, rooms) => tx.appointment.update({ where: { id: appt.id }, data: { date: newDate, startTime, endTime, confirmedAt: null, roomId: rooms[0] } }));
   } catch (e) {
     if (e instanceof SlotRefused) return NextResponse.json({ error: "השעה הזו כבר לא פנויה — בחר שעה אחרת", slotTaken: true }, { status: 409 });
     throw e;

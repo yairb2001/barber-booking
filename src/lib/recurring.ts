@@ -61,9 +61,10 @@ export async function generateOccurrences(
     // Conflict with another appointment in this barber's calendar? Checked by
     // busy parts under the staff-day lock (stage B); a clash skips this date.
     try {
-      await writeChecked([{ staffId: rule.staffId, dateISO: dayUTC.toISOString().slice(0, 10), startTime: rule.startTime, shape, holds: false }], tx => tx.appointment.create({
+      await writeChecked([{ staffId: rule.staffId, dateISO: dayUTC.toISOString().slice(0, 10), startTime: rule.startTime, shape, holds: false, room: { businessId: rule.businessId, serviceId: rule.serviceId } }], (tx, rooms) => tx.appointment.create({
       data: {
         ...bookingRecord(shape),
+        roomId: rooms[0],
         businessId: rule.businessId,
         customerId: rule.customerId,
         staffId: rule.staffId,

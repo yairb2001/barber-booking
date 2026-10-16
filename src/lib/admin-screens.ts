@@ -33,6 +33,7 @@ export const ADMIN_SCREENS: AdminScreen[] = [
   { path: "/admin/settings/permissions", name: "הרשאות ספרים", crumbs: "הגדרות עסק ← יומן וצוות ← הרשאות ספרים" },
   { path: "/admin/staff", name: "ספרים", crumbs: "הגדרות עסק ← יומן וצוות ← ספרים" },
   { path: "/admin/services", name: "שירותים", crumbs: "הגדרות עסק ← יומן וצוות ← שירותים" },
+  { path: "/admin/settings/rooms", name: "חדרים", crumbs: "הגדרות עסק ← יומן וצוות ← חדרים" },
   { path: "/admin/settings/whatsapp", name: "וואטסאפ", crumbs: "הגדרות עסק ← תקשורת עם לקוחות ← וואטסאפ" },
   { path: "/admin/templates", name: "תבניות הודעות", crumbs: "הגדרות עסק ← תקשורת עם לקוחות ← תבניות הודעות" },
   { path: "/admin/settings/automations", name: "אוטומציות", crumbs: "הגדרות עסק ← תקשורת עם לקוחות ← אוטומציות" },
