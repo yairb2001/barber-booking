@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { genderIn } from "@/lib/vocab";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getSessionBusiness, requireOwner } from "@/lib/session";
 import { getBusinessNow } from "@/lib/utils";
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
     data: {
       businessId: business.id,
       name: body.name,
+      gender: genderIn(body.gender),
       phone: body.phone ? sanitizePhoneInput(body.phone) : null,
       avatarUrl: body.avatarUrl || null,
       role: body.role || "barber",

@@ -4,6 +4,7 @@
  * Business.closureNoticeTemplate (null = this default); per-customer overrides
  * are passed in by the wizard at send time.
  */
+import { staffVoice } from "@/lib/type-wording";
 import { addDaysISO, getBusinessNow } from "@/lib/utils";
 
 export const DEFAULT_CLOSURE_NOTICE_TEMPLATE =
@@ -54,7 +55,7 @@ export function firstName(name: string): string {
 
 export function renderClosureText(
   template: string,
-  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[]; originalDate?: string },
+  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[]; originalDate?: string; barberFem?: boolean },
 ): string {
   const [a, b] = v.options;
   // "ביום רביעי (30.9) ב‑11:30 או ביום רביעי (30.9) ב‑13:00" read like a form
@@ -73,12 +74,13 @@ export function renderClosureText(
     if (lines.length > 1) lines.splice(lines.length - 1, 0, offer); else lines.push(offer);
     template = lines.join("\n");
   }
-  return template
+  // In the staff member's own voice: "אני נאלצת" when she is a woman (16.10.2026).
+  return staffVoice(template
     .replace(/\{\{name\}\}/g, firstName(v.name))
     .replace(/\{\{barber\}\}/g, firstName(v.barber))
     .replace(/\{\{when\}\}/g, v.when)
     .replace(/\{\{option_a\}\}/g, optionA)
     .replace(/\{\{option_b\}\}/g, optionB)
     // no options at all (manual-handling edge): drop the dangling "במקום זאת ."
-    .replace(/אני יכול לקבוע לך במקום זאת \.\n/, "");
+    .replace(/אני יכול לקבוע לך במקום זאת \.\n/, ""), !!v.barberFem);
 }

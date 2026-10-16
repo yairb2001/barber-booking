@@ -39,7 +39,7 @@ import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { isServiceList, agentSwitches, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
-import { vocabFor, vocabOf, staffChoiceOf, type Vocab } from "@/lib/vocab";
+import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
@@ -1784,7 +1784,7 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
       where: { businessId, isAvailable: true },
       orderBy: { sortOrder: "asc" },
       select: {
-        id: true, name: true, nickname: true, inQuickPool: true,
+        id: true, name: true, nickname: true, inQuickPool: true, gender: true,
         staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
       },
     }),
@@ -1810,8 +1810,12 @@ export async function buildCatalogBlock(businessId: string): Promise<string> {
     const list = own.length
       ? own.map(ss => svc(ss.customName ?? ss.service.name, ss.customPrice ?? ss.service.price, ss.customDuration ?? ss.service.durationMinutes, ss.customNote ?? ss.service.note, ss.service.id))
       : services.map(sv => svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id));
-    const pool = hasPool && !s.inQuickPool ? (v.staffFem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
-    return `• ${s.name}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
+    // A team member of the other gender than the business default (a male stylist
+    // in a women's salon) is marked, so the agent says "הוא פנוי" about him (16.10.2026).
+    const fem = staffFemOf(s, v);
+    const mark = fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
+    const pool = hasPool && !s.inQuickPool ? (fem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
+    return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
   // Two staff with the same first name ("יאיר בוחבוט" / "יאיר הרוש"): name them
   // explicitly, so "אצל יאיר" is never resolved by guess.

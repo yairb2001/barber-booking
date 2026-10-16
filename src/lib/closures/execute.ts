@@ -129,7 +129,7 @@ export async function executeClosure(input: ClosureInput, opts: ExecuteOptions =
   for (const d of order) {
     const text = opts.customTextByAppointmentId?.[d.appointmentId]?.trim()
       || renderClosureText(template, {
-        name: d.customer.name, barber: plan.staffName,
+        name: d.customer.name, barber: plan.staffName, barberFem: plan.staffFem, // her own voice (16.10.2026)
         when: whenLabel(input.date, d.startTime),
         options: d.options as (SlotOption & { staffName: string })[],
         originalDate: input.date,

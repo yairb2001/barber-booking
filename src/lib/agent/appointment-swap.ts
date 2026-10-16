@@ -27,7 +27,7 @@
 import { prisma } from "@/lib/prisma";
 import { checkSlot, writeChecked, SlotRefused } from "@/lib/availability/guard";
 import { shapeOfBooking, bookingRecord } from "@/lib/availability/shape";
-import { vocabOf } from "@/lib/vocab";
+import { vocabOf, staffFemOf } from "@/lib/vocab";
 import { refreshReminders } from "@/lib/reminders-sweep";
 import type { Prisma } from "@prisma/client";
 import { sendMessage, swapProposalText, firstName } from "@/lib/messaging";
@@ -892,7 +892,8 @@ async function markLateArrivalNoShow(
   });
   // The default in the staff member's gender ("לא אישרה" in a salon or studio).
   const bizWords = await prisma.business.findUnique({ where: { id: bizId }, select: { businessType: true, settings: true } });
-  const fallback = vocabOf(bizWords).staffFem ? DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE.replace("לא אישר את", "לא אישרה את") : DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE;
+  // ...in the gender of the staff member who didn't approve (her own mark, 16.10.2026).
+  const fallback = staffFemOf(proposal.primary.staff, vocabOf(bizWords)) ? DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE.replace("לא אישר את", "לא אישרה את") : DEFAULT_LATE_ARRIVAL_NO_SHOW_MESSAGE;
   const message = (cfg?.lateArrivalNoShowMessage || fallback)
     .replace(/\{\{staff\}\}/g, proposal.primary.staff.name);
 

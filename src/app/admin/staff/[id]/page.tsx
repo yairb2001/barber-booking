@@ -1,5 +1,6 @@
 "use client";
 import { useVocab } from "@/components/VocabProvider";
+import { staffFemOf } from "@/lib/vocab";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -8,6 +9,8 @@ import { useParams } from "next/navigation";
 type StaffInfo = {
   id: string;
   name: string;
+  /** "m" | "f"; null = the business default (16.10.2026). */
+  gender?: string | null;
   phone: string | null;
   tagline: string | null;
   avatarUrl: string | null;
@@ -296,6 +299,12 @@ export default function StaffSettingsPage() {
 
   if (loading) return <div className="p-8 text-neutral-400">טוען...</div>;
   if (!staff) return <div className="p-8 text-red-500">{v.staff} לא {v.staffFem ? "נמצאה" : "נמצא"}</div>;
+  // Words about this person follow her own mark (16.10.2026), else the business default.
+  const fem = staffFemOf(staff, v);
+  async function setGender(g: "m" | "f") {
+    setStaff(x => (x ? { ...x, gender: g } : x));
+    await fetch(`/api/admin/staff/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gender: g }) });
+  }
 
   return (
     <div className="p-8 overflow-auto h-full max-w-3xl">
@@ -313,6 +322,14 @@ export default function StaffSettingsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">{staff.name}</h1>
           {staff.phone && <p className="text-sm text-neutral-500" dir="ltr">{staff.phone}</p>}
+          <div className="flex gap-1 mt-1.5">
+            {([["m", "זכר"], ["f", "נקבה"]] as const).map(([g, label]) => (
+              <button key={g} type="button" onClick={() => void setGender(g)}
+                className={`px-2.5 py-0.5 rounded-full text-xs border transition ${(fem ? "f" : "m") === g ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-500"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -356,7 +373,7 @@ export default function StaffSettingsPage() {
       {/* ── Tab: Services ── */}
       {activeTab === "services" && (
         <div className="space-y-3">
-          <p className="text-xs text-neutral-400 mb-4">בחר אילו שירותים {staff.name} {v.staffFem ? "מציעה" : "מציע"}. ניתן לקבוע מחיר/משך מותאמים.</p>
+          <p className="text-xs text-neutral-400 mb-4">בחר אילו שירותים {staff.name} {fem ? "מציעה" : "מציע"}. ניתן לקבוע מחיר/משך מותאמים.</p>
 
           {/* Shared (owner-managed) services — toggle on/off + custom price/duration */}
           {services.filter(s => !s.owned).map(svc => (
@@ -685,7 +702,7 @@ export default function StaffSettingsPage() {
       {activeTab === "permissions" && (
         <div className="bg-white rounded-2xl border border-neutral-200 p-6 space-y-5">
           <p className="text-xs text-neutral-400">
-            הגדר מה {staff.name} {v.staffFem ? "רשאית" : "רשאי"} לראות ולעשות במערכת.
+            הגדר מה {staff.name} {fem ? "רשאית" : "רשאי"} לראות ולעשות במערכת.
           </p>
 
           {/* 👑 Full access (owner, 16.10.2026): this login becomes an owner login. */}
@@ -693,10 +710,10 @@ export default function StaffSettingsPage() {
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">👑 גישה מלאה כמו בעלים</p>
               <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                כשמופעל — {staff.name} {v.staffFem ? "נכנסת" : "נכנס"} עם הטלפון והסיסמה {v.staffFem ? "שלה" : "שלו"} ורואה ועושה הכל כמוך: הגדרות העסק, סוכן ה-AI, היומנים, השיחות וההכנסות של כל הצוות, וגם {v.staffFem ? "יכולה" : "יכול"} לשנות הרשאות של אחרים.
+                כשמופעל — {staff.name} {fem ? "נכנסת" : "נכנס"} עם הטלפון והסיסמה {fem ? "שלה" : "שלו"} ורואה ועושה הכל כמוך: הגדרות העסק, סוכן ה-AI, היומנים, השיחות וההכנסות של כל הצוות, וגם {fem ? "יכולה" : "יכול"} לשנות הרשאות של אחרים.
               </p>
               <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                הכניסה שלך כבעלים לא תלויה בזה, אז אי אפשר לנעול אותך בחוץ. כיבוי {v.staffFem ? "מחזיר אותה" : "מחזיר אותו"} להרשאות הרגילות תוך דקה, בלי התנתקות.
+                הכניסה שלך כבעלים לא תלויה בזה, אז אי אפשר לנעול אותך בחוץ. כיבוי {fem ? "מחזיר אותה" : "מחזיר אותו"} להרשאות הרגילות תוך דקה, בלי התנתקות.
               </p>
             </div>
             <button
@@ -713,8 +730,8 @@ export default function StaffSettingsPage() {
             <div className="flex-1">
               <p className="text-sm font-semibold text-slate-900">📅 צפייה ביומנים של כל {v.staffPluralDef}</p>
               <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                כשמופעל — {staff.name} {v.staffFem ? "יכולה" : "יכול"} לראות את כל העמודות ביומן, לא רק את {v.staffFem ? "שלה" : "שלו"}.
-                מתאים ל{v.staff} {v.staffFem ? "בכירה או מנהלת שצריכה" : "בכיר או מנהל שצריך"} לתאם בין כולם.
+                כשמופעל — {staff.name} {fem ? "יכולה" : "יכול"} לראות את כל העמודות ביומן, לא רק את {fem ? "שלה" : "שלו"}.
+                מתאים ל{v.staff} {fem ? "בכירה או מנהלת שצריכה" : "בכיר או מנהל שצריך"} לתאם בין כולם.
               </p>
             </div>
             <button
@@ -731,7 +748,7 @@ export default function StaffSettingsPage() {
             <p className="text-sm font-semibold text-slate-900">💬 שיחות וואטסאפ</p>
             <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">אילו שיחות {staff.name} רואה בתיבת השיחות.</p>
             <div className="mt-3 grid grid-cols-3 gap-1.5">
-              {([["own", v.staffFem ? "רק הלקוחות שלה" : "רק הלקוחות שלו"], ["all", "הכל"], ["none", "לא רואה"]] as const).map(([k, label]) => (
+              {([["own", fem ? "רק הלקוחות שלה" : "רק הלקוחות שלו"], ["all", "הכל"], ["none", "לא רואה"]] as const).map(([k, label]) => (
                 <button key={k} type="button" onClick={() => setChatScope(k)}
                   className={`py-2 rounded-lg text-xs font-semibold border transition ${chatScope === k ? "bg-teal-600 text-white border-teal-600" : "bg-white text-slate-600 border-slate-200"}`}>
                   {label}

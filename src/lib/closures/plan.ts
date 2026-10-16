@@ -17,6 +17,7 @@
  *     appointments ("מספר שווה"). Two options per customer is a goal, not a rule.
  */
 import { prisma } from "@/lib/prisma";
+import { staffFemOf, vocabOf } from "@/lib/vocab";
 import { getBusinessNow, timeToMinutes, addDaysISO, getDayOfWeekISO, generateSlots } from "@/lib/utils";
 import { gridOf, shapeOf, type BookedRow, type ShapedService } from "@/lib/availability/shape";
 import { LEGACY_GRID, type Grid, type Shape } from "@/lib/availability/engine";
@@ -62,6 +63,8 @@ export type DisplacedPlan = {
 export type ClosurePlan = {
   input: ClosureInput;
   staffName: string;
+  /** The closing staff member is a woman — her message reads "אני נאלצת" (16.10.2026). */
+  staffFem: boolean;
   isToday: boolean;
   displaced: DisplacedPlan[];
   gate: {
@@ -318,7 +321,7 @@ const slotKey = (o: SlotOption) => `${o.staffId}|${o.date}|${o.startTime}`;
 export async function planClosure(input: ClosureInput): Promise<ClosurePlan> {
   const staff = await prisma.staff.findFirst({
     where: { id: input.staffId, businessId: input.businessId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, gender: true },
   });
   if (!staff) throw new Error("staff_not_found");
   const isToday = input.date === getBusinessNow().date;
@@ -377,7 +380,7 @@ export async function planClosure(input: ClosureInput): Promise<ClosurePlan> {
   }
 
   return {
-    input, staffName: staff.name, isToday, displaced, gate,
+    input, staffName: staff.name, staffFem: staffFemOf(staff, vocabOf(await prisma.business.findUnique({ where: { id: input.businessId }, select: { businessType: true, settings: true } }))), isToday, displaced, gate,
     suggestions: {
       allowOtherBarberFor: displaced.filter(d => d.blockedByLoyalty).map(d => ({ appointmentId: d.appointmentId, customerName: d.customer.name })),
       closedDaysInWindow,

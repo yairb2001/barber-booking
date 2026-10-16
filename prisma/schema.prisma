@@ -201,6 +201,8 @@ model Staff {
   businessId    String   @map("business_id")
   phone         String?
   name          String
+  /// "m" | "f"; null = the business default (16.10.2026). Words about this person follow it.
+  gender        String?
   nickname      String?
   tagline       String?  @map("tagline")
   avatarUrl     String?  @map("avatar_url")

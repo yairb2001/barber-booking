@@ -280,3 +280,16 @@ export function vocabOf(biz: { businessType?: string | null; settings?: string |
   }
   return vocabFor(biz?.businessType, overrides);
 }
+
+/**
+ * Is this team member a woman? Her own mark (16.10.2026, Yair: "בצוות צריך לסמן
+ * אם זה זכר או נקבה"), else the business default — a mixed team is common (a
+ * male stylist in a women's salon, a female barber in a men's barbershop).
+ */
+export function staffFemOf(staff: { gender?: string | null } | null | undefined, v: Vocab): boolean {
+  return staff?.gender === "f" ? true : staff?.gender === "m" ? false : v.staffFem;
+}
+/** "m" | "f" | null from what a screen sent. */
+export function genderIn(x: unknown): "m" | "f" | null {
+  return x === "m" || x === "f" ? x : null;
+}

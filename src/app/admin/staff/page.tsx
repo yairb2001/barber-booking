@@ -1,5 +1,6 @@
 "use client";
 import { useVocab } from "@/components/VocabProvider";
+import { staffFemOf } from "@/lib/vocab";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -13,6 +14,8 @@ type NextAppointment = {
 type Staff = {
   id: string;
   name: string;
+  /** "m" | "f"; null = the business default (16.10.2026). */
+  gender?: string | null;
   phone: string | null;
   avatarUrl: string | null;
   isAvailable: boolean;
@@ -66,7 +69,7 @@ export default function AdminStaffPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState(emptySchedule());
-  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "" });
+  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "", gender: "" as "" | "m" | "f" });
   const [saving, setSaving] = useState(false);
   const [setPasswordFor, setSetPasswordFor] = useState<Staff | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -110,7 +113,7 @@ export default function AdminStaffPage() {
         body: JSON.stringify({ password: DEFAULT_PASSWORD }),
       });
     }
-    setNewStaff({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "" });
+    setNewStaff({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "", gender: "" });
     setShowAdd(false);
     setSaving(false);
     load();
@@ -215,7 +218,8 @@ export default function AdminStaffPage() {
   }
 
   async function deleteStaff(id: string, name: string) {
-    if (!confirm(`להוציא את ${name} מהניהול?\n\n${v.staffFem ? "היא תיעלם" : "הוא ייעלם"} מהיומן ומקביעת תורים חדשים, אבל כל ההיסטוריה ${v.staffFem ? "שלה" : "שלו"} (תורים, לוח שעות, שירותים, גלריה) נשמרת ולא נמחקת — אפשר עדיין לראות אותה בדוחות ובכרטיסי לקוחות.`)) return;
+    const fem = staffFemOf(staff.find(x => x.id === id), v);
+    if (!confirm(`להוציא את ${name} מהניהול?\n\n${fem ? "היא תיעלם" : "הוא ייעלם"} מהיומן ומקביעת תורים חדשים, אבל כל ההיסטוריה ${fem ? "שלה" : "שלו"} (תורים, לוח שעות, שירותים, גלריה) נשמרת ולא נמחקת — אפשר עדיין לראות אותה בדוחות ובכרטיסי לקוחות.`)) return;
     const res = await fetch(`/api/admin/staff/${id}`, { method: "DELETE" });
     if (!res.ok) { const data = await res.json(); alert(data.error || "שגיאה במחיקה"); return; }
     load();
@@ -401,7 +405,7 @@ export default function AdminStaffPage() {
                     s.isAvailable ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-neutral-200 text-neutral-400"
                   }`}
                 >
-                  {s.isAvailable ? (v.staffFem ? "פעילה" : "פעיל") : (v.staffFem ? "לא פעילה" : "לא פעיל")}
+                  {s.isAvailable ? (staffFemOf(s, v) ? "פעילה" : "פעיל") : (staffFemOf(s, v) ? "לא פעילה" : "לא פעיל")}
                 </button>
                 {isOwner && (
                   <button
@@ -494,6 +498,20 @@ export default function AdminStaffPage() {
                 <input value={newStaff.name} onChange={(e) => setNewStaff((p) => ({ ...p, name: e.target.value }))}
                   className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                   placeholder={`שם ${v.staffDef}`} />
+              </div>
+              <div>
+                <label className="text-xs text-neutral-500 block mb-1">מגדר <span className="text-neutral-400">(לנוסח: פעיל או פעילה, אישר או אישרה)</span></label>
+                <div className="flex gap-1.5">
+                  {([["m", "זכר"], ["f", "נקבה"]] as const).map(([g, label]) => {
+                    const on = (newStaff.gender || (v.staffFem ? "f" : "m")) === g;
+                    return (
+                      <button key={g} type="button" onClick={() => setNewStaff(p => ({ ...p, gender: g }))}
+                        className={`px-4 py-1.5 rounded-full text-sm border transition ${on ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-600"}`}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">טלפון * <span className="text-red-500">(חובה)</span></label>

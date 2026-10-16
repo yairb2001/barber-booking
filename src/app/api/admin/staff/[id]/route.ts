@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { genderIn } from "@/lib/vocab";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwner, requireStaffInBusiness } from "@/lib/session";
 import { sanitizePhoneInput } from "@/lib/messaging/phone";
@@ -70,6 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     where: { id: params.id },
     data: {
       ...(body.name !== undefined && { name: body.name }),
+      ...(body.gender !== undefined && { gender: genderIn(body.gender) }),
       ...(body.tagline !== undefined && { tagline: body.tagline ? String(body.tagline).trim() : null }),
       ...(body.phone !== undefined && { phone: body.phone ? sanitizePhoneInput(body.phone) : null }),
       ...(body.avatarUrl !== undefined && { avatarUrl: body.avatarUrl }),

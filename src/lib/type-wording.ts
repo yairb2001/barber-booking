@@ -55,11 +55,14 @@ const FEM: [string, string][] = [
 /** Second-person verbs as whole words (never inside a longer word). */
 const FEM_WORDS: [string, string][] = [["תגיד", "תגידי"], ["תכתוב", "תכתבי"], ["תוכל", "תוכלי"], ["תרצה", "תרצי"]];
 
-/** The staff member speaking (a closed day, in her own voice). */
+/** The staff member speaking (a closed day, in her own voice) — by that
+ *  person's own gender (staffVoice), not the business's. */
 const STAFF_FEM: [string, string][] = [
   ["אני נאלץ", "אני נאלצת"],
   ["אני יכול לקבוע", "אני יכולה לקבוע"],
   ["רק מוודא שראית", "רק מוודאת שראית"],
+  ["זה שוב ", "זו שוב "],
+  [", זה ", ", זו "],
 ];
 
 /** The walk-in thank-you's "find us on WhatsApp with the words" line; a
@@ -94,7 +97,14 @@ export function forType(text: string, words: Words): string {
     for (const [a, b] of FEM) out = out.split(a).join(b);
     for (const [a, b] of FEM_WORDS) out = out.replace(word(a), (_m, pre: string) => pre + b);
   }
-  if (v.staffFem) for (const [a, b] of STAFF_FEM) out = out.split(a).join(b);
+  return out;
+}
+
+/** A message in a staff member's own voice ("אני נאלץ" → "אני נאלצת" for a woman, 16.10.2026). */
+export function staffVoice(text: string, fem: boolean): string {
+  if (!fem || !text) return text;
+  let out = text;
+  for (const [a, b] of STAFF_FEM) out = out.split(a).join(b);
   return out;
 }
 

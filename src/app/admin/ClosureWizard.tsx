@@ -22,7 +22,7 @@ type Displaced = {
   options: Opt[]; blockedByLoyalty: boolean;
 };
 type Plan = {
-  staffName: string; isToday: boolean; displaced: Displaced[];
+  staffName: string; staffFem?: boolean; isToday: boolean; displaced: Displaced[];
   gate: { ok: boolean; needed: number; distinctSlots: number; withoutOption: string[] };
   suggestions: { allowOtherBarberFor: { appointmentId: string; customerName: string }[]; closedDaysInWindow: string[] };
 };
@@ -91,7 +91,7 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
   // Same renderer the server uses to send — what the barber previews is what goes out.
   function preview(d: Displaced): string {
     if (custom[d.appointmentId]) return custom[d.appointmentId];
-    return renderClosureText(template, { name: d.customer.name, barber: plan?.staffName ?? "", when: whenLabel(date, d.startTime), options: d.options, originalDate: date });
+    return renderClosureText(template, { name: d.customer.name, barber: plan?.staffName ?? "", barberFem: !!plan?.staffFem, when: whenLabel(date, d.startTime), options: d.options, originalDate: date });
   }
 
   async function send() {
