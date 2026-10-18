@@ -423,7 +423,7 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         {me?.trialEnding && !pathname.startsWith("/admin/settings/plan") && (() => {
           const t = me.trialEnding;
           const day = new Date(t.endsAt).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" });
-          const next = t.priceIls ? ` אחריו ממשיך ${t.planName ? `מסלול ${t.planName}, ` : ""}${t.priceIls} ₪ לחודש.` : " אחריו בוחרים מסלול.";
+          const next = t.priceIls ? ` אחריו ממשיך ${t.planName ? `מסלול ${t.planName}, ` : ""}${t.priceIls} ₪ לחודש כולל מע״מ.` : " אחריו בוחרים מסלול.";
           return (
             <Link href="/admin/settings/plan" className="shrink-0 bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 flex items-center justify-between gap-3 text-sm">
               <span className="leading-snug">החודש החינמי מסתיים ב-{day}.{next}</span>

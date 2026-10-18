@@ -25,9 +25,29 @@ export function cleanAttribution(x: unknown): string | null {
   return Object.keys(out).some(k => k !== "ts") ? JSON.stringify(out) : null;
 }
 
-const SOURCE_HE: Record<string, string> = { ig: "אינסטגרם", instagram: "אינסטגרם", fb: "פייסבוק", facebook: "פייסבוק", meta: "מטא", google: "גוגל", tiktok: "טיקטוק", youtube: "יוטיוב", whatsapp: "וואטסאפ", wa: "וואטסאפ" };
+const SOURCE_HE: Record<string, string> = { site: "האתר", ig: "אינסטגרם", instagram: "אינסטגרם", fb: "פייסבוק", facebook: "פייסבוק", meta: "מטא", google: "גוגל", tiktok: "טיקטוק", youtube: "יוטיוב", whatsapp: "וואטסאפ", wa: "וואטסאפ" };
 const MEDIUM_HE: Record<string, string> = { social: "אורגני", organic: "אורגני", paid: "ממומן", cpc: "ממומן", paid_social: "ממומן", ads: "ממומן" };
 const CONTENT_HE: Record<string, string> = { link_in_bio: "קישור בביו", bio: "קישור בביו", story: "סטורי" };
+
+/**
+ * A WhatsApp chat carries no UTM, so the prefilled opening text of each entry
+ * point tells where he came from. Add a row for every new ad with its own text.
+ */
+const OPENERS: { text: string; attribution: LeadAttribution }[] = [
+  // The marketing manager's click-to-WhatsApp ad (campaign 120252011759200275, 16.10.2026).
+  { text: "היי, ראיתי את צ'אטור במודעה ורוצה לנסות לקבוע תור", attribution: { source: "meta", medium: "paid", content: "ריל POV", campaign: "120252011759200275" } },
+  // The demo button on /for-business.
+  { text: "היי, ראיתי את הדמו באתר ורוצה לנסות לקבוע תור", attribution: { source: "site", content: "כפתור הדמו בדף המכירה" } },
+];
+const norm = (s: string) => s.replace(/[׳’`]/g, "'").replace(/\s+/g, " ").trim();
+
+/** The attribution of a WhatsApp lead from his first message, or null. */
+export function attributionFromOpening(first: string | null | undefined): string | null {
+  if (!first) return null;
+  const t = norm(first);
+  const hit = OPENERS.find(o => t.startsWith(norm(o.text)));
+  return hit ? JSON.stringify(hit.attribution) : null;
+}
 
 /** One short Hebrew line for the CRM card: "אינסטגרם · אורגני · קישור בביו". */
 export function attributionLabel(json: string | null | undefined): string {
@@ -39,7 +59,7 @@ export function attributionLabel(json: string | null | undefined): string {
     src,
     a.medium ? MEDIUM_HE[a.medium.toLowerCase()] ?? a.medium : "",
     a.content ? CONTENT_HE[a.content.toLowerCase()] ?? a.content : "",
-    a.campaign ? `קמפיין ${a.campaign}` : "",
+    a.campaign && !/^\d+$/.test(a.campaign) ? `קמפיין ${a.campaign}` : "",
     a.ref ? `הפניה: ${a.ref}` : "",
   ].filter(Boolean);
   return parts.join(" · ");

@@ -148,6 +148,7 @@ export default function SignupPage() {
                   );
                 })}
               </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">המחירים כוללים מע״מ.</p>
               {reco && <p className="text-[12px] mt-1.5 leading-relaxed" style={{ color: C.petrol }}>{BUSINESS_TYPES.find(t => t.id === businessType)?.label}: בדרך כלל כ־{typical.toLocaleString("he-IL")} תורים בחודש, מסלול {reco.name} מתאים.{plan && plan.key !== reco.key ? " אפשר כמובן לבחור אחר." : ""}</p>}
               {plan && <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">מסלול {plan.name}: {plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש. {MESSAGES_EXPLAINED}, כ־{plan.apptsEstimate.toLocaleString("he-IL")} תורים. התורים עצמם לא מוגבלים, ואפשר לשנות מסלול בכל רגע.</p>}
               <p className="text-[11px] mt-1 leading-relaxed" style={{ color: C.petrol }}><b>חבר מביא חבר:</b> על כל מספרה שתביא, כשהיא מתחילה לשלם, אתה מקבל חודש חינם.</p>

@@ -608,7 +608,7 @@ export default function OnboardingPage() {
             const reco = recommendPlan(plans, appts);
             return reco && (
               <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 mt-4 leading-relaxed">
-                <b className="text-slate-800">{people === 1 ? "איש צוות אחד" : `${people} אנשי צוות`}: בערך {appts.toLocaleString("he-IL")} תורים בחודש, מתאים מסלול {reco.name} ({reco.priceIls} ₪ לחודש).</b> {MESSAGES_EXPLAINED}. אפשר לשנות מסלול בכל רגע בהגדרות, במסך המסלול שלי.
+                <b className="text-slate-800">{people === 1 ? "איש צוות אחד" : `${people} אנשי צוות`}: בערך {appts.toLocaleString("he-IL")} תורים בחודש, מתאים מסלול {reco.name} ({reco.priceIls} ₪ לחודש כולל מע״מ).</b> {MESSAGES_EXPLAINED}. אפשר לשנות מסלול בכל רגע בהגדרות, במסך המסלול שלי.
               </p>
             );
           })()}

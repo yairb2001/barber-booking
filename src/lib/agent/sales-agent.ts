@@ -35,6 +35,7 @@ import { stopLeadAutomations } from "@/lib/crm/automations";
 import { findChatorCustomer, loadChatorCustomer, runSupportTurn, tidy } from "@/lib/agent/chator-support";
 import { generateFollowup, isPhoneLikeName } from "@/lib/agent/followup-shared";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
+import { attributionFromOpening } from "@/lib/lead-attribution";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -993,18 +994,22 @@ async function createLead(p: { phone: string; conversationId: string; fullName: 
   const summary = userMsgs.map(m => m.content.replace(/\s+/g, " ").trim()).filter(Boolean).join(" · ").slice(0, 600);
   const localPhone = p.phone.replace(/^972/, "0");
   const ig = p.source === "instagram";
-  const recent = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(p.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, source: true, conversationId: true, stage: true } });
+  const recent = await prisma.lead.findFirst({ where: { phone: { in: phoneVariants(p.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, source: true, conversationId: true, stage: true, attribution: true } });
+  // Which ad or button opened the chat (its prefilled text), for the CRM (16.10.2026).
+  const attribution = attributionFromOpening(userMsgs[0]?.content);
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
   const data = {
     name: p.fullName || undefined, phone: localPhone, source: ig ? "instagram" : p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: "contacted", stage: "chatting",
     businessName: p.businessName || null, businessType: p.businessType && p.businessType !== "other" ? p.businessType : "barber_men",
     conversationId: p.conversationId, summary, lastInboundAt: new Date(),
+    ...(attribution ? { attribution } : {}),
   };
   // A lead we already had (the website form, or the number he typed on Instagram) keeps where he
   // first came from, how far he got (a booked call or a trial doesn't fall back to "בשיחה"), and,
   // from Instagram, his WhatsApp chat (12.10.2026).
   const keep = recent ? {
     source: recent.source,
+    ...(recent.attribution ? { attribution: recent.attribution } : {}),
     ...(recent.stage && recent.stage !== "new" ? { stage: recent.stage } : {}),
     ...(ig ? { conversationId: recent.conversationId ?? p.conversationId } : {}),
   } : {};

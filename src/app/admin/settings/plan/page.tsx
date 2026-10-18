@@ -96,7 +96,7 @@ export default function MyPlanPage() {
           {d.payUrl && (plan || d.monthlyPrice) && (
             <a href={d.payUrl} className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-teal-600 text-white px-4 py-3 hover:bg-teal-700 transition">
               <span className="text-sm font-semibold">{d.free.level === "blocked" ? "להצטרפות למסלול" : "להזנת כרטיס אשראי"}</span>
-              <span className="text-xs text-white/80">{plan ? `מסלול ${plan.name}, ${plan.priceIls} ₪ לחודש` : "חיוב חודשי, חשבונית במייל"}</span>
+              <span className="text-xs text-white/80">{plan ? `מסלול ${plan.name}, ${plan.priceIls} ₪ לחודש כולל מע״מ` : "חיוב חודשי, חשבונית במייל"}</span>
             </a>
           )}
         </section>
@@ -106,7 +106,7 @@ export default function MyPlanPage() {
             <div>
               <h2 className="font-semibold text-neutral-800">{plan ? `מסלול ${plan.name}` : d.trialEndsAt ? "תקופת ניסיון" : d.activated === false ? "עוד לא הופעל" : "עוד לא נבחר מסלול"}</h2>
               <p className="text-xs text-neutral-500 mt-0.5">
-                {plan ? `${plan.priceIls} ₪ לחודש · ${n(plan.messages)} הודעות וואטסאפ` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : d.activated === false ? "החודש החינמי מתחיל רק כשמסיימים להקים ולוחצים הפעל. עד אז אפשר לערוך הכל בלי לחץ." : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
+                {plan ? `${plan.priceIls} ₪ לחודש כולל מע״מ · ${n(plan.messages)} הודעות וואטסאפ` : d.trialEndsAt ? `הכל פתוח עד ${shortDate(d.trialEndsAt)}. אחרי זה בוחרים מסלול.` : d.activated === false ? "החודש החינמי מתחיל רק כשמסיימים להקים ולוחצים הפעל. עד אז אפשר לערוך הכל בלי לחץ." : "בחר מסלול מהרשימה למטה ונחזור אליך לאשר."}
               </p>
             </div>
             {u && <span className="text-[11px] text-neutral-400 shrink-0 mt-1">מתאפס ב-1 לחודש</span>}
@@ -152,7 +152,7 @@ export default function MyPlanPage() {
                     <span className="font-semibold text-neutral-800">{p.name}</span>
                     {mine ? <span className="text-[11px] font-semibold text-teal-700">המסלול שלך</span> : reco?.key === p.key && <span className="text-[11px] font-semibold text-teal-700">מומלץ לך</span>}
                   </div>
-                  <span className="text-2xl font-bold text-neutral-900 tabular-nums">{p.priceIls} ₪<span className="text-xs font-normal text-neutral-500"> לחודש</span></span>
+                  <span className="text-2xl font-bold text-neutral-900 tabular-nums">{p.priceIls} ₪<span className="text-xs font-normal text-neutral-500"> לחודש, כולל מע״מ</span></span>
                   <span className="text-xs text-neutral-700 font-medium">{n(p.messages)} הודעות וואטסאפ בחודש</span>
                   <span className="text-xs text-neutral-500">כ־{n(p.apptsCap)} תורים בחודש (הערכה)</span>
                   {!mine && (

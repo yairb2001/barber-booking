@@ -41,7 +41,7 @@ export default async function PayPage({ params }: { params: { slug: string; sig:
               <div className="rounded-2xl border border-slate-200 p-4">
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="font-semibold text-slate-800">{plan ? `מסלול ${plan.name}` : "המנוי החודשי"}</span>
-                  {price ? <span className="text-2xl font-bold text-slate-900 tabular-nums">{price} ₪<span className="text-xs font-normal text-slate-500"> לחודש</span></span> : null}
+                  {price ? <span className="text-2xl font-bold text-slate-900 tabular-nums">{price} ₪<span className="text-xs font-normal text-slate-500"> לחודש, כולל מע״מ</span></span> : null}
                 </div>
                 {plan && <p className="text-xs text-slate-500 mt-1">{plan.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש · תורים בלי הגבלה · הסוכן בוואטסאפ</p>}
               </div>
