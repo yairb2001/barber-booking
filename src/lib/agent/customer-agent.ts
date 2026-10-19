@@ -52,6 +52,7 @@ import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointme
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
+import { unansweredRun, runConfirmsSlot } from "@/lib/agent/pending-confirmation";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -2430,7 +2431,10 @@ export type SandboxOptions = {
   setupOverride?: Record<string, string | boolean>;
 };
 
-export async function runCustomerAgent(opts: {
+/** What a run asks for after it ends (19.10.2026): hand the chat to a person. */
+type AgentRunCtx = { handoffReason?: string; conversationId?: string };
+
+async function runCustomerAgentCore(opts: {
   businessId: string;
   phone: string;        // normalized E.164
   incomingText: string;
@@ -2443,7 +2447,7 @@ export async function runCustomerAgent(opts: {
    *  usageKind tags the agent_usage rows ("sandbox") so they never pollute the
    *  cost numbers of real traffic. */
   sandbox?: SandboxOptions;
-}): Promise<void> {
+}, ctx: AgentRunCtx = {}): Promise<void> {
   const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
   if (sandbox) sandbox.proposalPhone = phone;
 
@@ -2539,7 +2543,19 @@ export async function runCustomerAgent(opts: {
         select: { content: true },
       });
       const pendingFinalConfirm = lastAssistantMsg?.content.includes("מאשר?") ?? false;
-      if (!pendingFinalConfirm && !sandbox) {
+      // Yair (19.10.2026): a customer at the cap who confirms a slot we offered ("14:30",
+      // "כן") is booked first, then the chat goes to a person. Every business.
+      const recentTurns = await prisma.conversationMessage.findMany({
+        where: { conversationId: conversation.id, role: { in: ["user", "assistant"] }, createdAt: { gte: windowStart } },
+        orderBy: { createdAt: "desc" }, take: 12, select: { role: true, content: true, createdAt: true },
+      });
+      const capRun = unansweredRun(recentTurns.reverse());
+      const confirmsSlot = !!capRun && runConfirmsSlot(capRun.offerContext, capRun.run);
+      if ((pendingFinalConfirm || confirmsSlot) && !sandbox) {
+        ctx.handoffReason = `השיחה ארוכה מהרגיל (${userMsgCount} הודעות מהלקוח). הלקוח אישר תור והסוכן קבע אותו. מכאן הטיפול אצלכם.`;
+        ctx.conversationId = conversation.id;
+      }
+      if (!pendingFinalConfirm && !confirmsSlot && !sandbox) {
         await escalateToHuman({
           bizId: businessId,
           conversationId: conversation.id,
@@ -2720,7 +2736,14 @@ export async function runCustomerAgent(opts: {
   if (!preHandledReply && (!sandbox || sandbox.enforceBudget)) {
     try {
       const gate = await tokenBudgetGate(businessId, phone);
-      if (gate.blocked) {
+      // Yair (19.10.2026): the package ran out mid-booking and the customer just said yes to a
+      // slot we offered → book it this once, then a person takes the chat. In every business.
+      const pending = gate.blocked ? unansweredRun(history.map(h => ({ role: h.role, content: h.content, createdAt: h.createdAt }))) : null;
+      if (gate.blocked && pending && runConfirmsSlot(pending.offerContext, pending.run)) {
+        console.log(`[agent] token package used up biz=${businessId}, but the customer confirmed an offered slot → one run, then a person`);
+        ctx.handoffReason = "חבילת הסוכן נגמרה באמצע קביעת תור. הלקוח אישר את השעה שהוצעה לו, והסוכן קבע את התור. מכאן הטיפול אצלכם.";
+        ctx.conversationId = conversation.id;
+      } else if (gate.blocked) {
         console.log(`[agent] token package used up biz=${businessId} (${gate.state.pct}%) — agent silent`);
         if (gate.unavailableMessage) {
           if (sandbox) sandbox.replies.push(gate.unavailableMessage);
@@ -2893,5 +2916,18 @@ export async function runCustomerAgent(opts: {
     });
     // Small human-like pause between bubbles so they arrive in order, not at once.
     if (i < bubbles.length - 1) await new Promise(r => setTimeout(r, 700));
+  }
+}
+
+/**
+ * The customer agent. A run that asked for a person (a confirmed slot booked after
+ * the month's package ran out) hands the chat over once it ends.
+ */
+export async function runCustomerAgent(opts: Parameters<typeof runCustomerAgentCore>[0]): Promise<void> {
+  const ctx: AgentRunCtx = {};
+  await runCustomerAgentCore(opts, ctx);
+  if (ctx.handoffReason && ctx.conversationId && !opts.sandbox) {
+    await escalateToHuman({ bizId: opts.businessId, conversationId: ctx.conversationId, callerPhone: opts.phone, reason: ctx.handoffReason })
+      .catch(e => console.error("[agent] hand-off after a confirmed slot failed", e));
   }
 }

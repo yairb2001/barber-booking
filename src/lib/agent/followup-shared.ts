@@ -16,7 +16,8 @@ export const FOLLOWUP_HARD_RULES =
   "אסור להמציא או להציע הנחות, מבצעים, קודי קופון, מחירים מיוחדים או הטבות מכל סוג — גם לא כדי לשכנע לקוח שאמר שיקר לו. " +
   "אסור להבטיח שום דבר שלא נאמר במפורש בשיחה עצמה (זמינות, מתנות, יוצאים מן הכלל). " +
   "אם ללקוח יקר — מותר להבין ולהשאיר דלת פתוחה, לא להציע פיצוי. " +
-  "המחירים והשירותים היחידים שקיימים הם אלה שהוזכרו בשיחה.";
+  "המחירים והשירותים היחידים שקיימים הם אלה שהוזכרו בשיחה. " +
+  "אתה לא יכול לקבוע תורים: אסור לכתוב או לרמוז שתור נקבע, אושר או שמור, ואסור להבטיח תזכורת.";
 
 /**
  * "Now" line for time-aware follow-ups: the generator must know the current
@@ -80,6 +81,9 @@ export function fallbackFollowup(name: string | null): string {
  * treats a slot that already passed as still on the table (offer to REBOOK
  * instead), plus the hard no-invented-discounts rules.
  */
+/** Wording that tells a customer he is booked, promises a reminder, or leaks the "now" line. */
+const SOUNDS_BOOKED = /\bconfirm(ed)?\b|\bbooked\b|\breminder\b|see you (on|at|then)|קבעתי|קבענו|התור (שלך )?נקבע|נקבע לך|שריינתי|שמרתי לך|אישרתי|מאושר|רשמתי אותך|תזכורת|השעה כעת/i;
+
 export async function generateFollowup(
   transcript: string,
   name: string | null,
@@ -118,6 +122,11 @@ export async function generateFollowup(
     // The model decided a follow-up would do more harm than good.
     if (/^SKIP\b/i.test(text)) return null;
     const cleaned = stripFollowupPreamble(text);
+    // A nudge that sounds like a booking, or that leaks our own "now" line, never goes out (19.10.2026).
+    if (cleaned && SOUNDS_BOOKED.test(cleaned)) {
+      console.error("[followup] sounded like a confirmation, using fallback:", cleaned);
+      return fallbackFollowup(name);
+    }
     if (!cleaned) {
       console.error("[followup] suspected preamble leak, using fallback:", text);
       return fallbackFollowup(name);

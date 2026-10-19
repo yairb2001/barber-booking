@@ -18,6 +18,8 @@ import { sendMessage, firstName } from "@/lib/messaging";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { tierHas } from "@/lib/tier";
 import { isPhoneLikeName, generateFollowup } from "@/lib/agent/followup-shared";
+import { runCustomerAgent, escalateToHuman } from "@/lib/agent/customer-agent";
+import { unansweredRun, runConfirmsSlot } from "@/lib/agent/pending-confirmation";
 
 export const dynamic = "force-dynamic";
 
@@ -85,11 +87,12 @@ export async function GET(req: NextRequest) {
     select: { id: true, tier: true, settings: true },
   });
 
-  let checked = 0, sent = 0, skipped = 0;
+  let checked = 0, sent = 0, skipped = 0, answeredLate = 0;
 
   for (const biz of businesses) {
     if (!tierHas(biz.tier, "aiAgent")) continue;
-    const settings = (biz.settings as Record<string, unknown> | null) ?? {};
+    let settings: Record<string, unknown> = {};
+    try { settings = typeof biz.settings === "string" ? JSON.parse(biz.settings) : ((biz.settings as Record<string, unknown> | null) ?? {}); } catch { /* bad JSON = defaults */ }
     if (settings.agentFollowupEnabled === false) continue;
 
     const convos = await prisma.conversation.findMany({
@@ -170,11 +173,39 @@ export async function GET(req: NextRequest) {
         where:   { conversationId: convo.id, role: { in: ["user", "assistant"] } },
         orderBy: { createdAt: "desc" },
         take:    12,
-        select:  { role: true, content: true },
+        select:  { role: true, content: true, createdAt: true },
       });
       const hasUser      = msgs.some(m => m.role === "user");
       const hasAssistant = msgs.some(m => m.role === "assistant");
       if (!hasUser || !hasAssistant) { skipped++; continue; }
+
+      // The customer wrote last and nobody answered (19.10.2026, the Michael case: he said
+      // "Yes" + "14:30", the agent was down, and this nudge, which cannot book, wrote
+      // "Can't wait to confirm you … at 14:30"). A nudge is never the answer to an open
+      // message: the real agent answers it now (it can book). A slot he confirmed is booked,
+      // then a person takes the chat (Yair: every business).
+      const pending = unansweredRun(msgs.slice().reverse());
+      if (pending) {
+        const confirmed = runConfirmsSlot(pending.offerContext, pending.run);
+        try {
+          await runCustomerAgent({ businessId: biz.id, phone, incomingText: pending.run, alreadyPersisted: true });
+          if (confirmed) {
+            await escalateToHuman({
+              bizId: biz.id, conversationId: convo.id, callerPhone: phone,
+              reason: "הלקוח אישר שעה שהוצעה לו ולא קיבל מענה בזמן. הסוכן ענה עכשיו באיחור וקבע את התור. כדאי לוודא מולו שהכל בסדר.",
+            });
+          }
+          answeredLate++;
+        } catch (e) {
+          console.error("[followup] late answer failed", phone, e);
+          await escalateToHuman({
+            bizId: biz.id, conversationId: convo.id, callerPhone: phone,
+            reason: "הודעה של הלקוח נשארה בלי מענה, והסוכן לא הצליח לענות לה גם באיחור.",
+          }).catch(() => {});
+          skipped++;
+        }
+        continue;
+      }
 
       const transcript = msgs
         .reverse()
@@ -219,5 +250,5 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, checked, sent, skipped });
+  return NextResponse.json({ ok: true, checked, sent, skipped, answeredLate });
 }
