@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { C, useCrm, crmAction, STAGE_TONE } from "../ui";
 import { bumpBell } from "../HomeParts";
+import { Composer, MsgBody } from "../Composer";
 
 /**
  * One chat on Chator's WhatsApp (10.10.2026). Writing here sends from
@@ -17,14 +18,13 @@ import { bumpBell } from "../HomeParts";
  * on top, the messages scroll in the middle, the reply box stays at the bottom.
  * Nothing is wider than the screen (it used to slide sideways on the phone).
  */
-type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string };
+type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string; mediaUrl?: string | null; mediaType?: string | null };
 type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; handledAt?: string | null; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[] };
 const time = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 const pill = "shrink-0 inline-flex items-center h-8 px-3 rounded-full text-[13px] font-semibold whitespace-nowrap";
 
 export default function ChatThread({ id, onBack }: { id: string; onBack?: () => void }) {
   const { data, error, reload } = useCrm<Data>(`view=chat&id=${encodeURIComponent(id)}`);
-  const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -34,12 +34,12 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
   // The server marked this chat's alerts read: refresh the bell now, not on the next screen change.
   useEffect(() => { if (data?.seen) bumpBell(); }, [data]);
 
-  async function send() {
-    if (!text.trim()) return;
-    setBusy(true); setNote(null);
+  async function send(text: string) {
+    setNote(null);
     const r = await crmAction({ action: "chat.send", id, body: text });
-    setBusy(false);
-    if (r.ok) { setText(""); await reload(); } else setNote(r.error ?? "לא נשלח");
+    if (r.ok) { await reload(); return true; }
+    setNote(r.error ?? "לא נשלח");
+    return false;
   }
   async function handled() {
     setBusy(true);
@@ -117,7 +117,7 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
           return (
             <div key={m.id} className={`flex min-w-0 ${mine ? "justify-end" : "justify-start"}`}>
               <div className="max-w-[82%] min-w-0 rounded-2xl px-3 py-2 text-[14px] whitespace-pre-line [overflow-wrap:anywhere]" style={mine ? { background: m.source === "admin" ? "#DDF3EA" : "#fff", border: `1px solid ${C.line}`, color: C.ink } : { background: C.petrol, color: "#fff" }}>
-                {m.content}
+                <div className="flex flex-col gap-1"><MsgBody content={m.content} mediaUrl={m.mediaUrl} mediaType={m.mediaType} mine={mine} /></div>
                 <div className="text-[10px] mt-1 opacity-70">{mine ? (m.source === "admin" ? "אתה" : "הסוכן") : "הוא"} · {time(m.createdAt)}</div>
               </div>
             </div>
@@ -128,12 +128,7 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
       {/* Reply: always at the bottom. */}
       <div className="shrink-0 bg-white px-3 pt-2 pb-[max(8px,env(safe-area-inset-bottom))]" style={{ borderTop: `1px solid ${C.line}` }}>
         {note && <p className="m-0 mb-1.5 text-xs text-red-700">{note}</p>}
-        <div className="flex gap-2 items-end">
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={1} placeholder={ig ? "הודעה מהאינסטגרם של צ'אטור" : "הודעה מהמספר של צ'אטור"} className="flex-1 min-w-0 rounded-2xl px-3 py-2.5 text-[15px] resize-none max-h-32" style={{ border: "1px solid #C7D8D5" }} />
-          <button type="button" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="שלח" className="shrink-0 w-11 h-11 rounded-full inline-flex items-center justify-center disabled:opacity-40" style={{ background: C.petrol, color: "#fff" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: "scaleX(-1)" }}><path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" /></svg>
-          </button>
-        </div>
+        <Composer placeholder={ig ? "הודעה מהאינסטגרם של צ'אטור" : "הודעה מהמספר של צ'אטור"} name={chat.name} onSend={send} voice={ig ? null : { to: "chat", id: chat.id }} onSent={() => void reload()} />
         <p className="m-0 mt-1 text-[11px]" style={{ color: C.muted }}>{ig ? "באינסטגרם אפשר לענות עד 24 שעות אחרי ההודעה האחרונה שלו. " : ""}הודעה שאתה שולח משהה את הסוכן בשיחה ל־24 שעות.</p>
       </div>
     </div>

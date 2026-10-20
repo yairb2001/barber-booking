@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { C, Btn } from "./ui";
+import { useEffect, useRef } from "react";
+import { C } from "./ui";
+import { Composer, MsgBody, type VoiceTarget } from "./Composer";
 
 /**
  * The WhatsApp conversation with Chator's line inside a lead or customer card
  * (15.10.2026, Yair: "לחצן וואטסאפ, שאני לוחץ עליו הוא פותח את השיחה בתוך
  * הכרטיס ושאני לוחץ שוב הוא סוגר"). Closed until the button opens it.
  */
-export type WaMsg = { id: string; role: string; content: string; source: string | null; createdAt: string };
+export type WaMsg = { id: string; role: string; content: string; source: string | null; createdAt: string; mediaUrl?: string | null; mediaType?: string | null };
 
 const time = (iso: string) => new Intl.DateTimeFormat("he-IL", { hour: "2-digit", minute: "2-digit", day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
 const GREEN = "#1F7A4D";
@@ -25,17 +26,19 @@ export function WaButton({ open, onClick, count, waiting }: { open: boolean; onC
   );
 }
 
-export function WaPanel({ status, messages, who, placeholder, onSend }: {
+export function WaPanel({ status, messages, who, placeholder, onSend, name, voice, onSent }: {
   status?: React.ReactNode;
   messages: WaMsg[];
   who: (m: WaMsg) => string;
   placeholder: string;
   onSend: (text: string) => Promise<boolean>;
+  /** For {שם} in the quick replies. */
+  name?: string | null;
+  /** Where a recorded voice note goes (20.10.2026). */
+  voice?: VoiceTarget | null;
+  onSent?: () => void;
 }) {
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
   const list = useRef<HTMLDivElement>(null);
-  const inputId = useId();
   // Opened (or a new message) → the latest at the bottom, like WhatsApp.
   useEffect(() => { const el = list.current; if (el) el.scrollTop = el.scrollHeight; }, [messages.length]);
 
@@ -53,18 +56,14 @@ export function WaPanel({ status, messages, who, placeholder, onSend }: {
             <div key={m.id} className="flex" style={{ justifyContent: mine ? "flex-start" : "flex-end" }}>
               <div className="max-w-[78%] rounded-[14px] px-3 py-2 flex flex-col gap-0.5" style={{ background: mine ? "#D9FDD3" : "#fff", boxShadow: "0 1px 0 rgba(0,0,0,0.06)" }}>
                 <span className="text-[11px] font-bold" style={{ color: mine ? "#0F6B4F" : "#7A4A00" }}>{who(m)}</span>
-                <span className="text-sm leading-relaxed whitespace-pre-wrap">{m.content}</span>
+                <MsgBody content={m.content} mediaUrl={m.mediaUrl} mediaType={m.mediaType} mine={mine} />
                 <span className="text-[11px] self-end" style={{ color: "#6B7F80" }}>{time(m.createdAt)}</span>
               </div>
             </div>
           );
         })}
       </div>
-      <div className="flex gap-2 items-center bg-white rounded-full ps-4 pe-1.5 py-1">
-        <label className="sr-only" htmlFor={inputId}>הודעה</label>
-        <input id={inputId} value={text} onChange={e => setText(e.target.value)} placeholder={placeholder} className="flex-1 h-10 bg-transparent outline-none text-sm" />
-        <Btn kind="dark" className="rounded-full" disabled={!text.trim() || sending} onClick={async () => { setSending(true); const ok = await onSend(text); setSending(false); if (ok) setText(""); }}>{sending ? "שולח…" : "שלח"}</Btn>
-      </div>
+      <Composer placeholder={placeholder} name={name} onSend={onSend} voice={voice} onSent={onSent} />
     </section>
   );
 }

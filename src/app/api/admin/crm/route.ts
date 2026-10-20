@@ -339,7 +339,7 @@ async function leadView(id: string) {
   const intl = normalizeIsraeliPhone(lead.phone);
   const conv = await prisma.conversation.findFirst({ where: { businessId: DEMO_BUSINESS_ID, phone: { in: [intl, local] }, agentType: { not: "owner" } }, orderBy: { createdAt: "desc" }, select: { id: true, escalatedAt: true } });
   const [messages, calls, notes, runs, reps, autos, slots] = await Promise.all([
-    conv ? prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }) : [],
+    conv ? prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "asc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } }) : [],
     prisma.salesCall.findMany({ where: { leadId: id }, orderBy: { startsAt: "desc" } }),
     prisma.leadNote.findMany({ where: { leadId: id }, orderBy: { createdAt: "desc" } }),
     prisma.crmAutomationRun.findMany({ where: { leadId: id }, orderBy: { startedAt: "desc" }, take: 10 }),
@@ -462,7 +462,7 @@ async function customerView(id: string) {
   const waPhones = Array.from(new Set([biz ? ownerPhoneOf(biz) : null, biz?.phone, lead?.phone]
     .map(p => (p ? normalizeIsraeliPhone(p) : "")).filter(p => p.startsWith("972")).flatMap(p => [p, "0" + p.slice(3)])));
   const waConvs = waPhones.length ? await prisma.conversation.findMany({ where: { businessId: DEMO_BUSINESS_ID, phone: { in: waPhones }, agentType: { not: "owner" } }, select: { id: true } }) : [];
-  const messages = waConvs.length ? (await prisma.conversationMessage.findMany({ where: { conversationId: { in: waConvs.map(x => x.id) }, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } })).reverse() : [];
+  const messages = waConvs.length ? (await prisma.conversationMessage.findMany({ where: { conversationId: { in: waConvs.map(x => x.id) }, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } })).reverse() : [];
   return {
     customer: c, business: biz && { ...biz, settings: undefined, phone: undefined, tokenBudgetIls: budget }, setup,
     agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
@@ -513,7 +513,7 @@ export async function GET(req: NextRequest) {
     if (view === "conversation") {
       const conv = await prisma.conversation.findUnique({ where: { id: sp.get("id") ?? "" }, select: { id: true, phone: true, whatsappName: true, businessId: true, escalatedAt: true, business: { select: { name: true } }, customer: { select: { name: true } } } });
       if (!conv) return NextResponse.json({ error: "השיחה לא נמצאה" }, { status: 404 });
-      const messages = await prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "asc" }, take: 300, select: { id: true, role: true, content: true, source: true, createdAt: true } });
+      const messages = await prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "asc" }, take: 300, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } });
       return NextResponse.json({ conversation: { id: conv.id, businessId: conv.businessId, businessName: conv.business.name, name: conv.customer?.name || conv.whatsappName || null, phone: conv.phone.replace(/^972/, "0") }, messages });
     }
     if (view === "improvements") {
@@ -537,6 +537,12 @@ export async function GET(req: NextRequest) {
       });
     }
     // Chator's own WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות").
+    // Ready messages for the WhatsApp composer (20.10.2026): they fill the box, never send.
+    if (view === "quickReplies") {
+      const { getQuickReplies, quickReplyVars } = await import("@/lib/crm/quick-replies");
+      const [items, vars] = await Promise.all([getQuickReplies(), quickReplyVars()]);
+      return NextResponse.json({ items, vars });
+    }
     if (view === "chats" || view === "chat") {
       const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
       // Leads are saved as 05X, 9725X or +9725X; a chat's phone is any of these.
@@ -569,7 +575,7 @@ export async function GET(req: NextRequest) {
       // Opening the chat = you saw it: its alerts ("הודעה חדשה באינסטגרם") stop showing in the bell (12.10.2026).
       const seen = await prisma.crmNotification.updateMany({ where: { href: `/admin/crm/chats/${conv.id}`, readAt: null }, data: { readAt: new Date() } });
       const [msgs, lead] = await Promise.all([
-        prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true } }),
+        prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } }),
         ig ? Promise.resolve(null) : prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
       ]);
       // Instagram: does the agent answer this person at all (settings.instagram.agent off / test / on)?
@@ -917,6 +923,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, ...(await runDailyReview()) });
       }
       // Yair writes in a Chator chat himself: from Chator's number, and the agent steps back for 24h.
+      case "quickReplies.save": {
+        const { saveQuickReplies } = await import("@/lib/crm/quick-replies");
+        return NextResponse.json({ ok: true, items: await saveQuickReplies(b.items) });
+      }
       case "chat.send": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
         const conv = await prisma.conversation.findFirst({ where: { id: str("id"), businessId: DEMO }, select: { phone: true } });

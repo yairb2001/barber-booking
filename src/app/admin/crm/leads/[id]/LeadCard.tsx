@@ -7,7 +7,7 @@ import { InModal } from "../../card-context";
 import { WaButton, WaPanel } from "../../WaPanel";
 import { attributionLabel } from "@/lib/lead-attribution";
 
-type Msg = { id: string; role: string; content: string; source: string | null; createdAt: string };
+type Msg = { id: string; role: string; content: string; source: string | null; createdAt: string; mediaUrl?: string | null; mediaType?: string | null };
 type Call = { id: string; startsAt: string; status: string; outcome: string | null; label: string; rep: string };
 type Data = {
   lead: { id: string; name: string | null; phone: string; businessName: string | null; businessType: string | null; shopSize: string | null; source: string; attribution?: string | null; stage: string; summary: string | null; optedOut: boolean; rep: string | null; repId: string | null; followUpAt: string | null; lostReason: string | null; businessId: string | null; createdAt: string };
@@ -87,6 +87,9 @@ export default function LeadCard({ id }: { id: string }) {
                 ? <span className="text-xs flex items-center gap-2" style={{ color: "#7A4A00" }}>הסוכן שותק עד {time(data.agentPausedUntil)}<button type="button" className="underline min-h-[32px]" onClick={() => act("resume", { action: "lead.resumeAgent", id: l.id }, "הסוכן חזר לענות")}>החזר את הסוכן</button></span>
                 : <span className="text-xs" style={{ color: "#3E5A5B" }}>הסוכן מטפל · הודעה שלך משתיקה אותו ל-24 שעות</span>}
               onSend={async body => (await act("msg", { action: "lead.message", id: l.id, body }, "נשלח")).ok}
+              name={l.name}
+              voice={{ to: "lead", id: l.id }}
+              onSent={() => void reload()}
             />
           </div>
         )}

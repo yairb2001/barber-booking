@@ -38,7 +38,7 @@ const TrashIcon = ({ className }: { className?: string }) => (<svg viewBox="0 0 
 const RATES = [1, 1.5, 2] as const;
 
 /** Incoming = white bubble, teal played part; mine = green bubble, dark played part. Tap the pill to cycle 1× → 1.5× → 2×. */
-export function VoiceBubble({ src, mine }: { src: string; mine?: boolean }) {
+export function VoiceBubble({ src, mine, className = "w-[250px] sm:w-[270px]" }: { src: string; mine?: boolean; className?: string }) {
   const ref = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [started, setStarted] = useState(false);
@@ -55,7 +55,7 @@ export function VoiceBubble({ src, mine }: { src: string; mine?: boolean }) {
   const unplayed = mine ? "bg-emerald-900/25" : "bg-slate-300";
   const wave = bars ?? Array.from({ length: BAR_COUNT }, () => 0.25);
   return (
-    <div className="flex items-center gap-2 w-[250px] sm:w-[270px] py-0.5" dir="ltr">
+    <div className={`flex items-center gap-2 py-0.5 ${className}`} dir="ltr">
       <audio ref={ref} src={src} preload="metadata"
         onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setT(0); }}
         onTimeUpdate={e => setT(e.currentTarget.currentTime)}
@@ -88,7 +88,9 @@ export function VoiceBubble({ src, mine }: { src: string; mine?: boolean }) {
 }
 
 /** Mic button → recording (timer) → preview (play, delete, send). Records OGG/Opus so WhatsApp shows it as a voice note. */
-export function VoiceComposer({ onSend, onOpenChange, busy }: { onSend: (blob: Blob, durationSec: number) => Promise<boolean>; onOpenChange: (open: boolean) => void; busy: boolean }) {
+export function VoiceComposer({ onSend, onOpenChange, busy, accent }: { onSend: (blob: Blob, durationSec: number) => Promise<boolean>; onOpenChange: (open: boolean) => void; busy: boolean; accent?: string }) {
+  // The CRM paints the round buttons in its own color (20.10.2026); the shop's chat keeps teal.
+  const tint = accent ? { background: accent } : undefined;
   const [state, setState] = useState<"idle" | "starting" | "recording" | "preview">("idle");
   const [secs, setSecs] = useState(0);
   const [preview, setPreview] = useState<{ blob: Blob; url: string; secs: number } | null>(null);
@@ -128,7 +130,7 @@ export function VoiceComposer({ onSend, onOpenChange, busy }: { onSend: (blob: B
   if (state === "idle" || state === "starting") return (
     <div className="flex flex-col items-end gap-1 shrink-0">
       {err && <span className="text-[10px] text-red-500 max-w-[160px] text-right">{err}</span>}
-      <button onClick={start} disabled={state === "starting"} aria-label="הקלט הודעה קולית" className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 text-white flex items-center justify-center shadow disabled:opacity-50">
+      <button type="button" onClick={start} disabled={state === "starting"} aria-label="הקלט הודעה קולית" style={tint} className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 text-white flex items-center justify-center shadow disabled:opacity-50">
         <MicIcon className="w-5 h-5" />
       </button>
     </div>
@@ -146,7 +148,7 @@ export function VoiceComposer({ onSend, onOpenChange, busy }: { onSend: (blob: B
     <div className="flex-1 flex items-center gap-2 border border-slate-200 rounded-xl px-2 py-1.5 bg-white" dir="ltr">
       <button onClick={cancel} aria-label="מחק" className="text-slate-400 hover:text-red-500 shrink-0"><TrashIcon className="w-5 h-5" /></button>
       {preview && <div className="flex-1 min-w-0"><VoiceBubble src={preview.url} /></div>}
-      <button onClick={send} disabled={busy} aria-label="שלח הקלטה" className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white flex items-center justify-center shrink-0"><SendIcon className="w-5 h-5" /></button>
+      <button type="button" onClick={send} disabled={busy} aria-label="שלח הקלטה" style={tint} className="w-10 h-10 rounded-full bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white flex items-center justify-center shrink-0"><SendIcon className="w-5 h-5" /></button>
     </div>
   );
 }

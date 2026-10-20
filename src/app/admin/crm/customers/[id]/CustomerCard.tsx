@@ -89,6 +89,9 @@ export default function CustomerCard({ id }: { id: string }) {
               placeholder={c.ownerPhone ? "נשלח מהמספר של צ׳אטור" : "אין טלפון לבעל העסק"}
               status={<span className="text-xs" style={{ color: "#3E5A5B" }}>עוזר התפעול עונה לו כאן</span>}
               onSend={async body => (await act("msg", { action: "customer.message", id, body }, "נשלח")).ok}
+              name={data.lead?.name}
+              voice={c.ownerPhone ? { to: "customer", id } : null}
+              onSent={() => void reload()}
             />
           )}
           <Card collapsible title="שלבי ההקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.current ? ` · ${st.current.label}` : ""}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
