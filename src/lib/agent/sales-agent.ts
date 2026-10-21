@@ -36,6 +36,8 @@ import { findChatorCustomer, loadChatorCustomer, runSupportTurn, tidy } from "@/
 import { generateFollowup, isPhoneLikeName } from "@/lib/agent/followup-shared";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { attributionFromOpening } from "@/lib/lead-attribution";
+import { computeDayAvailability } from "@/lib/agent/availability";
+import { getBusinessNow, addDaysISO } from "@/lib/utils";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -62,9 +64,26 @@ export type SalesState = {
   afterDemoNudged?: boolean;
   // Started booking in the demo and stopped: the demo shop's follow-up was sent.
   demoFollowedUp?: boolean;
+  // Came to "try booking" (TRY_BOOK_RE): the demo opened without the explanation, which
+  // comes after the booking; the two follow-ups if he never answered (21.10.2026).
+  revealDeferred?: boolean;
+  entryNudge1At?: string;
+  entryNudge2At?: string;
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
+/**
+ * He wrote "רוצה לנסות לקבוע תור" (the site's demo button, the WhatsApp ad) or asked
+ * for "תור לדוגמה" (21.10.2026, Yair: "לא לחפור לו... ביקש במילים לקבוע תור, אז לקבוע
+ * לו תור ולהסביר שזה פשוט"). The demo just books; what it was comes after the booking.
+ * Plain "רוצה לקבוע תור" keeps the explanation first (V2_ENTRY_INTENT, decision 9.10).
+ */
+const TRY_BOOK_RE = /לנסות\s+לקבוע\s+(לי\s+)?תור|תור\s+לדוגמה/;
+const TRY_BOOK_ENTRY = ["היי! 👋 כאן המספרה של דני", "למתי תרצה לקבוע? היום, מחר או יום אחר?"];
+const TRY_BOOK_AFTER = "זו הייתה מספרת הדגמה, התור לא אמיתי 😉 ככה צ'אטור עונה ללקוחות שלך. רוצה לראות איך זה עובד אצלך?";
+/** Never answered after TRY_BOOK_ENTRY: after 2 hours a real free slot, the next day at 10:00 one more line, then stop. */
+const ENTRY_NUDGE_1 = (when: string | null) => (when ? `נו, יש לי מקום ${when} 😄 לשריין לך?` : "נו, למתי לשריין לך? 😄");
+const ENTRY_NUDGE_2 = "עדיין רוצה לנסות? תכתוב לי שעה ואני קובע.";
 // ── Instagram (@chator.il, 12.10.2026; spec "ערוץ אינסטגרם" › "צ'אטור: סוכן מכירות באינסטגרם") ──
 // No demo shop on Instagram: whoever wants to try gets a link to Chator's WhatsApp
 // with this prefilled text, which opens the demo there (like the site's button).
@@ -289,6 +308,13 @@ export async function runDemoTurn(p: {
     } else if (v2) {
       // v2: the site's "try it" button goes straight into the demo; anyone else is a prospect.
       const opener = looksLikeDemoOpener(text);
+      if (TRY_BOOK_RE.test(text)) {
+        state = { mode: "demo", taggedAt: new Date().toISOString(), source: opener.source ?? "intent", demoTurns: 0, revealDeferred: true };
+        await saveState(conv.id, state);
+        if (!p.alreadyPersisted) await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
+        await reply(conv.id, phone, TRY_BOOK_ENTRY, p.sandbox);
+        return { handled: true, mode: state.mode, replies: TRY_BOOK_ENTRY };
+      }
       if (opener.source === "landing") {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "landing", demoTurns: 0 };
         await saveState(conv.id, state);
@@ -489,7 +515,7 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
     if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
     const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), afterDemoAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined, demoFollowedUp: undefined };
     await saveState(convId, next);
-    const line = AFTER_DEMO_LINE;
+    const line = state.revealDeferred ? TRY_BOOK_AFTER : AFTER_DEMO_LINE;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
   }
@@ -1106,7 +1132,57 @@ export async function followUpDemos(now: Date = new Date(), dryRun?: { phone: st
       if (nudge) sent++;
     }
   }
+  sent += await followUpTryBook(now, dryRun);
   return sent;
+}
+
+/**
+ * Came to "try booking" and never answered (21.10.2026): two messages at most, never at
+ * night or on Shabbat (okToRemind). Only chats opened by TRY_BOOK_RE, so a student of the
+ * academy writing to this number does not get them.
+ */
+async function followUpTryBook(now: Date, dryRun?: { phone: string; out: { phone: string; texts: string[] }[] }): Promise<number> {
+  if (!dryRun && (!(await salesV2On()) || !okToRemind(now))) return 0;
+  const convs = await prisma.conversation.findMany({
+    where: { businessId: DEMO_BUSINESS_ID, escalatedAt: null, salesState: { contains: '"revealDeferred":true' }, lastMessageAt: { gte: new Date(now.getTime() - 3 * 86_400_000), lte: new Date(now.getTime() - 2 * 3600_000) }, ...(dryRun ? { phone: dryRun.phone } : {}) },
+    select: { id: true, phone: true, salesState: true }, take: 50,
+  });
+  let sent = 0;
+  for (const c of convs) {
+    const st = parseSalesState(c.salesState);
+    if (!st || st.mode !== "demo" || !st.revealDeferred || (st.demoTurns ?? 0) > 0 || st.entryNudge2At) continue;
+    if ((!dryRun && c.phone.startsWith("972000")) || c.phone.startsWith("ig:")) continue;
+    // He wrote anything since the entry → a live chat, not a silence.
+    const answered = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "user", createdAt: { gt: new Date(new Date(st.taggedAt).getTime() + 1000) } }, select: { id: true } });
+    if (answered) continue;
+    const send = async (texts: string[], next: SalesState) => {
+      if (dryRun) { dryRun.out.push({ phone: c.phone, texts }); return; }
+      await saveState(c.id, next);
+      await reply(c.id, c.phone, texts);
+    };
+    if (!st.entryNudge1At) {
+      await send([ENTRY_NUDGE_1(await demoFreeSlot())], { ...st, entryNudge1At: now.toISOString() });
+      sent++;
+    } else if (israelClock(now).day > israelClock(new Date(st.entryNudge1At)).day && israelClock(now).hour >= 10) {
+      await send([ENTRY_NUDGE_2], { ...st, entryNudge2At: now.toISOString() });
+      sent++;
+    }
+  }
+  return sent;
+}
+
+/** A real free time in the demo shop: today at least an hour from now (the evening first), else tomorrow. */
+async function demoFreeSlot(): Promise<string | null> {
+  const now = getBusinessNow();
+  const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  for (const [i, label] of [[0, "היום"], [1, "מחר"]] as const) {
+    const date = addDaysISO(now.date, i);
+    const avail = await computeDayAvailability(DEMO_BUSINESS_ID, date).catch(() => [] as { slots: string[] }[]);
+    const times = Array.from(new Set(avail.flatMap(a => a.slots))).sort().filter(t => i > 0 || toMin(t) >= now.minutes + 60);
+    const pick = times.find(t => toMin(t) >= 16 * 60) ?? times[0];
+    if (pick) return `${label} ב ${pick}`;
+  }
+  return null;
 }
 
 export async function remindSignupLinks(now: Date = new Date()): Promise<number> {
