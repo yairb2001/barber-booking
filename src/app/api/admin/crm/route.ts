@@ -26,10 +26,20 @@ export const dynamic = "force-dynamic";
  *   GET  ?view=home | leads | lead&id= | calendar&week=YYYY-MM-DD | automations | customers | settings
  *   POST { action: … }  (see the switch below)
  */
-async function guard(req: NextRequest) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  await ensureCrmSeed();
-  return null;
+async function guard(req: NextRequest, what: { view?: string; action?: string }) {
+  if (isSuperAdmin(req)) { await ensureCrmSeed(); return null; }
+  // A reports-only member (25.10.2026): the reports screen's views and actions, nothing else.
+  const { memberOf, MEMBER_VIEWS, MEMBER_ACTIONS } = await import("@/lib/crm/members");
+  const m = await memberOf(req);
+  if (m && (what.view ? MEMBER_VIEWS.has(what.view) : MEMBER_ACTIONS.has(what.action ?? ""))) return null;
+  return NextResponse.json({ error: "forbidden" }, { status: 403 });
+}
+
+/** Who decided, for the fix history: Yair, or the member's name. */
+async function actorOf(req: NextRequest): Promise<string> {
+  if (isSuperAdmin(req)) return "יאיר";
+  const { memberOf } = await import("@/lib/crm/members");
+  return (await memberOf(req))?.name ?? "צוות";
 }
 
 function monthStart(): Date {
@@ -498,10 +508,22 @@ async function invoicesView() {
 }
 
 export async function GET(req: NextRequest) {
-  const g = await guard(req); if (g) return g;
   const sp = new URL(req.url).searchParams;
   const view = sp.get("view") ?? "home";
+  const g = await guard(req, { view }); if (g) return g;
   try {
+    // The people with their own CRM login (25.10.2026). Yair only.
+    if (view === "members") {
+      const { getMembers } = await import("@/lib/crm/members");
+      return NextResponse.json({ members: (await getMembers()).map(m => ({ id: m.id, name: m.name, phone: m.phone, scope: m.scope, createdAt: m.createdAt })) });
+    }
+    // Who is in the CRM: Yair (everything) or a reports member (the reports screen only).
+    if (view === "whoami") {
+      if (isSuperAdmin(req)) return NextResponse.json({ role: "admin", name: "יאיר" });
+      const { memberOf } = await import("@/lib/crm/members");
+      const m = await memberOf(req);
+      return NextResponse.json({ role: "reports", name: m?.name ?? "" });
+    }
     if (view === "home") return NextResponse.json(await home());
     // The notifications screen, without the dashboard's heavy queries.
     if (view === "alerts") {
@@ -652,8 +674,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const g = await guard(req); if (g) return g;
   const b = await req.json().catch(() => ({})) as Record<string, unknown>;
+  const g = await guard(req, { action: typeof b.action === "string" ? b.action : "" }); if (g) return g;
   const str = (k: string) => (typeof b[k] === "string" ? (b[k] as string).trim() : "");
   try {
     switch (b.action) {
@@ -840,12 +862,12 @@ export async function POST(req: NextRequest) {
       }
       case "improvement.publish": {
         const { publishFix } = await import("@/lib/agent/fix-queue");
-        const r = await publishFix(str("id"), b.growthOk === true);
+        const r = await publishFix(str("id"), b.growthOk === true, await actorOf(req));
         return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 400 });
       }
       case "improvement.revise": {
         const { reviseFix } = await import("@/lib/agent/fix-queue");
-        return (await reviseFix(str("id"), str("text"))) ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "צריך לכתוב מה לתקן" }, { status: 400 });
+        return (await reviseFix(str("id"), str("text"), await actorOf(req))) ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "צריך לכתוב מה לתקן" }, { status: 400 });
       }
       // "היום": a row he closed (7 days) or moved to tomorrow (until 06:00).
       case "today.hide": {
@@ -865,12 +887,12 @@ export async function POST(req: NextRequest) {
         return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "כבר פתוח" }, { status: 400 });
       }
       case "improvement.reject": {
-        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: { in: ["pending", "queued", "question", "review"] } }, data: { status: "rejected", decidedAt: new Date(), decidedBy: "יאיר" } });
+        const r = await prisma.agentImprovement.updateMany({ where: { id: str("id"), status: { in: ["pending", "queued", "question", "review"] } }, data: { status: "rejected", decidedAt: new Date(), decidedBy: await actorOf(req) } });
         return r.count ? NextResponse.json({ ok: true }) : NextResponse.json({ error: "כבר טופל" }, { status: 400 });
       }
       case "improvement.revert": {
         const { revertFix } = await import("@/lib/agent/fix-queue");
-        const r = await revertFix(str("id"));
+        const r = await revertFix(str("id"), await actorOf(req));
         return r.ok ? NextResponse.json(r) : NextResponse.json({ error: r.error }, { status: 400 });
       }
       case "improvement.decide": {
@@ -893,7 +915,7 @@ export async function POST(req: NextRequest) {
             await saveSetupAnswers(imp.businessId, { [field.key]: field.type === "bool" ? text === "כן" || text === "true" : text }, "review");
           } else status = "approved"; // base: for every agent, implemented by hand
         }
-        await prisma.agentImprovement.update({ where: { id: imp.id }, data: { status, proposal: text, decidedAt: new Date(), decidedBy: "יאיר" } });
+        await prisma.agentImprovement.update({ where: { id: imp.id }, data: { status, proposal: text, decidedAt: new Date(), decidedBy: await actorOf(req) } });
         if (status === "applied") { const { closeReports } = await import("@/lib/agent/fix-queue"); await closeReports(imp.id); }
         return NextResponse.json({ ok: true, status });
       }
@@ -924,6 +946,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, ...(await runDailyReview()) });
       }
       // Yair writes in a Chator chat himself: from Chator's number, and the agent steps back for 24h.
+      case "member.add": {
+        const { addMember } = await import("@/lib/crm/members");
+        const r = await addMember({ name: str("name"), phone: str("phone"), password: typeof b.password === "string" ? b.password : "" });
+        return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      case "member.remove": {
+        const { removeMember } = await import("@/lib/crm/members");
+        await removeMember(str("id"));
+        return NextResponse.json({ ok: true });
+      }
       case "quickReplies.save": {
         const { saveQuickReplies } = await import("@/lib/crm/quick-replies");
         return NextResponse.json({ ok: true, items: await saveQuickReplies(b.items) });

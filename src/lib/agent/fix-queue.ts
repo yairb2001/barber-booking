@@ -46,7 +46,7 @@ export type Fix = {
   question?: string;         // the agent needs Yair before it can fix
   plan: FixPlan;
   previous?: unknown;        // what a data fix replaced, for "החזר אחורה"
-  history?: { at: string; who: "יאיר" | "סוכן"; text: string }[];
+  history?: { at: string; who: string; text: string }[];  // "יאיר", "סוכן", or a CRM member's name
 };
 
 /** One manual report behind a proposal (15.10.2026: only manual reports, merged). */
@@ -114,10 +114,10 @@ export async function closeReports(improvementId: string): Promise<void> {
   }
 }
 
-const note = (f: Fix, who: "יאיר" | "סוכן", text: string): Fix => ({ ...f, history: [...(f.history ?? []), { at: new Date().toISOString(), who, text }] });
+const note = (f: Fix, who: string, text: string): Fix => ({ ...f, history: [...(f.history ?? []), { at: new Date().toISOString(), who, text }] });
 
 /** Yair: "אשר והעלה". */
-export async function publishFix(id: string, growthOk: boolean): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+export async function publishFix(id: string, growthOk: boolean, who = "יאיר"): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
   const imp = await prisma.agentImprovement.findUnique({ where: { id } });
   const fix = parseFix(imp?.fix);
   if (!imp || imp.status !== "review" || !fix) return { ok: false, error: "אין כאן תיקון שמחכה לאישור" };
@@ -125,36 +125,36 @@ export async function publishFix(id: string, growthOk: boolean): Promise<{ ok: t
   if ((fix.promptAfter ?? 0) > PROMPT_MAX) return { ok: false, error: `התיקון מעביר את הפרומפט מעל ${PROMPT_MAX.toLocaleString("he-IL")} תווים. לחץ "תקן" ובקש לקצר` };
   if (fix.plan.type === "rules" && fix.plan.text.length > RULES_MAX) return { ok: false, error: `כללי העסק ארוכים מדי (מעל ${RULES_MAX.toLocaleString("he-IL")} תווים). לחץ "תקן" ובקש לקצר` };
   if (fix.plan.type === "code") {
-    await prisma.agentImprovement.update({ where: { id }, data: { status: "publish", decidedAt: new Date(), decidedBy: "יאיר" } });
+    await prisma.agentImprovement.update({ where: { id }, data: { status: "publish", decidedAt: new Date(), decidedBy: who } });
     return { ok: true, status: "publish" };
   }
   const previous = await applyData(fix.plan);
-  await prisma.agentImprovement.update({ where: { id }, data: { status: "applied", decidedAt: new Date(), decidedBy: "יאיר", fix: JSON.stringify(note({ ...fix, previous }, "יאיר", "אושר והועלה")) } });
+  await prisma.agentImprovement.update({ where: { id }, data: { status: "applied", decidedAt: new Date(), decidedBy: who, fix: JSON.stringify(note({ ...fix, previous }, who, "אושר והועלה")) } });
   await closeReports(id);
   return { ok: true, status: "applied" };
 }
 
 /** Yair: "תקן" with his words, or an answer to the agent's question → back to the agent. */
-export async function reviseFix(id: string, text: string): Promise<boolean> {
+export async function reviseFix(id: string, text: string, who = "יאיר"): Promise<boolean> {
   const imp = await prisma.agentImprovement.findUnique({ where: { id } });
   if (!imp || !["review", "question"].includes(imp.status) || !text.trim()) return false;
   const fix = parseFix(imp.fix) ?? { summary: "", appliesTo: "", plan: { type: "none" } as FixPlan };
-  await prisma.agentImprovement.update({ where: { id }, data: { status: "queued", note: [imp.note, text.trim()].filter(Boolean).join("\n"), fix: JSON.stringify(note({ ...fix, question: undefined }, "יאיר", text.trim())) } });
+  await prisma.agentImprovement.update({ where: { id }, data: { status: "queued", note: [imp.note, text.trim()].filter(Boolean).join("\n"), fix: JSON.stringify(note({ ...fix, question: undefined }, who, text.trim())) } });
   return true;
 }
 
 /** Yair: "החזר אחורה", up to 7 days after it went live. */
-export async function revertFix(id: string): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
+export async function revertFix(id: string, who = "יאיר"): Promise<{ ok: true; status: string } | { ok: false; error: string }> {
   const imp = await prisma.agentImprovement.findUnique({ where: { id } });
   const fix = parseFix(imp?.fix);
   if (!imp || imp.status !== "applied" || !fix) return { ok: false, error: "אין מה להחזיר" };
   if (imp.decidedAt && Date.now() - imp.decidedAt.getTime() > 7 * 86400_000) return { ok: false, error: "עברו יותר מ-7 ימים" };
   if (fix.plan.type === "code") {
-    await prisma.agentImprovement.update({ where: { id }, data: { status: "revert", fix: JSON.stringify(note(fix, "יאיר", "בקשה להחזיר אחורה")) } });
+    await prisma.agentImprovement.update({ where: { id }, data: { status: "revert", fix: JSON.stringify(note(fix, who, "בקשה להחזיר אחורה")) } });
     return { ok: true, status: "revert" };
   }
   if (fix.plan.type === "none") return { ok: false, error: "אין מה להחזיר" };
   await restoreData(fix.plan, fix.previous);
-  await prisma.agentImprovement.update({ where: { id }, data: { status: "rejected", fix: JSON.stringify(note(fix, "יאיר", "הוחזר אחורה")) } });
+  await prisma.agentImprovement.update({ where: { id }, data: { status: "rejected", fix: JSON.stringify(note(fix, who, "הוחזר אחורה")) } });
   return { ok: true, status: "rejected" };
 }

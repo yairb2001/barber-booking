@@ -188,6 +188,7 @@ export default function ChatsPage() {
   // "דווח על השיחה" (25.10.2026): which agent messages in this chat were already reported.
   const [reported, setReported] = useState<Record<string, string>>({});
   const [reportOpen, setReportOpen] = useState(false);
+  const [headMenu, setHeadMenu] = useState(false);
   useEffect(() => {
     setReported({}); setReportOpen(false);
     if (!selId) return;
@@ -494,56 +495,56 @@ export default function ChatsPage() {
           </div>
         ) : (
           <>
-            {/* Header */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-200 shrink-0">
-              <button
-                onClick={() => { setSelId(null); setVirtualThread(null); }}
-                className="md:hidden text-slate-500 hover:text-slate-800 text-lg"
-                aria-label="חזרה"
-              >
-                ←
+            {/* Header (25.10.2026, Yair: on a small phone the buttons hid the name, and
+                "back" kept opening the customer card because it sat on the name): a big
+                back button apart from the name, the name no longer a link, one icon to
+                book, and the rest in ⋯. The agent's state is a thin strip under it. */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-200 shrink-0 bg-white">
+              <button type="button" onClick={() => { setSelId(null); setVirtualThread(null); }} aria-label="חזרה לצ'אטים"
+                className="md:hidden w-11 h-11 me-1.5 shrink-0 rounded-full bg-slate-100 text-slate-900 inline-flex items-center justify-center">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>
               </button>
-              <button onClick={() => router.push(`/admin/customers?customer=${encodeURIComponent(activeThread.phone)}`)}
-                className="flex-1 min-w-0 text-right hover:opacity-70 transition" title="פתח כרטיס לקוח">
-                <p className="font-semibold text-slate-900 truncate">{activeThread.customerName || activeThread.phone}</p>
-                <p className="text-xs text-slate-400" dir="ltr">{activeThread.phone}</p>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-900 truncate text-[16px] leading-tight">{activeThread.customerName || activeThread.phone}</p>
+                {activeThread.customerName && <p className="text-xs text-slate-500 text-right" dir="ltr">{activeThread.phone}</p>}
+              </div>
+              <button type="button" onClick={() => router.push(`/admin?book=${encodeURIComponent(activeThread.phone)}${activeThread.customerName ? `&name=${encodeURIComponent(activeThread.customerName)}` : ""}`)}
+                aria-label="קבע תור" title="קבע תור ללקוח הזה. האישור יופיע גם כאן בשיחה"
+                className="w-11 h-11 shrink-0 rounded-xl inline-flex items-center justify-center bg-teal-50 border border-teal-100 text-teal-700 hover:bg-teal-100 transition">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
               </button>
-              <button onClick={() => router.push(`/admin?book=${encodeURIComponent(activeThread.phone)}${activeThread.customerName ? `&name=${encodeURIComponent(activeThread.customerName)}` : ""}`)}
-                className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-teal-50 border-teal-200 text-teal-700 hover:bg-teal-100 transition"
-                title="קבע תור ללקוח הזה — האישור יופיע גם כאן בשיחה">
-                📅 קבע תור
-              </button>
-              {detail?.blocked && (
-                <span className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-red-50 border-red-200 text-red-700" title="לקוח חסום — הסוכן לא עונה לו">
-                  🚫 חסום
-                </span>
-              )}
-              {!detail?.blocked && !!detail?.staffBlocks?.length && (
-                <span className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-amber-50 border-amber-200 text-amber-700" title={`חסום אצל ${v.staff} ${v.staffFem ? "מסוימת" : "מסוים"} — הסוכן מציג אותו כמלא`}>
-                  🚫 חסום מ{detail.staffBlocks.join(", ")}
-                </span>
-              )}
-              {selId && (
-                <button type="button" onClick={() => setReportOpen(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition"
-                  title="לא אהבת משהו שהסוכן כתב כאן? סמן את ההודעות וכתוב מה לא היה בסדר">
-                  דווח על השיחה
+              <div className="relative shrink-0">
+                <button type="button" onClick={() => setHeadMenu(o => !o)} aria-label="עוד פעולות" aria-expanded={headMenu}
+                  className={`w-11 h-11 rounded-xl inline-flex items-center justify-center border transition ${headMenu ? "bg-slate-100 border-slate-200" : "bg-white border-slate-200 hover:bg-slate-50"} text-slate-700`}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
                 </button>
-              )}
-              {activeThread.id && !detail?.blocked && (
-                <button
-                  onClick={() => toggleAgent(activeThread.escalated)}
-                  className={`text-xs px-3 py-1.5 rounded-lg font-semibold border transition ${
-                    activeThread.escalated
-                      ? "bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100"
-                      : "bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                  }`}
-                  title={activeThread.escalated ? "הסוכן כבוי לשיחה זו — לחץ להפעלה" : "הסוכן פעיל לשיחה זו — לחץ לכיבוי"}
-                >
-                  🤖 {activeThread.escalated ? "כבוי" : "פעיל"}
-                </button>
-              )}
+                {headMenu && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={() => setHeadMenu(false)} />
+                    <div role="menu" className="absolute top-12 end-0 z-30 w-56 bg-white rounded-2xl border border-slate-200 shadow-lg p-1.5 flex flex-col">
+                      {selId && (
+                        <button type="button" role="menuitem" onClick={() => { setHeadMenu(false); setReportOpen(true); }} className="min-h-[44px] px-3 rounded-xl text-right text-[15px] text-slate-800 hover:bg-slate-50 inline-flex items-center gap-2.5">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 21V4M5 4h11l-2 4 2 4H5" /></svg>
+                          דווח על השיחה
+                        </button>
+                      )}
+                      <button type="button" role="menuitem" onClick={() => { setHeadMenu(false); router.push(`/admin/customers?customer=${encodeURIComponent(activeThread.phone)}`); }} className="min-h-[44px] px-3 rounded-xl text-right text-[15px] text-slate-800 hover:bg-slate-50 inline-flex items-center gap-2.5">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4" /><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" /></svg>
+                        כרטיס הלקוח
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
+            {detail?.blocked ? (
+              <div className="shrink-0 px-4 py-1.5 text-[13px] font-semibold bg-red-50 text-red-700">🚫 לקוח חסום: הסוכן לא עונה לו</div>
+            ) : activeThread.id ? (
+              <div className={`shrink-0 flex items-center justify-between gap-2 px-4 py-1.5 text-[13px] font-semibold ${activeThread.escalated ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
+                <span className="min-w-0 truncate">{activeThread.escalated ? "🤖 הסוכן כבוי בשיחה הזו" : "🤖 הסוכן עונה בשיחה הזו"}{!!detail?.staffBlocks?.length && ` · חסום מ${detail.staffBlocks.join(", ")}`}</span>
+                <button type="button" onClick={() => toggleAgent(activeThread.escalated)} className="shrink-0 underline min-h-[32px]">{activeThread.escalated ? "הפעל" : "כבה"}</button>
+              </div>
+            ) : null}
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">

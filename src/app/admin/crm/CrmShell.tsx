@@ -22,6 +22,8 @@ const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
   { href: "/admin/crm/invoices", label: "חשבוניות" },
   { href: "/admin/crm/numbers", label: "מספרים" },
   { href: "/admin/crm/requests", label: "בקשות מעסקים" },
+  // The shops' reports on the agent, managed by Nika (25.10.2026).
+  { href: "/admin/crm/reports", label: "דיווחים" },
   { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
   // Automations live under Settings (15.10.2026, Yair).
   { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations" },
@@ -31,27 +33,35 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  // A reports member (25.10.2026) sees only "דיווחים"; Yair sees everything.
+  const [member, setMember] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [requests, setRequests] = useState(0); // shops' requests not seen yet
 
   useEffect(() => {
-    fetch("/api/admin/me").then(r => (r.ok ? r.json() : null)).then(me => {
-      if (!me) { router.replace(`/admin/login?next=${encodeURIComponent(pathname)}`); return; }
-      setAllowed(!!me.isSuperAdmin);
+    fetch("/api/admin/crm?view=whoami", { cache: "no-store" }).then(async r => {
+      if (r.status === 401) { router.replace(pathname.startsWith("/admin/crm/reports") ? "/crm-login" : `/admin/login?next=${encodeURIComponent(pathname)}`); return; }
+      const me = r.ok ? await r.json() : null;
+      if (me?.role === "reports") {
+        setMember(me.name || "צוות");
+        if (!pathname.startsWith("/admin/crm/reports")) router.replace("/admin/crm/reports");
+      }
+      setAllowed(me?.role === "admin" || me?.role === "reports");
     }).catch(() => setAllowed(false));
     // Checked once on entry; later navigation inside the CRM keeps the session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
   // The bell: unread notifications, refreshed on every screen change and when
-  // a screen marks something read (bumpBell in HomeParts).
+  // a screen marks something read (bumpBell in HomeParts). Not for a member.
   useEffect(() => {
+    if (member || allowed !== true) return;
     const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); if (j && typeof j.requests === "number") setRequests(j.requests); }).catch(() => {});
     void load();
     window.addEventListener("crm:bell", load);
     return () => window.removeEventListener("crm:bell", load);
-  }, [pathname]);
+  }, [pathname, member, allowed]);
   // Safari's "Add to Home Screen" takes the manifest of the page as it was
   // first LOADED. Reaching the CRM by in-app navigation (the bookings app's
   // menu, or the login page) leaves the bookings app's manifest in force and
@@ -71,14 +81,24 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
   const active = (h: string, exact?: boolean, also?: string) => (exact ? pathname === h : pathname.startsWith(h) || (!!also && pathname.startsWith(also)));
+  const nav = member ? NAV.filter(n => n.href === "/admin/crm/reports") : NAV;
   const links = (
     <>
-      {NAV.map(n => (
+      {nav.map(n => (
         <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}{n.href === "/admin/crm/requests" && requests > 0 && <span className="ms-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold" style={{ background: C.turquoise, color: C.ink }}>{requests}</span>}</Link>
       ))}
       <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
-        <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
-        <Link href="/admin" className="text-[13px]" style={{ color: "#A9C9C4" }}>חזרה למספרה</Link>
+        {member ? (
+          <>
+            <span className="text-[13px]" style={{ color: "#A9C9C4" }}>מחוברת: {member}</span>
+            <a href="/api/crm-logout" className="text-[13px]" style={{ color: "#A9C9C4" }}>יציאה</a>
+          </>
+        ) : (
+          <>
+            <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
+            <Link href="/admin" className="text-[13px]" style={{ color: "#A9C9C4" }}>חזרה למספרה</Link>
+          </>
+        )}
       </div>
     </>
   );
@@ -93,10 +113,12 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
             <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label="תפריט">
               <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
             </button>
-            <Link href="/admin/crm/alerts" className="relative w-11 h-11 rounded-lg inline-flex items-center justify-center" style={{ color: pathname.startsWith("/admin/crm/alerts") ? C.turquoise : "#E8F4F1" }} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"}>
-              <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
-              {unread > 0 && <span className="absolute top-1 end-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold inline-flex items-center justify-center" style={{ background: C.coral, color: C.ink, fontFamily: "Outfit, Heebo, sans-serif" }}>{unread > 99 ? "99+" : unread}</span>}
-            </Link>
+            {!member && (
+              <Link href="/admin/crm/alerts" className="relative w-11 h-11 rounded-lg inline-flex items-center justify-center" style={{ color: pathname.startsWith("/admin/crm/alerts") ? C.turquoise : "#E8F4F1" }} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"}>
+                <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
+                {unread > 0 && <span className="absolute top-1 end-1 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold inline-flex items-center justify-center" style={{ background: C.coral, color: C.ink, fontFamily: "Outfit, Heebo, sans-serif" }}>{unread > 99 ? "99+" : unread}</span>}
+              </Link>
+            )}
           </div>
           <Link href="/admin/crm" className="flex items-baseline gap-2" style={{ textDecoration: "none" }} dir="ltr">
             <span className="text-[24px] md:text-[26px] font-bold text-white" style={{ fontFamily: "Outfit, Heebo, sans-serif", letterSpacing: "-0.5px" }}>Chator</span>

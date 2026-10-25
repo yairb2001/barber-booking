@@ -8,6 +8,7 @@ import { C } from "./ui";
 const TABS = [
   { href: "/admin/crm/settings", label: "כללי" },
   { href: "/admin/crm/automations", label: "אוטומציות" },
+  { href: "/admin/crm/wa-funnel", label: "משפך וואטסאפ" },
 ];
 
 export default function SettingsTabs() {

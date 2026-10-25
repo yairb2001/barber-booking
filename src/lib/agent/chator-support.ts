@@ -222,3 +222,19 @@ export async function answerChatorQuestion(id: string, answer: string, saveAsRul
   await prisma.chatorQuestion.update({ where: { id }, data: { answer: body, savedAsRule: saveAsRule, status: "answered", answeredAt: new Date() } });
   return { ok: true };
 }
+
+/** Every number that belongs to a Chator customer, by the rule of findChatorCustomer, for lists (the WhatsApp funnel). */
+export async function chatorCustomerPhones(): Promise<Set<string>> {
+  const bizs = await prisma.business.findMany({
+    where: { id: { notIn: [DEMO_BUSINESS_ID, SUPER_ADMIN_BUSINESS_ID] } },
+    select: { phone: true, settings: true, staff: { where: { isActive: true }, orderBy: { createdAt: "asc" }, select: { phone: true, role: true } } },
+  });
+  const out = new Set<string>();
+  const add = (p: unknown) => { if (typeof p === "string" && p) { const n = normalizeIsraeliPhone(p); if (n) out.add(n); } };
+  for (const b of bizs) {
+    add(b.phone);
+    try { add(b.settings ? JSON.parse(b.settings).ownerLoginPhone : null); } catch { /* ignore */ }
+    b.staff.filter((s, i) => s.role === "owner" || i === 0).forEach(s => add(s.phone));
+  }
+  return out;
+}

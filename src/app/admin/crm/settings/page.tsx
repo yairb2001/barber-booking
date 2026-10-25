@@ -6,6 +6,7 @@ import SettingsTabs from "../SettingsTabs";
 import { CrmPushSettings } from "../CrmPush";
 import { PlansEditor, type PackSettings } from "./Plans";
 import { SalesAgentCard, type SalesAgentData } from "./SalesAgent";
+import { MembersCard } from "./Members";
 
 type S = { callMinutes: number; breakMinutes: number; horizonDays: number; minNoticeMinutes: number; infraCostIls: number } & PackSettings;
 type Data = { settings: S; testKey: boolean; pushDevices: number; plans: { key: string; name: string; apptsCap: number; messages: number; aiBudgetIls: number; priceIls: number }[]; providerConnected: boolean; reps: { id: string; name: string; phone: string | null; active: boolean; isOwner: boolean }[]; salesAgent: SalesAgentData };
@@ -74,6 +75,8 @@ export default function SettingsPage() {
               </ol>
             </div>}
       </Card>
+
+      <MembersCard />
 
       <Card title="נציגי מכירות">
         {data.reps.map(r => <p key={r.id} className="m-0 mb-1.5 text-sm">{r.name}{r.isOwner ? " (אתה)" : ""} · {r.phone ?? "בלי טלפון"} · {r.active ? "פעיל" : "מושבת"}</p>)}

@@ -173,7 +173,7 @@ export { DAY_NAMES };
 // Stored as JSON { text, updatedAt } in crm_settings under their own keys.
 export type CrmText = { text: string; updatedAt: string | null };
 // supportKnowledge / supportRules (14.10.2026): the guide Chator's agent answers customers from, and the answers Yair gave that became rules.
-export type CrmTextKey = "salesKnowledge" | "salesAgentV2" | "agentReviewLastRun" | "supportKnowledge" | "supportRules";
+export type CrmTextKey = "salesKnowledge" | "salesAgentV2" | "agentReviewLastRun" | "supportKnowledge" | "supportRules" | "waFunnel";
 export async function getCrmText(key: CrmTextKey): Promise<CrmText> {
   const row = await prisma.crmSetting.findUnique({ where: { key } }).catch(() => null);
   if (!row) return { text: "", updatedAt: null };

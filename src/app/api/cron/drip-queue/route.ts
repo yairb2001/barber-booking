@@ -36,6 +36,7 @@ import { runLinkNudges } from "@/lib/link-first";
 import { checkAndRecordLlmHealth } from "@/lib/platform-health";
 import { runDemoSalesAgent } from "@/lib/agent/demo-sales-agent";
 import { remindStaleLeads, remindSignupLinks, followUpDemos } from "@/lib/agent/sales-agent";
+import { runWaFunnel } from "@/lib/agent/wa-funnel-run";
 import { runClosureSweep } from "@/lib/closures/status";
 import { keepAgentCachesWarm } from "@/lib/agent/cache-warm";
 import { sweepReminders } from "@/lib/reminders-sweep";
@@ -531,6 +532,7 @@ async function runPiggybackTasks(now: Date): Promise<void> {
       await remindStaleLeads(now).catch(e => console.error("[drip-queue] stale leads", e));
       await remindSignupLinks(now).catch(e => console.error("[drip-queue] signup reminders", e));
       await followUpDemos(now).catch(e => console.error("[drip-queue] demo follow-ups", e));
+      await runWaFunnel(now).catch(e => console.error("[drip-queue] whatsapp funnel", e));
     } catch (err) {
       console.error("[drip-queue] demo-sales-agent failed:", err);
     }

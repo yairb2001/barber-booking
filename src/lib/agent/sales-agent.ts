@@ -38,6 +38,7 @@ import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { attributionFromOpening } from "@/lib/lead-attribution";
 import { computeDayAvailability } from "@/lib/agent/availability";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
+import { withWaTrack, mergeWa, getFunnelConfig, fillFunnelText, WANTS_REP_RE, WANTS_DETAILS_RE, type WaTrack, type FunnelConfig } from "@/lib/crm/wa-funnel";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
 export type SalesState = {
@@ -69,6 +70,8 @@ export type SalesState = {
   revealDeferred?: boolean;
   entryNudge1At?: string;
   entryNudge2At?: string;
+  // The WhatsApp funnel (25.10.2026, src/lib/crm/wa-funnel.ts): stage, follow-ups sent, exit.
+  wa?: WaTrack;
 };
 
 const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
@@ -159,8 +162,20 @@ export function parseSalesState(raw: string | null | undefined): SalesState | nu
 }
 
 async function saveState(conversationId: string, state: SalesState): Promise<void> {
-  await prisma.conversation.update({ where: { id: conversationId }, data: { salesState: JSON.stringify(state) } });
+  // The WhatsApp funnel (25.10.2026): its stage moves with the chat, and the follow-ups it
+  // already sent are kept even when this turn started from an older copy of the state.
+  const cur = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { salesState: true } }).catch(() => null);
+  const dbWa = parseSalesState(cur?.salesState)?.wa;
+  const next = withWaTrack(dbWa ? { ...state, wa: mergeWa(dbWa, state.wa) } : state);
+  await prisma.conversation.update({ where: { id: conversationId }, data: { salesState: JSON.stringify(next) } });
 }
+
+/** The funnel's switch: in the sandbox only when the test asks for it. */
+async function funnelFor(sandbox?: DemoSandbox): Promise<FunnelConfig | null> {
+  const cfg = await getFunnelConfig();
+  return (sandbox ? sandbox.funnel : cfg.enabled) ? cfg : null;
+}
+const LANDING_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/for-business`;
 
 /** True when a message would open a demo/prospect conversation (kept for the tests and the source tag). */
 export function looksLikeDemoOpener(text: string): { tagged: boolean; source?: "landing" | "keywords" } {
@@ -178,7 +193,7 @@ export function looksLikeProspect(text: string, mode: SalesMode): boolean {
 }
 
 export type DemoTurnResult = { handled: boolean; mode?: SalesMode; replies?: string[] };
-export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean; v2?: boolean; asCustomerId?: string };
+export type DemoSandbox = { replies: string[]; toolLog: string[]; asLead?: boolean; v2?: boolean; asCustomerId?: string; funnel?: boolean };
 
 type LeadRow = { id: string; name: string | null; businessName: string | null; stage: string; repId: string | null; optedOut: boolean };
 
@@ -252,6 +267,7 @@ export async function runDemoTurn(p: {
       await stopLeadAutomations(lead.id, "opted_out");
     }
     conv = conv ?? await createConv(phone);
+    if (state) await saveState(conv.id, { ...state, wa: { ...state.wa, out: "opted_out", outAt: new Date().toISOString() } });
     await reply(conv.id, phone, [OPT_OUT_REPLY], p.sandbox);
     return { handled: true, mode: state?.mode, replies: [OPT_OUT_REPLY] };
   }
@@ -319,8 +335,10 @@ export async function runDemoTurn(p: {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "landing", demoTurns: 0 };
         await saveState(conv.id, state);
         if (!p.alreadyPersisted) await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
-        await reply(conv.id, phone, [V2_ENTRY_LANDING], p.sandbox);
-        return { handled: true, mode: state.mode, replies: [V2_ENTRY_LANDING] };
+        const funnel = await funnelFor(p.sandbox);
+        const entry = funnel?.repLineFirstReply && funnel.repLine ? `${V2_ENTRY_LANDING}\n\n${funnel.repLine}` : V2_ENTRY_LANDING;
+        await reply(conv.id, phone, [entry], p.sandbox);
+        return { handled: true, mode: state.mode, replies: [entry] };
       }
       if (BOOKING_INTENT_RE.test(text) && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text)) {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "intent", demoTurns: 0 };
@@ -350,6 +368,37 @@ export async function runDemoTurn(p: {
   if (!p.alreadyPersisted) {
     await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
     await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
+  }
+
+  // ── The WhatsApp funnel (25.10.2026): "נציג" gets two times for a call with the rep; asking
+  // for details or a call makes him a real lead too (Yair). Either way he leaves the funnel
+  // for the leads tab, stage "new", and the rep is alerted. Not inside the demo shop, where
+  // "פרטים" is a customer's word; "נציג" works everywhere.
+  if (v2 && state.channel !== "instagram") {
+    const wantsRep = text.length <= 60 && WANTS_REP_RE.test(text);
+    const wantsDetails = !wantsRep && state.mode !== "demo" && state.mode !== "lead_demo" && WANTS_DETAILS_RE.test(text);
+    const funnel = wantsRep || wantsDetails ? await funnelFor(p.sandbox) : null;
+    if (funnel) {
+      const isLeadNow = !!lead || !!state.leadId || state.mode === "lead" || state.mode === "lead_demo" || state.mode === "choosing";
+      const name = state.fullName || (p.senderName && !isPhoneLikeName(p.senderName) ? p.senderName.trim() : "");
+      if (!isLeadNow) {
+        p.sandbox?.toolLog.push(`funnel_lead(${wantsRep ? "נציג" : "פרטים"})`);
+        const leadId = p.sandbox ? "sandbox" : await createLead({ phone, conversationId: conv.id, fullName: name, businessName: state.businessName ?? "", businessType: null, source: state.source ?? null, stage: "new", why: wantsRep ? "כתב נציג" : `ביקש: ${text.slice(0, 80)}` });
+        state = { ...state, mode: "lead", leadId, fullName: name || undefined, wa: { ...state.wa, out: "lead", outAt: new Date().toISOString(), outBy: "keyword" } };
+        await saveState(conv.id, state);
+      }
+      if (wantsRep) {
+        const rep = await repName(lead?.repId ?? null);
+        if (isLeadNow && !p.sandbox) await alertRep(lead?.repId ?? null, `🙋 ${name || phone.replace(/^972/, "0")} כתב "נציג" בוואטסאפ: ${text.slice(0, 120)}`, { kind: "lead", leadId: lead?.id ?? state.leadId ?? null, push: true });
+        if (state.mode !== "lead" && state.mode !== "sales") { state = { ...state, mode: "lead" }; await saveState(conv.id, state); }
+        const call = state.leadId && !p.sandbox ? await prisma.salesCall.findFirst({ where: { leadId: state.leadId, status: "booked" }, orderBy: { startsAt: "asc" } }) : null;
+        const line = call
+          ? `${rep} כבר מעודכן ויחזור אליך כאן. השיחה שלכם נשארת ${slotLabel(call.startsAt)}.`
+          : fillFunnelText(funnel.repReply, { rep, callSlots: await twoSlotsSentence(), landing: LANDING_URL, signup: SIGNUP_URL, name: name.split(/\s+/)[0] || null });
+        await reply(conv.id, phone, [line], p.sandbox);
+        return { handled: true, mode: state.mode, replies: [line] };
+      }
+    }
   }
 
   // ── Lead, a call is waiting for "כן" ──
@@ -613,7 +662,7 @@ function salesSystemV2(state: SalesState, senderName: string | null, rep: string
   const isLead = state.mode === "lead";
   const ig = state.channel === "instagram";
   const hello = ig ? IG_HELLO : "היי, כאן צ'אטור.";
-  const opener = !firstTurn ? "" : isLead
+  const opener = !firstTurn ? "" : isLead && state.source === "lead"
     ? `זו ההודעה הראשונה שלך אליו. המערכת כבר מוסיפה לפני ההודעה שלך "${hello}", אז אל תפתח בברכה. ענה במשפט על מה שכתב, הזכר שהשאיר פרטים לגבי המספרה שלו, וסיים בשאלה אחת על המספרה. אתה צ'אטור, לא המספרה שלו.`
     : state.source === "keywords"
       ? `זו ההודעה הראשונה שלך אליו (כנראה הגיע ממודעה או שמע עלינו). המערכת כבר מוסיפה לפני ההודעה שלך "${hello}", אז אל תפתח בברכה. משפט אחד מה זה, למשל "אנחנו שמים סוכן שעונה ללקוחות וקובע תורים בוואטסאפ של המספרה, גם כשאתה באמצע תספורת". אם שאל משהו, ענה עליו קודם בקצרה. סיים ב"יש לך מספרה?".`
@@ -749,9 +798,11 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (v2 && firstTurn && GREETING_RE.test(p.text.trim())) {
     const opener = v2Opener(state);
     if (opener) {
+      const funnel = state.mode !== "lead" && state.channel !== "instagram" ? await funnelFor(p.sandbox) : null;
+      const first = funnel?.repLineFirstReply && funnel.repLine ? `${opener}\n\n${funnel.repLine}` : opener;
       await saveState(p.conversationId, state);
-      await reply(p.conversationId, p.phone, [opener], p.sandbox);
-      return { replies: [opener], state };
+      await reply(p.conversationId, p.phone, [first], p.sandbox);
+      return { replies: [first], state };
     }
   }
 
@@ -833,6 +884,12 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     if (!p.sandbox) await alertRep(p.lead?.repId ?? null, `🙋 ${state.fullName || p.lead?.name || (ig ? "פונה מאינסטגרם" : p.phone.replace(/^972/, "0"))} מבקש נציג${ig ? " (באינסטגרם)" : ""}: ${summary}`, { kind: "lead", leadId: p.lead?.id ?? state.leadId ?? null, push: true });
     // v2: the agent stays quiet in this chat for 24 hours (runDemoTurn checks escalatedAt).
     if (v2 && !p.sandbox) await prisma.conversation.update({ where: { id: p.conversationId }, data: { escalatedAt: new Date() } }).catch(() => {});
+    // The WhatsApp funnel: asking for a person makes him a real lead (the rep was just alerted).
+    if (v2 && !isLead && !ig && await funnelFor(p.sandbox)) {
+      const name = state.fullName || (p.senderName && !isPhoneLikeName(p.senderName) ? p.senderName.trim() : "");
+      const leadId = p.sandbox ? "sandbox" : await createLead({ phone: p.phone, conversationId: p.conversationId, fullName: name, businessName: state.businessName ?? "", businessType: null, source: state.source ?? null, stage: "new", quiet: true });
+      state = { ...state, mode: "lead", leadId, wa: { ...state.wa, out: "lead", outAt: new Date().toISOString(), outBy: "agent" } };
+    }
     replies.length = 0;
     replies.push(v2 ? `מעביר לטיפול אנושי, ${rep} יחזור אליך.` : `מעביר ל${rep}, הוא יחזור אליך בהקדם.`);
   } else if (v2 && tool?.name === "enter_demo") {
@@ -873,6 +930,11 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   }
   const who = { agent: "sales" as const, label: `${ig ? "אינסטגרם" : p.phone}${state.fullName ? ` · ${state.fullName}` : ""}` };
   const out = v2 ? [tidy(guardPriceV2(guardReply(joined, instructions, who)))] : guardPrice(replies.map(r => guardReply(r, instructions, who)));
+  // The WhatsApp funnel: the first reply says a person is one word away ("נציג").
+  if (v2 && firstTurn && state.mode !== "lead" && !ig) {
+    const funnel = await funnelFor(p.sandbox);
+    if (funnel?.repLineFirstReply && funnel.repLine && !out[0].includes("נציג")) out[0] = `${out[0]}\n\n${funnel.repLine}`;
+  }
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };
 }
@@ -1015,7 +1077,7 @@ export async function runInstagramSalesTurn(p: { conversationId: string; key: st
 
 // ─── Leads ───────────────────────────────────────────────────────────────────
 
-async function createLead(p: { phone: string; conversationId: string; fullName: string; businessName: string; businessType: string | null; source: string | null }): Promise<string> {
+async function createLead(p: { phone: string; conversationId: string; fullName: string; businessName: string; businessType: string | null; source: string | null; stage?: "new" | "chatting"; quiet?: boolean; why?: string }): Promise<string> {
   const userMsgs = await prisma.conversationMessage.findMany({ where: { conversationId: p.conversationId, role: "user" }, orderBy: { createdAt: "asc" }, take: 12, select: { content: true } });
   const summary = userMsgs.map(m => m.content.replace(/\s+/g, " ").trim()).filter(Boolean).join(" · ").slice(0, 600);
   const localPhone = p.phone.replace(/^972/, "0");
@@ -1025,7 +1087,7 @@ async function createLead(p: { phone: string; conversationId: string; fullName: 
   const attribution = attributionFromOpening(userMsgs[0]?.content);
   const rep = await prisma.salesRep.findFirst({ where: { active: true }, orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }], select: { id: true } });
   const data = {
-    name: p.fullName || undefined, phone: localPhone, source: ig ? "instagram" : p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: "contacted", stage: "chatting",
+    name: p.fullName || undefined, phone: localPhone, source: ig ? "instagram" : p.source === "landing" ? "whatsapp_demo" : "whatsapp_keywords", status: p.stage === "new" ? "new" : "contacted", stage: p.stage ?? "chatting",
     businessName: p.businessName || null, businessType: p.businessType && p.businessType !== "other" ? p.businessType : "barber_men",
     conversationId: p.conversationId, summary, lastInboundAt: new Date(),
     ...(attribution ? { attribution } : {}),
@@ -1044,8 +1106,8 @@ async function createLead(p: { phone: string; conversationId: string; fullName: 
     : await prisma.lead.create({ data: { ...data, repId: rep?.id ?? null }, select: { id: true } });
 
   if (recent) await prisma.leadNote.create({ data: { leadId: recent.id, author: "מערכת", body: ig ? "פנה גם באינסטגרם" : "פנה גם בוואטסאפ, לסוכן של צ'אטור" } }).catch(() => {});
-  const body = `🎯 ליד חדש ${ig ? "מאינסטגרם" : "מוואטסאפ הדמו"}${recent ? " (כבר היה ליד עם המספר הזה, נשאר כרטיס אחד)" : ""}\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\n${ig ? "מה כתב" : "מה ניסה"}: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
-  notifyPlatformOwner(body, { kind: "lead", leadId: lead.id, push: true }).catch(() => {});
+  const body = `🎯 ליד חדש ${ig ? "מאינסטגרם" : "מוואטסאפ הדמו"}${recent ? " (כבר היה ליד עם המספר הזה, נשאר כרטיס אחד)" : ""}\nשם: ${p.fullName || "—"}\nמספרה: ${p.businessName || "—"}\nטלפון: ${localPhone}\n${p.why ? `למה: ${p.why}\n` : ""}${ig ? "מה כתב" : "מה ניסה"}: ${summary.slice(0, 200) || "—"}\nCRM: /admin/crm`;
+  if (!p.quiet) notifyPlatformOwner(body, { kind: "lead", leadId: lead.id, push: true }).catch(() => {});
   return lead.id;
 }
 
@@ -1143,6 +1205,8 @@ export async function followUpDemos(now: Date = new Date(), dryRun?: { phone: st
  */
 async function followUpTryBook(now: Date, dryRun?: { phone: string; out: { phone: string; texts: string[] }[] }): Promise<number> {
   if (!dryRun && (!(await salesV2On()) || !okToRemind(now))) return 0;
+  // The WhatsApp funnel sends these now ("ניסה את הדמו", wa-funnel-run.ts).
+  if (!dryRun && (await getFunnelConfig()).enabled) return 0;
   const convs = await prisma.conversation.findMany({
     where: { businessId: DEMO_BUSINESS_ID, escalatedAt: null, salesState: { contains: '"revealDeferred":true' }, lastMessageAt: { gte: new Date(now.getTime() - 3 * 86_400_000), lte: new Date(now.getTime() - 2 * 3600_000) }, ...(dryRun ? { phone: dryRun.phone } : {}) },
     select: { id: true, phone: true, salesState: true }, take: 50,
@@ -1187,6 +1251,8 @@ async function demoFreeSlot(): Promise<string | null> {
 
 export async function remindSignupLinks(now: Date = new Date()): Promise<number> {
   if (!(await salesV2On()) || !okToRemind(now)) return 0;
+  // With the WhatsApp funnel on, it reminds whoever isn't a lead ("קיבל קישור הרשמה"); leads stay here.
+  const funnelOn = (await getFunnelConfig()).enabled;
   const convs = await prisma.conversation.findMany({
     where: { businessId: DEMO_BUSINESS_ID, salesState: { contains: "signupLinkAt" }, lastMessageAt: { gte: new Date(now.getTime() - 4 * 86400_000) } },
     select: { id: true, phone: true, salesState: true, escalatedAt: true }, take: 50,
@@ -1202,6 +1268,7 @@ export async function remindSignupLinks(now: Date = new Date()): Promise<number>
     // Signed up → stage 5 takes over; stop scanning this chat.
     if (await findChatorCustomer(c.phone)) { await saveState(c.id, { ...st, signupLinkAt: undefined, signupReminders: undefined }); continue; }
     const lead = c.phone.startsWith("ig:") ? null : await findLead(c.phone);
+    if (funnelOn && !lead && !st.leadId) continue;
     if (lead?.optedOut || lead?.stage === "not_relevant") { await done(2); continue; }
     // He wrote since the link: a live chat, the agent is on it; no reminders.
     const lastUser = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "user" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
@@ -1218,3 +1285,6 @@ export async function remindSignupLinks(now: Date = new Date()): Promise<number>
   }
   return sent;
 }
+
+// For the WhatsApp funnel engine (src/lib/agent/wa-funnel-run.ts).
+export { reply as salesReply, saveState as saveSalesState, createLead, repName, demoFreeSlot, SIGNUP_URL, LANDING_URL };
