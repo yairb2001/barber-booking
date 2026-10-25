@@ -14,8 +14,10 @@ const KEY = "crmMembers";
 const digits = (p: string) => { const d = p.replace(/\D/g, ""); return d.startsWith("972") ? `0${d.slice(3)}` : d; };
 
 /** What a reports member may read and do in /api/admin/crm. */
-export const MEMBER_VIEWS = new Set(["whoami", "improvements", "conversation"]);
-export const MEMBER_ACTIONS = new Set(["improvement.queue", "improvement.unqueue", "improvement.publish", "improvement.revise", "improvement.reopen", "improvement.reject", "improvement.revert", "improvement.decide"]);
+export const MEMBER_VIEWS = new Set(["whoami", "improvements", "conversation", "pushKey"]);
+export const MEMBER_ACTIONS = new Set(["improvement.queue", "improvement.unqueue", "improvement.publish", "improvement.revise", "improvement.reopen", "improvement.reject", "improvement.revert", "improvement.decide",
+  // Her own phone's pushes (member-push.ts), never Yair's devices.
+  "push.subscribe", "push.status", "push.unsubscribe"]);
 
 export async function getMembers(): Promise<CrmMember[]> {
   const row = await prisma.crmSetting.findUnique({ where: { key: KEY } }).catch(() => null);

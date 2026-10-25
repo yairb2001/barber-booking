@@ -106,5 +106,8 @@ export async function POST(req: NextRequest) {
     await Promise.race([reviewReports(new Date(), { ids: [fb.id], notify: false }), new Promise(r => setTimeout(r, 20_000))]);
   } catch (e) { console.error("[feedback] sort", fb.id, e); }
   await recordCrmNotification(`${biz.name}: דיווח על הסוכן${messageId ? " מתוך צ'אט" : ""}\n${text.slice(0, 160)}`, { kind: "customer", businessId: biz.id, href: "/admin/crm/improvements", push: true });
+  // And whoever runs the reports screen (Nika), on her own phone.
+  const { pushReportsMembers } = await import("@/lib/crm/member-push");
+  await pushReportsMembers({ title: `דיווח חדש מ${biz.name}`, body: text.replace(/^על התשובה «.*?»: /, "").split("\n")[0].slice(0, 100), url: "/admin/crm/reports", tag: `report-${fb.id}` });
   return NextResponse.json({ ok: true, id: fb.id });
 }

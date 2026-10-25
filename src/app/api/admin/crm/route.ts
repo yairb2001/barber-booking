@@ -44,6 +44,13 @@ async function actorOf(req: NextRequest): Promise<string> {
   return (await memberOf(req))?.name ?? "צוות";
 }
 
+/** The reports member whose phone this push action is about; null for Yair (his own CRM pushes). */
+async function pushMember(req: NextRequest): Promise<string | null> {
+  if (isSuperAdmin(req)) return null;
+  const { memberOf } = await import("@/lib/crm/members");
+  return (await memberOf(req))?.id ?? null;
+}
+
 function monthStart(): Date {
   const { date } = getBusinessNow();
   return appointmentInstant(new Date(date.slice(0, 8) + "01T00:00:00Z"), "00:00");
@@ -526,6 +533,11 @@ export async function GET(req: NextRequest) {
       const m = await memberOf(req);
       return NextResponse.json({ role: "reports", name: m?.name ?? "" });
     }
+    // The VAPID public key for the CRM push banner: here, because a member cannot reach /api/admin/native.
+    if (view === "pushKey") {
+      const { VAPID_PUBLIC_KEY } = await import("@/lib/native/web-push");
+      return NextResponse.json({ publicKey: VAPID_PUBLIC_KEY });
+    }
     if (view === "home") return NextResponse.json(await home());
     // The notifications screen, without the dashboard's heavy queries.
     if (view === "alerts") {
@@ -765,15 +777,33 @@ export async function POST(req: NextRequest) {
       case "push.subscribe": {
         const sub = b.subscription as { endpoint?: string; keys?: { p256dh?: string; auth?: string } } | undefined;
         if (!sub?.endpoint || !sub.keys?.p256dh || !sub.keys?.auth) return NextResponse.json({ error: "invalid subscription" }, { status: 400 });
+        // A reports member: her own phones (member-push.ts), apart from Yair's.
+        const m = await pushMember(req);
+        if (m) {
+          const { addMemberPushSub } = await import("@/lib/crm/member-push");
+          await addMemberPushSub(m, { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
+          return NextResponse.json({ ok: true });
+        }
         const { addCrmPushSub } = await import("@/lib/crm/notify");
         await addCrmPushSub({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
         return NextResponse.json({ ok: true });
       }
       case "push.status": {
+        const m = await pushMember(req);
+        if (m) {
+          const { memberPushHas } = await import("@/lib/crm/member-push");
+          return NextResponse.json({ ok: true, registered: str("endpoint") ? await memberPushHas(m, str("endpoint")) : false });
+        }
         const { crmPushHas } = await import("@/lib/crm/notify");
         return NextResponse.json({ ok: true, registered: str("endpoint") ? await crmPushHas(str("endpoint")) : false });
       }
       case "push.unsubscribe": {
+        const m = await pushMember(req);
+        if (m) {
+          const { removeMemberPushSub } = await import("@/lib/crm/member-push");
+          if (str("endpoint")) await removeMemberPushSub(m, str("endpoint"));
+          return NextResponse.json({ ok: true });
+        }
         const { removeCrmPushSub } = await import("@/lib/crm/notify");
         if (str("endpoint")) await removeCrmPushSub(str("endpoint"));
         return NextResponse.json({ ok: true });

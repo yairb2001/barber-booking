@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { C, Btn, crmAction } from "./ui";
+import { C, Btn, crmAction, useCrm } from "./ui";
 
 /**
  * The CRM's own push notifications (10.10.2026, Yair: "התראות רק על ה-CRM",
  * "שלא יהיה הרבה הודעות"). Subscribes THIS app (the CRM's home-screen
  * shortcut) to the CRM's few pushes; the barbershop app keeps its own.
+ * A reports member (Nika, 25.10.2026) uses the same flow from her reports
+ * screen; the API keeps her phones apart from Yair's (member-push.ts).
  */
 
 function key(b64: string): Uint8Array {
@@ -59,7 +61,7 @@ export function useCrmPush() {
       await navigator.serviceWorker.ready;
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { setState(perm === "denied" ? "denied" : "off"); return "לא אושרו התראות"; }
-      const { publicKey } = await fetch("/api/admin/native/web-push").then(r => r.json());
+      const { publicKey } = await fetch("/api/admin/crm?view=pushKey", { cache: "no-store" }).then(r => r.json());
       const sub = (await reg.pushManager.getSubscription()) ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key(publicKey) as BufferSource });
       const r = await crmAction({ action: "push.subscribe", subscription: sub.toJSON() });
       if (!r.ok) { setState("off"); return r.error ?? "השמירה נכשלה"; }
@@ -91,6 +93,28 @@ export function CrmPushBanner() {
         ? <span>להתראות לטלפון: שיתוף ← &quot;הוסף למסך הבית&quot;, ופתח את ה-CRM מהאייקון.</span>
         : <span>התראות לטלפון, רק על מה שחשוב.{err ? ` ${err}` : ""}</span>}
       {state !== "needs-install" && <Btn kind="dark" className="!min-h-[38px] !px-3 !text-[13px]" disabled={state === "busy"} onClick={async () => setErr(await enable())}>{state === "busy" ? "מפעיל…" : "הפעל"}</Btn>}
+    </section>
+  );
+}
+
+/** The reports screen, for a reports member only: one push per new report and when fixes wait for her. */
+export function ReportsPushBanner() {
+  const { data: me } = useCrm<{ role: string }>("view=whoami");
+  if (me?.role !== "reports") return null;
+  return <ReportsPushStrip />;
+}
+function ReportsPushStrip() {
+  const { state, enable } = useCrmPush();
+  const [err, setErr] = useState<string | null>(null);
+  const [justOn, setJustOn] = useState(false);
+  if (state === "on" && justOn) return <p className="m-0 rounded-2xl px-4 py-2.5 text-sm" style={{ background: C.mist, color: C.petrol }}>✓ ההתראות פועלות בטלפון הזה.</p>;
+  if (state !== "off" && state !== "busy" && state !== "needs-install") return null;
+  return (
+    <section className="rounded-2xl ps-4 pe-2 py-2 flex flex-wrap items-center justify-between gap-2 text-sm" style={{ background: C.mist, color: C.petrol }}>
+      {state === "needs-install"
+        ? <span>להתראות בטלפון: שיתוף ← &quot;הוסף למסך הבית&quot;, ופותחים את הדיווחים מהאייקון.</span>
+        : <span>התראה לטלפון על כל דיווח חדש ועל כל תיקון שמחכה לאישור.{err ? ` ${err}` : ""}</span>}
+      {state !== "needs-install" && <Btn kind="dark" className="!min-h-[38px] !px-3 !text-[13px]" disabled={state === "busy"} onClick={async () => { const e = await enable(); setErr(e); setJustOn(!e); }}>{state === "busy" ? "מפעיל…" : "הפעלת התראות"}</Btn>}
     </section>
   );
 }

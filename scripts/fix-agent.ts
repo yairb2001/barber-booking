@@ -10,7 +10,7 @@
  *   npx tsx --env-file=.env scripts/fix-agent.ts report <id> <fix.json> a prepared fix → "לאישור שלך" (or a question)
  *   npx tsx --env-file=.env scripts/fix-agent.ts applied <id> [commit] a code fix is live
  *   npx tsx --env-file=.env scripts/fix-agent.ts reverted <id>         a code fix was taken back
- *   npx tsx --env-file=.env scripts/fix-agent.ts notify                one push to Yair when something waits for him
+ *   npx tsx --env-file=.env scripts/fix-agent.ts notify                one push to Yair (and the reports members) when something waits
  */
 import fs from "node:fs";
 import { prisma } from "@/lib/prisma";
@@ -20,6 +20,7 @@ import { buildBookingLink } from "@/lib/link-first";
 import { getCrmText } from "@/lib/crm/core";
 import { SUPPORT_KNOWLEDGE } from "@/lib/agent/chator-support";
 import { recordCrmNotification } from "@/lib/crm/notify";
+import { pushReportsMembers } from "@/lib/crm/member-push";
 
 const [cmd, a1, a2] = process.argv.slice(2);
 const out = (v: unknown) => console.log(typeof v === "string" ? v : JSON.stringify(v, null, 2));
@@ -94,6 +95,8 @@ async function main() {
     if (review + question) {
       const parts = [review ? `${review} ${review === 1 ? "תיקון מחכה" : "תיקונים מחכים"} לאישור שלך` : "", question ? `${question} ${question === 1 ? "שאלה" : "שאלות"} אליך` : ""].filter(Boolean);
       await recordCrmNotification(`סוכן התיקונים: ${parts.join(", ")}`, { kind: "customer", href: "/admin/crm/improvements", push: true });
+      // The reports members (Nika) approve them too: one push to their own phones.
+      await pushReportsMembers({ title: "סוכן התיקונים סיים", body: parts.join(", "), url: "/admin/crm/reports", tag: "reports-approve" });
     }
     out(String(review + question));
   } else {

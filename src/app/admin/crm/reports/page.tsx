@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { C, useCrm, ago } from "../ui";
 import ConversationSheet from "../improvements/ConversationSheet";
+import { ReportsPushBanner } from "../CrmPush";
 import { Detail, STAGES, stageOf, scope, reportsLabel, type Data, type Stage } from "./ReportDetail";
 
 /**
@@ -79,6 +80,7 @@ function ReportsInner() {
         <h1 className="m-0 text-[26px] font-extrabold">דיווחים על הסוכן</h1>
         <p className="m-0 text-sm" style={{ color: C.muted }}>{count("approve") ? `${count("approve")} מחכים לאישור · ` : ""}{count("new")} חדשים לבדוק · תיקונים מוכנים כל בוקר</p>
       </header>
+      <div className={sel ? "hidden md:block" : ""}><ReportsPushBanner /></div>
       <div className={sel ? "hidden md:block" : ""}>{steps}</div>
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
 
