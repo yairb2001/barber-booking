@@ -25,6 +25,12 @@ const TAG: Record<string, [string, Tone]> = {
   approve: ["סוכן", "info"], request: ["בקשה", "warn"], setup: ["הקמה", "warn"], customer: ["לקוח", "warn"],
   followup: ["לחזור", "info"], lead: ["ליד", "info"], manual: ["משימה", "ok"], calendar: ["יומן", "info"], automations: ["אוטומציות", "info"],
 };
+// Grouped like the areas (26.10.2026): what the customers need, what sales needs, and your own tasks.
+const GROUPS: { label: string; kinds: string[] }[] = [
+  { label: "לקוחות", kinds: ["billing", "request", "setup", "customer", "approve"] },
+  { label: "מכירות", kinds: ["call", "outcome", "chat", "followup", "lead", "calendar", "automations"] },
+  { label: "משימות שלי", kinds: ["manual"] },
+];
 const isoDay = (d: number) => new Date(Date.now() + d * 86400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
 
 function TodayInner() {
@@ -74,7 +80,10 @@ function TodayInner() {
         </section>
       )}
 
-      {rows.map(r => {
+      {GROUPS.map(g => ({ ...g, rows: rows.filter(r => g.kinds.includes(r.kind) || (g.label === "משימות שלי" && !GROUPS.some(x => x.kinds.includes(r.kind)))) })).filter(g => g.rows.length).map(g => (
+      <section key={g.label} className="flex flex-col gap-2">
+      <h2 className="m-0 mt-2 text-[13px] font-bold flex items-center gap-2" style={{ color: C.muted }}>{g.label}<span className="min-w-[20px] h-5 px-1.5 rounded-full text-[12px] inline-flex items-center justify-center" style={{ background: "#fff", border: `1px solid ${C.line}`, fontFamily: "Outfit, Heebo, sans-serif" }}>{g.rows.length}</span></h2>
+      {g.rows.map(r => {
         const [tag, tone] = TAG[r.kind] ?? ["", "info"];
         return (
           <section key={r.key} className="bg-white rounded-2xl px-3.5 py-3 flex flex-col gap-2" style={{ border: r.urgent ? `2px solid ${TONE.bad.dot}` : `1px solid ${C.line}` }}>
@@ -97,6 +106,8 @@ function TodayInner() {
           </section>
         );
       })}
+      </section>
+      ))}
 
       <p className="m-0 text-xs flex flex-wrap gap-x-3 gap-y-1" style={{ color: C.muted }}>
         {data.hiddenCount > 0 && <span>{data.hiddenCount} נדחו למחר או סומנו</span>}

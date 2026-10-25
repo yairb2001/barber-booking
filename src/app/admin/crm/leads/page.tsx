@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { C, NUM, Btn, PageHead, useCrm, crmAction, ago, STAGE_TONE, SOURCE_LABEL } from "../ui";
+import { C, NUM, Btn, useCrm, crmAction, ago, STAGE_TONE, SOURCE_LABEL } from "../ui";
+import { AreaTabs } from "../Areas";
 
 type Lead = { id: string; name: string | null; phone: string; businessName: string | null; source: string; stage: string; createdAt: string; lastInboundAt: string | null; optedOut: boolean; rep: string | null; next: string };
 type Data = { stages: { key: string; label: string }[]; reps: { id: string; name: string }[]; leads: Lead[] };
@@ -69,10 +70,21 @@ function LeadsInner() {
     router.push(`/admin/crm/leads/${r.id}`);
   }
 
-  const chip = (on: boolean) => (on ? { background: C.petrol, color: "#fff", border: `1px solid ${C.petrol}` } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" });
+  // Statuses are the second row under the two categories: lighter than them.
+  const chip = (on: boolean) => (on ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}`, fontWeight: 700 } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" });
   return (
     <div className="flex flex-col gap-3.5">
-      <PageHead title="לידים" sub={`${data?.leads.length ?? 0} לידים`} actions={<Btn kind="primary" onClick={() => setShowNew(s => !s)}>+ ליד חדש</Btn>} />
+      <div className="flex flex-col gap-2.5">
+        <h1 className="m-0 text-[26px] font-extrabold">מכירות</h1>
+        <AreaTabs />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="m-0 text-sm flex-[1_1_200px]" style={{ color: C.muted }}>{data?.leads.length ?? 0} לידים אמיתיים: אנשים שמטפלים בהם.</p>
+        <span className="flex items-center gap-2">
+          <Link href="/admin/crm/calendar" className="min-h-[40px] px-3.5 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: "#fff", color: C.petrol, border: `1px solid ${C.line}`, textDecoration: "none" }}>יומן שיחות</Link>
+          <Btn kind="primary" className="!min-h-[40px]" onClick={() => setShowNew(s => !s)}>+ ליד חדש</Btn>
+        </span>
+      </div>
 
       {showNew && (
         <section className="rounded-2xl bg-white p-4 flex flex-wrap gap-3 items-end" style={{ border: `1px solid ${C.line}` }}>

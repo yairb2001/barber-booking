@@ -601,6 +601,9 @@ export async function GET(req: NextRequest) {
         const people = convs.filter(c => /^\d{8,15}$/.test(c.phone) || isIg(c.phone));
         const leads = await prisma.lead.findMany({ where: { phone: { in: people.filter(c => !isIg(c.phone)).flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
         const leadOf = (p: string) => (isIg(p) ? undefined : leads.find(l => local(l.phone) === local(p)));
+        // Chats with our customers' owners go to their own tab, apart from the people still interested (26.10.2026).
+        const owners = new Map<string, string>();
+        for (const b of await prisma.business.findMany({ where: { id: { notIn: [DEMO, SUPER_ADMIN_BUSINESS_ID] } }, select: { name: true, phone: true, settings: true } })) { const p = ownerPhoneOf(b); if (p) owners.set(local(p), b.name); }
         // Instagram: does the agent answer this person at all (settings.instagram.agent)?
         const { instagramAccountOf, instagramAgentAnswers, igsidOf } = await import("@/lib/messaging/instagram");
         const igAccount = instagramAccountOf((await prisma.business.findUnique({ where: { id: DEMO }, select: { settings: true } }))?.settings);
@@ -608,7 +611,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, customer: isIg(c.phone) ? null : owners.get(local(c.phone)) ?? null, leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, handledAt: true, salesState: true } });
@@ -633,11 +636,13 @@ export async function GET(req: NextRequest) {
     // The bell in the header: one cheap count.
     if (view === "today") return NextResponse.json(await todayView());
     if (view === "badge") {
-      const [unread, requests] = await Promise.all([
+      // reports: problems that wait for Nika, new ones and fixes to approve (the menu's bubble, 26.10.2026).
+      const [unread, requests, reports] = await Promise.all([
         prisma.crmNotification.count({ where: { readAt: null } }),
         prisma.shopRequest.count({ where: { fromChator: false, seenAt: null } }),
+        prisma.agentImprovement.count({ where: { status: { in: ["pending", "review", "question"] } } }),
       ]);
-      return NextResponse.json({ unread, requests });
+      return NextResponse.json({ unread, requests, reports });
     }
     // Shops' requests (15.10.2026): one thread per shop; unseen first, then the latest.
     if (view === "requests") {

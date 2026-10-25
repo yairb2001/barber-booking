@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { C } from "./ui";
 import { CardHost } from "./CardModal";
+import { AREAS, areaOf, CrmScope } from "./Areas";
 
 /**
  * Chator CRM shell — direction A ("חדר בקרה", chosen 9.10.2026): a petrol side
@@ -12,23 +13,10 @@ import { CardHost } from "./CardModal";
  * Design: claude.ai/artifact/SgzjBxsYrqHDE2HKJtEvDz.
  */
 
-const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
-  // The home is "היום": tasks folded into it, the numbers on their own screen (16.10.2026).
-  { href: "/admin/crm", label: "היום", exact: true, also: "/admin/crm/tasks" },
-  { href: "/admin/crm/whatsapp", label: "וואטסאפ" },
-  { href: "/admin/crm/leads", label: "לידים" },
-  { href: "/admin/crm/chats", label: "צ׳אטים" },
-  { href: "/admin/crm/calendar", label: "יומן שיחות" },
-  { href: "/admin/crm/customers", label: "לקוחות" },
-  { href: "/admin/crm/invoices", label: "חשבוניות" },
-  { href: "/admin/crm/numbers", label: "מספרים" },
-  { href: "/admin/crm/requests", label: "בקשות מעסקים" },
-  // The shops' reports on the agent, managed by Nika (25.10.2026).
-  { href: "/admin/crm/reports", label: "דיווחים" },
-  { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
-  // Automations live under Settings (15.10.2026, Yair).
-  { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations|/admin/crm/wa-funnel" },
-];
+// Six areas (26.10.2026): see Areas.tsx. A reports member sees only the reports.
+const REPORTS_ONLY = [{ key: "reports", label: "דיווחים", href: "/admin/crm/reports", icon: null as React.ReactNode }];
+// The phone's bottom bar: the four daily areas, and "עוד" (the side menu) for numbers and settings.
+const BAR = ["today", "chats", "customers", "sales"];
 
 export default function CrmShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -40,6 +28,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [requests, setRequests] = useState(0); // shops' requests not seen yet
+  const [reports, setReports] = useState(0); // new reports on the agent, not looked at yet
 
   useEffect(() => {
     fetch("/api/admin/crm?view=whoami", { cache: "no-store" }).then(async r => {
@@ -60,7 +49,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   // a screen marks something read (bumpBell in HomeParts). Not for a member.
   useEffect(() => {
     if (member || allowed !== true) return;
-    const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); if (j && typeof j.requests === "number") setRequests(j.requests); }).catch(() => {});
+    const load = () => fetch("/api/admin/crm?view=badge", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.unread === "number") setUnread(j.unread); if (j && typeof j.requests === "number") setRequests(j.requests); if (j && typeof j.reports === "number") setReports(j.reports); }).catch(() => {});
     void load();
     window.addEventListener("crm:bell", load);
     return () => window.removeEventListener("crm:bell", load);
@@ -83,13 +72,21 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (allowed === null) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-500 font-heebo" style={{ background: C.ground }}>טוען…</div>;
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
-  const active = (h: string, exact?: boolean, also?: string) => (exact ? pathname === h : pathname.startsWith(h) || (!!also && also.split("|").some(a => pathname.startsWith(a))));
-  const nav = member ? NAV.filter(n => n.href === "/admin/crm/reports") : NAV;
+  const current = member ? "reports" : areaOf(pathname)?.key;
+  const nav = member ? REPORTS_ONLY : AREAS;
+  const badge = (key: string) => (key === "customers" ? requests + reports : 0);
   const links = (
     <>
-      {nav.map(n => (
-        <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}{n.href === "/admin/crm/requests" && requests > 0 && <span className="ms-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold" style={{ background: C.turquoise, color: C.ink }}>{requests}</span>}</Link>
-      ))}
+      {nav.map(n => {
+        const on = current === n.key;
+        return (
+          <Link key={n.key} href={n.href} onClick={() => setMenuOpen(false)} aria-current={on ? "page" : undefined} className="px-3 py-3 rounded-[10px] text-[15px] flex items-center gap-3" style={{ background: on ? C.petrol2 : "transparent", color: on ? "#fff" : "#CFE3DF", fontWeight: on ? 600 : 400, textDecoration: "none" }}>
+            {n.icon && <span style={{ color: on ? C.turquoise : "#8FB8B0" }}>{n.icon}</span>}
+            {n.label}
+            {badge(n.key) > 0 && <span className="ms-auto inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold" style={{ background: C.coral, color: C.ink, fontFamily: "Outfit, Heebo, sans-serif" }}>{badge(n.key)}</span>}
+          </Link>
+        );
+      })}
       <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
         {memberName ? (
           <>
@@ -106,16 +103,19 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     </>
   );
   return (
+    <CrmScope.Provider value={{ member: !!member, requests, reports }}>
     <div dir="rtl" className="min-h-screen flex flex-col md:flex-row font-heebo" style={{ background: C.ground, color: C.ink }}>
+      {/* A screen with its own bottom bar (a chat's composer, a save bar) marks itself data-no-tabbar: the phone's bar steps aside. */}
+      <style>{`@media (max-width: 767px){body:has([data-no-tabbar]) .crm-tabbar{display:none}body:has([data-no-tabbar]) .crm-main{padding-bottom:1.25rem}}`}</style>
       {/* eslint-disable-next-line @next/next/no-page-custom-font */}
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&display=swap" rel="stylesheet" />
       <nav aria-label="תפריט CRM" className="sticky top-0 z-30 md:w-[232px] md:shrink-0 md:h-screen md:overflow-y-auto flex flex-col" style={{ background: C.petrol, color: "#E8F4F1" }}>
         {/* Phone: menu button on the right (start), logo on the left (Yair, 10.10.2026). */}
         <div className="flex items-center justify-between px-4 py-3 md:px-5 md:py-6">
           <div className="flex items-center gap-1">
-            <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label="תפריט">
+            {member && <button type="button" className="md:hidden w-11 h-11 -ms-1 rounded-lg inline-flex items-center justify-center" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} aria-label="תפריט">
               <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-            </button>
+            </button>}
             {!member && (
               <Link href="/admin/crm/alerts" className="relative w-11 h-11 rounded-lg inline-flex items-center justify-center" style={{ color: pathname.startsWith("/admin/crm/alerts") ? C.turquoise : "#E8F4F1" }} aria-label={unread ? `התראות, ${unread} חדשות` : "התראות"}>
                 <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>
@@ -147,8 +147,28 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
           <nav aria-label="תפריט CRM" className="flex flex-col gap-1 px-3 pb-6 flex-1 overflow-y-auto">{links}</nav>
         </aside>
       </div>
-      <main className="flex-1 min-w-0 px-4 py-5 md:px-8 md:py-7">{children}</main>
+      <main className={`crm-main flex-1 min-w-0 px-4 pt-5 md:px-8 md:py-7 ${member ? "pb-5" : "pb-28"}`}>{children}</main>
+      {!member && (
+        <nav aria-label="אזורים" className="crm-tabbar md:hidden fixed bottom-0 inset-x-0 z-30 grid grid-cols-5 bg-white" style={{ borderTop: `1px solid ${C.line}`, paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+          {[...AREAS.filter(a => BAR.includes(a.key)), { key: "more", label: "עוד", href: "", icon: <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg> }].map(a => {
+            const on = a.key === "more" ? menuOpen || current === "numbers" || current === "settings" : current === a.key;
+            const inner = (
+              <>
+                {a.icon}
+                <span className="text-[11px]" style={{ fontWeight: on ? 700 : 500 }}>{a.label}</span>
+                {badge(a.key) > 0 && <span className="absolute top-1 start-[calc(50%+6px)] min-w-[18px] h-[18px] px-1 rounded-full text-[11px] font-bold inline-flex items-center justify-center" style={{ background: C.coral, color: C.ink, fontFamily: "Outfit, Heebo, sans-serif" }}>{badge(a.key)}</span>}
+              </>
+            );
+            const cls = "relative flex flex-col items-center gap-0.5 pt-2 pb-1 min-h-[52px]";
+            const style = { color: on ? C.petrol : C.muted, textDecoration: "none" };
+            return a.key === "more"
+              ? <button key="more" type="button" onClick={() => setMenuOpen(true)} aria-expanded={menuOpen} className={cls} style={style}>{inner}</button>
+              : <Link key={a.key} href={a.href} aria-current={on ? "page" : undefined} className={cls} style={style}>{inner}</Link>;
+          })}
+        </nav>
+      )}
       <CardHost />
     </div>
+    </CrmScope.Provider>
   );
 }

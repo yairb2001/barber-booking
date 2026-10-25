@@ -1,6 +1,7 @@
 "use client";
 
 import { C, PageHead, useCrm } from "../ui";
+import { AreaTabs } from "../Areas";
 import { Numbers, type Home } from "../HomeParts";
 
 /** The business numbers (16.10.2026: moved off the home, which became "היום"). */
@@ -11,6 +12,7 @@ export default function NumbersPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHead title="מספרים" sub="החודש, מהתחלת החודש" />
+      <AreaTabs />
       <Numbers data={data} />
     </div>
   );

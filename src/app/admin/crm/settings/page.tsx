@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { C, TONE, Btn, Card, PageHead, useCrm, crmAction } from "../ui";
-import SettingsTabs from "../SettingsTabs";
+import { AreaTabs } from "../Areas";
 import { CrmPushSettings } from "../CrmPush";
 import { PlansEditor, type PackSettings } from "./Plans";
 import { SalesAgentCard, type SalesAgentData } from "./SalesAgent";
@@ -40,7 +40,7 @@ export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-4 max-w-3xl">
       <PageHead title="הגדרות" />
-      <SettingsTabs />
+      <AreaTabs />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
       <SalesAgentCard key={data.salesAgent.knowledgeAt ?? "default"} data={data.salesAgent} onSaved={reload} />
       <Card title="מסלולים" aside={data.providerConnected ? "Invoice4U מחובר" : "Invoice4U עוד לא מחובר"}>

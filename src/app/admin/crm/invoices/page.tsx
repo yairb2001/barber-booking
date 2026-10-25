@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { C, NUM, PageHead, useCrm } from "../ui";
+import { AreaTabs } from "../Areas";
 
 /** All invoices to Chator customers (10.10.2026). From Invoice4U once connected; manual until then. */
 type Inv = { id: string; businessId: string; businessName: string; number: string | null; issuedAt: string; amountIls: number; status: string; pdfUrl: string | null; provider: string; sentAt: string | null };
@@ -20,7 +21,8 @@ export default function InvoicesPage() {
   if (!data) return <p style={{ color: C.muted }}>טוען…</p>;
   return (
     <div className="flex flex-col gap-3.5">
-      <PageHead title="חשבוניות" sub={`${data.providerConnected ? "מגיעות לבד מ-Invoice4U" : "Invoice4U עוד לא מחובר, מוסיפים ידנית מכרטיס הלקוח"} · שולם החודש ${monthTotal.toLocaleString("he-IL")} ₪`} />
+      <PageHead title="מספרים" sub={`${data.providerConnected ? "מגיעות לבד מ-Invoice4U" : "Invoice4U עוד לא מחובר, מוסיפים ידנית מכרטיס הלקוח"} · שולם החודש ${monthTotal.toLocaleString("he-IL")} ₪`} />
+      <AreaTabs />
       <div className="flex gap-1.5">
         {([["all", "הכל"], ["open", "פתוחות ונכשלו"], ["paid", "שולמו"]] as const).map(([k, l]) => (
           <button key={k} type="button" onClick={() => setFilter(k)} className="h-10 px-3.5 rounded-full text-sm font-semibold" style={filter === k ? { background: C.petrol, color: "#fff" } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" }}>{l}</button>

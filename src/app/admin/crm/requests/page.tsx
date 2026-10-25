@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { C, useCrm, crmAction, PageHead, ago } from "../ui";
+import { AreaTabs } from "../Areas";
 import { bumpBell } from "../HomeParts";
 import { VoiceBubble } from "@/components/Voice";
 
@@ -25,7 +26,8 @@ function RequestsInner() {
 
   return (
     <div>
-      <PageHead title="בקשות מעסקים" sub="מה חסר להם ומה לשנות, בכתב או בהקלטה. חדשות למעלה." />
+      <PageHead title="לקוחות" sub="פניות מהעסקים: מה חסר להם ומה לשנות, בכתב או בהקלטה. חדשות למעלה." />
+      <div className="mb-4"><AreaTabs /></div>
       <div className="grid md:grid-cols-[320px_1fr] gap-4">
         <div className={`${open ? "hidden md:block" : ""} rounded-2xl bg-white overflow-hidden`} style={{ border: `1px solid ${C.line}` }}>
           {!data && <p className="p-4 text-sm" style={{ color: C.muted }}>טוען…</p>}

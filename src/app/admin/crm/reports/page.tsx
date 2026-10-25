@@ -6,6 +6,7 @@ import { C, useCrm, ago } from "../ui";
 import ConversationSheet from "../improvements/ConversationSheet";
 import { ReportsPushBanner } from "../CrmPush";
 import { Detail, STAGES, stageOf, scope, reportsLabel, type Data, type Stage } from "./ReportDetail";
+import { AreaTabs, useCrmScope } from "../Areas";
 
 /**
  * The reports screen (25.10.2026, Yair: "אני רוצה מקום סופר מסודר, אשתי תנהל את
@@ -33,6 +34,7 @@ function ReportsInner() {
   const router = useRouter();
   const pathname = usePathname();
   const wide = useWide();
+  const { member } = useCrmScope(); // a reports member: this is her whole CRM
   const sp = useSearchParams();
   const { data, error, reload } = useCrm<Data>("view=improvements");
   const [conv, setConv] = useState<string | null>(null);
@@ -77,9 +79,10 @@ function ReportsInner() {
   return (
     <div className="flex flex-col gap-4 max-w-6xl">
       <header className={`${shown && sel ? "hidden md:flex" : "flex"} flex-col gap-1`}>
-        <h1 className="m-0 text-[26px] font-extrabold">דיווחים על הסוכן</h1>
+        <h1 className="m-0 text-[26px] font-extrabold">{member ? "דיווחים על הסוכן" : "לקוחות"}</h1>
         <p className="m-0 text-sm" style={{ color: C.muted }}>{count("approve") ? `${count("approve")} מחכים לאישור · ` : ""}{count("new")} חדשים לבדוק · תיקונים מוכנים כל בוקר</p>
       </header>
+      <div className={sel ? "hidden md:block" : ""}><AreaTabs /></div>
       <div className={sel ? "hidden md:block" : ""}><ReportsPushBanner /></div>
       <div className={sel ? "hidden md:block" : ""}>{steps}</div>
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { C, NUM, TONE, PageHead, useCrm, ils } from "../ui";
+import { AreaTabs } from "../Areas";
 import { ReportsBubble } from "./[id]/ShopReports";
 
 type Cust = {
@@ -39,9 +40,10 @@ function CustomersInner() {
       <PageHead title="לקוחות" sub={`${all.length} עסקים · ${count("setup")} בהקמה · ${count("live")} חיים · ${count("risk")} בסיכון`} actions={
         <Link href="/admin/crm/leads?new=1" className="min-h-[44px] px-4 rounded-xl text-sm font-bold inline-flex items-center" style={{ background: C.coral, color: C.ink, textDecoration: "none" }}>+ הקם לקוח (מליד)</Link>
       } />
+      <AreaTabs />
       <div role="tablist" className="flex flex-wrap gap-2">
         {TABS.map(([k, l]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="h-[38px] px-3.5 rounded-full text-sm font-semibold" style={tab === k ? { background: C.petrol, color: "#fff", border: `1px solid ${C.petrol}` } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" }}>{l} ({count(k)})</button>
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className="h-[38px] px-3.5 rounded-full text-sm font-semibold" style={tab === k ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}`, fontWeight: 700 } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" }}>{l} ({count(k)})</button>
         ))}
       </div>
 

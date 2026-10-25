@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { C, NUM, Btn, PageHead, useCrm, crmAction, ago } from "../ui";
+import { C, NUM, Btn, useCrm, crmAction, ago } from "../ui";
+import { AreaTabs } from "../Areas";
 
 type Row = {
   id: string; name: string; phone: string; ig: boolean; source: string;
@@ -52,11 +53,22 @@ export default function WhatsappFunnelPage() {
     if (r.ok) { setOpen(null); await reload(); }
   }
 
-  const chip = (on: boolean) => (on ? { background: C.petrol, color: "#fff", border: `1px solid ${C.petrol}` } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" });
+  // Statuses are the second row under the two categories: lighter than them.
+  const chip = (on: boolean) => (on ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}`, fontWeight: 700 } : { background: "#fff", color: C.ink, border: "1px solid #C7D8D5" });
 
   return (
     <div className="flex flex-col gap-3.5">
-      <PageHead title="וואטסאפ" sub="כל מי שכתב לצ׳אטור ועוד לא ליד. ההודעות יוצאות לבד, לפי השלב." actions={<Link href="/admin/crm/wa-funnel" className="text-sm font-semibold min-h-[44px] inline-flex items-center px-1" style={{ color: C.petrol }}>עריכת ההודעות</Link>} />
+      <div className="flex flex-col gap-2.5">
+        <h1 className="m-0 text-[26px] font-extrabold">מכירות</h1>
+        <AreaTabs />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="m-0 text-sm flex-[1_1_240px]" style={{ color: C.muted }}>כל מי שכתב לצ׳אטור ועוד לא ליד. הסוכן מטפל בהם וההודעות יוצאות לבד, לפי השלב.</p>
+        <span className="flex items-center gap-2">
+          <Link href="/admin/crm/wa-funnel" className="text-sm font-semibold min-h-[40px] inline-flex items-center px-1" style={{ color: C.petrol }}>עריכת ההודעות</Link>
+          <Link href="/admin/crm/calendar" className="min-h-[40px] px-3.5 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: "#fff", color: C.petrol, border: `1px solid ${C.line}`, textDecoration: "none" }}>יומן שיחות</Link>
+        </span>
+      </div>
 
       {data && !data.enabled && (
         <p className="m-0 text-sm rounded-xl px-3.5 py-2.5" style={{ background: "#FFF1D6", color: "#7A4A00" }}>
@@ -136,7 +148,7 @@ export default function WhatsappFunnelPage() {
                       </div>
                     )}
                     <div className="flex flex-wrap gap-2">
-                      <Link href={`/admin/crm/chats/${r.id}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: C.petrol, color: "#fff", textDecoration: "none" }}>לצ׳אט</Link>
+                      <Link href={`/admin/crm/chats/${r.id}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: C.petrol, color: "#fff", textDecoration: "none" }}>התערב בצ׳אט</Link>
                       {r.exit === "lead" && r.leadId && <Link href={`/admin/crm/leads/${r.leadId}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: "#fff", color: C.petrol, border: `1px solid ${C.petrol}`, textDecoration: "none" }}>לכרטיס הליד</Link>}
                       {!r.exit && <Btn disabled={busy === r.id} onClick={() => act(r.id, { action: "wa.toLead", id: r.id }, `${r.name} עבר ללידים`)}>העבר לליד</Btn>}
                       {!r.exit && <Btn kind="ghost" disabled={busy === r.id} onClick={() => act(r.id, { action: "wa.notRelevant", id: r.id, on: true }, `${r.name} סומן לא רלוונטי`)}>לא רלוונטי</Btn>}

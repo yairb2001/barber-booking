@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { C, NUM, Btn, Card, PageHead, useCrm, crmAction } from "../ui";
-import SettingsTabs from "../SettingsTabs";
+import { AreaTabs } from "../Areas";
 
 type Unit = "minutes" | "hours" | "days";
 type Step = { id: string; wait: number; unit: Unit; at?: number; text: string; on: boolean };
@@ -67,7 +67,7 @@ export default function WaFunnelSettingsPage() {
   return (
     <div className="flex flex-col gap-4 pb-24">
       <PageHead title="הגדרות" />
-      <SettingsTabs />
+      <AreaTabs />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
 
       <Card>
@@ -177,7 +177,7 @@ export default function WaFunnelSettingsPage() {
       </Card>
 
       {dirty && (
-        <div className="fixed bottom-0 inset-x-0 z-20 px-4 py-3 flex justify-center gap-2" style={{ background: "rgba(244,247,246,.96)", borderTop: `1px solid ${C.line}` }}>
+        <div data-no-tabbar className="fixed bottom-0 inset-x-0 z-20 px-4 py-3 flex justify-center gap-2" style={{ background: "rgba(244,247,246,.96)", borderTop: `1px solid ${C.line}` }}>
           <Btn kind="dark" disabled={busy} onClick={() => save(draft, "נשמר")}>{busy ? "שומר…" : "שמור שינויים"}</Btn>
           <Btn kind="ghost" onClick={() => setDraft(structuredClone(data.config))}>בטל</Btn>
         </div>
