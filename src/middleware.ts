@@ -67,11 +67,13 @@ export async function middleware(req: NextRequest) {
   // A reports-only CRM member (25.10.2026): its own cookie, and only the reports
   // screen and the CRM API, where every view and action is checked again. Set
   // even when a shop's admin session exists in the same browser.
-  const memberId = isMemberPath(pathname) ? await verifyMemberToken(req.cookies.get(MEMBER_COOKIE)?.value) : null;
-  if (memberId) requestHeaders.set("x-crm-member-id", memberId);
+  const memberId = pathname.startsWith("/admin/crm") || isMemberPath(pathname) ? await verifyMemberToken(req.cookies.get(MEMBER_COOKIE)?.value) : null;
+  if (memberId && isMemberPath(pathname)) requestHeaders.set("x-crm-member-id", memberId);
 
   if (!session) {
-    if (memberId) return NextResponse.next({ request: { headers: requestHeaders } });
+    if (memberId && isMemberPath(pathname)) return NextResponse.next({ request: { headers: requestHeaders } });
+    // Elsewhere in the CRM (the home-screen shortcut opens /admin/crm): to her reports, not the admin login.
+    if (memberId && pathname.startsWith("/admin/crm")) return NextResponse.redirect(new URL("/admin/crm/reports", req.url));
     if (pathname.startsWith("/api/admin")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
