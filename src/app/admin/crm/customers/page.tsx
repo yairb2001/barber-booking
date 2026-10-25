@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { C, NUM, TONE, PageHead, useCrm, ils } from "../ui";
+import { ReportsBubble } from "./[id]/ShopReports";
 
 type Cust = {
-  id: string; name: string; slug: string; ownerPhone: string | null; stage: string; health: "ok" | "warn" | "bad"; issues: { tone: "bad" | "warn"; text: string }[];
+  id: string; name: string; slug: string; ownerPhone: string | null; stage: string; health: "ok" | "warn" | "bad"; issues: { tone: "bad" | "warn"; text: string }[]; reportsOpen?: number;
   wa: "up" | "down" | "none"; apptsWeek: number; pkgPct: number; costIls: number; price: number; trialDaysLeft: number | null; rep: string | null;
   plan: string | null; apptsMonth: { used: number; cap: number; pct: number } | null;
   segment: "setup" | "live" | "risk" | "suspended"; setup: { doneCount: number; total: number; current: string | null; stuckHours: number } | null;
@@ -81,7 +82,7 @@ function CustomersInner() {
             <tbody>
               {list.map(c => (
                 <tr key={c.id} style={{ borderTop: `1px solid ${C.soft}`, background: c.id === focus ? C.mist : undefined }}>
-                  <td className="px-3 py-3"><Link href={`/admin/crm/customers/${c.id}`} className="font-bold" style={{ color: C.ink }}>{c.name}</Link><div className="text-xs" style={{ color: C.muted }}>{c.ownerPhone ?? "בלי טלפון"}</div></td>
+                  <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5"><Link href={`/admin/crm/customers/${c.id}`} className="font-bold" style={{ color: C.ink }}>{c.name}</Link><ReportsBubble count={c.reportsOpen ?? 0} href={`/admin/crm/customers/${c.id}#reports`} /></span><div className="text-xs" style={{ color: C.muted }}>{c.ownerPhone ?? "בלי טלפון"}</div></td>
                   <td className="px-3 py-3"><span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: C.soft, color: C.petrol }}>{STAGE[c.stage]}{c.trialDaysLeft != null && c.stage === "trial" ? ` · ${c.trialDaysLeft} ימים` : ""}</span></td>
                   <td className="px-3 py-3 text-[13px]">{c.plan ?? <span style={{ color: C.muted }}>—</span>}</td>
                   <td className="px-3 py-3">

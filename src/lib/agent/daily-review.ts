@@ -112,7 +112,9 @@ export async function fileReport(n: { id: string; businessId: string; text: stri
     await prisma.agentFeedback.update({ where: { id: n.id }, data: { status: "in_review", reviewedAt: now, reviewNote: `התאחד עם: ${into.title}` } });
     return "merged";
   }
-  const p = out?.new && ["rule", "faq", "setup", "base"].includes(out.new.kind) && out.new.title ? out.new : { kind: "base" as const, title: n.text.split("\n")[0].slice(0, 80), proposal: n.text, evidence: undefined };
+  // Without a usable answer from the model, the title is the owner's own words, without the quoted reply (26.10.2026).
+  const own = (() => { const l = n.text.split("\n")[0]; const m = l.match(/^על התשובה «.+?»: (.*)$/); return (m ? m[1] : l).trim(); })();
+  const p = out?.new && ["rule", "faq", "setup", "base"].includes(out.new.kind) && out.new.title ? out.new : { kind: "base" as const, title: own.slice(0, 80) || n.text.slice(0, 80), proposal: n.text, evidence: undefined };
   const row = await prisma.agentImprovement.create({ data: { businessId: n.businessId, source: "feedback", kind: p.kind, title: p.title.slice(0, 200), proposal: (p.proposal || n.text).slice(0, 2000), evidence: (p.evidence || report.evidence)?.slice(0, 1000) ?? null, conversationId: n.conversationId, reports: JSON.stringify([report]) } });
   await prisma.agentFeedback.update({ where: { id: n.id }, data: { status: "in_review", reviewedAt: now, reviewNote: `הצעה חדשה: ${row.title}` } });
   return "created";

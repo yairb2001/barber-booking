@@ -80,6 +80,9 @@ async function customers(settings: CrmSettings) {
   ]);
   const reps = await prisma.salesRep.findMany({ select: { id: true, name: true } });
   const [plans, monthUsage] = await Promise.all([getPlans(), usageFor(ids)]);
+  // Open reports on the agent per shop: the red bubble on the customer (26.10.2026).
+  const { shopReports, OPEN_STAGES } = await import("@/lib/agent/shop-reports");
+  const reportsBy = await shopReports(ids);
   return bizs.map(b => {
     const stage = b.suspendedAt ? "suspended" : b.paidAt ? "paying" : !b.activatedAt ? "setup" : "trial";
     const waUp = b.waLiveState === "authorized";
@@ -107,6 +110,7 @@ async function customers(settings: CrmSettings) {
       rep: reps.find(r => r.id === repId)?.name ?? null, createdAt: b.createdAt,
       plan: plans.find(p => p.key === planKeyOf(b.settings))?.name ?? null,
       apptsMonth: monthUsage.get(b.id)?.appts ?? null,
+      reportsOpen: (reportsBy.get(b.id) ?? []).filter(r => OPEN_STAGES.has(r.stage)).length,
     };
   });
 }
@@ -483,6 +487,7 @@ async function customerView(id: string) {
   const waConvs = waPhones.length ? await prisma.conversation.findMany({ where: { businessId: DEMO_BUSINESS_ID, phone: { in: waPhones }, agentType: { not: "owner" } }, select: { id: true } }) : [];
   const messages = waConvs.length ? (await prisma.conversationMessage.findMany({ where: { conversationId: { in: waConvs.map(x => x.id) }, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } })).reverse() : [];
   return {
+    reports: (await (await import("@/lib/agent/shop-reports")).shopReports([id])).get(id) ?? [],
     customer: c, business: biz && { ...biz, settings: undefined, phone: undefined, tokenBudgetIls: budget }, setup,
     agent: { enabled: !!agent?.isEnabled, customPrompt: !!agent?.systemPrompt?.trim(), platformNotes: typeof cfg.platformNotes === "string" ? cfg.platformNotes : "", name: agent?.agentName ?? null, fields, faqs: agent?.faqs ?? [], history },
     quality: { conversationsWeek: convs, escalatedWeek: escalated, agentBookingsWeek: agentAppts },
@@ -622,7 +627,7 @@ export async function GET(req: NextRequest) {
         const account = instagramAccountOf(demo?.settings);
         agent = !!account && instagramAgentAnswers(account, igsidOf(conv.phone));
       }
-      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse() });
+      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse(), reported: (await prisma.agentFeedback.findMany({ where: { conversationId: conv.id, messageId: { not: null } }, select: { messageId: true, status: true } })).flatMap(r => (r.messageId ?? "").split(",").filter(Boolean).map(messageId => ({ messageId, status: r.status }))) });
     }
     // The bell in the header: one cheap count.
     if (view === "today") return NextResponse.json(await todayView());
@@ -994,6 +999,22 @@ export async function POST(req: NextRequest) {
       case "quickReplies.save": {
         const { saveQuickReplies } = await import("@/lib/crm/quick-replies");
         return NextResponse.json({ ok: true, items: await saveQuickReplies(b.items) });
+      }
+      // Yair reports what Chator's own agent wrote in one of Chator's chats (26.10.2026):
+      // the same sheet and the same queue as the shops' reports, under the demo line.
+      case "chat.report": {
+        const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+        const conv = await prisma.conversation.findFirst({ where: { id: str("conversationId"), businessId: DEMO }, select: { id: true } });
+        if (!conv) return NextResponse.json({ error: "השיחה לא נמצאה" }, { status: 404 });
+        const { composeReport } = await import("@/lib/agent/shop-reports");
+        const r = await composeReport(conv.id, b.items, b.reasons, b.text);
+        if (!r.text) return NextResponse.json({ error: "סמן הודעה או כתוב מה לא היה בסדר" }, { status: 400 });
+        const fb = await prisma.agentFeedback.create({ data: { businessId: DEMO, author: `${await actorOf(req)} (פנימי)`, conversationId: conv.id, messageId: r.messageId, text: r.text } });
+        try {
+          const { reviewReports } = await import("@/lib/agent/daily-review");
+          await Promise.race([reviewReports(new Date(), { ids: [fb.id], notify: false }), new Promise(res => setTimeout(res, 20_000))]);
+        } catch (e) { console.error("[chat.report]", fb.id, e); }
+        return NextResponse.json({ ok: true });
       }
       case "chat.send": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");

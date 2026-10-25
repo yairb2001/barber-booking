@@ -10,18 +10,23 @@ import { REPORT_REASONS } from "@/lib/agent/report-reasons";
  * under it (ready reasons + his words). One report for the whole chat goes to
  * /api/admin/agent/feedback, sorted at once and seen by Chator in the CRM.
  */
-type Msg = { id: string; role: string; source: string; content: string; createdAt: string };
+type Msg = { id: string; role: string; source: string | null; content: string; createdAt: string };
 type Pick = { reasons: string[]; text: string };
 
 const hm = (iso: string) => new Date(iso).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
 
-export default function ReportSheet({ conversationId, messages, reported, onClose, onSent }: {
+export type ReportPayload = { conversationId: string; items: { messageId: string; reasons: string[]; text: string }[]; text: string };
+
+export default function ReportSheet({ conversationId, messages, reported, onClose, onSent, submit, doneText }: {
   conversationId: string;
   messages: Msg[];
   /** Agent messages already reported in this chat. */
   reported: Record<string, string>;
   onClose: () => void;
   onSent: (ids: string[]) => void;
+  /** Where the report goes; a shop's by default. Chator's CRM sends its own (26.10.2026). */
+  submit?: (p: ReportPayload) => Promise<{ ok: boolean; error?: string }>;
+  doneText?: string;
 }) {
   const [picked, setPicked] = useState<Record<string, Pick>>({});
   const [general, setGeneral] = useState("");
@@ -43,9 +48,14 @@ export default function ReportSheet({ conversationId, messages, reported, onClos
   async function send() {
     setBusy(true); setErr(null);
     const items = ids.map(id => ({ messageId: id, reasons: picked[id].reasons, text: picked[id].text }));
-    const res = await fetch("/api/admin/agent/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId, items, text: general }) }).catch(() => null);
+    const payload = { conversationId, items, text: general };
+    const r = submit
+      ? await submit(payload)
+      : await fetch("/api/admin/agent/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+          .then(async res => (res.ok ? { ok: true } : { ok: false, error: (await res.json().catch(() => null))?.error }))
+          .catch(() => ({ ok: false, error: undefined as string | undefined }));
     setBusy(false);
-    if (!res?.ok) { setErr((await res?.json().catch(() => null))?.error ?? "הדיווח לא נשלח, נסה שוב"); return; }
+    if (!r.ok) { setErr(r.error ?? "הדיווח לא נשלח, נסה שוב"); return; }
     setDone(true); onSent(ids);
   }
 
@@ -56,7 +66,7 @@ export default function ReportSheet({ conversationId, messages, reported, onClos
         {done ? (
           <div className="p-6 flex flex-col gap-4">
             <p className="text-lg font-bold text-slate-900">תודה, קיבלנו.</p>
-            <p className="text-sm text-slate-600 leading-relaxed">הדיווח הגיע לצוות של צ'אטור עם השיחה כולה. כשנתקן, תקבל הודעה.</p>
+            <p className="text-sm text-slate-600 leading-relaxed">{doneText ?? "הדיווח הגיע לצוות של צ'אטור עם השיחה כולה. כשנתקן, תקבל הודעה."}</p>
             <button type="button" onClick={onClose} className="h-12 rounded-xl bg-teal-600 text-white font-semibold">סגור</button>
           </div>
         ) : (
