@@ -122,7 +122,7 @@ export async function resendClosureNotice(closureId: string, appointmentId: stri
   if (!p) return false;
   const opts = p.optionsJson ? JSON.parse(p.optionsJson) : [];
   const origDate = p.primary.date.toISOString().slice(0, 10);
-  const text = renderClosureText(DEFAULT_CLOSURE_REMINDER_TEMPLATE, { name: p.primary.customer.name, barber: p.primary.staff.name, barberFem: staffFemOf(p.primary.staff, vocabOf(await prisma.business.findUnique({ where: { id: p.businessId }, select: { businessType: true, settings: true } }))), when: whenLabel(origDate, p.primary.startTime), options: opts, originalDate: origDate });
+  const text = renderClosureText(DEFAULT_CLOSURE_REMINDER_TEMPLATE, { name: p.primary.customer.name, barber: p.primary.staff.name, barberFem: staffFemOf(p.primary.staff, vocabOf(await prisma.business.findUnique({ where: { id: p.businessId }, select: { businessType: true, settings: true } }))), when: whenLabel(origDate, p.primary.startTime), options: opts, originalDate: origDate, mixed: false });
   try {
     await sendProactiveMessage({ businessId: p.businessId, customerPhone: p.primary.customer.phone, customerName: p.primary.customer.name,
       appointmentId, kind: "closure_reminder", body: text, escalate: false });

@@ -20,7 +20,10 @@ type Displaced = {
   service: { id: string; name: string; durationMinutes: number };
   loyalty: { total: number; withStaff: number; share: number | null; anyStaffAllowed: boolean };
   options: Opt[]; blockedByLoyalty: boolean;
+  /** Route per customer (25.10.2026): only the closing barber, or also the others. */
+  route: Route; defaultRoute: Route; othersAvailable: boolean;
 };
+type Route = "own" | "both";
 type Plan = {
   staffName: string; staffFem?: boolean; isToday: boolean; displaced: Displaced[];
   gate: { ok: boolean; needed: number; distinctSlots: number; withoutOption: string[] };
@@ -61,18 +64,30 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
   const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
   const [editAll, setEditAll] = useState(false);
   const [sending, setSending] = useState(false);
+  // The owner's choice per customer; a change re-plans (options are handed out
+  // greedily across customers, so one change can move another's alternative).
+  const [routes, setRoutes] = useState<Record<string, Route>>({});
+  const [replanning, setReplanning] = useState(false);
 
   const range = rangeLabel(fromTime, toTime);
 
-  async function loadPlan() {
-    setLoading(true); setError(null);
+  async function loadPlan(r: Record<string, Route> = routes, soft = false) {
+    if (soft) setReplanning(true); else setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/admin/closures/preview", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ staffId, date, fromTime: fromTime ?? null, toTime: toTime ?? null }) });
+        body: JSON.stringify({ staffId, date, fromTime: fromTime ?? null, toTime: toTime ?? null, routes: r }) });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       setPlan(await res.json());
     } catch (e) { setError(e instanceof Error ? e.message : "שגיאה"); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setReplanning(false); }
+  }
+  function setRoute(ids: string[], route: Route) {
+    const next = { ...routes };
+    for (const id of ids) next[id] = route;
+    setRoutes(next);
+    setCustom(c => { const n = { ...c }; for (const id of ids) delete n[id]; return n; }); // an edited text would offer the old times
+    void loadPlan(next, true);
   }
   useEffect(() => { loadPlan(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [staffId, date, fromTime, toTime]);
   useEffect(() => {
@@ -101,6 +116,7 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
       const res = await fetch("/api/admin/closures", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ staffId, date, fromTime: fromTime ?? null, toTime: toTime ?? null, reason: reason || null,
           excludeAppointmentIds: Array.from(excluded), customTextByAppointmentId: custom,
+          routes: Object.fromEntries(plan.displaced.map(d => [d.appointmentId, d.route])),
           templateOverride: template !== DEFAULT_TEMPLATE ? template : null, saveTemplate: template !== DEFAULT_TEMPLATE }) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -151,7 +167,17 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
         {plan && !loading && step === 1 && (
           <div className="p-4 space-y-3">
             {plan.displaced.length === 0 && <p className="text-sm text-neutral-500 text-center py-6">אין תורים בטווח הזה — אפשר לסגור רגיל.</p>}
-            <div className="divide-y divide-neutral-100 rounded-xl border border-neutral-200">
+            {plan.displaced.some(d => d.othersAvailable) && (
+              <div className="flex items-center justify-between gap-2 text-xs text-neutral-500">
+                <span className="font-semibold text-neutral-700">לכולם בבת אחת:</span>
+                <span>
+                  <button onClick={() => setRoute(plan.displaced.map(d => d.appointmentId), "own")} className="font-bold text-teal-700">רק אצל {plan.staffName.split(/\s+/)[0]}</button>
+                  <span className="mx-1.5 text-neutral-300">·</span>
+                  <button onClick={() => setRoute(plan.displaced.filter(d => d.othersAvailable).map(d => d.appointmentId), "both")} className="font-bold text-violet-700">גם ספרים אחרים</button>
+                </span>
+              </div>
+            )}
+            <div className={`divide-y divide-neutral-100 rounded-xl border border-neutral-200 transition-opacity ${replanning ? "opacity-50 pointer-events-none" : ""}`}>
               {plan.displaced.map(d => {
                 const off = excluded.has(d.appointmentId);
                 return (
@@ -161,9 +187,20 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
                       <div className="flex-1 min-w-0">
                         <div className="text-sm font-semibold text-neutral-800 truncate">{d.customer.name}</div>
                         <div className="text-[11px] text-neutral-400">{d.service.name} · {d.loyalty.share === null ? "לקוח חדש" : `${Math.round(d.loyalty.share * 100)}% אצל ${plan.staffName.split(/\s+/)[0]}`}</div>
-                        <div className="text-xs mt-1">
-                          {d.options.length ? d.options.map((o, i) => <span key={i} className="inline-block ml-2 text-teal-700 font-medium">{slotLabel(o, today)}</span>)
-                            : <span className="text-red-600 font-semibold">אין משבצת{d.blockedByLoyalty ? " (כלל 70%)" : ""}</span>}
+                        {!off && (d.othersAvailable || d.route === "both") && (
+                          <div className="grid grid-cols-2 bg-neutral-100 rounded-lg p-0.5 mt-2 text-[12px] font-semibold">
+                            {(["own", "both"] as const).map(r => (
+                              <button key={r} onClick={() => d.route !== r && setRoute([d.appointmentId], r)}
+                                className={`py-1.5 rounded-md transition ${d.route === r ? "bg-white shadow text-neutral-900" : "text-neutral-500"}`}>
+                                {r === "own" ? `רק אצל ${plan.staffName.split(/\s+/)[0]}` : "גם ספרים אחרים"}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-xs mt-1.5 flex flex-wrap gap-1.5">
+                          {d.options.length ? d.options.map((o, i) => (
+                            <span key={i} className={`inline-block rounded-md px-2 py-0.5 font-semibold ${o.sameStaff ? "bg-teal-50 text-teal-700" : "bg-violet-50 text-violet-700"}`}>{slotLabel(o, today)}</span>
+                          )) : <span className="text-red-600 font-semibold">אין משבצת{d.blockedByLoyalty ? ` אצל ${plan.staffName.split(/\s+/)[0]}, נסה "גם ספרים אחרים"` : ""}</span>}
                         </div>
                       </div>
                       <button onClick={() => setExcluded(s => { const n = new Set(s); n.has(d.appointmentId) ? n.delete(d.appointmentId) : n.add(d.appointmentId); return n; })}
@@ -180,8 +217,8 @@ export default function ClosureWizard({ staffId, date, fromTime, toTime, today, 
               : <div className="space-y-2">
                   <div className="rounded-xl bg-red-50 text-red-700 text-sm font-semibold px-3 py-2.5">חסרות {gate.missing} משבצות כדי לסגור בבטחה</div>
                   <div className="text-xs text-neutral-500">תקן ואז לחץ "בדוק שוב": האר שעות ביום אחר, פתח יום סגור{plan.suggestions.closedDaysInWindow.length ? ` (${plan.suggestions.closedDaysInWindow.map(dateLabel).join(", ")})` : ""}, או כבה לקוח כדי לטפל בו בעצמך.</div>
-                  {plan.suggestions.allowOtherBarberFor.length > 0 && <div className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">חסומים בכלל ה‑70% (קבועים אצלך, ואצלך אין מקום): {plan.suggestions.allowOtherBarberFor.map(x => x.customerName).join(", ")} — כבה אותם ותתקשר, או פתח לעצמך שעות.</div>}
-                  <button onClick={loadPlan} className="w-full border border-teal-300 text-teal-700 rounded-xl py-2 text-sm font-semibold">בדוק שוב</button>
+                  {plan.suggestions.allowOtherBarberFor.length > 0 && <div className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">אצלך אין מקום בשביל: {plan.suggestions.allowOtherBarberFor.map(x => x.customerName).join(", ")}. העבר אותם ל&quot;גם ספרים אחרים&quot;, כבה אותם ותתקשר, או פתח לעצמך שעות.</div>}
+                  <button onClick={() => loadPlan()} className="w-full border border-teal-300 text-teal-700 rounded-xl py-2 text-sm font-semibold">בדוק שוב</button>
                 </div>)}
             <label className="block text-xs text-neutral-500">סיבה (מופיעה רק לך)<input value={reason} onChange={e => setReason(e.target.value)} placeholder="בלת״מ" className="mt-1 w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm" /></label>
             <button disabled={!gate.ok || plan.displaced.length === 0} onClick={() => setStep(2)} className="w-full bg-teal-600 text-white rounded-xl py-3 text-sm font-bold disabled:opacity-40">המשך להודעה</button>

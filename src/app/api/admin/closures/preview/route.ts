@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
-import { planClosure } from "@/lib/closures/plan";
+import { planClosure, sanitizeRoutes } from "@/lib/closures/plan";
 
 /**
  * POST /api/admin/closures/preview  { staffId, date: "YYYY-MM-DD", fromTime?, toTime? }
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   const guard = requireOwnStaffOrOwner(req, staffId);
   if (guard) return guard;
   try {
-    const plan = await planClosure({ businessId: session.businessId, staffId, date, fromTime: t(body.fromTime), toTime: t(body.toTime) });
+    const plan = await planClosure({ businessId: session.businessId, staffId, date, fromTime: t(body.fromTime), toTime: t(body.toTime), routes: sanitizeRoutes(body.routes) });
     return NextResponse.json(plan);
   } catch (e) {
     if ((e as Error).message === "staff_not_found") return NextResponse.json({ error: "ספר לא נמצא" }, { status: 404 });

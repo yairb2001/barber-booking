@@ -12,6 +12,11 @@
  *   - Loyalty rule: a customer with ≥70% of past visits at the closing barber is
  *     offered that barber ONLY; a new customer or one under 70% may be offered any
  *     barber (the closing barber still ranks first).
+ *   - Routes (owner, 25.10.2026): per customer the owner picks "own" (only the
+ *     closing barber's nearest free times) or "both" (other barbers' times AND
+ *     the closing barber's nearest one: "ואם נוח לך יותר להישאר אצלי…").
+ *     Default: loyal (≥70%) → own, anyone else → both. The loyalty rule is now
+ *     the default only — the owner may route a loyal customer to others too.
  *   - Gate: every displaced customer has ≥1 option, and the number of DISTINCT
  *     free slots across all options is at least the number of displaced
  *     appointments ("מספר שווה"). Two options per customer is a goal, not a rule.
@@ -38,7 +43,20 @@ export type ClosureInput = {
   /** "HH:MM" — omit both for a full-day closure */
   fromTime?: string | null;
   toTime?: string | null;
+  /** Per-appointment route chosen in the wizard; missing = the default for that customer. */
+  routes?: Record<string, ClosureRoute>;
 };
+
+export type ClosureRoute = "own" | "both";
+
+/** The wizard's per-customer routes: { [appointmentId]: "own" | "both" } (25.10.2026). */
+export function sanitizeRoutes(v: unknown): Record<string, ClosureRoute> | undefined {
+  if (!v || typeof v !== "object") return undefined;
+  const out: Record<string, ClosureRoute> = {};
+  for (const [k, r] of Object.entries(v as Record<string, unknown>)) if (typeof k === "string" && (r === "own" || r === "both")) out[k] = r;
+  return Object.keys(out).length ? out : undefined;
+}
+
 
 export type SlotOption = {
   staffId: string;
@@ -55,8 +73,13 @@ export type DisplacedPlan = {
   customer: { id: string; name: string; phone: string };
   service: { id: string; name: string; durationMinutes: number };
   loyalty: { total: number; withStaff: number; share: number | null; anyStaffAllowed: boolean };
-  options: SlotOption[]; // best first, at most 2
-  /** true when the ONLY reason there is no option is the loyalty rule */
+  /** "own": up to 2 of the closing barber's times; "both": up to 2 at other barbers + 1 of his. */
+  options: SlotOption[];
+  route: ClosureRoute;
+  defaultRoute: ClosureRoute;
+  /** Another staff member works in the window — "both" is a real choice. */
+  othersAvailable: boolean;
+  /** true when the ONLY reason there is no option is the route ("own" and he is full) */
   blockedByLoyalty: boolean;
 };
 
@@ -336,22 +359,21 @@ export async function planClosure(input: ClosureInput): Promise<ClosurePlan> {
   const displaced: DisplacedPlan[] = [];
   for (const a of rows) {
     const loyalty = loyaltyByAppt.get(a.id)!;
-    const ranked = rankOptions(await collectOptions(cache, input, a, loyalty.anyStaffAllowed, isToday), input, a.startTime);
-    const options: SlotOption[] = [];
-    for (const o of ranked) {
-      if (options.length === 2) break;
-      if (taken.has(slotKey(o))) continue;
-      options.push(o);
-    }
+    const defaultRoute: ClosureRoute = loyalty.anyStaffAllowed ? "both" : "own";
+    const route: ClosureRoute = input.routes?.[a.id] === "own" || input.routes?.[a.id] === "both" ? input.routes[a.id] : defaultRoute;
+    const ranked = rankOptions(await collectOptions(cache, input, a, true, isToday), input, a.startTime).filter(o => !taken.has(slotKey(o)));
+    const own = ranked.filter(o => o.sameStaff), others = ranked.filter(o => !o.sameStaff);
+    // "both": the other barbers first (the message offers them, then "ואם נוח לך
+    // יותר להישאר אצלי"), plus his nearest one. No one else free → his two.
+    const options: SlotOption[] = route === "own"
+      ? own.slice(0, 2)
+      : others.length ? [...others.slice(0, 2), ...own.slice(0, 1)] : own.slice(0, 2);
     if (options[0]) taken.add(slotKey(options[0])); // the primary is reserved for this customer in the plan
-    let blockedByLoyalty = false;
-    if (!options.length && !loyalty.anyStaffAllowed) {
-      const anyAtAll = await collectOptions(cache, input, a, true, isToday);
-      blockedByLoyalty = anyAtAll.some(o => !taken.has(slotKey(o)));
-    }
+    const blockedByLoyalty = !options.length && route === "own" && others.length > 0;
     displaced.push({
       appointmentId: a.id, startTime: a.startTime, endTime: a.endTime,
-      customer: a.customer, service: a.service, loyalty, options, blockedByLoyalty,
+      customer: a.customer, service: a.service, loyalty, options, route, defaultRoute,
+      othersAvailable: others.length > 0, blockedByLoyalty,
     });
   }
 

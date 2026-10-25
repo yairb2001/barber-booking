@@ -39,7 +39,7 @@ export function describeSlot(o: { date: string; startTime: string; staffName?: s
     const d = new Date(o.date + "T00:00:00.000Z");
     dayLabel = `ביום ${DAY[d.getUTCDay()]} (${d.getUTCDate()}.${d.getUTCMonth() + 1})`;
   }
-  const who = o.sameStaff === false && o.staffName ? ` אצל ${o.staffName}` : "";
+  const who = o.sameStaff === false && o.staffName?.trim() ? ` אצל ${o.staffName.trim()}` : "";
   return `${dayLabel} ב‑${o.startTime}${who}`;
 }
 
@@ -55,16 +55,27 @@ export function firstName(name: string): string {
 
 export function renderClosureText(
   template: string,
-  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[]; originalDate?: string; barberFem?: boolean },
+  v: { name: string; barber: string; when: string; options: { date: string; startTime: string; staffName: string; sameStaff: boolean }[]; originalDate?: string; barberFem?: boolean;
+    /** false = plain list even when the options mix barbers (the short reminder). */
+    mixed?: boolean },
 ): string {
   const [a, b] = v.options;
   // "ביום רביעי (30.9) ב‑11:30 או ביום רביעי (30.9) ב‑13:00" read like a form
   // letter (first real closure, 18.9.2026). Same day as the cancelled slot →
   // "באותו יום"; second option on the same day as the first → just the time.
-  const who = (o: { staffName: string; sameStaff: boolean }) => (o.sameStaff === false && o.staffName ? ` אצל ${o.staffName}` : "");
+  const who = (o: { staffName: string; sameStaff: boolean }) => (o.sameStaff === false && o.staffName?.trim() ? ` אצל ${o.staffName.trim()}` : "");
   const label = (o: typeof a) => (v.originalDate && o.date === v.originalDate ? `באותו יום ב‑${o.startTime}${who(o)}` : describeSlot(o));
-  const optionA = a ? label(a) : "";
-  const optionB = b ? ` או ${a && b.date === a.date ? `ב‑${b.startTime}${who(b)}` : label(b)}` : "";
+  let optionA = a ? label(a) : "";
+  let optionB = b ? ` או ${a && b.date === a.date ? `ב‑${b.startTime}${who(b)}` : label(b)}` : "";
+  // Route "both" (owner, 25.10.2026): the other barbers' times, then a line of
+  // his own — "ואם נוח לך יותר להישאר אצלי, יש לי…". Fits any template that has
+  // {{option_a}}{{option_b}} followed by a period.
+  const others = v.options.filter(o => !o.sameStaff), mine = v.options.filter(o => o.sameStaff);
+  if (v.mixed !== false && others.length && mine.length) {
+    const [x, y] = others;
+    optionA = label(x) + (y ? ` או ${y.date === x.date ? `ב‑${y.startTime}${who(y)}` : label(y)}` : "");
+    optionB = `.\nואם נוח לך יותר להישאר אצלי, יש לי ${label({ ...mine[0], sameStaff: true })}`;
+  }
   // A custom template without {{option_a}} sent the first notice with no times at
   // all (28.9 — the times only showed up in the reminder). The offered, held
   // slots must always be in the message: add the line before the closing line.

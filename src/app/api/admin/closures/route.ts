@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, requireOwnStaffOrOwner } from "@/lib/session";
 import { executeClosure, closeHoursSilently } from "@/lib/closures/execute";
+import { sanitizeRoutes } from "@/lib/closures/plan";
 import { summarizeClosure } from "@/lib/closures/status";
 
 /**
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
   try {
     const result = await executeClosure(
-      { businessId: session.businessId, staffId, date, fromTime: t(body.fromTime), toTime: t(body.toTime) },
+      { businessId: session.businessId, staffId, date, fromTime: t(body.fromTime), toTime: t(body.toTime), routes: sanitizeRoutes(body.routes) },
       {
         reason: typeof body.reason === "string" ? body.reason.slice(0, 200) : null,
         createdByStaffId: session.staffId ?? null,
