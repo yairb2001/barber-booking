@@ -10,13 +10,32 @@ Yair's rules, 15.10.2026:
 - "כל הצעה מלבד להחליף מילה או 2 צריכה לעבור אצל סוכן ai פה במחשב שמבין שאסור לנפח פרומטים."
 - "אסור שיגדל הרבה. אם נחוץ להגדיל את הפרומפט חייב אישור שלי והסבר למה."
 - "שם אני אאשר דחיפה סופית": nothing goes live without his approval in the CRM.
+- 25.10.2026: "חשוב שיהיה לו הגבלה של לא לעבור X תווים ... ושהוא יתקן פר עסק איך
+  כל אחד היה רוצה שהוא ידבר, ומה הוא לא עשה נכון ... הכל עובר דרך ה-CRM, ואני לוחץ
+  אישורים". The limits are in "Size limits" below; per-shop voice in step 4.
+
+## Size limits (hard, the CRM refuses past them)
+- **A shop's whole prompt: at most 15,000 characters** (`PROMPT_MAX`,
+  src/lib/agent/fix-queue.ts). On 25.10.2026 a plain shop was 12,710 and
+  DOMINANT 14,631. A fix that would cross it must first shorten or merge
+  something else; not even Yair's tick lets it through.
+- **Growth per fix: more than 100 characters needs `growthReason`** and Yair's
+  "אני מאשר להגדיל" (`GROWTH_LIMIT`).
+- **A shop's own rules: at most 1,200 characters and 12 short lines**
+  (`RULES_MAX`), always the whole merged text, never lines added at the end.
+- Chator's support agent (`support`): today 2,748; the same 100 rule.
 
 ## Every run, in this order
 
 Read-only commands run from `~/Projects/chator-wt`. Never edit files there:
 other sessions work in that checkout. Code work happens in a worktree per fix.
 
-1. `scripts/fix-agent.ts queue` → the work, as JSON: each item has `status`,
+1. `scripts/fix-agent.ts queue` → the work, as JSON. Since 25.10.2026 most
+   reports come from inside a shop's chat: the owner marked the agent replies he
+   did not like and wrote why. In `reports` each one has `text` (lines like
+   "על התשובה «...»: why"), `evidence` (those agent replies) and `messageId`
+   (their ids, comma separated). Those replies are your `before`.
+   Each item has `status`,
    `yairWords` (his words: they win over the original proposal), `yairNotes`
    (his corrections after an earlier attempt), `evidence`, `previousFix`,
    `reports` (every manual report merged into it, from any shop: one fix should
@@ -37,6 +56,11 @@ other sessions work in that checkout. Code work happens in a worktree per fix.
      `setup` (one answer), `faq` (replace the existing question when there is
      one: `replaceQuestion`), or `rules` with the shop's WHOLE rules text, merged
      and shortened. Do not write to the DB: the CRM applies it on approval.
+   - **how one shop wants the agent to talk, or what it did wrong for that shop**
+     (tone, length, emoji, words to use or avoid, when to hand over to him):
+     that shop's data only, `setup` when a setup question covers it, else its
+     `rules`. Never the base template for one shop's taste. The base changes
+     only when the same problem shows in two shops or more, or it is a bug.
    - **behavior for every shop**: change an existing section of
      `src/lib/agent/prompt-template.ts` (or the code that causes it). Replace,
      never append. Plan `code`.

@@ -113,13 +113,14 @@ export async function fileReport(n: { id: string; businessId: string; text: stri
     return "merged";
   }
   const p = out?.new && ["rule", "faq", "setup", "base"].includes(out.new.kind) && out.new.title ? out.new : { kind: "base" as const, title: n.text.split("\n")[0].slice(0, 80), proposal: n.text, evidence: undefined };
-  const row = await prisma.agentImprovement.create({ data: { businessId: n.businessId, source: "feedback", kind: p.kind, title: p.title.slice(0, 200), proposal: (p.proposal || n.text).slice(0, 2000), evidence: p.evidence?.slice(0, 1000) ?? null, conversationId: n.conversationId, reports: JSON.stringify([report]) } });
+  const row = await prisma.agentImprovement.create({ data: { businessId: n.businessId, source: "feedback", kind: p.kind, title: p.title.slice(0, 200), proposal: (p.proposal || n.text).slice(0, 2000), evidence: (p.evidence || report.evidence)?.slice(0, 1000) ?? null, conversationId: n.conversationId, reports: JSON.stringify([report]) } });
   await prisma.agentFeedback.update({ where: { id: n.id }, data: { status: "in_review", reviewedAt: now, reviewNote: `הצעה חדשה: ${row.title}` } });
   return "created";
 }
 
-export async function reviewReports(now = new Date(), opts: { notify?: boolean } = {}): Promise<{ reports: number; merged: number; created: number }> {
-  const notes = await prisma.agentFeedback.findMany({ where: { status: "new" }, orderBy: { createdAt: "asc" }, take: 30 });
+export async function reviewReports(now = new Date(), opts: { notify?: boolean; ids?: string[] } = {}): Promise<{ reports: number; merged: number; created: number }> {
+  // ids: a report sent from a chat is sorted right away (25.10.2026), not the next morning.
+  const notes = await prisma.agentFeedback.findMany({ where: { status: "new", ...(opts.ids ? { id: { in: opts.ids } } : {}) }, orderBy: { createdAt: "asc" }, take: 30 });
   if (!notes.length) return { reports: 0, merged: 0, created: 0 };
   const names = new Map((await prisma.business.findMany({ where: { id: { in: Array.from(new Set(notes.map(n => n.businessId))) } }, select: { id: true, name: true } })).map(b => [b.id, b.name]));
   let merged = 0, created = 0;
@@ -130,13 +131,18 @@ export async function reviewReports(now = new Date(), opts: { notify?: boolean }
       const msgs = await prisma.conversationMessage.findMany({ where: { conversationId: n.conversationId, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: MAX_MSGS, select: { role: true, content: true, source: true } });
       transcript = msgs.reverse().map(m => `${m.role === "user" ? "לקוח" : m.source === "admin" ? "בעל העסק" : "סוכן"}: ${m.content.replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
     }
-    const report: Report = { at: n.createdAt.toISOString(), source: "feedback", businessId: n.businessId, businessName: names.get(n.businessId) ?? "", author: n.author, text: n.text, conversationId: n.conversationId };
+    // A report from inside a chat names the agent messages it is about (comma separated ids).
+    const ids = (n.messageId ?? "").split(",").filter(Boolean);
+    const reported = ids.length ? await prisma.conversationMessage.findMany({ where: { id: { in: ids } }, orderBy: { createdAt: "asc" }, select: { content: true } }) : [];
+    const quote = reported.length ? reported.map(m => m.content.replace(/\s+/g, " ").slice(0, 300)).join(" | ").slice(0, 900) : null;
+    const report: Report = { at: n.createdAt.toISOString(), source: "feedback", businessId: n.businessId, businessName: names.get(n.businessId) ?? "", author: n.author, text: n.text, evidence: quote, conversationId: n.conversationId, feedbackId: n.id, messageId: n.messageId };
     const system = `אתה ממיין דיווח ידני על הסוכן שעונה בוואטסאפ ללקוחות של מספרה. אם הוא אותה בעיה כמו אחת הפתוחות ברשימה (גם אם ממספרה אחרת ובמילים אחרות), החזר את המזהה שלה. אחרת, נסח הצעה חדשה.
 סוגים: "base" בעיה בהתנהגות הסוכן שחלה על כל העסקים, "rule" כלל של העסק הזה, "faq" שאלה ותשובה של העסק ("ש: ... ת: ..."), "setup" תשובה לשאלת הגדרה.
 כתוב בעברית פשוטה, בלי מקפים ארוכים. החזר JSON בלבד: {"same":"<8 התווים של המזהה>"} או {"new":{"kind":"...","title":"קצר בעברית","proposal":"מה לתקן","evidence":"ציטוט קצר"}}`;
     const user = [
       open.length ? `בעיות פתוחות:\n${open.map(o => `- ${o.id.slice(0, 8)}: ${o.title}: ${o.proposal.replace(/\s+/g, " ").slice(0, 200)}`).join("\n")}` : "אין בעיות פתוחות.",
       `הדיווח (${report.businessName}${n.author ? `, ${n.author}` : ""}):\n${n.text}`,
+      quote ? `התשובות של הסוכן שעליהן הדיווח:\n${quote}` : "",
       transcript ? `השיחה שעליה הדיווח:\n${transcript}` : "",
     ].filter(Boolean).join("\n\n");
     let out: Decision = null;

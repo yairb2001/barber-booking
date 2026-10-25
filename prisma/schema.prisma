@@ -1347,6 +1347,7 @@ model AgentFeedback {
   staffId        String?   @map("staff_id")
   author         String?
   conversationId String?   @map("conversation_id")
+  messageId      String?   @map("message_id") // the agent's message a chat report is about (25.10.2026)
   text           String
   status         String    @default("new") // new | in_review | applied | dismissed
   reviewNote     String?   @map("review_note")

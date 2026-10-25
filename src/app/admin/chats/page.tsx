@@ -4,6 +4,7 @@ import { useVocab } from "@/components/VocabProvider";
 import { useEffect, useRef, useState, useCallback, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { VoiceBubble, VoiceComposer } from "@/components/Voice";
+import ReportSheet from "./ReportSheet";
 
 type ChatListItem = {
   id: string;
@@ -184,6 +185,17 @@ export default function ChatsPage() {
       .then((d: ChatDetail | null) => { if (d) setDetail(d); })
       .catch(() => {});
   }, []);
+  // "דווח על השיחה" (25.10.2026): which agent messages in this chat were already reported.
+  const [reported, setReported] = useState<Record<string, string>>({});
+  const [reportOpen, setReportOpen] = useState(false);
+  useEffect(() => {
+    setReported({}); setReportOpen(false);
+    if (!selId) return;
+    fetch(`/api/admin/agent/feedback?conversationId=${encodeURIComponent(selId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then((j: { reported?: { messageId: string; status: string }[] } | null) => { if (j?.reported) setReported(Object.fromEntries(j.reported.map(x => [x.messageId, x.status]))); })
+      .catch(() => {});
+  }, [selId]);
   useEffect(() => {
     if (!selId) { setDetail(null); return; }
     fetchDetail(selId);
@@ -511,6 +523,13 @@ export default function ChatsPage() {
                   🚫 חסום מ{detail.staffBlocks.join(", ")}
                 </span>
               )}
+              {selId && (
+                <button type="button" onClick={() => setReportOpen(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg font-semibold border bg-white border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+                  title="לא אהבת משהו שהסוכן כתב כאן? סמן את ההודעות וכתוב מה לא היה בסדר">
+                  דווח על השיחה
+                </button>
+              )}
               {activeThread.id && !detail?.blocked && (
                 <button
                   onClick={() => toggleAgent(activeThread.escalated)}
@@ -571,13 +590,17 @@ export default function ChatsPage() {
                         <a href={m.mediaUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-sm underline mb-1">📄 {m.mediaName || "קובץ"}</a>
                       )}
                       {(!m.mediaUrl || !MEDIA_LABEL.test(m.content)) && <p className="text-sm whitespace-pre-wrap break-words">{m.content}</p>}
-                      <p className={`text-[10px] mt-1 ${
-                        m.role === "user" ? "text-slate-400"
-                        : m.source === "admin" ? "text-white/60"
-                        : "text-emerald-600"
-                      }`} dir="ltr">
-                        {timeOnly(m.createdAt)}
-                      </p>
+                      <div className="flex items-center justify-between gap-3 mt-1">
+                        {/* Marked in a report on this chat (25.10.2026). */}
+                        {m.role === "assistant" && reported[m.id] ? <span className="text-[10px] text-emerald-700">{reported[m.id] === "applied" ? "דיווחת · תוקן ✓" : "דיווחת ✓"}</span> : <span />}
+                        <p className={`text-[10px] ${
+                          m.role === "user" ? "text-slate-400"
+                          : m.source === "admin" ? "text-white/60"
+                          : "text-emerald-600"
+                        }`} dir="ltr">
+                          {timeOnly(m.createdAt)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                   )}
@@ -623,6 +646,10 @@ export default function ChatsPage() {
           </>
         )}
       </section>
+      {reportOpen && selId && activeThread && (
+        <ReportSheet conversationId={selId} messages={activeThread.messages} reported={reported} onClose={() => setReportOpen(false)}
+          onSent={ids => setReported(r => ({ ...r, ...Object.fromEntries(ids.map(id => [id, "new"])) }))} />
+      )}
     </div>
   );
 }

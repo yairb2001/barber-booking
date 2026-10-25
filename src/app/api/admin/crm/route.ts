@@ -894,6 +894,7 @@ export async function POST(req: NextRequest) {
           } else status = "approved"; // base: for every agent, implemented by hand
         }
         await prisma.agentImprovement.update({ where: { id: imp.id }, data: { status, proposal: text, decidedAt: new Date(), decidedBy: "יאיר" } });
+        if (status === "applied") { const { closeReports } = await import("@/lib/agent/fix-queue"); await closeReports(imp.id); }
         return NextResponse.json({ ok: true, status });
       }
       // Yair gave the referral's free month in Invoice4U (or takes it back).

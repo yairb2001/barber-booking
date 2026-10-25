@@ -19,6 +19,12 @@ import { saveSetupAnswers } from "@/lib/agent/setup-save";
 import { getCrmText, setCrmText } from "@/lib/crm/core";
 
 export const GROWTH_LIMIT = 100;
+/** A shop's whole system prompt never goes past this (25.10.2026, Yair: "הגבלה של לא
+ *  לעבור X תווים"). Measured that day: a plain shop 12,710, DOMINANT 14,631. Not
+ *  even with his tick: a fix that crosses it must shorten something else first. */
+export const PROMPT_MAX = 15_000;
+/** The shop's own rules text (same cap as "במילים שלך", free-text.ts RULES_MAX). */
+export const RULES_MAX = 1_200;
 
 export type FixPlan =
   | { type: "setup"; businessId: string; key: string; value: string | boolean }
@@ -44,7 +50,7 @@ export type Fix = {
 };
 
 /** One manual report behind a proposal (15.10.2026: only manual reports, merged). */
-export type Report = { at: string; source: string; businessId: string; businessName: string; author?: string | null; text: string; evidence?: string | null; conversationId?: string | null };
+export type Report = { at: string; source: string; businessId: string; businessName: string; author?: string | null; text: string; evidence?: string | null; conversationId?: string | null; feedbackId?: string | null; messageId?: string | null };
 export const parseReports = (raw: string | null | undefined): Report[] => { try { const v = raw ? JSON.parse(raw) : []; return Array.isArray(v) ? v : []; } catch { return []; } };
 
 export const parseFix = (raw: string | null | undefined): Fix | null => { try { return raw ? JSON.parse(raw) as Fix : null; } catch { return null; } };
@@ -91,6 +97,23 @@ async function restoreData(plan: FixPlan, previous: unknown): Promise<void> {
   } else if (plan.type === "support_rules") await setCrmText("supportRules", String(p.text ?? ""));
 }
 
+/**
+ * A fix went live (25.10.2026): the shop reports behind it are closed, and every
+ * shop that reported it hears it was fixed. Reporting only keeps happening when
+ * people see that it helps.
+ */
+export async function closeReports(improvementId: string): Promise<void> {
+  const imp = await prisma.agentImprovement.findUnique({ where: { id: improvementId }, select: { title: true, reports: true } });
+  if (!imp) return;
+  const reports = parseReports(imp.reports).filter(r => r.source === "feedback");
+  const ids = reports.map(r => r.feedbackId).filter((x): x is string => !!x);
+  if (ids.length) await prisma.agentFeedback.updateMany({ where: { id: { in: ids } }, data: { status: "applied", reviewedAt: new Date() } });
+  const { centerNotify } = await import("@/lib/notify/center");
+  for (const businessId of Array.from(new Set(reports.map(r => r.businessId)))) {
+    await centerNotify({ businessId, kind: "account", title: "תיקנו את מה שדיווחת על הסוכן", body: imp.title, href: "/admin/chats" }).catch(() => {});
+  }
+}
+
 const note = (f: Fix, who: "יאיר" | "סוכן", text: string): Fix => ({ ...f, history: [...(f.history ?? []), { at: new Date().toISOString(), who, text }] });
 
 /** Yair: "אשר והעלה". */
@@ -99,12 +122,15 @@ export async function publishFix(id: string, growthOk: boolean): Promise<{ ok: t
   const fix = parseFix(imp?.fix);
   if (!imp || imp.status !== "review" || !fix) return { ok: false, error: "אין כאן תיקון שמחכה לאישור" };
   if (needsGrowthOk(fix) && !growthOk) return { ok: false, error: "התיקון מגדיל את הפרומפט. צריך לסמן שאתה מאשר להגדיל" };
+  if ((fix.promptAfter ?? 0) > PROMPT_MAX) return { ok: false, error: `התיקון מעביר את הפרומפט מעל ${PROMPT_MAX.toLocaleString("he-IL")} תווים. לחץ "תקן" ובקש לקצר` };
+  if (fix.plan.type === "rules" && fix.plan.text.length > RULES_MAX) return { ok: false, error: `כללי העסק ארוכים מדי (מעל ${RULES_MAX.toLocaleString("he-IL")} תווים). לחץ "תקן" ובקש לקצר` };
   if (fix.plan.type === "code") {
     await prisma.agentImprovement.update({ where: { id }, data: { status: "publish", decidedAt: new Date(), decidedBy: "יאיר" } });
     return { ok: true, status: "publish" };
   }
   const previous = await applyData(fix.plan);
   await prisma.agentImprovement.update({ where: { id }, data: { status: "applied", decidedAt: new Date(), decidedBy: "יאיר", fix: JSON.stringify(note({ ...fix, previous }, "יאיר", "אושר והועלה")) } });
+  await closeReports(id);
   return { ok: true, status: "applied" };
 }
 

@@ -14,7 +14,7 @@
  */
 import fs from "node:fs";
 import { prisma } from "@/lib/prisma";
-import { parseFix, parseReports, type Fix } from "@/lib/agent/fix-queue";
+import { parseFix, parseReports, closeReports, type Fix } from "@/lib/agent/fix-queue";
 import { stablePromptParams, buildCatalogBlock, buildSystemPrompt } from "@/lib/agent/customer-agent";
 import { buildBookingLink } from "@/lib/link-first";
 import { getCrmText } from "@/lib/crm/core";
@@ -87,6 +87,7 @@ async function main() {
     const text = cmd === "applied" ? `עלה לאוויר${a2 ? ` (${a2})` : ""}` : "הוחזר אחורה";
     const plan = cmd === "applied" && a2 && fix.plan.type === "code" ? { ...fix.plan, commit: a2 } : fix.plan;
     await prisma.agentImprovement.update({ where: { id: a1 }, data: { status: cmd === "applied" ? "applied" : "rejected", ...(cmd === "applied" ? { decidedAt: new Date() } : {}), fix: JSON.stringify({ ...fix, plan, history: [...(fix.history ?? []), { at: new Date().toISOString(), who: "סוכן", text }] }) } });
+    if (cmd === "applied") await closeReports(a1);
     out("ok");
   } else if (cmd === "notify") {
     const [review, question] = await Promise.all([prisma.agentImprovement.count({ where: { status: "review" } }), prisma.agentImprovement.count({ where: { status: "question" } })]);
