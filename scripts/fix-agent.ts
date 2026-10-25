@@ -77,6 +77,10 @@ async function main() {
     const fix = JSON.parse(fs.readFileSync(a2, "utf8")) as Fix;
     if (!fix.plan?.type) throw new Error("fix.plan.type is required");
     if (!fix.question && (!fix.summary || !fix.appliesTo)) throw new Error("summary and appliesTo are required");
+    // The fix report Yair (or Nika) opens in the CRM (26.10.2026): what you understood, is there anything to fix, what you read.
+    if (!fix.question && (!fix.understood || !fix.verdict)) throw new Error("understood and verdict are required");
+    if (fix.verdict && !["fix", "not_a_problem", "need_info"].includes(fix.verdict)) throw new Error("verdict: fix | not_a_problem | need_info");
+    if (fix.verdict === "not_a_problem" && fix.plan.type !== "none") throw new Error("not_a_problem goes with plan {type:\"none\"}");
     const prev = parseFix(imp.fix);
     const history = [...(prev?.history ?? []), { at: new Date().toISOString(), who: "סוכן" as const, text: fix.question ? `שאלה: ${fix.question}` : fix.summary }];
     await prisma.agentImprovement.update({ where: { id: a1 }, data: { status: fix.question ? "question" : "review", fix: JSON.stringify({ ...fix, history }), fixAt: new Date() } });

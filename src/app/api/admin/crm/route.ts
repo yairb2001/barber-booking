@@ -571,7 +571,7 @@ export async function GET(req: NextRequest) {
       const bizs = await prisma.business.findMany({ where: { id: { in: bizIds } }, select: { id: true, name: true } });
       const name = (id: string) => bizs.find(b => b.id === id)?.name ?? "—";
       return NextResponse.json({
-        items: await Promise.all(items.map(async i => { const fx = parseFix(i.fix); return { ...i, fix: fx, reports: parseReports(i.reports), growth: growthOf(fx), growthNeedsOk: needsGrowthOk(fx), businessName: name(i.businessId), conversations: (await proposalConversations(i)).slice(0, 6) }; })),
+        items: await Promise.all(items.map(async i => { const fx = parseFix(i.fix); return { ...i, fix: fx, reports: parseReports(i.reports), growth: growthOf(fx), growthNeedsOk: needsGrowthOk(fx), businessName: name(i.businessId), conversations: (await proposalConversations(i)).slice(0, 6), change: fx ? await (await import("@/lib/agent/fix-report")).describeChange(fx, i.status === "applied").catch(() => null) : null }; })),
         growthLimit: GROWTH_LIMIT,
         feedback: feedback.map(f => ({ ...f, businessName: name(f.businessId) })),
         chatorQuestions: cq.map(q => ({ id: q.id, question: q.question, stage: q.stage, createdAt: q.createdAt, businessId: q.businessId, businessName: q.businessId ? name(q.businessId) : null, phone: q.phone.replace(/^972/, "0"), conversationId: q.conversationId })),

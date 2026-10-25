@@ -92,6 +92,9 @@ other sessions work in that checkout. Code work happens in a worktree per fix.
 
 ```json
 {
+  "understood": "משפט או שניים: מה הבנת שהבעיה, במילים פשוטות",
+  "verdict": "fix",
+  "read": ["<conversation id>", "<conversation id>"],
   "summary": "משפט אחד: מה השתנה",
   "appliesTo": "כל העסקים" ,
   "before": "התשובה שהסוכן נתן",
@@ -103,6 +106,14 @@ other sessions work in that checkout. Code work happens in a worktree per fix.
   "plan": { "type": "code", "branch": "fix/imp-1a2b3c4d", "files": ["src/lib/agent/customer-agent.ts"] }
 }
 ```
+The fix report (26.10.2026, Yair: "לפתוח את הדוח תיקון, לראות מה הסוכן הבין, האם
+יש מה לתקן"): `understood`, `verdict` and `read` are required (`report`
+refuses without them). `verdict`: `fix` (a real problem, with a plan),
+`not_a_problem` (with plan `{type:"none"}`; say why in `understood`; the CRM
+offers "לסגור, אין מה לתקן"), or `need_info` (prefer a `question`). `read`: the
+ids of the conversations you actually read. The CRM shows, next to it, what
+exactly changes: the text before and after for data plans, the files and a
+link to the branch or commit for code.
 `appliesTo`: "כל העסקים" or "רק <שם העסק>". Data plans:
 `{type:"setup", businessId, key, value}`, `{type:"rules", businessId, text}`,
 `{type:"faq", businessId, question, answer, replaceQuestion?}`,

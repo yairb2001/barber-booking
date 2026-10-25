@@ -36,6 +36,9 @@ export type FixPlan =
 
 export type Fix = {
   summary: string;           // one sentence, Hebrew: what changed
+  understood?: string;       // the fix report (26.10.2026): what the agent understood the problem to be
+  verdict?: "fix" | "not_a_problem" | "need_info"; // is there something to fix
+  read?: string[];           // the conversations it read
   appliesTo: string;         // "כל העסקים" / "רק DOMINANT"
   before?: string;           // the reply before the fix
   after?: string;            // the reply after it (from the replay)
@@ -121,6 +124,7 @@ export async function publishFix(id: string, growthOk: boolean, who = "יאיר"
   const imp = await prisma.agentImprovement.findUnique({ where: { id } });
   const fix = parseFix(imp?.fix);
   if (!imp || imp.status !== "review" || !fix) return { ok: false, error: "אין כאן תיקון שמחכה לאישור" };
+  if (fix.plan.type === "none") return { ok: false, error: "אין כאן תיקון להעלות. אפשר לסגור, או לבקש תיקון בכל זאת" };
   if (needsGrowthOk(fix) && !growthOk) return { ok: false, error: "התיקון מגדיל את הפרומפט. צריך לסמן שאתה מאשר להגדיל" };
   if ((fix.promptAfter ?? 0) > PROMPT_MAX) return { ok: false, error: `התיקון מעביר את הפרומפט מעל ${PROMPT_MAX.toLocaleString("he-IL")} תווים. לחץ "תקן" ובקש לקצר` };
   if (fix.plan.type === "rules" && fix.plan.text.length > RULES_MAX) return { ok: false, error: `כללי העסק ארוכים מדי (מעל ${RULES_MAX.toLocaleString("he-IL")} תווים). לחץ "תקן" ובקש לקצר` };

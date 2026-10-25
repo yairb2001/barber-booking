@@ -12,6 +12,7 @@ import { C, crmAction, ago } from "../ui";
 export type Fix = {
   summary: string; appliesTo: string; before?: string; after?: string; tested?: string;
   promptBefore?: number; promptAfter?: number; growthReason?: string; question?: string;
+  understood?: string; verdict?: "fix" | "not_a_problem" | "need_info"; read?: string[]; plan?: { type?: string };
   history?: { at: string; who: string; text: string }[];
 };
 export type Report = { at: string; source: string; businessName: string; author?: string | null; text: string; evidence?: string | null; conversationId?: string | null };
@@ -19,6 +20,8 @@ export type Item = {
   id: string; businessId: string; businessName: string; source: string; kind: "rule" | "faq" | "setup" | "base"; title: string; proposal: string;
   evidence: string | null; conversations: string[]; status: string; createdAt: string; decidedAt: string | null; decidedBy: string | null;
   fix: Fix | null; growthNeedsOk: boolean; reports: Report[];
+  /** What exactly changes (fix-report.ts). */
+  change?: { what: string; before?: string | null; after?: string | null; files?: string[]; url?: string | null } | null;
 };
 export type Data = { items: Item[] };
 export type Stage = "new" | "agent" | "approve" | "done" | "closed";
@@ -103,6 +106,10 @@ export function Detail({ i, onDone, openChat }: { i: Item; onDone: (msg: string)
   if (st === "pending") {
     main = <button type="button" disabled={busy || !proposal.trim()} onClick={() => void act({ action: "improvement.queue", proposal }, "נשלח לסוכן התיקונים. התיקון יחכה לאישור מחר בבוקר.")} className="flex-1 min-h-[52px] rounded-2xl text-white text-[16px] font-extrabold disabled:opacity-50" style={{ background: C.petrol }}>{busy ? "שולח…" : "שלח לתיקון"}</button>;
     more = [...(i.kind === "setup" || i.kind === "faq" ? [{ label: "החל עכשיו (מילה או שתיים)", onClick: () => void act({ action: "improvement.decide", approve: true, proposal }, "הוחל על הסוכן") }] : []), reject];
+  } else if (st === "review" && !revising && (fx?.verdict === "not_a_problem" || fx?.plan?.type === "none")) {
+    // The fix agent says there is nothing to fix: close it, or ask for a fix anyway.
+    main = <button type="button" disabled={busy} onClick={() => void act({ action: "improvement.reject" }, "נסגר")} className="flex-1 min-h-[52px] rounded-2xl text-white text-[16px] font-extrabold disabled:opacity-50" style={{ background: C.petrol }}>{busy ? "סוגר…" : "לסגור, אין מה לתקן"}</button>;
+    more = [{ label: "בקש תיקון בכל זאת", onClick: () => setRevising(true) }];
   } else if (st === "review" && !revising) {
     main = <button type="button" disabled={busy || (i.growthNeedsOk && !growthOk)} onClick={() => void act({ action: "improvement.publish", growthOk }, fx && (fx as { plan?: { type?: string } }).plan?.type === "code" ? "אושר. עולה לאוויר בריצה של הבוקר." : "אושר והוחל. העסק קיבל הודעה.")} className="flex-1 min-h-[52px] rounded-2xl text-white text-[16px] font-extrabold disabled:opacity-50" style={{ background: C.petrol }}>{busy ? "מאשר…" : "אשר והעלה"}</button>;
     more = [{ label: "בקש שינוי בתיקון", onClick: () => setRevising(true) }, { label: "דחה את התיקון", danger: true, onClick: () => void act({ action: "improvement.reject" }, "נדחה") }];
@@ -136,13 +143,60 @@ export function Detail({ i, onDone, openChat }: { i: Item; onDone: (msg: string)
       {info[st] && <p className="m-0 text-sm rounded-2xl px-4 py-3" style={{ background: C.soft, color: C.ink }}>{info[st]}</p>}
 
       {/* The fix to approve: what changes, before and after, the prompt's size. */}
-      {(st === "review" || st === "applied") && fx && (
-        <section className="flex flex-col gap-3">
-          <h3 className="m-0 text-[13px] font-bold" style={{ color: C.muted }}>התיקון</h3>
-          <p className="m-0 text-[16px] leading-relaxed">{fx.summary}</p>
+      {/* The fix report (26.10.2026, Yair: "לפתוח את הדוח תיקון, לראות מה הסוכן הבין, האם יש
+          מה לתקן"): what it understood, the verdict, what exactly changes, what it read. */}
+      {(st === "review" || st === "applied" || st === "publish") && fx && (
+        <details open={st !== "applied"} className="rounded-2xl" style={{ border: `1px solid ${C.line}` }}>
+          <summary className="cursor-pointer min-h-[48px] px-4 flex items-center justify-between gap-2 text-[15px] font-bold">דוח התיקון<span className="text-xs font-semibold" style={{ color: C.muted }}>{fx.verdict === "not_a_problem" ? "אין מה לתקן" : fx.appliesTo || ""}</span></summary>
+          <div className="px-4 pb-4 flex flex-col gap-4">
+            {fx.understood && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[13px] font-bold" style={{ color: C.muted }}>מה הסוכן הבין</span>
+                <p className="m-0 text-[15px] leading-relaxed">{fx.understood}</p>
+              </div>
+            )}
+            {fx.verdict && (
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-bold" style={{ color: C.muted }}>יש מה לתקן?</span>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={fx.verdict === "fix" ? { background: "#FDECEA", color: "#B42318" } : fx.verdict === "not_a_problem" ? { background: "#E3F7EF", color: "#0F6B4F" } : { background: "#FFF1D6", color: "#7A4A00" }}>{fx.verdict === "fix" ? "כן" : fx.verdict === "not_a_problem" ? "לא, זו לא תקלה" : "צריך מידע"}</span>
+              </div>
+            )}
+            <div className="flex flex-col gap-1">
+              <span className="text-[13px] font-bold" style={{ color: C.muted }}>מה עושים</span>
+              <p className="m-0 text-[15px] leading-relaxed">{fx.summary}</p>
+            </div>
+            {i.change && (i.change.after || i.change.files) && (
+              <div className="flex flex-col gap-2">
+                <span className="text-[13px] font-bold" style={{ color: C.muted }}>מה משתנה בדיוק: {i.change.what}</span>
+                {i.change.after != null && (
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="rounded-xl p-3 flex flex-col gap-1" style={{ background: "#FDF2F1" }}>
+                      <span className="text-[11px] font-bold" style={{ color: "#B42318" }}>{st === "applied" ? "היה" : "עכשיו"}</span>
+                      <p className="m-0 text-sm leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto [overflow-wrap:anywhere]">{i.change.before || "ריק"}</p>
+                    </div>
+                    <div className="rounded-xl p-3 flex flex-col gap-1" style={{ background: "#EDF9F3" }}>
+                      <span className="text-[11px] font-bold" style={{ color: "#0F6B4F" }}>{st === "applied" ? "עכשיו" : "אחרי התיקון"}</span>
+                      <p className="m-0 text-sm leading-relaxed whitespace-pre-wrap max-h-56 overflow-y-auto [overflow-wrap:anywhere]">{i.change.after}</p>
+                    </div>
+                  </div>
+                )}
+                {i.change.files && i.change.files.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    <p className="m-0 text-xs" style={{ color: C.muted }}>קבצים: <span dir="ltr">{i.change.files.join(", ")}</span></p>
+                    {i.change.url && <a href={i.change.url} target="_blank" rel="noreferrer" className="self-start min-h-[36px] inline-flex items-center text-sm font-bold" style={{ color: C.petrol }}>לראות את השינוי בקוד</a>}
+                  </div>
+                )}
+              </div>
+            )}
+            {fx.read && fx.read.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[13px] font-bold" style={{ color: C.muted }}>עבר על השיחות:</span>
+                {fx.read.map((cid, k) => <button key={cid} type="button" onClick={() => openChat(cid)} className="min-h-[36px] px-3 rounded-full text-sm font-semibold" style={{ background: C.mist, color: C.petrol }}>שיחה {k + 1}</button>)}
+              </div>
+            )}
           {fx.appliesTo && <p className="m-0 text-xs" style={{ color: C.muted }}>חל על: {fx.appliesTo}</p>}
-          {fx.before && <Bubble label="לפני" text={fx.before} tone="bad" />}
-          {fx.after && <Bubble label="אחרי" text={fx.after} tone="good" />}
+          {fx.before && <Bubble label="התשובה לפני" text={fx.before} tone="bad" />}
+          {fx.after && <Bubble label="התשובה אחרי, בבדיקה" text={fx.after} tone="good" />}
           {fx.promptBefore != null && fx.promptAfter != null && (
             <div className="flex flex-col gap-1.5">
               <div className="h-2 rounded-full overflow-hidden" style={{ background: "#E3ECEA" }}><div className="h-full rounded-full" style={{ width: `${Math.min(100, (fx.promptAfter / PROMPT_MAX) * 100)}%`, background: fx.promptAfter > PROMPT_MAX ? "#D92D20" : C.petrol2 }} /></div>
@@ -156,7 +210,8 @@ export function Detail({ i, onDone, openChat }: { i: Item; onDone: (msg: string)
             </div>
           )}
           {fx.tested && <p className="m-0 text-xs" style={{ color: C.muted }}>נבדק: {fx.tested}</p>}
-        </section>
+          </div>
+        </details>
       )}
 
       {st === "question" && fx?.question && <Bubble label="סוכן התיקונים שואל" text={fx.question} tone="agent" />}
