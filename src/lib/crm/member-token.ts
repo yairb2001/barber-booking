@@ -1,6 +1,6 @@
 /**
- * A CRM login that sees only the reports screen (25.10.2026, Yair: "אשתי תאשר,
- * תבנה לה כניסה משלה"). Its own cookie, separate from the shops' admin login,
+ * A CRM login of its own (25.10.2026, Yair: "אשתי תאשר, תבנה לה כניסה משלה";
+ * the same day: the whole CRM for Nika). Its own cookie, separate from the shops' admin login,
  * so being logged into a shop never mixes with it. Edge-safe (jose only): the
  * middleware reads it. Members themselves live in crm_settings (members.ts).
  */
@@ -8,6 +8,8 @@ import { SignJWT, jwtVerify } from "jose";
 
 export const MEMBER_COOKIE = "crm_member";
 export const MEMBER_MAX_AGE = 60 * 60 * 24 * 180; // 180 days: a home-screen app
+/** Stays after logout: this phone's CRM opens on the member login, not Yair's. */
+export const MEMBER_SEEN = "crm_member_seen";
 const TYPE = "crm_member";
 
 function secret(): Uint8Array {
@@ -29,5 +31,11 @@ export async function verifyMemberToken(token: string | undefined | null): Promi
   } catch { return null; }
 }
 
-/** Where a member may go: the reports screen and the CRM API (which checks each view and action). */
-export const isMemberPath = (p: string) => p === "/admin/crm/reports" || p.startsWith("/admin/crm/reports/") || p === "/api/admin/crm" || p === "/admin/crm/manifest.webmanifest";
+/**
+ * Where a member may go: the CRM's screens and the APIs they call. Every API
+ * checks the member's scope again (members.ts), and a reports member's shell
+ * sends her back to the reports screen, so the screens hold no data of their own.
+ */
+export const isMemberPath = (p: string) =>
+  p === "/admin/crm" || p.startsWith("/admin/crm/") || p === "/api/admin/crm" || p.startsWith("/api/admin/crm/") ||
+  p.startsWith("/api/admin/super/businesses/") || p === "/api/admin/super/impersonate";

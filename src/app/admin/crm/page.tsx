@@ -31,6 +31,8 @@ function TodayInner() {
   const router = useRouter();
   const sp = useSearchParams();
   const { data, error, loading, reload } = useCrm<Today>("view=today");
+  // Nika (an "admin" member) is greeted by her own name.
+  const { data: me } = useCrm<{ name: string; member?: boolean }>("view=whoami");
   const [busy, setBusy] = useState<string | null>(null);
   const [task, setTask] = useState("");
   // Old links (push, WhatsApp) still point at ?tab=…
@@ -55,7 +57,7 @@ function TodayInner() {
   const btn = "min-h-[40px] px-3 rounded-[10px] text-sm font-semibold inline-flex items-center gap-1.5";
   return (
     <div className="flex flex-col gap-3 max-w-3xl">
-      <PageHead title={`${greeting()}, יאיר`} sub={`${today} · ${rows.length ? `${rows.length} דברים מחכים לך` : "אין משהו שמחכה לך"}`}
+      <PageHead title={`${greeting()}, ${me?.member ? me.name.split(" ")[0] : "יאיר"}`} sub={`${today} · ${rows.length ? `${rows.length} דברים מחכים לך` : "אין משהו שמחכה לך"}`}
         actions={<Link href="/admin/crm/leads?new=1" className="min-h-[44px] px-4 rounded-xl text-sm font-bold inline-flex items-center" style={{ background: C.coral, color: C.ink, textDecoration: "none" }}>+ ליד חדש</Link>} />
       <CrmPushBanner />
 

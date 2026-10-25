@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import { verifySession, COOKIE_NAME } from "@/lib/auth";
-import { MEMBER_COOKIE, verifyMemberToken, isMemberPath } from "@/lib/crm/member-token";
+import { MEMBER_COOKIE, MEMBER_SEEN, verifyMemberToken, isMemberPath } from "@/lib/crm/member-token";
 
 // A barber with "👑 גישה מלאה" logs in as owner (Staff.role "owner"). His cookie
 // lives 30 days, so the role is re-checked against the DB (cached 60s per
@@ -64,21 +64,20 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(COOKIE_NAME)?.value;
   const session = await verifySession(token);
 
-  // A reports-only CRM member (25.10.2026): its own cookie, and only the reports
-  // screen and the CRM API, where every view and action is checked again. Set
-  // even when a shop's admin session exists in the same browser.
-  const memberId = pathname.startsWith("/admin/crm") || isMemberPath(pathname) ? await verifyMemberToken(req.cookies.get(MEMBER_COOKIE)?.value) : null;
-  if (memberId && isMemberPath(pathname)) requestHeaders.set("x-crm-member-id", memberId);
+  // A CRM member (25.10.2026): its own cookie, the CRM's screens and APIs only,
+  // where every view and action is checked again by her scope. Set even when a
+  // shop's admin session exists in the same browser.
+  const memberId = isMemberPath(pathname) ? await verifyMemberToken(req.cookies.get(MEMBER_COOKIE)?.value) : null;
+  if (memberId) requestHeaders.set("x-crm-member-id", memberId);
 
   if (!session) {
-    if (memberId && isMemberPath(pathname)) return NextResponse.next({ request: { headers: requestHeaders } });
-    // Elsewhere in the CRM (the home-screen shortcut opens /admin/crm): to her reports, not the admin login.
-    if (memberId && pathname.startsWith("/admin/crm")) return NextResponse.redirect(new URL("/admin/crm/reports", req.url));
+    if (memberId) return NextResponse.next({ request: { headers: requestHeaders } });
     if (pathname.startsWith("/api/admin")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
     const url = req.nextUrl.clone();
-    url.pathname = pathname.startsWith("/admin/crm/reports") ? "/crm-login" : "/admin/login";
+    // A phone where a member logged in before (MEMBER_SEEN) goes back to her own login.
+    url.pathname = pathname.startsWith("/admin/crm/reports") || (pathname.startsWith("/admin/crm") && req.cookies.get(MEMBER_SEEN)?.value) ? "/crm-login" : "/admin/login";
     // Back to where they were going after login — e.g. the CRM's home-screen
     // shortcut opens logged out (iOS gives each home-screen app its own cookies).
     url.search = "";

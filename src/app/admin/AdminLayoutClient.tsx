@@ -236,8 +236,9 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   };
 
   const stopImpersonating = async () => {
-    await fetch("/api/admin/super/impersonate", { method: "DELETE" });
-    window.location.href = "/admin/super";
+    const r = await fetch("/api/admin/super/impersonate", { method: "DELETE" });
+    const j = await r.json().catch(() => ({}));
+    window.location.href = j.to ?? "/admin/super";
   };
 
   // Share / copy the public booking link so the owner can distribute it easily.

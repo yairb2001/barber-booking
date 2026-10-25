@@ -30,10 +30,10 @@ export const dynamic = "force-dynamic";
  */
 async function guard(req: NextRequest, what: { view?: string; action?: string }) {
   if (isSuperAdmin(req)) { await ensureCrmSeed(); return null; }
-  // A reports-only member (25.10.2026): the reports screen's views and actions, nothing else.
-  const { memberOf, MEMBER_VIEWS, MEMBER_ACTIONS } = await import("@/lib/crm/members");
+  // A member (25.10.2026): "admin" everything, like Yair; "reports" only the reports screen's views and actions.
+  const { memberOf, memberMay } = await import("@/lib/crm/members");
   const m = await memberOf(req);
-  if (m && (what.view ? MEMBER_VIEWS.has(what.view) : MEMBER_ACTIONS.has(what.action ?? ""))) return null;
+  if (m && memberMay(m, what)) { if (m.scope === "admin") await ensureCrmSeed(); return null; }
   return NextResponse.json({ error: "forbidden" }, { status: 403 });
 }
 
@@ -44,11 +44,12 @@ async function actorOf(req: NextRequest): Promise<string> {
   return (await memberOf(req))?.name ?? "צוות";
 }
 
-/** The reports member whose phone this push action is about; null for Yair (his own CRM pushes). */
+/** The reports member whose phone this push action is about; null for Yair and an "admin" member (the CRM's own pushes). */
 async function pushMember(req: NextRequest): Promise<string | null> {
   if (isSuperAdmin(req)) return null;
   const { memberOf } = await import("@/lib/crm/members");
-  return (await memberOf(req))?.id ?? null;
+  const m = await memberOf(req);
+  return m?.scope === "reports" ? m.id : null;
 }
 
 function monthStart(): Date {
@@ -531,12 +532,12 @@ export async function GET(req: NextRequest) {
       const { getMembers } = await import("@/lib/crm/members");
       return NextResponse.json({ members: (await getMembers()).map(m => ({ id: m.id, name: m.name, phone: m.phone, scope: m.scope, createdAt: m.createdAt })) });
     }
-    // Who is in the CRM: Yair (everything) or a reports member (the reports screen only).
+    // Who is in the CRM: Yair or an "admin" member (everything), or a reports member (the reports screen only).
     if (view === "whoami") {
       if (isSuperAdmin(req)) return NextResponse.json({ role: "admin", name: "יאיר" });
       const { memberOf } = await import("@/lib/crm/members");
       const m = await memberOf(req);
-      return NextResponse.json({ role: "reports", name: m?.name ?? "" });
+      return NextResponse.json({ role: m?.scope === "admin" ? "admin" : "reports", name: m?.name ?? "", member: true });
     }
     // The VAPID public key for the CRM push banner: here, because a member cannot reach /api/admin/native.
     if (view === "pushKey") {
@@ -988,8 +989,15 @@ export async function POST(req: NextRequest) {
       // Yair writes in a Chator chat himself: from Chator's number, and the agent steps back for 24h.
       case "member.add": {
         const { addMember } = await import("@/lib/crm/members");
-        const r = await addMember({ name: str("name"), phone: str("phone"), password: typeof b.password === "string" ? b.password : "" });
+        const { isScope } = await import("@/lib/crm/members");
+        const r = await addMember({ name: str("name"), phone: str("phone"), password: typeof b.password === "string" ? b.password : "", scope: isScope(b.scope) ? b.scope : "reports" });
         return r.ok ? NextResponse.json({ ok: true }) : NextResponse.json({ error: r.error }, { status: 400 });
+      }
+      case "member.scope": {
+        const { setMemberScope, isScope } = await import("@/lib/crm/members");
+        if (!isScope(b.scope)) return NextResponse.json({ error: "scope" }, { status: 400 });
+        await setMemberScope(str("id"), b.scope);
+        return NextResponse.json({ ok: true });
       }
       case "member.remove": {
         const { removeMember } = await import("@/lib/crm/members");

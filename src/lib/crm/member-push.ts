@@ -1,8 +1,9 @@
 /**
- * Pushes for the CRM's reports members (25.10.2026, Nika): "יש משהו שמחכה לך
+ * Pushes for the CRM's reports-only members (25.10.2026): "יש משהו שמחכה לך
  * במסך הדיווחים". Their phones are kept apart from Yair's (crmWebPushSubs in
  * the platform business, notify.ts): crm_settings "crmMemberPushSubs", a list
- * of devices per member id. Same VAPID pair as the rest of the app.
+ * of devices per member id. Same VAPID pair as the rest of the app. An "admin"
+ * member (Nika) gets the CRM's own pushes, like Yair, not these.
  *
  * Two pushes only: a shop filed a report (feedback route), and the morning fix
  * agent left fixes waiting for approval (fix-agent.ts notify). Both open the

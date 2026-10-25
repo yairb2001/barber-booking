@@ -22,7 +22,8 @@ import { rewardReferral } from "@/lib/chator-referral";
  *   suspend: boolean               → set/clear suspendedAt
  */
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Also a CRM "admin" member (Nika, 25.10.2026): the customer card's buttons. Deleting a business stays Yair's.
+  if (!isSuperAdmin(req) && !(await (await import("@/lib/crm/members")).crmAdminMemberOf(req))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const data: Record<string, unknown> = {};

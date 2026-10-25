@@ -3,9 +3,10 @@
 import { useState } from "react";
 
 /**
- * Login for the CRM's reports screen (25.10.2026, Yair: "אשתי תאשר, תבנה לה כניסה
- * משלה"). Phone and the password Yair set for her in the CRM settings; opens
- * straight on /admin/crm/reports. Yair himself logs in at /admin/login.
+ * The CRM members' login (25.10.2026, Yair: "אשתי תאשר, תבנה לה כניסה משלה").
+ * Phone and the password Yair set in the CRM settings; opens where she was
+ * going (next), else the whole CRM or, for a reports member, the reports.
+ * Yair himself logs in at /admin/login.
  */
 const C = { petrol: "#0B3A3C", turquoise: "#4FE3B1", ground: "#F4F7F6", line: "#DCE6E4", muted: "#536B6C", ink: "#0B1F21" };
 
@@ -18,7 +19,12 @@ export default function CrmLogin() {
     e.preventDefault();
     setBusy(true); setErr(null);
     const r = await fetch("/api/crm-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone, password }) }).catch(() => null);
-    if (r?.ok) { window.location.href = "/admin/crm/reports"; return; }
+    if (r?.ok) {
+      const next = new URLSearchParams(window.location.search).get("next") ?? "";
+      const j = await r.json().catch(() => ({}));
+      window.location.href = next.startsWith("/admin/crm") ? next : j.home ?? "/admin/crm";
+      return;
+    }
     setBusy(false);
     setErr((await r?.json().catch(() => null))?.error ?? "שגיאת רשת, נסי שוב");
   }
@@ -30,8 +36,8 @@ export default function CrmLogin() {
           <span className="text-xs font-semibold tracking-widest" style={{ color: C.petrol }}>CRM</span>
         </div>
         <div className="text-center">
-          <h1 className="m-0 text-xl font-extrabold">מסך הדיווחים</h1>
-          <p className="m-0 mt-1 text-sm" style={{ color: C.muted }}>הדיווחים של העסקים על הסוכן, והאישורים לתיקונים</p>
+          <h1 className="m-0 text-xl font-extrabold">כניסה ל-CRM</h1>
+          <p className="m-0 mt-1 text-sm" style={{ color: C.muted }}>עם הטלפון והסיסמה שיאיר הגדיר לך</p>
         </div>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold">טלפון</span>
@@ -43,7 +49,7 @@ export default function CrmLogin() {
         </label>
         {err && <p className="m-0 text-sm" style={{ color: "#B42318" }}>{err}</p>}
         <button type="submit" disabled={busy || !phone || !password} className="h-12 rounded-xl text-white font-bold disabled:opacity-50" style={{ background: C.petrol }}>{busy ? "נכנסת…" : "כניסה"}</button>
-        <a href="/admin/login?next=/admin/crm/reports" className="text-center text-xs" style={{ color: C.muted }}>יאיר? כניסת מנהל</a>
+        <a href="/admin/login?next=/admin/crm" className="text-center text-xs" style={{ color: C.muted }}>יאיר? כניסת מנהל</a>
       </form>
     </div>
   );

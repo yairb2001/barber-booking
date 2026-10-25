@@ -21,7 +21,7 @@ const ownerPhoneOf = (b: { phone: string | null; settings: string | null }): str
 };
 
 export async function POST(req: NextRequest) {
-  if (!isSuperAdmin(req)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  if (!isSuperAdmin(req) && !(await (await import("@/lib/crm/members")).crmAdminMemberOf(req))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const form = await req.formData();
   const file = form.get("file") as File | null;
   const to = String(form.get("to") ?? "");

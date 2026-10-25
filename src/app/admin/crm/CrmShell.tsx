@@ -34,8 +34,9 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  // A reports member (25.10.2026) sees only "דיווחים"; Yair sees everything.
+  // A reports member (25.10.2026) sees only "דיווחים"; Yair and an "admin" member (Nika) see everything.
   const [member, setMember] = useState<string | null>(null);
+  const [memberName, setMemberName] = useState<string | null>(null); // any member: her name and logout at the bottom
   const [menuOpen, setMenuOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [requests, setRequests] = useState(0); // shops' requests not seen yet
@@ -44,6 +45,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     fetch("/api/admin/crm?view=whoami", { cache: "no-store" }).then(async r => {
       if (r.status === 401) { router.replace(pathname.startsWith("/admin/crm/reports") ? "/crm-login" : `/admin/login?next=${encodeURIComponent(pathname)}`); return; }
       const me = r.ok ? await r.json() : null;
+      if (me?.member) setMemberName(me.name || "צוות");
       if (me?.role === "reports") {
         setMember(me.name || "צוות");
         if (!pathname.startsWith("/admin/crm/reports")) router.replace("/admin/crm/reports");
@@ -89,9 +91,9 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
         <Link key={n.href} href={n.href} onClick={() => setMenuOpen(false)} className="px-3 py-3 rounded-[10px] text-[15px]" style={{ background: active(n.href, n.exact, n.also) ? C.petrol2 : "transparent", color: active(n.href, n.exact, n.also) ? "#fff" : "#CFE3DF", fontWeight: active(n.href, n.exact, n.also) ? 600 : 400, textDecoration: "none" }}>{n.label}{n.href === "/admin/crm/requests" && requests > 0 && <span className="ms-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold" style={{ background: C.turquoise, color: C.ink }}>{requests}</span>}</Link>
       ))}
       <div className="mt-auto pt-4 border-t flex flex-col gap-2 px-2" style={{ borderColor: "#1E5C5B" }}>
-        {member ? (
+        {memberName ? (
           <>
-            <span className="text-[13px]" style={{ color: "#A9C9C4" }}>מחוברת: {member}</span>
+            <span className="text-[13px]" style={{ color: "#A9C9C4" }}>מחוברת: {memberName}</span>
             <a href="/api/crm-logout" className="text-[13px]" style={{ color: "#A9C9C4" }}>יציאה</a>
           </>
         ) : (
