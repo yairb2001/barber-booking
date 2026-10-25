@@ -12,6 +12,8 @@ import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/ca
 import { parseFix, parseReports, growthOf, needsGrowthOk, GROWTH_LIMIT } from "@/lib/agent/fix-queue";
 import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, AUTOMATION_GROUPS, type AutoStep } from "@/lib/crm/automations";
 import { computeSetup } from "@/lib/crm/setup-progress";
+import { getFunnelConfig, saveFunnelConfig, DEFAULT_FUNNEL, FUNNEL_VARIABLES, WA_STAGES, WA_STAGE_LABEL } from "@/lib/crm/wa-funnel";
+import { waFunnelView, waToLead, waSetNotRelevant, runWaFunnel } from "@/lib/agent/wa-funnel-run";
 import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
 import { saveSetupAnswers, restoreSetupVersion } from "@/lib/agent/setup-save";
 import { signOnboardingToken } from "@/lib/auth";
@@ -645,6 +647,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ business: biz, items: items.map(r => ({ id: r.id, fromChator: r.fromChator, author: r.authorName, body: r.body, audioUrl: r.audioUrl, audioSecs: r.audioSecs, at: r.createdAt, done: !!r.doneAt })) });
     }
     if (view === "leads") return NextResponse.json(await leadsView(sp.get("q")));
+    // The WhatsApp funnel (25.10.2026): the tab, and its settings.
+    if (view === "whatsapp") return NextResponse.json(await waFunnelView());
+    if (view === "waFunnel") return NextResponse.json({ config: await getFunnelConfig(), defaults: DEFAULT_FUNNEL, variables: FUNNEL_VARIABLES, stages: WA_STAGES.map(k => ({ key: k, label: WA_STAGE_LABEL[k] })) });
     if (view === "lead") { const v = await leadView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "calendar") return NextResponse.json(await calendarView(sp.get("week")));
     if (view === "automations") return NextResponse.json(await automationsView());
@@ -1011,6 +1016,24 @@ export async function POST(req: NextRequest) {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
         await prisma.conversation.updateMany({ where: { id: str("id"), businessId: DEMO }, data: { escalatedAt: b.on === true ? null : new Date(), status: b.on === true ? "active" : "escalated" } });
         return NextResponse.json({ ok: true });
+      }
+      case "wa.toLead": {
+        const r = await waToLead(str("id"));
+        return NextResponse.json({ ok: true, leadId: r.leadId });
+      }
+      case "wa.notRelevant": {
+        await waSetNotRelevant(str("id"), b.on !== false);
+        return NextResponse.json({ ok: true });
+      }
+      case "waFunnel.save": {
+        const config = await saveFunnelConfig(b.config);
+        return NextResponse.json({ ok: true, config });
+      }
+      // What the next pass would send to one number, nothing sent (tests).
+      case "waFunnel.dryRun": {
+        const out: { phone: string; key: string; text: string }[] = [];
+        await runWaFunnel(typeof b.at === "string" ? new Date(b.at) : new Date(), { phone: normalizeIsraeliPhone(str("phone")), out });
+        return NextResponse.json({ ok: true, out });
       }
       case "settings.update": {
         const patch: Partial<CrmSettings> = {};

@@ -15,6 +15,7 @@ import { CardHost } from "./CardModal";
 const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
   // The home is "היום": tasks folded into it, the numbers on their own screen (16.10.2026).
   { href: "/admin/crm", label: "היום", exact: true, also: "/admin/crm/tasks" },
+  { href: "/admin/crm/whatsapp", label: "וואטסאפ" },
   { href: "/admin/crm/leads", label: "לידים" },
   { href: "/admin/crm/chats", label: "צ׳אטים" },
   { href: "/admin/crm/calendar", label: "יומן שיחות" },
@@ -26,7 +27,7 @@ const NAV: { href: string; label: string; exact?: boolean; also?: string }[] = [
   { href: "/admin/crm/reports", label: "דיווחים" },
   { href: "/admin/crm/improvements", label: "שיפורי סוכן" },
   // Automations live under Settings (15.10.2026, Yair).
-  { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations" },
+  { href: "/admin/crm/settings", label: "הגדרות", also: "/admin/crm/automations|/admin/crm/wa-funnel" },
 ];
 
 export default function CrmShell({ children }: { children: React.ReactNode }) {
@@ -80,7 +81,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (allowed === null) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-500 font-heebo" style={{ background: C.ground }}>טוען…</div>;
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
-  const active = (h: string, exact?: boolean, also?: string) => (exact ? pathname === h : pathname.startsWith(h) || (!!also && pathname.startsWith(also)));
+  const active = (h: string, exact?: boolean, also?: string) => (exact ? pathname === h : pathname.startsWith(h) || (!!also && also.split("|").some(a => pathname.startsWith(a))));
   const nav = member ? NAV.filter(n => n.href === "/admin/crm/reports") : NAV;
   const links = (
     <>
