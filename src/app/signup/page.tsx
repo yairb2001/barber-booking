@@ -43,6 +43,16 @@ function chatorPixel(event?: string) {
  * (stage 1): petrol background, white card, one coral button, Outfit wordmark.
  */
 const C = { petrol: "#0B3A3C", turquoise: "#4FE3B1", coral: "#FF6B57", ink: "#0B1F21" };
+/** Every plan has all of Chator; the plans differ only in WhatsApp messages a month. */
+const PLAN_INCLUDES = [
+  "סוכן שעונה בוואטסאפ של העסק, קובע, מזיז ומבטל תורים, מסביב לשעון",
+  "יומן לכל הצוות וקישור שבו הלקוחות קובעים לבד",
+  "אישורים ותזכורות אוטומטיים לפני כל תור",
+  "רשימת המתנה שממלאת תורים שהתבטלו",
+  "כרטיס לכל לקוח, ותמונה של לקוחות חדשים וחוזרים",
+  "הקמה בליווי שלנו",
+];
+
 const input = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-base text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4FE3B1]";
 
 export default function SignupPage() {
@@ -167,19 +177,34 @@ export default function SignupPage() {
             <p className="text-sm text-slate-500 mt-0.5">בוחרים מסלול רק בסוף החודש, ואפשר להחליף בכל רגע.</p>
             <ul className="mt-4 divide-y divide-slate-100">
               {plans.map(p => (
-                <li key={p.key} className="flex items-center gap-3 py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-[15px]" style={{ color: C.ink }}>
-                      {p.name}
-                      {reco?.key === p.key && <span className="mr-2 align-middle text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: "#E3F7EF", color: C.petrol }}>מתאים לך</span>}
-                    </p>
-                    <p className="text-[13px] text-slate-500">עד {p.apptsEstimate.toLocaleString("he-IL")} תורים בחודש</p>
-                  </div>
-                  <p className="text-lg font-bold tabular-nums whitespace-nowrap" style={{ color: C.ink }}>{p.priceIls} ₪<span className="text-xs font-normal text-slate-500"> לחודש</span></p>
+                <li key={p.key}>
+                  <details className="group">
+                    <summary className="flex items-center gap-3 py-3 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-[15px]" style={{ color: C.ink }}>
+                          {p.name}
+                          {reco?.key === p.key && <span className="mr-2 align-middle text-[11px] font-semibold rounded-full px-2 py-0.5" style={{ background: "#E3F7EF", color: C.petrol }}>מתאים לך</span>}
+                        </p>
+                        <p className="text-[13px] text-slate-500">עד {p.apptsEstimate.toLocaleString("he-IL")} תורים בחודש</p>
+                      </div>
+                      <p className="text-lg font-bold tabular-nums whitespace-nowrap" style={{ color: C.ink }}>{p.priceIls} ₪<span className="text-xs font-normal text-slate-500"> לחודש</span></p>
+                      <svg className="w-4 h-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                    </summary>
+                    <div className="pb-4 -mt-1 space-y-2.5">
+                      <p className="text-sm rounded-xl px-3 py-2" style={{ background: "#E3F7EF", color: C.petrol }}>
+                        <b>{p.messages.toLocaleString("he-IL")} הודעות וואטסאפ בחודש.</b> זה מספיק לבערך {p.apptsEstimate.toLocaleString("he-IL")} תורים: התשובות של הסוכן, אישורים ותזכורות. התורים עצמם לא מוגבלים.
+                      </p>
+                      <ul className="space-y-1.5 text-sm text-slate-600">
+                        {PLAN_INCLUDES.map(line => (
+                          <li key={line} className="flex gap-2"><span aria-hidden="true" style={{ color: C.petrol }}>✓</span><span>{line}</span></li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
                 </li>
               ))}
             </ul>
-            <p className="text-xs text-slate-500 mt-2">המחירים כוללים מע״מ.</p>
+            <p className="text-xs text-slate-500 mt-2">המחירים כוללים מע״מ. דיוורים שיווקיים בתשלום נפרד.</p>
           </section>
         )}
       </div>
