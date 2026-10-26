@@ -31,7 +31,7 @@ export const AREAS: Area[] = [
     tabs: [{ href: "/admin/crm/customers", label: "פעילים" }, { href: "/admin/crm/setup", label: "בהקמה" }, { href: "/admin/crm/requests", label: "פניות", badge: "requests" }, { href: "/admin/crm/reports", label: "דיווחים על הסוכן", badge: "reports" }],
     also: ["/admin/crm/improvements"],
   },
-  { key: "numbers", label: "מספרים", href: "/admin/crm/numbers", icon: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></>), tabs: [{ href: "/admin/crm/numbers", label: "החודש" }, { href: "/admin/crm/invoices", label: "חשבוניות" }] },
+  { key: "numbers", label: "מספרים", href: "/admin/crm/numbers", icon: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></>), tabs: [{ href: "/admin/crm/numbers", label: "דשבורד" }, { href: "/admin/crm/invoices", label: "חשבוניות" }] },
   { key: "settings", label: "הגדרות", href: "/admin/crm/settings", icon: svg(<><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></>), tabs: [{ href: "/admin/crm/settings", label: "כללי" }, { href: "/admin/crm/automations", label: "אוטומציות" }, { href: "/admin/crm/wa-funnel", label: "הודעות המשפך" }] },
 ];
 

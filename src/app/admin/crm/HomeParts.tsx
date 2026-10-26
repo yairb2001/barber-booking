@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { C, NUM, TONE, Card, Tag, crmAction, ils, ago, SOURCE_LABEL, type Tone } from "./ui";
+import { C, Tag, crmAction, ago, type Tone } from "./ui";
 
 /**
  * CRM home pieces (10.10.2026, Yair: "התראות פעמון בצד, משימות לשונית בצד,
@@ -31,7 +31,6 @@ export const TASK_TAG: Record<Task["kind"], [string, Tone]> = {
   setup: ["הקמה", "warn"], customer: ["לקוח", "bad"], calendar: ["יומן", "warn"], automations: ["אוטומציות", "info"], manual: ["שלי", "ok"], billing: ["תשלום", "bad"],
 };
 const NOTIF_TAG: Record<string, [string, Tone]> = { lead: ["ליד", "ok"], call: ["שיחה", "info"], customer: ["לקוח", "info"], whatsapp: ["וואטסאפ", "warn"], system: ["מערכת", "bad"] };
-const FILLS = ["#BDEFDC", "#8FE6C6", C.turquoise, "#2BC293"];
 
 export const isoDay = (offset: number) => {
   const d = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()) + "T12:00:00Z");
@@ -158,92 +157,5 @@ export function AlertsPanel({ data, reload }: { data: { notifications: Notif[]; 
           );
         })}
       </section>
-  );
-}
-
-export function Numbers({ data }: { data: Home }) {
-  const k = data.kpis;
-  const bySource = k.leadsWeekBySource.map(s => `${s.n} ${SOURCE_LABEL[s.source] ?? s.source}`).join(" · ");
-  const top = data.funnel[0]?.n || 0;
-  const pct = (n: number, of: number) => (of > 0 ? Math.round((n / of) * 100) : 0);
-  const kpis = [
-    { label: "הכנסה חודשית קבועה", value: ils(k.mrr), sub: k.newPayingThisMonth ? `+${k.newPayingThisMonth} משלמים החודש` : "אין משלמים חדשים החודש", tone: k.newPayingThisMonth ? "ok" : "info" },
-    { label: "לקוחות משלמים", value: String(k.paying), sub: "", tone: "info" },
-    { label: "בניסיון חינם", value: String(k.trials), sub: k.trialsEndingWeek ? `${k.trialsEndingWeek} מסתיימים השבוע` : "", tone: "warn" },
-    { label: "לידים השבוע", value: String(k.leadsWeek), sub: bySource, tone: "info" },
-    { label: "עזבו החודש", value: String(k.churnedThisMonth), sub: `נטישה ${k.churnPct}%`, tone: k.churnedThisMonth ? "bad" : "info" },
-  ] as const;
-  return (
-    <>
-      <section aria-label="מספרים מרכזיים" className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))" }}>
-        {kpis.map(x => (
-          <div key={x.label} className="rounded-2xl px-3 py-3 flex flex-col gap-0.5 min-w-0" style={{ background: "#fff", border: `1px solid ${C.line}` }}>
-            <span className="text-[12px] leading-tight" style={{ color: C.muted }}>{x.label}</span>
-            <span className="text-[22px] font-bold leading-tight" style={{ ...NUM, color: C.petrol }}>{x.value}</span>
-            {x.sub && <span className="text-[11px] font-medium leading-snug" style={{ color: x.tone === "info" ? C.muted : TONE[x.tone].color }}>{x.sub}</span>}
-          </div>
-        ))}
-      </section>
-      <Card title="המשפך החודש" aside="מליד ועד לקוח משלם">
-        <div className="flex flex-col gap-3">
-          {data.funnel.map((f, i) => {
-            const prev = i === 0 ? f.n : data.funnel[i - 1].n;
-            return (
-              <div key={f.label} className="grid items-center gap-3" style={{ gridTemplateColumns: "96px minmax(0,1fr)" }}>
-                <span className="text-sm font-semibold">{f.label}</span>
-                <div className="flex flex-col gap-0.5 min-w-0">
-                  <div className="h-[28px] rounded-lg overflow-hidden" style={{ background: C.soft }}>
-                    <div className="h-full rounded-lg flex items-center ps-2.5" style={{ width: `${Math.max(top ? (f.n / top) * 100 : 0, f.n ? 6 : 0)}%`, background: FILLS[i] }}>
-                      <span className="text-sm font-bold" style={NUM}>{f.n}</span>
-                    </div>
-                  </div>
-                  {i > 0 && <span className="text-xs" style={{ color: C.muted }}>{pct(f.n, prev)}% מהשלב הקודם</span>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-      {data.chatorAgent && <ChatorAgentCost a={data.chatorAgent} />}
-      <Card title="רווחיות החודש">
-        {[
-          ["הכנסה חודשית", ils(data.money.revenue), C.ink],
-          ["טוקנים (כל הסוכנים)", `−${ils(data.money.tokensIls)}`, "#B42318"],
-          ["שרתים ודאטה בייס", `−${ils(data.money.infraIls)}`, "#B42318"],
-          ["נשאר", `${ils(data.money.left)}${data.money.revenue > 0 ? ` · ${pct(data.money.left, data.money.revenue)}%` : ""}`, data.money.left >= 0 ? "#0F6B4F" : "#B42318"],
-        ].map(([l, v, col]) => (
-          <div key={l} className="flex justify-between text-sm pb-2 mb-2" style={{ borderBottom: `1px solid ${C.soft}` }}>
-            <span style={{ color: C.muted }}>{l}</span>
-            <span className="font-bold" style={{ ...NUM, color: col }}>{v}</span>
-          </div>
-        ))}
-        <p className="m-0 text-xs" style={{ color: C.muted }}>טוקנים = עלות הסוכנים של כל הלקוחות יחד, בלי בדיקות.</p>
-      </Card>
-    </>
-  );
-}
-
-
-/** What Chator's own number cost this month: the sales agent + the demo shop (10.10.2026). */
-function ChatorAgentCost({ a }: { a: NonNullable<Home["chatorAgent"]> }) {
-  const per = (n: number) => (n > 0 ? `${(a.monthIls / n).toFixed(1)} ₪` : "—");
-  const rows: [string, string][] = [
-    ["סוכן המכירות", `${a.salesIls.toFixed(1)} ₪`],
-    ["מספרת הדמו (קובע התורים)", `${a.demoIls.toFixed(1)} ₪`],
-    ["היום", `${a.todayIls.toFixed(1)} ₪`],
-    [`לשיחה (${a.convs} שיחות)`, per(a.convs)],
-    [`לליד מוואטסאפ (${a.leads})`, per(a.leads)],
-    [`לשיחה שהסוכן קבע (${a.callsBooked})`, per(a.callsBooked)],
-  ];
-  return (
-    <Card collapsible defaultOpen title="הסוכן של צ'אטור והדמו" aside={`${a.monthIls.toFixed(1)} ₪ החודש`}>
-      {rows.map(([l, v]) => (
-        <div key={l} className="flex justify-between text-sm pb-2 mb-2" style={{ borderBottom: `1px solid ${C.soft}` }}>
-          <span style={{ color: C.muted }}>{l}</span>
-          <span className="font-bold" style={NUM}>{v}</span>
-        </div>
-      ))}
-      <p className="m-0 text-xs" style={{ color: C.muted }}>שיחות אמיתיות בלבד. בדיקות בארגז חול החודש: {a.testsIls.toFixed(1)} ₪.</p>
-    </Card>
   );
 }
