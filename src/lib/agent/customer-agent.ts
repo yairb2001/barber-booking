@@ -287,8 +287,6 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // request, and the "stuck agent" alarm counted lifetime messages. A fresh day =
 // a fresh conversation (the customer record still supplies name/appointments).
 const CONTEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** What the model writes when a message that landed mid-reply was already answered. */
-const ALREADY_ANSWERED = "[כבר נענה]";
 
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
@@ -2615,6 +2613,7 @@ async function runCustomerAgentCore(opts: {
   // may already answer it: "still waiting for an answer" made the model answer
   // twice ("הערב" + "היום", "רשמתי אותך" ×2, DOMINANT 14.10.2026), so it may
   // now say it was answered and nothing goes out.
+  const ALREADY_ANSWERED = "[כבר נענה]";
   const lateMessage = messages.length > 0 && messages[messages.length - 1].role === "assistant";
   if (lateMessage) {
     messages.push({ role: "user", content: `(הלקוח כתב את זה בזמן שענית לו: ${incomingText})\nאם מה שכבר כתבת למעלה עונה על זה, כתוב רק ${ALREADY_ANSWERED}. אחרת ענה רק על מה שחדש, בלי לחזור על מה שכבר כתבת.` });
