@@ -80,6 +80,8 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
   const v = useVocab();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // חבילת הסוכן בתחתית התפריט (26.10.2026): אחוז הניצול, לבעל העסק בלבד.
+  const [pkg, setPkg] = useState<{ free: boolean; pct: number | null } | null>(null);
   const [me, setMe] = useState<{ businessName?: string | null; isOwner: boolean; hasClasses?: boolean; staff?: { name: string } | null; chatsEnabled?: boolean; barbersCanAccessChats?: boolean; referralProgramEnabled?: boolean; onboardingCompletedAt?: string | null; activatedAt?: string | null; whatsappDown?: boolean; isSuperAdmin?: boolean; impersonating?: boolean; publicPath?: string; slug?: string | null; trialEnding?: { endsAt: string; planName: string | null; priceIls: number | null } | null; setupTasks?: { key: string; text: string; action: string; href: string; external?: boolean }[] } | null>(null);
   // Header title = the logged-in business (each shop sees its own name — this was
   // hard-coded "DOMINANT" for everyone); the product name until /me answers.
@@ -198,6 +200,10 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
     return () => { cancelled = true; clearInterval(id); window.removeEventListener("center:read", tick); document.removeEventListener("visibilitychange", tick); };
   }, [pathname]);
 
+  useEffect(() => {
+    if (!me?.isOwner) return;
+    fetch("/api/admin/agent-package", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(j => { if (j && typeof j.pct === "number") setPkg(j); }).catch(() => {});
+  }, [me?.isOwner]);
   const isOwner = me?.isOwner ?? true; // optimistic — show full menu while loading, API will reject any forbidden actions
 
   const referralEnabled = me?.referralProgramEnabled ?? false;
@@ -337,6 +343,18 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
         </nav>
 
         <div className="px-4 py-3 border-t border-slate-200 space-y-2">
+          {pkg && pkg.pct !== null && (
+            <Link href="/admin/settings/plan" onClick={() => setDrawerOpen(false)} className="block rounded-lg px-3 py-2 hover:bg-slate-50 transition" aria-label={`${pkg.free ? "החבילה החינמית" : "חבילת הסוכן"}: נוצלו ${pkg.pct} אחוז`}>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-600">{pkg.free ? "החבילה החינמית" : "חבילת הסוכן החודש"}</span>
+                <span className={`font-semibold tabular-nums ${pkg.pct >= 100 ? "text-red-600" : pkg.pct >= 80 ? "text-amber-600" : "text-slate-800"}`}>{Math.min(pkg.pct, 999)}%</span>
+              </div>
+              <div className="h-1.5 rounded-full bg-slate-100 mt-1.5 overflow-hidden">
+                <div className={`h-full rounded-full ${pkg.pct >= 100 ? "bg-red-500" : pkg.pct >= 80 ? "bg-amber-400" : "bg-teal-500"}`} style={{ width: `${Math.min(100, pkg.pct)}%` }} />
+              </div>
+              {pkg.pct >= 80 && <p className="text-[11px] mt-1 text-slate-500">{pkg.pct >= 100 ? "נגמרה. הסוכן לא עונה ללקוחות חדשים" : "עוד מעט נגמרת"} · להגדלה ←</p>}
+            </Link>
+          )}
           {/* Share the public booking link — easy to distribute to customers */}
           <button
             onClick={handleShareLink}
