@@ -38,6 +38,7 @@ import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { attributionFromOpening } from "@/lib/lead-attribution";
 import { computeDayAvailability } from "@/lib/agent/availability";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
+import { hiddenChatPhones } from "@/lib/crm/json-settings";
 import { withWaTrack, mergeWa, getFunnelConfig, fillFunnelText, WANTS_REP_RE, WANTS_DETAILS_RE, type WaTrack, type FunnelConfig } from "@/lib/crm/wa-funnel";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
@@ -253,6 +254,8 @@ export async function runDemoTurn(p: {
     select: { id: true, salesState: true, escalatedAt: true, _count: { select: { messages: true } } },
   });
   let state = parseSalesState(conv?.salesState);
+  // A hidden chat (small talk with someone Yair knows, 27.10.2026): the agent never writes; the message is already saved.
+  if (!p.sandbox && conv && (await hiddenChatPhones()).has(phone)) return { handled: true, mode: state?.mode, replies: [] };
   // A person (a rep from the CRM, or the phone itself) took this chat over in the
   // last 24 hours → the agent stays quiet; the message is already saved.
   if (!p.sandbox && conv?.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 && !OPT_OUT_RE.test(text)) {
@@ -1017,9 +1020,10 @@ export async function runInstagramSalesTurn(p: { conversationId: string; key: st
   const text = p.text.trim();
   if (!text) return { handled: false };
   if (!p.sandbox) await ensureCrmSeed().catch(() => {});
-  const conv = await prisma.conversation.findUnique({ where: { id: p.conversationId }, select: { id: true, salesState: true, escalatedAt: true } });
+  const conv = await prisma.conversation.findUnique({ where: { id: p.conversationId }, select: { id: true, phone: true, salesState: true, escalatedAt: true } });
   if (!conv) return { handled: false };
   let state = parseSalesState(conv.salesState);
+  if (!p.sandbox && (await hiddenChatPhones()).has(conv.phone)) return { handled: true, mode: state?.mode, replies: [] };
 
   // A person took this chat over in the last 24 hours (the CRM, or the Instagram app): quiet, said once.
   if (!p.sandbox && conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 && !OPT_OUT_RE.test(text)) {

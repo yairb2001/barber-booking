@@ -14,6 +14,7 @@ import { getCrmSettings } from "@/lib/crm/core";
 import { shopReports, OPEN_STAGES } from "@/lib/agent/shop-reports";
 import { waFunnelView } from "@/lib/agent/wa-funnel-run";
 import { appointmentInstant } from "@/lib/utils";
+import { marketingSpend } from "@/lib/crm/json-settings";
 
 const DAY = 86400_000;
 /** Below this many, a rate is shown with "מעט נתונים". */
@@ -176,6 +177,20 @@ export async function saasDashboard(rangeRaw: string | null, fromRaw: string | n
     top: [...accounts].sort((a, b) => b.cost30Ils - a.cost30Ils).slice(0, 3).filter(a => a.cost30Ils > 0).map(a => ({ id: a.id, name: a.name, ils: a.cost30Ils, price: a.price })),
   };
 
+  // ── Unit economics: what a new paying customer costs us, and what he leaves each month ──
+  // Marketing spend is entered per month in the finance screen (27.10.2026); with Chator's own agent it
+  // makes the cost of a new customer.
+  const spend = await marketingSpend();
+  const [fromKey, toKey] = [monthKey(since), monthKey(until)];
+  const spendIls = Object.entries(spend).filter(([m]) => range === "all" || (m >= fromKey && m <= toKey)).reduce((sum, [, v]) => sum + v, 0);
+  const newPaying = bizs.filter(b => within(b.paidAt)).length;
+  const marginPerCustomer = payingNow.length ? Math.round((mrr - payingNow.reduce((sum, a) => sum + a.cost30Ils, 0)) / payingNow.length - settings.infraCostIls / Math.max(1, active.length)) : null;
+  const cac = newPaying ? Math.round((spendIls + chatorAgentIls) / newPaying) : null;
+  const unit = {
+    spendIls, spend, newPaying, cac, marginPerCustomer,
+    paybackMonths: cac != null && marginPerCustomer && marginPerCustomer > 0 ? Math.round((cac / marginPerCustomer) * 10) / 10 : null,
+  };
+
   // ── Retention: signup cohorts, still not suspended N months later ──────────
   const cohortMonths = Array.from(new Set(bizs.map(b => monthKey(b.createdAt)))).slice(-6);
   const cohorts = cohortMonths.map(m => {
@@ -191,5 +206,5 @@ export async function saasDashboard(rangeRaw: string | null, fromRaw: string | n
   const suspendedInRange = bizs.filter(b => within(b.suspendedAt)).length;
   const retention = { cohorts, suspendedInRange, logoChurnPct: range === "all" ? null : pct(suspendedInRange, startActive), startActive };
 
-  return { range, since: since.toISOString(), until: until.toISOString(), action, firstValue, accounts, funnel, bySource, sales, revenue, costs, retention, few: FEW };
+  return { range, since: since.toISOString(), until: until.toISOString(), action, firstValue, accounts, funnel, bySource, sales, revenue, costs, unit, retention, few: FEW };
 }

@@ -9,6 +9,7 @@ import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { parseSalesState, salesReply, saveSalesState, createLead, repName, demoFreeSlot, SIGNUP_URL, LANDING_URL, type SalesState } from "@/lib/agent/sales-agent";
 import { isPhoneLikeName } from "@/lib/agent/followup-shared";
+import { hiddenChatPhones } from "@/lib/crm/json-settings";
 import { chatorCustomerPhones } from "@/lib/agent/chator-support";
 import { attributionFromOpening } from "@/lib/lead-attribution";
 import { getFunnelConfig, planContact, fillFunnelText, okHours, whenLabel, WA_STAGES, WA_STAGE_LABEL, WA_EXIT_LABEL, type ContactFacts, type FunnelConfig, type WaExit, type WaStage } from "@/lib/crm/wa-funnel";
@@ -42,8 +43,11 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
     orderBy: { lastMessageAt: "desc" }, take: 400,
     select: { id: true, phone: true, whatsappName: true, salesState: true, escalatedAt: true, lastMessageAt: true },
   });
-  if (!convs.length) return [];
-  const ids = convs.map(c => c.id);
+  // Hidden chats (people Yair knows) get no follow-ups and are not counted (27.10.2026).
+  const hidden = await hiddenChatPhones();
+  const kept = convs.filter(c => !hidden.has(c.phone));
+  if (!kept.length) return [];
+  const ids = kept.map(c => c.id);
   const [lasts, firsts, customers] = await Promise.all([
     prisma.conversationMessage.groupBy({ by: ["conversationId", "role"], where: { conversationId: { in: ids }, role: { in: ["user", "assistant"] } }, _max: { createdAt: true } }),
     prisma.conversationMessage.findMany({ where: { conversationId: { in: ids }, role: "user" }, orderBy: { createdAt: "asc" }, take: 5000, select: { conversationId: true, content: true } }),
@@ -61,13 +65,13 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
     if (!first.has(m.conversationId)) first.set(m.conversationId, m.content);
     if (ACADEMY_RE.test(m.content)) academy.add(m.conversationId);
   }
-  const phones = convs.filter(c => !c.phone.startsWith("ig:")).flatMap(c => phoneVariants(c.phone));
+  const phones = kept.filter(c => !c.phone.startsWith("ig:")).flatMap(c => phoneVariants(c.phone));
   const leads = phones.length ? await prisma.lead.findMany({ where: { phone: { in: phones } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, optedOut: true } }) : [];
   const leadOf = new Map<string, { id: string; optedOut: boolean }>();
   for (const l of leads) { const n = normalizeIsraeliPhone(l.phone); if (n && !leadOf.has(n)) leadOf.set(n, l); }
 
   const out: Contact[] = [];
-  for (const c of convs) {
+  for (const c of kept) {
     const state = parseSalesState(c.salesState);
     if (!state) continue;
     const ig = c.phone.startsWith("ig:");

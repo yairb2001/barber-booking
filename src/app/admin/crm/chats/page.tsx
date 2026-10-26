@@ -28,11 +28,45 @@ const CHANNELS: { key: "all" | Chat["channel"]; label: string }[] = [
 ];
 
 export default function ChatsPage() {
-  return <Suspense fallback={<p style={{ color: C.muted }}>טוען…</p>}><ChatsInner /></Suspense>;
+  return <Suspense fallback={<p style={{ color: C.muted }}>טוען…</p>}><ChatsSwitch /></Suspense>;
+}
+
+function ChatsSwitch() {
+  return useSearchParams().get("h") === "1" ? <HiddenChats /> : <ChatsInner />;
+}
+
+/** The hidden chats (27.10.2026: personal chats with people Yair knows), each can come back. */
+function HiddenChats() {
+  const router = useRouter();
+  const { data, error, reload } = useCrm<{ chats: Chat[] }>("view=chats&hidden=1");
+  const [busy, setBusy] = useState<string | null>(null);
+  if (error) return <p className="text-red-700">{error}</p>;
+  if (!data) return <p style={{ color: C.muted }}>טוען…</p>;
+  const show = async (id: string) => { setBusy(id); await crmAction({ action: "chat.hide", id, on: false }); setBusy(null); await reload(); };
+  return (
+    <div className="flex flex-col gap-3 max-w-3xl">
+      <button type="button" onClick={() => router.replace("/admin/crm/chats")} className="self-start text-sm min-h-[36px]" style={{ color: C.petrol }}>→ חזרה לצ׳אטים</button>
+      <PageHead title="שיחות מוסתרות" sub="שיחות אישיות: לא ברשימות, בלי סוכן ובלי הודעות אוטומטיות" />
+      {data.chats.length === 0 && <p className="m-0 p-4 text-sm bg-white rounded-2xl" style={{ color: C.muted, border: `1px solid ${C.line}` }}>אין שיחות מוסתרות.</p>}
+      {data.chats.length > 0 && (
+        <section className="bg-white rounded-2xl" style={{ border: `1px solid ${C.line}` }}>
+          {data.chats.map((c, i) => (
+            <div key={c.id} className="flex items-center gap-3 px-3.5 py-3" style={{ borderTop: i ? `1px solid ${C.soft}` : undefined }}>
+              <Link href={`/admin/crm/chats/${c.id}`} className="flex-1 min-w-0" style={{ color: C.ink, textDecoration: "none" }}>
+                <b className="text-[15px] truncate block">{c.name || c.phone || "לקוח מאינסטגרם"}</b>
+                <span className="block text-[13px] truncate" style={{ color: C.muted }}>{c.last?.text ?? ""}</span>
+              </Link>
+              <button type="button" disabled={busy === c.id} onClick={() => void show(c.id)} className="shrink-0 min-h-[36px] px-3 rounded-full text-[13px] font-semibold" style={{ border: `1px solid ${C.petrol}`, color: C.petrol }}>החזר</button>
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
 }
 
 function ChatsInner() {
-  const { data, error, reload } = useCrm<{ chats: Chat[] }>("view=chats");
+  const { data, error, reload } = useCrm<{ chats: Chat[]; hiddenCount?: number }>("view=chats");
   const [q, setQ] = useState("");
   const sp = useSearchParams();
   const router = useRouter();
@@ -115,6 +149,7 @@ function ChatsInner() {
           {byAgent.map(row)}
         </section>
       )}
+      {(data.hiddenCount ?? 0) > 0 && <button type="button" onClick={() => setParam("h", "1")} className="self-start min-h-[36px] text-sm" style={{ color: C.muted }}>שיחות מוסתרות ({data.hiddenCount})</button>}
     </div>
   );
 }

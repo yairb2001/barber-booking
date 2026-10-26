@@ -1,6 +1,38 @@
 "use client";
 
+import { useState } from "react";
 import { C, NUM, TONE } from "../ui";
+import type { saasDashboard } from "@/lib/crm/saas";
+
+export type SaasData = Awaited<ReturnType<typeof saasDashboard>>;
+const RANGES = [["30", "30 יום"], ["90", "90 יום"], ["all", "מההתחלה"], ["custom", "טווח תאריכים"]] as const;
+const isoDay = (offset: number) => new Date(Date.now() + offset * 86400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+
+/** The period of the numbers: 30 / 90 days, from the start, or a range of dates of his own (Yair, 26.10.2026). */
+export function useSaasRange() {
+  const [range, setRange] = useState<(typeof RANGES)[number][0]>("30");
+  const [from, setFrom] = useState(isoDay(-30));
+  const [to, setTo] = useState(isoDay(0));
+  const query = range === "custom" ? `view=saas&range=custom&from=${from}&to=${to}` : `view=saas&range=${range}`;
+  const field = "h-9 rounded-lg px-2 text-[13px] bg-white";
+  const picker = (
+    <div className="flex flex-col gap-2">
+      <div role="tablist" aria-label="תקופה" className="flex flex-wrap gap-1.5">
+        {RANGES.map(([k, l]) => (
+          <button key={k} type="button" role="tab" aria-selected={range === k} onClick={() => setRange(k)} className="h-9 px-3 rounded-full text-[13px] font-semibold"
+            style={range === k ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}` } : { background: "#fff", color: C.muted, border: `1px solid ${C.line}` }}>{l}</button>
+        ))}
+      </div>
+      {range === "custom" && (
+        <div className="flex flex-wrap items-center gap-2 text-[13px]" style={{ color: C.muted }}>
+          <label className="flex items-center gap-1.5">מתאריך<input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
+          <label className="flex items-center gap-1.5">עד<input type="date" value={to} min={from} max={isoDay(0)} onChange={e => e.target.value && setTo(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
+        </div>
+      )}
+    </div>
+  );
+  return { query, picker };
+}
 
 /** Small pieces of the dashboard (numbers/Dashboard.tsx, numbers/Accounts.tsx). */
 export const STAGE: Record<string, [string, string, string]> = {

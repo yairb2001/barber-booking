@@ -50,6 +50,15 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
     setBusy(false);
     await reload();
   }
+  // A personal chat (someone Yair knows, 27.10.2026): out of the lists, no agent, no follow-ups.
+  async function hide() {
+    if (!confirm("להסתיר את השיחה? היא תצא מהרשימות, והסוכן וההודעות האוטומטיות לא יכתבו לו. אפשר להחזיר אותה בכל רגע.")) return;
+    setBusy(true);
+    const r = await crmAction({ action: "chat.hide", id, on: true });
+    setBusy(false);
+    if (!r.ok) { setNote(r.error ?? "לא הצלחתי להסתיר"); return; }
+    if (onBack) onBack(); else await reload();
+  }
   async function agent(on: boolean) {
     setBusy(true);
     await crmAction({ action: "chat.agent", id, on });
@@ -100,6 +109,7 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
             {chat.lead?.businessId && <Link href={`/admin/crm/customers/${chat.lead.businessId}`} className={pill} style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס הלקוח</Link>}
             {waiting && <button type="button" disabled={busy} onClick={() => void handled()} className={pill} style={{ background: "#E3F7EF", color: "#0F6B4F", border: "1px solid #BFE8D6" }} title="מסיר את הסימון האדום בלי לענות">✓ סמן טופל</button>}
             <button type="button" onClick={() => setReportOpen(true)} className={pill} style={{ border: `1px solid ${C.line}`, color: C.muted, background: "#fff" }} title="סמן תשובות של הסוכן שלא אהבת, ומה לא היה בסדר">דווח על השיחה</button>
+            <button type="button" disabled={busy} onClick={() => void hide()} className={pill} style={{ border: `1px solid ${C.line}`, color: C.muted, background: "#fff" }} title="שיחה אישית: יוצאת מהרשימות, בלי סוכן ובלי הודעות אוטומטיות">הסתר</button>
           </div>
         )}
       </header>

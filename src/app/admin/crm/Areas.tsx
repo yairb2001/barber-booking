@@ -15,7 +15,7 @@ export type Area = { key: string; label: string; href: string; icon: React.React
 
 const svg = (d: React.ReactNode) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>;
 
-// Order (26.10.2026, Yair): היום, מכירות, צ׳אטים, לקוחות, then numbers and settings.
+// Order (26.10.2026, Yair): היום, מכירות, צ׳אטים, לקוחות, then numbers, finance and settings.
 export const AREAS: Area[] = [
   { key: "today", label: "היום", href: "/admin/crm", icon: svg(<><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>), tabs: [], also: ["/admin/crm/tasks", "/admin/crm/alerts"] },
   {
@@ -31,7 +31,9 @@ export const AREAS: Area[] = [
     tabs: [{ href: "/admin/crm/customers", label: "פעילים" }, { href: "/admin/crm/setup", label: "בהקמה" }, { href: "/admin/crm/requests", label: "פניות", badge: "requests" }, { href: "/admin/crm/reports", label: "דיווחים על הסוכן", badge: "reports" }],
     also: ["/admin/crm/improvements"],
   },
-  { key: "numbers", label: "מספרים", href: "/admin/crm/numbers", icon: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></>), tabs: [{ href: "/admin/crm/numbers", label: "דשבורד" }, { href: "/admin/crm/invoices", label: "חשבוניות" }] },
+  { key: "numbers", label: "מספרים", href: "/admin/crm/numbers", icon: svg(<><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" /></>), tabs: [{ href: "/admin/crm/numbers", label: "דשבורד" }] },
+  // כספים, its own place (27.10.2026, Yair: "לשונית נפרדת ולא בתוך מספרים").
+  { key: "finance", label: "כספים", href: "/admin/crm/finance", icon: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></>), tabs: [{ href: "/admin/crm/finance", label: "הכנסות ועלויות" }, { href: "/admin/crm/invoices", label: "חשבוניות" }] },
   { key: "settings", label: "הגדרות", href: "/admin/crm/settings", icon: svg(<><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></>), tabs: [{ href: "/admin/crm/settings", label: "כללי" }, { href: "/admin/crm/automations", label: "אוטומציות" }, { href: "/admin/crm/wa-funnel", label: "הודעות המשפך" }] },
 ];
 

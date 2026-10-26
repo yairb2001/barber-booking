@@ -3,48 +3,26 @@
 import Link from "next/link";
 import { useState } from "react";
 import { C, NUM, TONE, Card, useCrm, ils } from "../ui";
-import type { saasDashboard } from "@/lib/crm/saas";
-import { Few, Stat, Stats, Note, days } from "./parts";
+import { Few, Stat, Stats, Note, days, useSaasRange, type SaasData } from "./parts";
 import Accounts from "./Accounts";
 
 /**
  * The SaaS dashboard (26.10.2026, Yair: "פירוט מעמיק מאוד לסאאס"; the order after GPT's review):
- * what needs action, first value, every account, the funnel and sales, revenue, costs, retention.
+ * what needs action, first value, every account, the funnel and sales, retention. Revenue and costs
+ * have their own screen, כספים (27.10.2026).
  * Data: view=saas (src/lib/crm/saas.ts). A rate on too little data says so.
  */
-type Data = Awaited<ReturnType<typeof saasDashboard>>;
-const RANGES = [["30", "30 יום"], ["90", "90 יום"], ["all", "מההתחלה"], ["custom", "טווח תאריכים"]] as const;
-const isoDay = (offset: number) => new Date(Date.now() + offset * 86400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
+type Data = SaasData;
 const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "—");
 
 export default function Dashboard() {
-  const [range, setRange] = useState<(typeof RANGES)[number][0]>("30");
-  // A range of dates of his own (Yair, 26.10.2026: "לבחור טווח תאריכים").
-  const [from, setFrom] = useState(isoDay(-30));
-  const [to, setTo] = useState(isoDay(0));
   const [allActions, setAllActions] = useState(false);
-  const { data, error } = useCrm<Data>(range === "custom" ? `view=saas&range=custom&from=${from}&to=${to}` : `view=saas&range=${range}`);
+  const { query, picker } = useSaasRange();
+  const { data, error } = useCrm<Data>(query);
 
-  const field = "h-9 rounded-lg px-2 text-[13px] bg-white";
-  const picker = (
-    <div className="flex flex-col gap-2">
-    <div role="tablist" aria-label="תקופה" className="flex flex-wrap gap-1.5">
-      {RANGES.map(([k, l]) => (
-        <button key={k} type="button" role="tab" aria-selected={range === k} onClick={() => setRange(k)} className="h-9 px-3 rounded-full text-[13px] font-semibold"
-          style={range === k ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}` } : { background: "#fff", color: C.muted, border: `1px solid ${C.line}` }}>{l}</button>
-      ))}
-    </div>
-    {range === "custom" && (
-      <div className="flex flex-wrap items-center gap-2 text-[13px]" style={{ color: C.muted }}>
-        <label className="flex items-center gap-1.5">מתאריך<input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
-        <label className="flex items-center gap-1.5">עד<input type="date" value={to} min={from} max={isoDay(0)} onChange={e => e.target.value && setTo(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
-      </div>
-    )}
-    </div>
-  );
   if (error) return <>{picker}<p className="text-red-700">{error}</p></>;
   if (!data) return <>{picker}<p style={{ color: C.muted }}>מחשב את המספרים…</p></>;
-  const { firstValue: fv, revenue: rv, costs: cs, retention: rt, sales: sl, few } = data;
+  const { firstValue: fv, revenue: rv, retention: rt, sales: sl, few } = data;
   const contacts = data.funnel[0].n + sl.leads;
 
   // Two groups: the WhatsApp funnel, then the shops that signed up. No rate across the border.
@@ -54,7 +32,6 @@ export default function Dashboard() {
   const drops = data.funnel.map((f, i) => (rated(i) ? 1 - f.n / data.funnel[i - 1].n : -1));
   const leak = drops.indexOf(Math.max(...drops));
   const top = Math.max(1, ...data.funnel.map(f => f.n));
-  const maxMrr = Math.max(1, ...rv.history.map(h => h.mrr));
 
   return (
     <div className="flex flex-col gap-4">
@@ -144,47 +121,6 @@ export default function Dashboard() {
           <Stat v={sl.closeRate == null ? "—" : `${sl.closeRate}%`} l="אחוז סגירה" />
         </Stats>
         {sl.leadsBySource.length > 0 && <Note>לידים לפי מקור: {sl.leadsBySource.map(s => `${s.source} ${s.n}`).join(" · ")}</Note>}
-      </Card>
-
-      {/* Revenue */}
-      <Card title="הכנסה" aside={<Few n={rv.paying} few={few} />}>
-        <Stats>
-          <Stat v={ils(rv.mrr)} l="הכנסה חודשית קבועה" />
-          <Stat v={ils(rv.arr)} l="בקצב שנתי" />
-          <Stat v={rv.paying} l="לקוחות משלמים" />
-          <Stat v={rv.arpa == null ? "—" : ils(rv.arpa)} l="ממוצע ללקוח" />
-          <Stat v={rv.newMrr ? `+${ils(rv.newMrr)}` : ils(0)} l="חדשה בתקופה" tone={rv.newMrr ? "ok" : undefined} />
-          <Stat v={rv.churnedMrr ? `−${ils(rv.churnedMrr)}` : ils(0)} l="נעלמה בנטישה" tone={rv.churnedMrr ? "bad" : undefined} />
-          <Stat v={ils(rv.collected)} l="נגבה בחשבוניות" />
-          <Stat v={rv.trialsEnding7} l="ניסיונות שנגמרים השבוע" tone={rv.trialsEnding7 ? "warn" : undefined} />
-        </Stats>
-        {rv.history.every(h => !h.mrr) ? <Note>הגרף של 6 החודשים יתמלא מהלקוח המשלם הראשון.</Note> : <>
-        <div className="mt-4 flex items-end gap-2 h-[120px]" aria-label="הכנסה חודשית קבועה, 6 חודשים">
-          {rv.history.map(h => (
-            <div key={h.month} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-              <span className="text-[11px]" style={{ ...NUM, color: C.muted }}>{h.mrr ? ils(h.mrr) : ""}</span>
-              <div className="w-full rounded-t-lg" style={{ height: `${Math.max(h.mrr ? 8 : 2, (h.mrr / maxMrr) * 80)}px`, background: h.mrr ? C.turquoise : C.soft }} />
-              <span className="text-[11px]" style={{ ...NUM, color: C.muted }}>{h.month.slice(5)}/{h.month.slice(2, 4)}</span>
-            </div>
-          ))}
-        </div>
-        <Note>משוחזר מתאריך התשלום, ההשהיה והמחיר החודשי. עוד אין היסטוריה של שינויי מחיר.</Note>
-        </>}
-      </Card>
-
-      {/* Costs */}
-      <Card title="עלויות" aside="30 יום אחרונים">
-        <Stats>
-          <Stat v={ils(cs.agentIls30)} l="הסוכנים של כל העסקים" />
-          <Stat v={cs.perAccount == null ? "—" : ils(cs.perAccount)} l="לעסק פעיל בממוצע" />
-          <Stat v={ils(cs.infraIls)} l="שרתים בחודש" />
-          <Stat v={ils(cs.chatorAgentIls)} l="הסוכן של צ׳אטור בתקופה" />
-          <Stat v={cs.perLead == null ? "—" : ils(cs.perLead)} l="לכל פנייה" />
-          <Stat v={cs.perSignup == null ? "—" : ils(cs.perSignup)} l="לכל הרשמה" />
-          <Stat v={cs.grossMarginPct == null ? "—" : `${cs.grossMarginPct}%`} l="רווח גולמי" tone={cs.grossMarginPct == null ? undefined : cs.grossMarginPct >= 80 ? "ok" : "warn"} />
-        </Stats>
-        {cs.top.length > 0 && <Note>הכי יקרים לנו: {cs.top.map(t => `${t.name} ${ils(t.ils)}${t.price ? ` (משלם ${ils(t.price)})` : ""}`).join(" · ")}</Note>}
-        {cs.grossMarginPct == null && <Note>רווח גולמי יחושב כשתהיה הכנסה. עלות גיוס לקוח תתווסף כשנזין הוצאות שיווק.</Note>}
       </Card>
 
       {/* Retention */}

@@ -12,6 +12,7 @@ import { bookCall, cancelCall, setCallOutcome, type Outcome } from "@/lib/crm/ca
 import { parseFix, parseReports, growthOf, needsGrowthOk, GROWTH_LIMIT } from "@/lib/agent/fix-queue";
 import { startAutomation, stopLeadAutomations, parseSteps, parseStopOn, STOP_LABELS, VARIABLES, AUTOMATION_GROUPS, type AutoStep } from "@/lib/crm/automations";
 import { computeSetup } from "@/lib/crm/setup-progress";
+import { hiddenChatPhones, setChatHidden } from "@/lib/crm/json-settings";
 import { getFunnelConfig, saveFunnelConfig, DEFAULT_FUNNEL, FUNNEL_VARIABLES, WA_STAGES, WA_STAGE_LABEL } from "@/lib/crm/wa-funnel";
 import { waFunnelView, waToLead, waSetNotRelevant, runWaFunnel } from "@/lib/agent/wa-funnel-run";
 import { setupFieldsFor, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -287,7 +288,8 @@ async function todayView() {
     orderBy: { lastMessageAt: "desc" }, take: 60,
     select: { id: true, phone: true, whatsappName: true, handledAt: true, messages: { orderBy: { createdAt: "desc" }, take: 1, select: { role: true, content: true, createdAt: true } } },
   });
-  const waitingChats = chats.filter(c => { const m = c.messages[0]; return m && m.role === "user" && m.createdAt.getTime() < now - 3 * 60_000 && !(c.handledAt && m.createdAt <= c.handledAt); }).slice(0, 10);
+  const hiddenChats = await hiddenChatPhones();
+  const waitingChats = chats.filter(c => !hiddenChats.has(c.phone)).filter(c => { const m = c.messages[0]; return m && m.role === "user" && m.createdAt.getTime() < now - 3 * 60_000 && !(c.handledAt && m.createdAt <= c.handledAt); }).slice(0, 10);
   const local = (p: string) => p.replace(/^972/, "0");
   const chatLeads = await prisma.lead.findMany({ where: { phone: { in: waitingChats.flatMap(c => [c.phone, local(c.phone)]) } }, select: { id: true, phone: true, name: true } });
   for (const c of waitingChats) {
@@ -598,7 +600,9 @@ export async function GET(req: NextRequest) {
         });
         // WhatsApp numbers and Instagram DMs ("ig:<IGSID>", 12.10); no groups, no channels.
         const isIg = (p: string) => p.startsWith("ig:");
-        const people = convs.filter(c => /^\d{8,15}$/.test(c.phone) || isIg(c.phone));
+        const hidden = await hiddenChatPhones();
+        const showHidden = sp.get("hidden") === "1";
+        const people = convs.filter(c => (/^\d{8,15}$/.test(c.phone) || isIg(c.phone)) && hidden.has(c.phone) === showHidden);
         const leads = await prisma.lead.findMany({ where: { phone: { in: people.filter(c => !isIg(c.phone)).flatMap(c => forms(c.phone)) } }, orderBy: { createdAt: "desc" }, select: { id: true, phone: true, name: true, stage: true, businessName: true } });
         const leadOf = (p: string) => (isIg(p) ? undefined : leads.find(l => local(l.phone) === local(p)));
         // Chats with our customers' owners have their own tabs (26.10.2026): in setup (not live yet, as on
@@ -611,7 +615,7 @@ export async function GET(req: NextRequest) {
         const { instagramAccountOf, instagramAgentAnswers, igsidOf } = await import("@/lib/messaging/instagram");
         const igAccount = instagramAccountOf((await prisma.business.findUnique({ where: { id: DEMO }, select: { settings: true } }))?.settings);
         const agentFor = (p: string) => !isIg(p) || (!!igAccount && instagramAgentAnswers(igAccount, igsidOf(p)));
-        return NextResponse.json({ chats: people.map(c => {
+        return NextResponse.json({ hiddenCount: showHidden ? people.length : convs.filter(c => hidden.has(c.phone)).length, chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
           return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, customer: isIg(c.phone) ? null : owners.get(local(c.phone))?.name ?? null, customerSetup: !isIg(c.phone) && inSetup.has(owners.get(local(c.phone))?.id ?? ""), leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
@@ -1079,6 +1083,20 @@ export async function POST(req: NextRequest) {
       case "chat.handled": {
         const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
         await prisma.conversation.updateMany({ where: { id: str("id"), businessId: DEMO }, data: b.handled === false ? { handledAt: null } : { handledAt: new Date(), lastReadAt: new Date() } });
+        return NextResponse.json({ ok: true });
+      }
+      // Marketing spend for a month (the finance screen, 27.10.2026): the cost of a new customer.
+      case "finance.marketingSpend": {
+        const { setMarketingSpend } = await import("@/lib/crm/json-settings");
+        try { await setMarketingSpend(str("month"), Number(b.ils)); } catch { return NextResponse.json({ error: "חודש או סכום לא תקינים" }, { status: 400 }); }
+        return NextResponse.json({ ok: true });
+      }
+      // A chat with someone Yair knows (27.10.2026): out of the lists, no agent, no follow-ups. on:false shows it again.
+      case "chat.hide": {
+        const { DEMO_BUSINESS_ID: DEMO } = await import("@/lib/demo-widget");
+        const conv = await prisma.conversation.findFirst({ where: { id: str("id"), businessId: DEMO }, select: { phone: true } });
+        if (!conv) return NextResponse.json({ error: "השיחה לא נמצאה" }, { status: 404 });
+        await setChatHidden(conv.phone, b.on !== false);
         return NextResponse.json({ ok: true });
       }
       case "chat.agent": {

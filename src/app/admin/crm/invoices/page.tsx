@@ -21,7 +21,7 @@ export default function InvoicesPage() {
   if (!data) return <p style={{ color: C.muted }}>טוען…</p>;
   return (
     <div className="flex flex-col gap-3.5">
-      <PageHead title="מספרים" sub={`${data.providerConnected ? "מגיעות לבד מ-Invoice4U" : "Invoice4U עוד לא מחובר, מוסיפים ידנית מכרטיס הלקוח"} · שולם החודש ${monthTotal.toLocaleString("he-IL")} ₪`} />
+      <PageHead title="כספים" sub={`${data.providerConnected ? "מגיעות לבד מ-Invoice4U" : "Invoice4U עוד לא מחובר, מוסיפים ידנית מכרטיס הלקוח"} · שולם החודש ${monthTotal.toLocaleString("he-IL")} ₪`} />
       <AreaTabs />
       <div className="flex gap-1.5">
         {([["all", "הכל"], ["open", "פתוחות ונכשלו"], ["paid", "שולמו"]] as const).map(([k, l]) => (

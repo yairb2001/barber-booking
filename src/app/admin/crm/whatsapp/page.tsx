@@ -152,6 +152,7 @@ export default function WhatsappFunnelPage() {
                       {r.exit === "lead" && r.leadId && <Link href={`/admin/crm/leads/${r.leadId}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ background: "#fff", color: C.petrol, border: `1px solid ${C.petrol}`, textDecoration: "none" }}>לכרטיס הליד</Link>}
                       {!r.exit && <Btn disabled={busy === r.id} onClick={() => act(r.id, { action: "wa.toLead", id: r.id }, `${r.name} עבר ללידים`)}>העבר לליד</Btn>}
                       {!r.exit && <Btn kind="ghost" disabled={busy === r.id} onClick={() => act(r.id, { action: "wa.notRelevant", id: r.id, on: true }, `${r.name} סומן לא רלוונטי`)}>לא רלוונטי</Btn>}
+                      <Btn kind="ghost" disabled={busy === r.id} onClick={() => confirm("להסתיר? זו שיחה אישית: היא תצא מהרשימות, בלי סוכן ובלי הודעות אוטומטיות.") && act(r.id, { action: "chat.hide", id: r.id, on: true }, `${r.name} הוסתר`)} title="שיחה אישית עם מישהו שאתה מכיר">הסתר</Btn>
                       {r.exit === "not_relevant" && r.exitBy === "סומן ידנית" && <Btn kind="ghost" disabled={busy === r.id} onClick={() => act(r.id, { action: "wa.notRelevant", id: r.id, on: false }, `${r.name} חזר למשפך`)}>החזר למשפך</Btn>}
                     </div>
                   </div>
