@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { C, PageHead, Tag, useCrm, ago, STAGE_TONE, crmAction } from "../ui";
+import { openCard } from "../CardModal";
 
 /**
  * Chator's WhatsApp chats (10.10.2026, Yair: "צ'אטים בתפריט, בלי קבוצות"), and its Instagram DMs (12.10).
@@ -14,7 +15,7 @@ import { C, PageHead, Tag, useCrm, ago, STAGE_TONE, crmAction } from "../ui";
  * משלמים ויש לקוחות בהקמה"): people still interested, customers in setup, active customers. Under them,
  * smaller channel tabs ("סיווג בין אינסטגרם לווצאפ, לשוניות קטנות יותר מתחת").
  */
-type Chat = { id: string; channel: "whatsapp" | "instagram"; agent: boolean; handled?: boolean; phone: string; name: string | null; shop: string | null; customer: string | null; customerSetup: boolean; leadId: string | null; stage: string | null; mode: string | null; at: string; last: { role: string; source: string | null; text: string } | null; waiting: boolean; paused: boolean };
+type Chat = { id: string; channel: "whatsapp" | "instagram"; agent: boolean; handled?: boolean; phone: string; name: string | null; shop: string | null; customer: string | null; customerId?: string | null; customerSetup: boolean; leadId: string | null; stage: string | null; mode: string | null; at: string; last: { role: string; source: string | null; text: string } | null; waiting: boolean; paused: boolean };
 
 const TABS: { key: "leads" | "setup" | "customers"; label: string; of: (c: Chat) => boolean }[] = [
   { key: "leads", label: "מתעניינים", of: c => !c.customer },
@@ -86,11 +87,11 @@ function ChatsInner() {
   const byAgent = list.filter(c => !c.paused && c.agent);
   const row = (c: Chat, i: number) => (
     <Link key={c.id} href={`/admin/crm/chats/${c.id}`} className="flex items-start gap-3 px-3.5 py-3" style={{ borderTop: i ? `1px solid ${C.soft}` : undefined, color: C.ink, textDecoration: "none" }}>
-      <span className="w-10 h-10 rounded-full shrink-0 inline-flex items-center justify-center font-bold" style={{ background: C.mist, color: C.petrol }}>{(c.name || "?").trim().charAt(0)}</span>
+      <span className="w-10 h-10 rounded-full shrink-0 inline-flex items-center justify-center font-bold" style={{ background: C.mist, color: C.petrol }}>{(c.customer || c.name || "?").trim().charAt(0)}</span>
       <span className="flex-1 min-w-0">
         <span className="flex items-center gap-2">
-          <b className="text-[15px] truncate">{c.name || c.phone || "לקוח מאינסטגרם"}</b>
-          {c.customer && c.customer !== c.name && <span className="text-[13px] truncate" style={{ color: "#3E5A5B" }}>{c.customer}</span>}
+          <b className="text-[15px] truncate">{c.customer || c.name || c.phone || "לקוח מאינסטגרם"}</b>
+          {c.customer && <span className="text-[13px] truncate" style={{ color: "#3E5A5B" }}>{c.name && c.name !== c.customer && !/^\d+$/.test(c.name) ? c.name : c.phone}</span>}
           {channel === "all" && c.channel === "instagram" && <Tag>אינסטגרם</Tag>}
           {c.stage && <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: C.soft }}><span className="w-1.5 h-1.5 rounded-full" style={{ background: STAGE_TONE[c.stage]?.accent ?? C.line }} aria-hidden="true" />{STAGE_TONE[c.stage]?.label ?? c.stage}</span>}
           {c.paused && <Tag tone="warn">אתה עונה</Tag>}
@@ -101,6 +102,7 @@ function ChatsInner() {
         {ago(c.at)}
         {c.waiting && <span className="w-2.5 h-2.5 rounded-full" style={{ background: C.coral }} aria-label="מחכה לתשובה" />}
         {c.waiting && <button type="button" onClick={e => void markHandled(e, c.id)} className="text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: "#E3F7EF", color: "#0F6B4F", border: "1px solid #BFE8D6" }} title="מסיר את הסימון האדום בלי לענות">✓ טופל</button>}
+        {c.customerId && <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); openCard(router, "customer", c.customerId!); }} className="text-[11px] font-semibold px-2 py-1 rounded-full" style={{ background: C.mist, color: C.petrol }}>כרטיס לקוח</button>}
         {c.handled && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: C.soft, color: C.muted }}>✓ טופל</span>}
       </span>
     </Link>

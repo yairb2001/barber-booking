@@ -618,7 +618,7 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ hiddenCount: showHidden ? people.length : convs.filter(c => hidden.has(c.phone)).length, chats: people.map(c => {
           const l = leadOf(c.phone); const last = c.messages[0];
           let mode: string | null = null; try { mode = c.salesState ? JSON.parse(c.salesState).mode ?? null : null; } catch { /* none */ }
-          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, customer: isIg(c.phone) ? null : owners.get(local(c.phone))?.name ?? null, customerSetup: !isIg(c.phone) && inSetup.has(owners.get(local(c.phone))?.id ?? ""), leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
+          return { id: c.id, channel: isIg(c.phone) ? "instagram" : "whatsapp", agent: agentFor(c.phone), phone: isIg(c.phone) ? "" : local(c.phone), name: l?.name || c.whatsappName || null, shop: l?.businessName ?? null, customer: isIg(c.phone) ? null : owners.get(local(c.phone))?.name ?? null, customerId: isIg(c.phone) ? null : owners.get(local(c.phone))?.id ?? null, customerSetup: !isIg(c.phone) && inSetup.has(owners.get(local(c.phone))?.id ?? ""), leadId: l?.id ?? null, stage: l?.stage ?? null, mode, at: c.lastMessageAt, last: last ? { role: last.role, source: last.source, text: last.content.slice(0, 120) } : null, waiting: last?.role === "user" && !(c.handledAt && last.createdAt <= c.handledAt), handled: !!c.handledAt && !!last && last.role === "user" && last.createdAt <= c.handledAt, paused: !!c.escalatedAt && Date.now() - c.escalatedAt.getTime() < 24 * 3600_000 };
         }) });
       }
       const conv = await prisma.conversation.findFirst({ where: { id: sp.get("id") ?? "", businessId: DEMO }, select: { id: true, phone: true, whatsappName: true, escalatedAt: true, handledAt: true, salesState: true } });
@@ -630,6 +630,17 @@ export async function GET(req: NextRequest) {
         prisma.conversationMessage.findMany({ where: { conversationId: conv.id, role: { in: ["user", "assistant"] } }, orderBy: { createdAt: "desc" }, take: 200, select: { id: true, role: true, content: true, source: true, createdAt: true, mediaUrl: true, mediaType: true } }),
         ig ? Promise.resolve(null) : prisma.lead.findFirst({ where: { phone: { in: forms(conv.phone) } }, orderBy: { createdAt: "desc" }, select: { id: true, name: true, stage: true, businessName: true, businessId: true } }),
       ]);
+      // A customer's owner (27.10.2026, Yair: "כרטיס לקוח למעלה עם גישה מהירה"): who, and the stage.
+      let customer: { id: string; name: string; stage: string } | null = null;
+      if (!ig) {
+        const owners = await prisma.business.findMany({ where: { id: { notIn: [DEMO, SUPER_ADMIN_BUSINESS_ID] } }, select: { id: true, name: true, phone: true, settings: true, paidAt: true, suspendedAt: true, trialEndsAt: true } });
+        const b = owners.find(o => { const op = ownerPhoneOf(o); return !!op && local(op) === local(conv.phone); });
+        if (b) {
+          const [st] = await computeSetup({ businessIds: [b.id] });
+          const days = b.trialEndsAt ? Math.ceil((b.trialEndsAt.getTime() - Date.now()) / 86400_000) : null;
+          customer = { id: b.id, name: b.name, stage: b.suspendedAt ? "מושהה" : b.paidAt ? "משלם" : st && !st.isLive ? "בהקמה" : days != null && days >= 0 ? `בניסיון · עוד ${days} ימים` : "בניסיון" };
+        }
+      }
       // Instagram: does the agent answer this person at all (settings.instagram.agent off / test / on)?
       let agent = true;
       if (ig) {
@@ -638,7 +649,7 @@ export async function GET(req: NextRequest) {
         const account = instagramAccountOf(demo?.settings);
         agent = !!account && instagramAgentAnswers(account, igsidOf(conv.phone));
       }
-      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse(), reported: (await prisma.agentFeedback.findMany({ where: { conversationId: conv.id, messageId: { not: null } }, select: { messageId: true, status: true } })).flatMap(r => (r.messageId ?? "").split(",").filter(Boolean).map(messageId => ({ messageId, status: r.status }))) });
+      return NextResponse.json({ seen: seen.count, chat: { id: conv.id, channel: ig ? "instagram" : "whatsapp", agent, phone: ig ? "" : local(conv.phone), name: lead?.name || conv.whatsappName || null, lead, customer, handledAt: conv.handledAt, paused: !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 }, messages: msgs.reverse(), reported: (await prisma.agentFeedback.findMany({ where: { conversationId: conv.id, messageId: { not: null } }, select: { messageId: true, status: true } })).flatMap(r => (r.messageId ?? "").split(",").filter(Boolean).map(messageId => ({ messageId, status: r.status }))) });
     }
     // The bell in the header: one cheap count.
     if (view === "today") return NextResponse.json(await todayView());

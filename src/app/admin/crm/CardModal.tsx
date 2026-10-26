@@ -32,6 +32,13 @@ function urlWith(card: string | null, wa = false): string {
   return `${window.location.pathname}${q ? `?${q}` : ""}`;
 }
 
+/** Open a card as a sheet from code: a button inside a row that is itself a link (27.10.2026). */
+export function openCard(router: { push: (href: string, o?: { scroll?: boolean }) => void }, kind: "lead" | "customer", id: string) {
+  const next = urlWith(`${kind}:${id}`);
+  try { sessionStorage.setItem(PUSHED, next); } catch { /* private mode */ }
+  router.push(next, { scroll: false });
+}
+
 export function CardModal({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };

@@ -20,7 +20,7 @@ import ReportSheet from "../../chats/ReportSheet";
  * Nothing is wider than the screen (it used to slide sideways on the phone).
  */
 type Msg = { id: string; role: "user" | "assistant"; content: string; source: string | null; createdAt: string; mediaUrl?: string | null; mediaType?: string | null };
-type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; handledAt?: string | null; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null }; messages: Msg[]; reported?: { messageId: string; status: string }[] };
+type Data = { seen?: number; chat: { id: string; channel: "whatsapp" | "instagram"; agent: boolean; phone: string; name: string | null; paused: boolean; handledAt?: string | null; lead: { id: string; name: string | null; stage: string; businessName: string | null; businessId: string | null } | null; customer?: { id: string; name: string; stage: string } | null }; messages: Msg[]; reported?: { messageId: string; status: string }[] };
 const time = (iso: string) => new Date(iso).toLocaleString("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" });
 const pill = "shrink-0 inline-flex items-center h-8 px-3 rounded-full text-[13px] font-semibold whitespace-nowrap";
 
@@ -106,11 +106,18 @@ export default function ChatThread({ id, onBack }: { id: string; onBack?: () => 
         {(
           <div className="flex gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {chat.lead && <Link href={`/admin/crm/leads/${chat.lead.id}`} className={pill} style={{ background: C.petrol, color: "#fff", textDecoration: "none" }}>כרטיס הליד</Link>}
-            {chat.lead?.businessId && <Link href={`/admin/crm/customers/${chat.lead.businessId}`} className={pill} style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס הלקוח</Link>}
+            {!chat.customer && chat.lead?.businessId && <Link href={`/admin/crm/customers/${chat.lead.businessId}`} className={pill} style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס הלקוח</Link>}
             {waiting && <button type="button" disabled={busy} onClick={() => void handled()} className={pill} style={{ background: "#E3F7EF", color: "#0F6B4F", border: "1px solid #BFE8D6" }} title="מסיר את הסימון האדום בלי לענות">✓ סמן טופל</button>}
             <button type="button" onClick={() => setReportOpen(true)} className={pill} style={{ border: `1px solid ${C.line}`, color: C.muted, background: "#fff" }} title="סמן תשובות של הסוכן שלא אהבת, ומה לא היה בסדר">דווח על השיחה</button>
             <button type="button" disabled={busy} onClick={() => void hide()} className={pill} style={{ border: `1px solid ${C.line}`, color: C.muted, background: "#fff" }} title="שיחה אישית: יוצאת מהרשימות, בלי סוכן ובלי הודעות אוטומטיות">הסתר</button>
           </div>
+        )}
+        {chat.customer && (
+          <Link href={`/admin/crm/customers/${chat.customer.id}`} className="mt-2 flex items-center gap-2.5 rounded-xl px-3 py-2" style={{ background: C.mist, color: C.ink, textDecoration: "none" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.petrol} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9" /><path d="M4 9v11h16V9" /><path d="M3 9h18" /><path d="M10 20v-6h4v6" /></svg>
+            <span className="flex-1 min-w-0 truncate text-[14px]"><b>{chat.customer.name}</b><span style={{ color: C.muted }}> · {chat.customer.stage}</span></span>
+            <span className="shrink-0 text-[13px] font-bold" style={{ color: C.petrol }}>כרטיס לקוח ‹</span>
+          </Link>
         )}
       </header>
 
