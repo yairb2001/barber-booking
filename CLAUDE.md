@@ -6,7 +6,7 @@
 
 SaaS booking system for barbershops (Hebrew, RTL). Multi-tenant from the schema level (every table has `businessId`). Currently runs DOMINANT barbershop in production, designed to onboard more shops. See `BUSINESS_CONTEXT.md` for product/pricing strategy.
 
-**Live URL:** `https://barber-booking-indol.vercel.app` (Vercel auto-deploy on push to `main`)
+**Live URL:** `https://app.dominantbarber.com` (own Hetzner server + Coolify, auto-deploy on push to `main`). The old `https://barber-booking-indol.vercel.app` is a Vercel proxy to it, so links already sent keep working.
 
 ---
 
@@ -16,11 +16,11 @@ SaaS booking system for barbershops (Hebrew, RTL). Multi-tenant from the schema 
 |---|---|
 | Framework | Next.js 14 App Router (TypeScript) |
 | DB | PostgreSQL on Neon, Prisma ORM |
-| Storage | Vercel Blob (images) |
+| Storage | `src/lib/storage.ts`: R2 when configured, else Vercel Blob |
 | Auth | JWT via `jose`, cookie `admin_session`, `bcryptjs` for passwords |
 | WhatsApp | GreenAPI (`src/lib/messaging/green-api.ts`) |
 | AI | Anthropic SDK (`@anthropic-ai/sdk`) — customer agent in `src/lib/agent/` |
-| Hosting | Vercel + Vercel Cron |
+| Hosting | Hetzner CX33 (Falkenstein) + Coolify, Docker (`Dockerfile`); DB Neon Frankfurt |
 
 ```bash
 npm run dev        # next dev on port 3001
@@ -84,7 +84,9 @@ Helpers in `src/lib/session.ts`:
 
 ---
 
-## Crons (`vercel.json`)
+## Crons (Coolify scheduled tasks, UTC; `vercel.json` is only the reference list)
+
+On the server each cron is `node scripts/cron.mjs /api/cron/<name>` (calls localhost with CRON_SECRET). drip-queue runs every minute and whatsapp-health every 30 min, with no cron-job.org. A new cron = add the route + a scheduled task in Coolify (https://coolify.dominantbarber.com).
 
 | Path | Schedule | What |
 |---|---|---|
@@ -135,7 +137,7 @@ Piggybacked on the every-minute drip-queue tick: rolling reminder sweep (every 1
 - **`AUTH_SECRET`** is reused for the admin session JWT, the OTP token, the customer session cookie and the customer link token — every verifier checks the `type` claim. Don't introduce a separate `JWT_SECRET`.
 - **Cron auth is fail-closed** (`src/lib/cron-auth.ts`): every cron route returns 503 without `CRON_SECRET` and 401 on mismatch.
 - **Public message-sending endpoints are rate-limited per IP** (`src/lib/rate-limit.ts`).
-- **Never commit unless asked.** When asked, write a meaningful commit message and push to `main` (Vercel auto-deploys).
+- **Never commit unless asked.** When asked, write a meaningful commit message and push to `main` (Coolify auto-deploys; never `vercel deploy`: the Vercel project is only the old-URL proxy).
 
 ---
 
