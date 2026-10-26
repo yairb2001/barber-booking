@@ -42,14 +42,17 @@ export default function SettingsPage() {
       <PageHead title="הגדרות" />
       <AreaTabs />
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
-      <SalesAgentCard key={data.salesAgent.knowledgeAt ?? "default"} data={data.salesAgent} onSaved={reload} />
-      <Card title="מסלולים" aside={data.providerConnected ? "Invoice4U מחובר" : "Invoice4U עוד לא מחובר"}>
+      <h2 className="m-0 mt-2 text-[13px] font-bold" style={{ color: C.muted }}>המוצר</h2>
+      <Card collapsible title="מסלולים ומחירים" aside={`${data.plans.length} מסלולים`}>
         <PlansEditor plans={data.plans} packs={s} onSaved={() => void reload()} />
       </Card>
-      <Card title="התראות לטלפון">
-        <CrmPushSettings devices={data.pushDevices} />
+      <h2 className="m-0 mt-2 text-[13px] font-bold" style={{ color: C.muted }}>הצוות</h2>
+      <MembersCard />
+      <Card collapsible title="נציגי מכירות" aside={`${data.reps.filter(r => r.active).length} פעילים`}>
+        {data.reps.map(r => <p key={r.id} className="m-0 mb-1.5 text-sm">{r.name}{r.isOwner ? " (אתה)" : ""} · {r.phone ?? "בלי טלפון"} · {r.active ? "פעיל" : "מושבת"}</p>)}
+        <p className="m-0 mt-2 text-xs" style={{ color: C.muted }}>מוסיפים נציג ופותחים לו חלונות ביומן השיחות.</p>
       </Card>
-      <Card title="שיחות מכירה">
+      <Card collapsible title="שיחות מכירה" aside={`${s.callMinutes} דקות לשיחה`}>
         <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
           {FIELDS.map(([k, label, unit]) => (
             <label key={k} className="flex flex-col gap-1 text-xs" style={{ color: C.muted }}>{label}
@@ -63,7 +66,14 @@ export default function SettingsPage() {
         <Btn kind="dark" className="mt-4" disabled={busy} onClick={save}>{busy ? "שומר…" : "שמור"}</Btn>
       </Card>
 
-      <Card title="מפתח API לבדיקות">
+      <h2 className="m-0 mt-2 text-[13px] font-bold" style={{ color: C.muted }}>סוכנים</h2>
+      <SalesAgentCard key={data.salesAgent.knowledgeAt ?? "default"} data={data.salesAgent} onSaved={reload} />
+
+      <h2 className="m-0 mt-2 text-[13px] font-bold" style={{ color: C.muted }}>המערכת</h2>
+      <Card collapsible title="התראות לטלפון" aside={`${data.pushDevices} מכשירים`}>
+        <CrmPushSettings devices={data.pushDevices} />
+      </Card>
+      <Card collapsible title="מפתח API לבדיקות" aside={data.testKey ? "מחובר" : "לא מחובר"}>
         {data.testKey
           ? <p className="m-0 text-sm" style={{ color: TONE.ok.color }}>מחובר. כל הבדיקות, ארגז החול והתצוגה המקדימה באשף עובדים על מפתח הבדיקות, בנפרד מהסוכנים החיים.</p>
           : <div className="text-sm flex flex-col gap-2" style={{ color: C.ink }}>
@@ -76,12 +86,6 @@ export default function SettingsPage() {
             </div>}
       </Card>
 
-      <MembersCard />
-
-      <Card title="נציגי מכירות">
-        {data.reps.map(r => <p key={r.id} className="m-0 mb-1.5 text-sm">{r.name}{r.isOwner ? " (אתה)" : ""} · {r.phone ?? "בלי טלפון"} · {r.active ? "פעיל" : "מושבת"}</p>)}
-        <p className="m-0 mt-2 text-xs" style={{ color: C.muted }}>מוסיפים נציג ופותחים לו חלונות ביומן השיחות.</p>
-      </Card>
     </div>
   );
 }

@@ -26,7 +26,7 @@ export function MembersCard() {
     if (r.ok) { setF({ name: "", phone: "", password: "", scope: "admin" }); setMsg("נשמר. הכניסה בכתובת /crm-login"); await reload(); } else setMsg(r.error ?? "לא נשמר");
   }
   return (
-    <Card title="כניסות לצוות" aside="כל ה-CRM, או רק הדיווחים">
+    <Card collapsible title="כניסות לצוות" aside="כל ה-CRM, או רק הדיווחים">
       <div className="flex flex-col gap-2">
         {(data?.members ?? []).map(m => (
           <div key={m.id} className="flex items-center justify-between gap-3 rounded-xl px-3 py-2" style={{ background: C.soft }}>
