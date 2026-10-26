@@ -57,6 +57,8 @@ export type SalesState = {
   // Stage 4 (14.10.2026): the signup link was sent; two reminders at most.
   signupLinkAt?: string;
   signupReminders?: number;
+  // The price question got the three bubbles (price, the plans, the free signup) (26.10.2026).
+  priceShownAt?: string;
   // Stage 3: the one prep question before the call was already asked.
   prepAsked?: boolean;
   // After a booking in the demo (14.10.2026): when the question about him went
@@ -140,7 +142,7 @@ const BOOKING_INTENT_RE = /תור|תספורת|להסתפר|זקן|יש מקום
 const ABOUT_SYSTEM_RE = /מערכת|צ['׳]אטור|chator|סוכן|בוט|פרטים|מחיר|עולה|לעסק|יש לי מספרה|המספרה שלי|אני ספר(?![א-ת])|בעל מספרה/i;
 const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור. התור לא אמיתי, וככה בדיוק הלקוחות שלך יקבלו מענה.";
 const V2_OPEN_STRANGER = "היי, כאן צ'אטור. יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.";
-const V2_SIGNUP = `אפשר להקים לבד כאן: ${SIGNUP_URL}\nבוחרים מסלול, עוברים על ההגדרות בקצב שלך, והחודש החינמי מתחיל רק כשאתה לוחץ "הפעל". אם תיתקע באמצע, תכתוב לי כאן.`;
+const V2_SIGNUP = `נרשמים בחינם, ותוך 15 דקות אתה רואה איך זה עובד במספרה שלך:\n${SIGNUP_URL}\nהחודש החינמי מתחיל רק כשאתה לוחץ "הפעל". אם תיתקע באמצע, תכתוב לי כאן.`;
 const v2Opener = (state: SalesState): string | null => {
   const first = (state.fullName ?? "").trim().split(/\s+/)[0];
   if (state.channel === "instagram" && state.mode !== "lead") return `${IG_HELLO} יש לך מספרה? אשמח להראות לך איך זה עובד אצלך.`;
@@ -176,6 +178,15 @@ async function funnelFor(sandbox?: DemoSandbox): Promise<FunnelConfig | null> {
   return (sandbox ? sandbox.funnel : cfg.enabled) ? cfg : null;
 }
 const LANDING_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/for-business`;
+/**
+ * "כמה זה עולה?" (Yair, 26.10.2026: "ליצור כמה בועות, ולהניע לפעולה ... תמיד לחתוך לנקודה שנרשם
+ * או שיקבע שיחה"): the price, the plans page, and the free signup, each its own WhatsApp bubble.
+ */
+const PRICE_BUBBLES = [
+  PRICE_TEXT_V2,
+  `את כל המסלולים אפשר לראות כאן: ${LANDING_URL}#plans`,
+  `נרשמים בחינם, ותוך 15 דקות אתה רואה איך זה עובד במספרה שלך:\n${SIGNUP_URL}`,
+];
 
 /** True when a message would open a demo/prospect conversation (kept for the tests and the source tag). */
 export function looksLikeDemoOpener(text: string): { tagged: boolean; source?: "landing" | "keywords" } {
@@ -703,8 +714,9 @@ ${ctx}
 רוצה לדבר עם בן אדם: הצע שיחה עם ${rep} עם שתי שעות מהרשימה, זו המטרה. מעבירים ל${rep} (handoff_to_rep) רק כשמתעקש שיחזרו אליו עכשיו או כשאין שעות פנויות, וגם כשמבקש הנחה, שואל שאלה שאין עליה תשובה בידע למטה, מתלונן, או לקוח קיים עם בעיה.
 
 גבולות:
-- הודעה אחת, עד שלושה משפטים. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
+- עד שלוש הודעות קצרות, עם שורה ריקה ביניהן (כל אחת נשלחת כבועה נפרדת), כל אחת עד שני משפטים. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
 - כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
+- תמיד מקדמים לצעד: כשאתה עונה על שאלה, ההודעה האחרונה מציעה להירשם בחינם (send_signup_link) או שיחה קצרה, אלא אם הצעת את זה בהודעה הקודמת שלך.
 - מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות.
@@ -806,6 +818,19 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     }
   }
 
+  if (v2 && PRICE_RE.test(p.text) && !state.priceShownAt) {
+    const out = [...PRICE_BUBBLES];
+    if (firstTurn) out[0] = `${state.channel === "instagram" ? IG_HELLO : "היי, כאן צ'אטור."} ${out[0]}`;
+    const funnel = firstTurn && state.mode !== "lead" && state.channel !== "instagram" ? await funnelFor(p.sandbox) : null;
+    if (funnel?.repLineFirstReply && funnel.repLine) out.push(funnel.repLine);
+    const now = new Date().toISOString();
+    // The signup link went out: the signup reminders follow (remindSignupLinks).
+    state = { ...state, priceShownAt: now, signupLinkAt: state.signupLinkAt ?? now, signupReminders: state.signupReminders ?? 0 };
+    await saveState(p.conversationId, state);
+    await reply(p.conversationId, p.phone, out, p.sandbox);
+    return { replies: out, state };
+  }
+
   const rep = await repName(p.lead?.repId ?? null);
   // After a demo booking the next two steps are fixed (14.10.2026, Yair). Left to
   // the general flow the model drifted back to "כמה ספרים אתם?".
@@ -903,7 +928,8 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
     replies.push(await demoLinkLine());
   } else if (v2 && tool?.name === "send_signup_link") {
     p.sandbox?.toolLog.push("send_signup_link()");
-    replies.length = 0;
+    // His answer stays (up to two bubbles), and the link is the last bubble (26.10.2026).
+    replies.splice(2);
     replies.push(V2_SIGNUP);
     // Stage 4: two reminders if he doesn't sign up (remindSignupLinks).
     state = { ...state, signupLinkAt: new Date().toISOString(), signupReminders: 0 };
@@ -921,19 +947,20 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (v2 && ctx.callBooked && !state.prepAsked) state = { ...state, prepAsked: true };
 
   await saveState(p.conversationId, state);
-  // v2: one WhatsApp message per turn (spec: "הודעה אחת"); only allowed amounts.
-  let joined = replies.join("\n\n");
+  // v2: up to three short WhatsApp bubbles a turn (26.10.2026, Yair: "ליצור כמה בועות"; before, one
+  // message); only allowed amounts.
+  const parts = v2 ? replies.slice(0, 3) : replies;
   // v2: the first reply always says who is writing (on Instagram: that it is the automated agent).
-  if (v2 && firstTurn && !/כאן (הסוכן האוטומטי של )?צ['׳]אטור/.test(joined)) {
+  if (v2 && firstTurn && parts.length && !/כאן (הסוכן האוטומטי של )?צ['׳]אטור/.test(parts.join(" "))) {
     const first = (state.fullName ?? "").trim().split(/\s+/)[0];
-    joined = ig ? `${IG_HELLO} ${joined}` : `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${joined}`;
+    parts[0] = ig ? `${IG_HELLO} ${parts[0]}` : `היי${state.mode === "lead" && first ? ` ${first}` : ""}, כאן צ'אטור. ${parts[0]}`;
   }
   const who = { agent: "sales" as const, label: `${ig ? "אינסטגרם" : p.phone}${state.fullName ? ` · ${state.fullName}` : ""}` };
-  const out = v2 ? [tidy(guardPriceV2(guardReply(joined, instructions, who)))] : guardPrice(replies.map(r => guardReply(r, instructions, who)));
-  // The WhatsApp funnel: the first reply says a person is one word away ("נציג").
-  if (v2 && firstTurn && state.mode !== "lead" && !ig) {
+  const out = v2 ? parts.map(r => tidy(guardPriceV2(guardReply(r, instructions, who)))).filter(Boolean) : guardPrice(replies.map(r => guardReply(r, instructions, who)));
+  // The WhatsApp funnel: the first reply says a person is one word away ("נציג"), as its own bubble.
+  if (v2 && firstTurn && state.mode !== "lead" && !ig && out.length) {
     const funnel = await funnelFor(p.sandbox);
-    if (funnel?.repLineFirstReply && funnel.repLine && !out[0].includes("נציג")) out[0] = `${out[0]}\n\n${funnel.repLine}`;
+    if (funnel?.repLineFirstReply && funnel.repLine && !out.some(r => r.includes("נציג"))) out.push(funnel.repLine);
   }
   await reply(p.conversationId, p.phone, out, p.sandbox);
   return { replies: out, state };

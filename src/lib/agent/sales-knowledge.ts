@@ -55,7 +55,7 @@ export const FORBIDDEN_CLAIMS = `אין היום ואסור להבטיח: SMS; �
 
 /** The only price wording (fixed): plans start at 287, launch price for the first 20. */
 export const PRICE_TEXT_V2 =
-  "המסלולים מתחילים מ־287 ₪ לחודש, מחיר השקה ל־20 המספרות הראשונות, נעול לשנה. חודש ראשון חינם, וההקמה חינם.";
+  "מסלול הבסיס 287 ₪ לחודש, כולל מע״מ. מחיר השקה לעשרים המספרות הראשונות, נעול לשנה. החודש הראשון וההקמה עלינו.";
 
 /** Shekel amounts the agent may write: the plans, the setup fee (waived) and the add-on packs. */
 export const ALLOWED_AMOUNTS_V2 = ["287", "367", "467", "997", "49", "90", "33"];
