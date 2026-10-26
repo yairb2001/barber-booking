@@ -15,20 +15,21 @@ export type Area = { key: string; label: string; href: string; icon: React.React
 
 const svg = (d: React.ReactNode) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{d}</svg>;
 
+// Order (26.10.2026, Yair): היום, מכירות, צ׳אטים, לקוחות, then numbers and settings.
 export const AREAS: Area[] = [
   { key: "today", label: "היום", href: "/admin/crm", icon: svg(<><path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" /></>), tabs: [], also: ["/admin/crm/tasks", "/admin/crm/alerts"] },
+  {
+    key: "sales", label: "מכירות", href: "/admin/crm/whatsapp", icon: svg(<><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></>),
+    // Two categories (Yair 26.10): the agent's funnel, and real leads. Only real leads count as leads.
+    tabs: [{ href: "/admin/crm/whatsapp", label: "אוטומטי" }, { href: "/admin/crm/leads", label: "לידים אמיתיים" }],
+    also: ["/admin/crm/calendar"],
+  },
   { key: "chats", label: "צ׳אטים", href: "/admin/crm/chats", icon: svg(<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />), tabs: [] },
   {
     key: "customers", label: "לקוחות", href: "/admin/crm/customers", icon: svg(<><path d="M3 9l1.5-5h15L21 9" /><path d="M4 9v11h16V9" /><path d="M3 9h18" /><path d="M10 20v-6h4v6" /></>),
     // "בקשות מעסקים" became פניות; reports and agent improvements were one queue, it stays one (under reports).
     tabs: [{ href: "/admin/crm/customers", label: "פעילים" }, { href: "/admin/crm/setup", label: "בהקמה" }, { href: "/admin/crm/requests", label: "פניות", badge: "requests" }, { href: "/admin/crm/reports", label: "דיווחים על הסוכן", badge: "reports" }],
     also: ["/admin/crm/improvements"],
-  },
-  {
-    key: "sales", label: "מכירות", href: "/admin/crm/whatsapp", icon: svg(<><path d="M3 17l6-6 4 4 8-8" /><path d="M14 7h7v7" /></>),
-    // Two categories (Yair 26.10): the agent's funnel, and real leads. Only real leads count as leads.
-    tabs: [{ href: "/admin/crm/whatsapp", label: "אוטומטי" }, { href: "/admin/crm/leads", label: "לידים אמיתיים" }],
-    also: ["/admin/crm/calendar"],
   },
   { key: "numbers", label: "מספרים", href: "/admin/crm/numbers", icon: svg(<><rect x="3" y="6" width="18" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /></>), tabs: [{ href: "/admin/crm/numbers", label: "החודש" }, { href: "/admin/crm/invoices", label: "חשבוניות" }] },
   { key: "settings", label: "הגדרות", href: "/admin/crm/settings", icon: svg(<><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" /><circle cx="16" cy="6" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="18" cy="18" r="2" /></>), tabs: [{ href: "/admin/crm/settings", label: "כללי" }, { href: "/admin/crm/automations", label: "אוטומציות" }, { href: "/admin/crm/wa-funnel", label: "הודעות המשפך" }] },
