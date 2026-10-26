@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ChatThread from "../ChatThread";
 
@@ -11,6 +12,14 @@ import ChatThread from "../ChatThread";
 export default function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  // The chat fills the screen under the top bar and the page itself never scrolls (26.10.2026: it
+  // scrolled under the top bar, hiding the chat's header and its back button).
+  useEffect(() => {
+    const el = document.documentElement, prev = el.style.overflow;
+    el.style.overflow = "hidden";
+    window.scrollTo(0, 0);
+    return () => { el.style.overflow = prev; };
+  }, []);
   const back = () => { if (window.history.length > 1) router.back(); else router.push("/admin/crm/chats"); };
   return (
     <div className="-mx-4 -my-5 md:-mx-8 md:-my-7 h-[calc(100dvh-68px)] md:h-[100dvh] overflow-hidden">

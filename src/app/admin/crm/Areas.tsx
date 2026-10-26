@@ -21,7 +21,7 @@ export const AREAS: Area[] = [
   {
     key: "customers", label: "לקוחות", href: "/admin/crm/customers", icon: svg(<><path d="M3 9l1.5-5h15L21 9" /><path d="M4 9v11h16V9" /><path d="M3 9h18" /><path d="M10 20v-6h4v6" /></>),
     // "בקשות מעסקים" became פניות; reports and agent improvements were one queue, it stays one (under reports).
-    tabs: [{ href: "/admin/crm/customers", label: "עסקים" }, { href: "/admin/crm/requests", label: "פניות", badge: "requests" }, { href: "/admin/crm/reports", label: "דיווחים על הסוכן", badge: "reports" }],
+    tabs: [{ href: "/admin/crm/customers", label: "פעילים" }, { href: "/admin/crm/setup", label: "בהקמה" }, { href: "/admin/crm/requests", label: "פניות", badge: "requests" }, { href: "/admin/crm/reports", label: "דיווחים על הסוכן", badge: "reports" }],
     also: ["/admin/crm/improvements"],
   },
   {
