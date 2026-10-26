@@ -67,22 +67,46 @@ export function PageHead({ title, sub, actions }: { title: string; sub?: React.R
   );
 }
 
+/**
+ * Screens remember what they loaded (26.10.2026, Yair: every tab switch reloaded from scratch,
+ * "שיהיה מהיר יותר"): a screen opens on its last data at once and refreshes it behind the scenes.
+ * One request per view at a time; reload() after an action always asks the server again.
+ */
+const cache = new Map<string, unknown>();
+const inflight = new Map<string, Promise<{ ok: boolean; j: { error?: string } }>>();
+function fetchView(query: string, fresh = false) {
+  const running = inflight.get(query);
+  if (running && !fresh) return running;
+  const p = fetch(`/api/admin/crm?${query}`, { cache: "no-store" })
+    .then(async r => ({ ok: r.ok, j: await r.json() }))
+    .then(res => { if (res.ok) cache.set(query, res.j); return res; })
+    .finally(() => { if (inflight.get(query) === p) inflight.delete(query); });
+  inflight.set(query, p);
+  return p;
+}
+/** Warm the screens one is likely to open next (the shell does it once, after entering). */
+export function prefetchCrm(queries: string[]) {
+  for (const q of queries) if (!cache.has(q)) fetchView(q).catch(() => {});
+}
+
 /** GET /api/admin/crm?view=… with loading / error / reload. */
 export function useCrm<T>(query: string) {
-  const [data, setData] = useState<T | null>(null);
+  const [data, setData] = useState<T | null>(() => (cache.get(query) as T | undefined) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
+  const load = useCallback(async (fresh: boolean) => {
+    const hit = cache.get(query) as T | undefined;
+    if (hit) setData(hit);
     setLoading(true);
     try {
-      const r = await fetch(`/api/admin/crm?${query}`, { cache: "no-store" });
-      const j = await r.json();
-      if (!r.ok) setError(j.error || "שגיאה"); else { setData(j); setError(null); }
+      const { ok, j } = await fetchView(query, fresh);
+      if (!ok) setError(j.error || "שגיאה"); else { setData(j as T); setError(null); }
     } catch { setError("שגיאת רשת"); }
     setLoading(false);
   }, [query]);
-  useEffect(() => { void load(); }, [load]);
-  return { data, error, loading, reload: load };
+  useEffect(() => { void load(false); }, [load]);
+  const reload = useCallback(() => load(true), [load]);
+  return { data, error, loading, reload };
 }
 
 export async function crmAction(body: Record<string, unknown>): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> {

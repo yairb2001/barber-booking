@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { C } from "./ui";
+import { C, prefetchCrm } from "./ui";
 import { CardHost } from "./CardModal";
 import { AREAS, areaOf, CrmScope } from "./Areas";
 
@@ -43,6 +43,12 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
   useEffect(() => { setMenuOpen(false); }, [pathname]);
+  // The daily screens load behind the scenes once, so opening them is instant (26.10.2026).
+  useEffect(() => {
+    if (allowed !== true || member) return;
+    const t = setTimeout(() => prefetchCrm(["view=today", "view=chats", "view=customers", "view=whatsapp", "view=leads"]), 1200);
+    return () => clearTimeout(t);
+  }, [allowed, member]);
   // The bell: unread notifications, refreshed on every screen change and when
   // a screen marks something read (bumpBell in HomeParts). Not for a member.
   useEffect(() => {

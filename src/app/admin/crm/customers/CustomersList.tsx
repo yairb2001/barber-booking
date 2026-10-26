@@ -20,7 +20,6 @@ type Cust = {
   segment: "setup" | "live" | "risk" | "suspended"; setup: { doneCount: number; total: number; current: string | null; stuckHours: number } | null;
 };
 const STAGE: Record<string, string> = { setup: "בהקמה", trial: "בניסיון", paying: "משלם", suspended: "מושהה" };
-const HEALTH = { ok: "תקין", warn: "לשים לב", bad: "דורש טיפול" } as const;
 const TABS = [["active", "הכל"], ["risk", "דורשים טיפול"], ["suspended", "מושהים"]] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -79,33 +78,38 @@ export default function CustomersList({ only }: { only: "active" | "setup" }) {
           })}
         </div>
       ) : (
-        <section className="bg-white rounded-[18px] overflow-x-auto" style={{ border: `1px solid ${C.line}` }}>
-          <table className="w-full text-sm" style={{ minWidth: 1080, borderCollapse: "collapse" }}>
-            <thead>
-              <tr className="text-right text-xs" style={{ color: C.muted }}>
-                {["עסק", "מצב", "מסלול", "בריאות", "וואטסאפ", "תורים החודש", "חבילת הסוכן", "משלם / עולה לנו", "נציג"].map((h, i) => <th key={i} scope="col" className="px-3 py-3.5 font-semibold">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {list.map(c => (
-                <tr key={c.id} style={{ borderTop: `1px solid ${C.soft}`, background: c.id === focus ? C.mist : undefined }}>
-                  <td className="px-3 py-3"><span className="inline-flex items-center gap-1.5"><Link href={`/admin/crm/customers/${c.id}`} className="font-bold" style={{ color: C.ink }}>{c.name}</Link><ReportsBubble count={c.reportsOpen ?? 0} href={`/admin/crm/customers/${c.id}#reports`} /></span><div className="text-xs" style={{ color: C.muted }}>{c.ownerPhone ?? "בלי טלפון"}</div></td>
-                  <td className="px-3 py-3"><span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ background: C.soft, color: C.petrol }}>{STAGE[c.stage]}{c.trialDaysLeft != null && c.stage === "trial" ? ` · ${c.trialDaysLeft} ימים` : ""}</span></td>
-                  <td className="px-3 py-3 text-[13px]">{c.plan ?? <span style={{ color: C.muted }}>—</span>}</td>
-                  <td className="px-3 py-3">
-                    <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: TONE[c.health].color }}><span className="w-2.5 h-2.5 rounded-full" style={{ background: TONE[c.health].dot }} />{HEALTH[c.health]}</span>
-                    {c.issues.length > 0 && <div className="text-xs" style={{ color: C.muted }}>{c.issues.map(i => i.text).join(" · ")}</div>}
-                  </td>
-                  <td className="px-3 py-3 text-[13px] font-semibold" style={{ color: c.wa === "up" ? "#0F6B4F" : c.wa === "down" ? "#B42318" : C.muted }}>{c.wa === "up" ? "מחובר" : c.wa === "down" ? "מנותק" : "לא חובר"}</td>
-                  <td className="px-3 py-3 font-semibold" style={{ ...NUM, color: c.apptsMonth && c.apptsMonth.cap > 0 && c.apptsMonth.pct >= 80 ? "#B54708" : C.ink }}>{c.apptsMonth ? (c.apptsMonth.cap > 0 ? `${c.apptsMonth.used} / ${c.apptsMonth.cap}` : c.apptsMonth.used) : "—"}</td>
-                  <td className="px-3 py-3"><div className="flex items-center gap-2"><div className="w-[90px] h-2 rounded-full overflow-hidden" style={{ background: C.soft }}><div className="h-full" style={{ width: `${c.pkgPct}%`, background: c.pkgPct >= 80 ? "#F5A623" : C.turquoise }} /></div><span className="text-xs" style={{ color: C.muted }}>{c.pkgPct}%</span></div></td>
-                  <td className="px-3 py-3 text-[13px]" style={{ ...NUM, color: c.price > 0 && c.costIls > c.price ? "#B42318" : C.ink }}>{c.price > 0 ? ils(c.price) : "ניסיון"} / {ils(c.costIls)}</td>
-                  <td className="px-3 py-3 text-[13px]">{c.rep ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        // A card per customer, everything readable from outside (26.10.2026, Yair: "לפעילים שיהיה כרטיס, לא גלילה").
+        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
+          {list.map(c => {
+            const issue = [...c.issues].sort((x, y) => (x.tone === "bad" ? 0 : 1) - (y.tone === "bad" ? 0 : 1))[0];
+            const stage = c.stage === "paying" ? `משלם · ${ils(c.price)}` : c.stage === "trial" && c.trialDaysLeft != null ? `בניסיון · ${c.trialDaysLeft} ימים` : STAGE[c.stage];
+            const appts = c.apptsMonth ? (c.apptsMonth.cap > 0 ? `${c.apptsMonth.used}/${c.apptsMonth.cap}` : String(c.apptsMonth.used)) : String(c.apptsWeek);
+            return (
+              <Link key={c.id} href={`/admin/crm/customers/${c.id}`} className="bg-white rounded-2xl p-4 flex flex-col gap-2.5"
+                style={{ border: c.health === "bad" ? `2px solid ${TONE.bad.dot}` : `1px solid ${C.line}`, color: C.ink, textDecoration: "none", background: c.id === focus ? C.mist : "#fff" }}>
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <div className="font-bold inline-flex items-center gap-1.5">{c.name}<ReportsBubble count={c.reportsOpen ?? 0} /></div>
+                    <div className="text-xs" style={{ color: C.muted }}>{[c.ownerPhone, c.plan, c.rep].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <span className="text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: C.mist, color: C.petrol }}>{stage}</span>
+                </div>
+                <div className="text-[13px] font-semibold inline-flex items-center gap-1.5" style={{ color: TONE[issue?.tone ?? "ok"].color }}>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TONE[issue?.tone ?? "ok"].dot }} />
+                  {issue ? issue.text : "הכל עובד"}{c.issues.length > 1 ? <span className="font-normal" style={{ color: C.muted }}> · עוד {c.issues.length - 1}</span> : null}
+                </div>
+                <div className="grid grid-cols-3 gap-2 pt-2" style={{ borderTop: `1px solid ${C.soft}` }}>
+                  {[[appts, "תורים החודש"], [`${c.pkgPct}%`, "חבילת הסוכן"], [ils(c.costIls), "עולה לנו"]].map(([v, l]) => (
+                    <div key={l} className="flex flex-col min-w-0">
+                      <b className="text-[17px] leading-tight" style={{ ...NUM, color: l === "חבילת הסוכן" && c.pkgPct >= 80 ? "#B54708" : l === "עולה לנו" && c.price > 0 && c.costIls > c.price ? "#B42318" : C.petrol }}>{v}</b>
+                      <span className="text-[11px]" style={{ color: C.muted }}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       )}
     </div>
   );
