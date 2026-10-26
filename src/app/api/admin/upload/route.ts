@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
+import { putPublic, storageEnabled } from "@/lib/storage";
 
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
@@ -21,19 +22,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "file too large (max 20MB)" }, { status: 400 });
   }
 
-  // ── Option 1: Vercel Blob (production) ─────────────────────────────────────
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  // ── Option 1: R2 / Vercel Blob (production) ────────────────────────────────
+  if (storageEnabled()) {
     try {
-      const { put } = await import("@vercel/blob");
       const ext = file.name.split(".").pop() || "jpg";
       const filename = `uploads/${randomUUID()}.${ext}`;
-      const blob = await put(filename, file, {
-        access: "public",
-        addRandomSuffix: false,
-      });
-      return NextResponse.json({ url: blob.url });
+      return NextResponse.json({ url: await putPublic(filename, file, file.type) });
     } catch (err) {
-      console.error("Vercel Blob upload failed:", err);
+      console.error("storage upload failed:", err);
       return NextResponse.json({ error: "upload failed" }, { status: 500 });
     }
   }
@@ -50,6 +46,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ url });
   } catch (err) {
     console.error("Local upload failed:", err);
-    return NextResponse.json({ error: "upload failed — in production, set BLOB_READ_WRITE_TOKEN" }, { status: 500 });
+    return NextResponse.json({ error: "upload failed — in production, configure R2 or BLOB_READ_WRITE_TOKEN" }, { status: 500 });
   }
 }

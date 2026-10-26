@@ -36,7 +36,7 @@ import {
 } from "@/lib/agent/appointment-swap";
 import { handleWaitlistDeclineReply } from "@/lib/waitlist-notify";
 import { handleOptOutKeywordReply } from "@/lib/messaging/opt-out";
-import { put } from "@vercel/blob";
+import { putPublic, storageEnabled } from "@/lib/storage";
 import { handleClosureReply } from "@/lib/closures/reply";
 import { getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
@@ -135,15 +135,14 @@ async function storeIncomingMedia(p: { bizId: string; idMessage?: string; downlo
   if (!p.downloadUrl) return null;
   const mime = (p.mimeType || "").split(";")[0].trim() || null;
   const name = p.kind === "document" ? (p.fileName || null) : null;
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return { url: p.downloadUrl, mime, name };
+  if (!storageEnabled()) return { url: p.downloadUrl, mime, name };
   try {
     const res = await fetch(p.downloadUrl);
     if (!res.ok) return { url: p.downloadUrl, mime, name };
     const buf = Buffer.from(await res.arrayBuffer());
     if (!buf.length || buf.length > MAX_MEDIA_BYTES) return { url: p.downloadUrl, mime, name };
     const key = `wa-media/${p.bizId}/${(p.idMessage || Date.now().toString(36)).replace(/[^A-Za-z0-9_-]/g, "")}.${mediaExt(p.mimeType, p.fileName)}`;
-    const blob = await put(key, buf, { access: "public", addRandomSuffix: false, contentType: mime || undefined });
-    return { url: blob.url, mime, name };
+    return { url: await putPublic(key, buf, mime || undefined), mime, name };
   } catch (e) {
     console.error("[webhook] media store failed", e);
     return { url: p.downloadUrl, mime, name };

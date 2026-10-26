@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { putPublic, storageEnabled } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "@/lib/session";
 import { canAccessConversation } from "@/lib/chat-access";
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const file = form.get("file") as File | null;
   if (!file || !file.size) return NextResponse.json({ error: "file required" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "file too large" }, { status: 413 });
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "storage not configured" }, { status: 500 });
+  if (!storageEnabled()) return NextResponse.json({ error: "storage not configured" }, { status: 500 });
 
   const conv = await prisma.conversation.findFirst({ where: { id: params.id, businessId: business.id } });
   if (!conv) return NextResponse.json({ error: "not found" }, { status: 404 });
@@ -35,16 +35,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const buf = Buffer.from(await file.arrayBuffer());
   const key = `wa-media/out/${business.id}/${crypto.randomUUID()}.ogg`;
-  const blob = await put(key, buf, { access: "public", addRandomSuffix: false, contentType: "audio/ogg" });
+  const blobUrl = await putPublic(key, buf, "audio/ogg");
 
-  const result = await provider.sendFileByUrl(conv.phone, { urlFile: blob.url, fileName: `voice-${Date.now()}.ogg` });
+  const result = await provider.sendFileByUrl(conv.phone, { urlFile: blobUrl, fileName: `voice-${Date.now()}.ogg` });
   await prisma.messageLog.create({
     data: { businessId: business.id, customerPhone: conv.phone, kind: "manual", body: VOICE_LABEL, status: result.ok ? "sent" : "failed", providerId: result.providerId ?? null, sentAt: result.ok ? new Date() : null },
   }).catch(() => {});
   if (!result.ok) return NextResponse.json({ ok: false, error: result.error || "send failed" }, { status: 502 });
 
   const saved = await prisma.conversationMessage.create({
-    data: { conversationId: conv.id, role: "assistant", source: "admin", sentByStaffId: session.staffId ?? null, content: VOICE_LABEL, mediaUrl: blob.url, mediaType: "audio", mediaMime: "audio/ogg" },
+    data: { conversationId: conv.id, role: "assistant", source: "admin", sentByStaffId: session.staffId ?? null, content: VOICE_LABEL, mediaUrl: blobUrl, mediaType: "audio", mediaMime: "audio/ogg" },
   });
   await prisma.conversation.update({
     where: { id: conv.id },

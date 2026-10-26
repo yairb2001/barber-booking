@@ -31,6 +31,7 @@
     "@capacitor/status-bar": "^8.0.2",
     "@prisma/client": "^5.22.0",
     "@vercel/blob": "^2.3.3",
+    "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.2",
     "next": "14.2.35",

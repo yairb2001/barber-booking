@@ -1,9 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Self-contained server bundle for the Docker image (own server); Vercel ignores it.
+  ...(process.env.BUILD_STANDALONE ? { output: "standalone" } : {}),
   env: {
     // Expose the deploy's commit to both server and client bundles so the app
     // can detect that a newer build is live (see src/lib/build-id.ts).
-    NEXT_PUBLIC_BUILD_ID: (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7) || "dev",
+    NEXT_PUBLIC_BUILD_ID: (process.env.VERCEL_GIT_COMMIT_SHA || process.env.SOURCE_COMMIT || "").slice(0, 7) || "dev",
   },
   eslint: {
     ignoreDuringBuilds: true,

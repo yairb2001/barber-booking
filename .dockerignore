@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+ios
+apps
+docs
+specs
+prompt-backups
+.env*

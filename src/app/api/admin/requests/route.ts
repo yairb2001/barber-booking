@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { putPublic, storageEnabled } from "@/lib/storage";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { recordCrmNotification } from "@/lib/crm/notify";
 
@@ -40,10 +41,8 @@ export async function POST(req: NextRequest) {
     const file = form.get("file") as File | null;
     if (file && file.size) {
       if (file.size > MAX_AUDIO_BYTES) return NextResponse.json({ error: "ההקלטה ארוכה מדי" }, { status: 413 });
-      if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "storage not configured" }, { status: 500 });
-      const { put } = await import("@vercel/blob");
-      const blob = await put(`requests/${biz.id}/${randomUUID()}.ogg`, Buffer.from(await file.arrayBuffer()), { access: "public", addRandomSuffix: false, contentType: "audio/ogg" });
-      audioUrl = blob.url;
+      if (!storageEnabled()) return NextResponse.json({ error: "storage not configured" }, { status: 500 });
+      audioUrl = await putPublic(`requests/${biz.id}/${randomUUID()}.ogg`, Buffer.from(await file.arrayBuffer()), "audio/ogg");
       const s = Number(form.get("secs"));
       audioSecs = Number.isFinite(s) && s > 0 ? Math.round(s) : null;
     }

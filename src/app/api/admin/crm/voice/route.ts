@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
+import { putPublic, storageEnabled } from "@/lib/storage";
 import { prisma } from "@/lib/prisma";
 import { isSuperAdmin } from "@/lib/super-admin";
 import { providerForBusiness } from "@/lib/messaging";
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const id = String(form.get("id") ?? "");
   if (!file || !file.size) return NextResponse.json({ error: "ההקלטה ריקה" }, { status: 400 });
   if (file.size > MAX_BYTES) return NextResponse.json({ error: "ההקלטה ארוכה מדי" }, { status: 413 });
-  if (!process.env.BLOB_READ_WRITE_TOKEN) return NextResponse.json({ error: "אין אחסון לקבצים" }, { status: 500 });
+  if (!storageEnabled()) return NextResponse.json({ error: "אין אחסון לקבצים" }, { status: 500 });
 
   // Who it goes to, and the conversation it is kept in.
   let phone = "";
@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
   const provider = demo ? providerForBusiness(demo) : null;
   if (!provider?.sendFileByUrl) return NextResponse.json({ error: "הקו של צ'אטור לא יכול לשלוח הקלטות" }, { status: 500 });
 
-  const blob = await put(`wa-media/out/${DEMO_BUSINESS_ID}/${crypto.randomUUID()}.ogg`, Buffer.from(await file.arrayBuffer()), { access: "public", addRandomSuffix: false, contentType: "audio/ogg" });
-  const result = await provider.sendFileByUrl(phone, { urlFile: blob.url, fileName: `voice-${Date.now()}.ogg` });
+  const blobUrl = await putPublic(`wa-media/out/${DEMO_BUSINESS_ID}/${crypto.randomUUID()}.ogg`, Buffer.from(await file.arrayBuffer()), "audio/ogg");
+  const result = await provider.sendFileByUrl(phone, { urlFile: blobUrl, fileName: `voice-${Date.now()}.ogg` });
   await prisma.messageLog.create({
     data: { businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body: VOICE_LABEL, status: result.ok ? "sent" : "failed", providerId: result.providerId ?? null, sentAt: result.ok ? new Date() : null },
   }).catch(() => {});
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       ?? await prisma.conversation.create({ data: { businessId: DEMO_BUSINESS_ID, phone, agentType: "customer", status: "active" }, select: { id: true } });
     conversationId = conv.id;
   }
-  await prisma.conversationMessage.create({ data: { conversationId, role: "assistant", source: "admin", content: VOICE_LABEL, mediaUrl: blob.url, mediaType: "audio", mediaMime: "audio/ogg" } });
+  await prisma.conversationMessage.create({ data: { conversationId, role: "assistant", source: "admin", content: VOICE_LABEL, mediaUrl: blobUrl, mediaType: "audio", mediaMime: "audio/ogg" } });
   // A person took over: the sales agent stays quiet for 24h (like a typed message).
   await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), ...(to === "customer" ? {} : { escalatedAt: new Date() }) } });
   if (leadId) await prisma.lead.update({ where: { id: leadId }, data: { stage: "chatting", status: "contacted" } });
