@@ -13,7 +13,7 @@ export default function ChatPage() {
   const router = useRouter();
   const back = () => { if (window.history.length > 1) router.back(); else router.push("/admin/crm/chats"); };
   return (
-    <div data-no-tabbar className="-mx-4 -my-5 md:-mx-8 md:-my-7 h-[calc(100dvh-68px)] md:h-[100dvh] overflow-hidden">
+    <div className="-mx-4 -my-5 md:-mx-8 md:-my-7 h-[calc(100dvh-68px)] md:h-[100dvh] overflow-hidden">
       <div className="h-full md:max-w-3xl md:mx-auto md:border-x" style={{ borderColor: "#DCE6E4" }}>
         <ChatThread id={id} onBack={back} />
       </div>

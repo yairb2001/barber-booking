@@ -177,7 +177,7 @@ export default function WaFunnelSettingsPage() {
       </Card>
 
       {dirty && (
-        <div data-no-tabbar className="fixed bottom-0 inset-x-0 z-20 px-4 py-3 flex justify-center gap-2" style={{ background: "rgba(244,247,246,.96)", borderTop: `1px solid ${C.line}` }}>
+        <div className="fixed bottom-0 inset-x-0 z-20 px-4 py-3 flex justify-center gap-2" style={{ background: "rgba(244,247,246,.96)", borderTop: `1px solid ${C.line}` }}>
           <Btn kind="dark" disabled={busy} onClick={() => save(draft, "נשמר")}>{busy ? "שומר…" : "שמור שינויים"}</Btn>
           <Btn kind="ghost" onClick={() => setDraft(structuredClone(data.config))}>בטל</Btn>
         </div>

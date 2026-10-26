@@ -227,7 +227,7 @@ export function Detail({ i, onDone, openChat }: { i: Item; onDone: (msg: string)
 
       {err && <p className="m-0 text-sm" style={{ color: "#B42318" }}>{err}</p>}
       {(main || more.length > 0) && (
-        <footer data-no-tabbar className="sticky bottom-0 -mx-1 px-1 pt-2 pb-1 flex items-center gap-2.5" style={{ background: "linear-gradient(to top, #fff 80%, rgba(255,255,255,0))" }}>
+        <footer className="sticky bottom-0 -mx-1 px-1 pt-2 pb-1 flex items-center gap-2.5" style={{ background: "linear-gradient(to top, #fff 80%, rgba(255,255,255,0))" }}>
           {main ?? <span className="flex-1" />}
           <MoreMenu items={more} up />
         </footer>

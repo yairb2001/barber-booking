@@ -7,7 +7,7 @@ import { C, NUM } from "./ui";
 
 /**
  * The CRM in six areas (26.10.2026, Yair: "סדר מופתי ... אשתי הולכת לנהל זאת והיא
- * לא אוהבת בלאגן"). The side menu (and the phone's bottom bar) shows the areas;
+ * לא אוהבת בלאגן"). The side menu (on the phone, behind ☰) shows the areas;
  * an area's screens are tabs at its top. Design: agents/dev-chator/עיצובים/תפעול.
  */
 type Tab = { href: string; label: string; badge?: "requests" | "reports" };
