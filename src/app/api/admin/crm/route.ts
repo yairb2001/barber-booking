@@ -304,7 +304,7 @@ async function todayView() {
     prisma.chatorQuestion.count({ where: { status: "pending" } }),
   ]);
   const parts = [review && `${review} תיקונים לאישור`, question + cq && `${question + cq} שאלות אליך`, fresh && `${fresh} הצעות חדשות`].filter(Boolean) as string[];
-  if (parts.length) rows.push({ key: `improve-${review}-${question + cq}-${fresh}`, kind: "approve", title: "שיפורי סוכן", detail: parts.join(" · "), time: null, urgent: review > 0, order: ORDER.approve, href: "/admin/crm/improvements", phone: null, wa: null, also: [], done: null, canHide: true });
+  if (parts.length) rows.push({ key: `improve-${review}-${question + cq}-${fresh}`, kind: "approve", title: "דיווחים על הסוכן", detail: parts.join(" · "), time: null, urgent: review > 0, order: ORDER.approve, href: "/admin/crm/reports", phone: null, wa: null, also: [], done: null, canHide: true });
 
   // Shop requests he hasn't seen, one row per shop.
   const reqs = await prisma.shopRequest.findMany({ where: { fromChator: false, seenAt: null }, orderBy: { createdAt: "desc" }, take: 50, select: { businessId: true, body: true, audioUrl: true } });
@@ -1206,6 +1206,19 @@ export async function POST(req: NextRequest) {
         if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
         await mirrorToConversation(DEMO_BUSINESS_ID, phone, body, "admin");
         return NextResponse.json({ ok: true, link });
+      }
+      // The owner's WhatsApp line is down: how to link it again, sent from Chator's number (the card's next step, 26.10.2026).
+      case "customer.waReconnect": {
+        const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { id: true, name: true, phone: true, settings: true } });
+        const to = biz ? ownerPhoneOf(biz) : null;
+        if (!biz || !to) return NextResponse.json({ error: "אין טלפון לבעל העסק" }, { status: 400 });
+        const body = `היי, כאן Chator. הוואטסאפ של ${biz.name} התנתק מהמערכת, אז הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.\nלחיבור מחדש, פחות מדקה: ${req.nextUrl.origin}/admin/settings/whatsapp ושם "חבר את הטלפון".`;
+        const phone = normalizeIsraeliPhone(to);
+        const r = await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body });
+        if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
+        await mirrorToConversation(DEMO_BUSINESS_ID, phone, body, "admin");
+        await prisma.leadNote.create({ data: { businessId: biz.id, author: "וואטסאפ", body: "נשלחו לבעל העסק הוראות לחיבור הוואטסאפ מחדש" } });
+        return NextResponse.json({ ok: true });
       }
       case "customer.setup": {
         const key = str("key");

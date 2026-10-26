@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { C, crmAction, ago } from "../ui";
+import { C, crmAction, ago, MoreMenu } from "../ui";
 
 /**
  * One agent problem and what to do with it (25.10.2026): what the shops
@@ -44,31 +44,6 @@ export function parseReport(text: string): { quote: string | null; why: string }
     const m = line.match(/^על התשובה «(.+?)»: (.*)$/);
     return m ? { quote: m[1], why: m[2] } : { quote: null, why: line.replace(/^ובכללי: /, "") };
   });
-}
-
-function Dots() {
-  return <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>;
-}
-
-/** The ⋯ menu: plain details/summary, closes after a choice. */
-function More({ items }: { items: { label: string; danger?: boolean; onClick: () => void }[] }) {
-  const [open, setOpen] = useState(false);
-  if (!items.length) return null;
-  return (
-    <div className="relative">
-      <button type="button" aria-label="עוד פעולות" aria-expanded={open} onClick={() => setOpen(o => !o)} className="w-12 h-12 rounded-xl inline-flex items-center justify-center bg-white" style={{ border: `1px solid ${C.line}`, color: C.petrol }}><Dots /></button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div role="menu" className="absolute bottom-14 end-0 z-20 w-64 bg-white rounded-2xl p-1.5 flex flex-col" style={{ border: `1px solid ${C.line}`, boxShadow: "0 14px 34px rgba(11,31,33,0.16)" }}>
-            {items.map((it, k) => (
-              <button key={k} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick(); }} className="min-h-[44px] px-3 rounded-xl text-right text-[15px] hover:bg-[#F4F7F6]" style={{ color: it.danger ? "#B42318" : C.ink }}>{it.label}</button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
 }
 
 function Bubble({ label, text, tone }: { label: string; text: string; tone: "agent" | "bad" | "good" }) {
@@ -254,7 +229,7 @@ export function Detail({ i, onDone, openChat }: { i: Item; onDone: (msg: string)
       {(main || more.length > 0) && (
         <footer data-no-tabbar className="sticky bottom-0 -mx-1 px-1 pt-2 pb-1 flex items-center gap-2.5" style={{ background: "linear-gradient(to top, #fff 80%, rgba(255,255,255,0))" }}>
           {main ?? <span className="flex-1" />}
-          <More items={more} />
+          <MoreMenu items={more} up />
         </footer>
       )}
 

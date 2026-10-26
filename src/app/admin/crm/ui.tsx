@@ -116,3 +116,26 @@ export function ago(iso: string | Date | null | undefined): string {
 }
 
 export const ils = (n: number) => `₪${Math.round(n).toLocaleString("he-IL")}`;
+
+/** The ⋯ menu (things done sometimes, 24.10.2026): closes after a choice. up: opens above (in a bottom bar). */
+export function MoreMenu({ items, up = false }: { items: { label: string; danger?: boolean; onClick: () => void }[]; up?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!items.length) return null;
+  return (
+    <div className="relative">
+      <button type="button" aria-label="עוד פעולות" aria-expanded={open} onClick={() => setOpen(o => !o)} className="w-12 h-12 rounded-xl inline-flex items-center justify-center bg-white" style={{ border: `1px solid ${C.line}`, color: C.petrol }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div role="menu" className={`absolute ${up ? "bottom-14" : "top-14"} end-0 z-20 w-64 bg-white rounded-2xl p-1.5 flex flex-col`} style={{ border: `1px solid ${C.line}`, boxShadow: "0 14px 34px rgba(11,31,33,0.16)" }}>
+            {items.map((it, k) => (
+              <button key={k} type="button" role="menuitem" onClick={() => { setOpen(false); it.onClick(); }} className="min-h-[44px] px-3 rounded-xl text-right text-[15px] hover:bg-[#F4F7F6]" style={{ color: it.danger ? "#B42318" : C.ink }}>{it.label}</button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

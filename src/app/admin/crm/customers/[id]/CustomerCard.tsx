@@ -2,12 +2,18 @@
 
 import Link from "next/link";
 import { useState, useContext, useEffect } from "react";
-import { C, NUM, TONE, Btn, Card, useCrm, crmAction, ils } from "../../ui";
+import { C, NUM, TONE, Btn, Card, MoreMenu, useCrm, crmAction, ils } from "../../ui";
 import { PlanCard, InvoicesCard, type BillingData } from "./Billing";
 import { InModal } from "../../card-context";
 import { WaButton, WaPanel, type WaMsg } from "../../WaPanel";
 import { ShopReportsCard, ReportsBubble, isOpenReport, type ShopReport } from "./ShopReports";
 
+/**
+ * The customer card in four layers (spec: agents/dev-chator/עיצובים/כרטיס-לקוח/אפיון.md,
+ * 24.10.2026; built 26.10): what you must know, seen on open; up to three buttons
+ * (וואטסאפ, חייג, and the next step, named by the situation); the ⋯ menu for what
+ * is done sometimes; and boxes that open for details and editing.
+ */
 type Field = { key: string; label: string; group: string; question: string; type: "choice" | "text" | "bool"; options: string[] | null; core: boolean; value: string | boolean | null; default: string | boolean | null };
 type Data = {
   customer: { id: string; name: string; slug: string; ownerPhone: string | null; stage: string; health: "ok" | "warn" | "bad"; issues: { tone: "bad" | "warn"; text: string }[]; wa: string; apptsWeek: number; pkgPct: number; costIls: number; price: number; trialDaysLeft: number | null; rep: string | null };
@@ -23,7 +29,16 @@ type Data = {
   billing: BillingData;
 };
 const d = (iso: string | null) => (iso ? new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jerusalem" }).format(new Date(iso)) : "");
+const day = (iso: string | Date) => new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "numeric", timeZone: "Asia/Jerusalem" }).format(new Date(iso));
 const AUTHOR: Record<string, string> = { owner: "בעל העסק", wizard: "אשף ההקמה", owner_agent: "סוכן הבעלים", crm: "CRM" };
+const DAY = 86400_000;
+
+/** The next monthly charge after paidAt (the same day of the month). */
+function nextCharge(paidAt: string): Date {
+  const n = new Date(paidAt);
+  while (n.getTime() <= Date.now()) n.setMonth(n.getMonth() + 1);
+  return n;
+}
 
 export default function CustomerCard({ id }: { id: string }) {
   const inModal = useContext(InModal);
@@ -33,6 +48,9 @@ export default function CustomerCard({ id }: { id: string }) {
   const [waOpen, setWaOpen] = useState(false);
   // Opened from "היום" with ?wa=1: the chat is open already.
   useEffect(() => { if (new URLSearchParams(window.location.search).get("wa") === "1") setWaOpen(true); }, []);
+  // A box the ⋯ menu or the next step opened (Card keeps its own state, so it remounts open).
+  const [box, setBox] = useState<string | null>(null);
+  const openBox = (k: string) => { setBox(k); setTimeout(() => document.getElementById(`box-${k}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
   const [note, setNote] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [val, setVal] = useState<string>("");
@@ -62,130 +80,187 @@ export default function CustomerCard({ id }: { id: string }) {
   if (!data) return <p style={{ color: C.muted }}>טוען…</p>;
   const c = data.customer, b = data.business, st = data.setup, ag = data.agent;
   const answered = ag.fields.filter(f => f.value !== null && f.value !== "").length;
+  const last = data.messages[data.messages.length - 1];
+  const waiting = last?.role === "user";
+  const openChat = () => { setWaOpen(true); setTimeout(() => document.getElementById("wa-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 50); };
+  // A payment link needs Invoice4U; until it is connected, the talk about paying happens in the chat.
+  const pay = () => (data.billing.providerConnected ? openBox("money") : openChat());
+  const payLabel = data.billing.providerConnected ? "שלח קישור תשלום" : "דבר איתו על התשלום";
+  const liveSince = st.isLive ? Math.max(...st.steps.map(s => (s.at ? new Date(s.at).getTime() : 0))) : 0;
+
+  // The next step, by severity (the spec's table). Everything works: no main button.
+  const next: { label: string; run: () => void } | null =
+    data.billing.invoices.some(i => i.status === "failed") ? { label: payLabel, run: pay } :
+    c.wa === "down" ? { label: "שלח הוראות לחיבור מחדש", run: () => void act("next", { action: "customer.waReconnect", id }, "ההוראות לחיבור נשלחו לו בוואטסאפ") } :
+    waiting ? { label: "ענה לו", run: openChat } :
+    !st.isLive ? { label: "שלח קישור להמשך ההקמה", run: () => void act("next", { action: "customer.resendLink", id }, "קישור ההקמה נשלח לו בוואטסאפ") } :
+    liveSince && Date.now() - liveSince > 3 * DAY && data.quality.agentBookingsWeek === 0 ? { label: "בדוק איתו מה קורה", run: openChat } :
+    c.trialDaysLeft != null && c.trialDaysLeft <= 3 && !b.paidAt ? { label: payLabel, run: pay } :
+    c.pkgPct >= 80 ? { label: "הצע מסלול גדול יותר", run: openChat } :
+    null;
+
+  // The situation in one sentence, and the stage.
+  const issues = [...c.issues].sort((x, y) => (x.tone === "bad" ? 0 : 1) - (y.tone === "bad" ? 0 : 1));
+  const tone: "ok" | "warn" | "bad" = issues[0]?.tone ?? "ok";
+  const stage = b.suspendedAt ? "מושהה" : b.paidAt ? `משלם · ${ils(b.monthlyPrice ?? c.price)} לחודש` : c.trialDaysLeft != null ? (c.trialDaysLeft > 0 ? `בניסיון · עוד ${c.trialDaysLeft} ימים` : "הניסיון נגמר") : "בהקמה";
+  const nums: [string, string][] = [
+    [String(data.quality.agentBookingsWeek), "תורים מהסוכן השבוע"],
+    [`${c.pkgPct}%`, "ניצול החבילה"],
+    b.paidAt && !b.suspendedAt ? [day(nextCharge(b.paidAt)), "החיוב הבא"] : b.trialEndsAt && !b.paidAt ? [day(b.trialEndsAt), "סוף הניסיון"] : ["אין", "חיוב קבוע"],
+  ];
+
+  const more = [
+    { label: busy === "imp" ? "נכנס…" : "היכנס למערכת שלו כמנהל", onClick: () => void impersonate() },
+    ...(data.lead ? [{ label: "כרטיס המכירה", onClick: () => { window.location.href = `/admin/crm/leads/${data.lead!.id}`; } }] : []),
+    ...(!b.paidAt ? [
+      { label: "סמן כמשלם", onClick: () => { if (confirm("לסמן שהעסק עבר לתשלום?")) void patchBiz("paid", { markPaid: true }, "סומן כמשלם"); } },
+      { label: "הארך ניסיון בשבוע", onClick: () => void patchBiz("trial", { extendTrialDays: 7 }, "הניסיון הוארך בשבוע") },
+    ] : []),
+    { label: "הוסף חבילה", onClick: () => openBox("money") },
+    { label: "חשבונית ידנית", onClick: () => openBox("money") },
+    { label: "קישור תשלום", onClick: () => openBox("money") },
+    { label: "שלח קישור הקמה", onClick: () => void act("link", { action: "customer.resendLink", id }, "קישור ההקמה נשלח לו בוואטסאפ") },
+    { label: b.suspendedAt ? "החזר לפעילות" : "השהה עסק", danger: !b.suspendedAt, onClick: () => { if (confirm(b.suspendedAt ? "להחזיר את העסק לפעילות?" : "להשהות את העסק? הוא לא יוכל להיכנס והסוכן ייעצר.")) void patchBiz("susp", { suspend: !b.suspendedAt }, b.suspendedAt ? "העסק הוחזר" : "העסק הושהה"); } },
+  ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 max-w-3xl">
       {!inModal && <Link href="/admin/crm/customers" className="text-sm" style={{ color: C.petrol }}>→ חזרה ללקוחות</Link>}
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="m-0 text-2xl font-extrabold inline-flex items-center gap-2">{c.name}<ReportsBubble count={(data.reports ?? []).filter(isOpenReport).length} href="#reports" /></h1>
-          <span className="text-sm" style={{ color: C.muted }}>{[c.ownerPhone, `/${c.slug}`, c.rep ? `נציג: ${c.rep}` : null, `נפתח ${d(b.createdAt)}`].filter(Boolean).join(" · ")}</span>
+
+      {/* 1 · Seen on open */}
+      <header className="flex flex-col gap-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="m-0 text-[26px] font-extrabold inline-flex items-center gap-2">{c.name}<ReportsBubble count={(data.reports ?? []).filter(isOpenReport).length} href="#reports" /></h1>
+          <span className="text-[13px] font-bold px-3 py-1.5 rounded-full" style={{ background: C.mist, color: C.petrol }}>{stage}</span>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Btn kind="dark" disabled={busy === "imp"} onClick={impersonate}>{busy === "imp" ? "נכנס…" : "היכנס כמנהל"}</Btn>
-          <Btn disabled={!!busy || !c.ownerPhone} onClick={() => act("link", { action: "customer.resendLink", id }, "קישור ההקמה נשלח לו בוואטסאפ")}>שלח קישור הקמה</Btn>
-          {data.lead && <Link href={`/admin/crm/leads/${data.lead.id}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>כרטיס המכירה</Link>}
-          <WaButton open={waOpen} onClick={() => setWaOpen(o => !o)} count={data.messages.length} waiting={data.messages[data.messages.length - 1]?.role === "user"} />
-          {c.ownerPhone && <a href={`tel:${c.ownerPhone}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>חייג</a>}
-        </div>
+        <span className="text-sm" style={{ color: C.muted }}>{[c.ownerPhone, `/${c.slug}`, c.rep ? `נציג: ${c.rep}` : null, `נפתח ${day(b.createdAt)}`].filter(Boolean).join(" · ")}</span>
       </header>
+      <section className="rounded-[18px] px-4 py-3.5 flex flex-col gap-0.5" style={{ background: TONE[tone].bg, color: TONE[tone].color }}>
+        <b className="text-[17px]">{issues[0]?.text ?? "הכל עובד"}</b>
+        {issues.length > 1 && <span className="text-sm">גם: {issues.slice(1).map(i => i.text).join(" · ")}</span>}
+      </section>
+      <div className="grid grid-cols-3 gap-2">
+        {nums.map(([v, l]) => (
+          <div key={l} className="bg-white rounded-2xl px-3 py-2.5 flex flex-col" style={{ border: `1px solid ${C.line}` }}>
+            <b className="text-[22px] leading-tight" style={{ ...NUM, color: C.petrol }}>{v}</b>
+            <span className="text-[12px]" style={{ color: C.muted }}>{l}</span>
+          </div>
+        ))}
+      </div>
+      {waiting && (
+        <button type="button" onClick={openChat} className="text-right bg-white rounded-2xl px-4 py-3 text-sm leading-relaxed" style={{ border: `1px solid ${C.line}`, color: C.ink }}>
+          <span className="block text-[12px] font-semibold" style={{ color: "#B42318" }}>כתב ועוד לא ענו לו · {d(last.createdAt)}</span>
+          {last.content.length > 160 ? `${last.content.slice(0, 160)}…` : last.content}
+        </button>
+      )}
+
+      {/* 2 · Up to three buttons, and ⋯ */}
+      <div className="flex flex-wrap items-center gap-2">
+        <WaButton open={waOpen} onClick={() => setWaOpen(o => !o)} count={data.messages.length} waiting={waiting} />
+        {c.ownerPhone && <a href={`tel:${c.ownerPhone}`} className="min-h-[44px] px-4 rounded-xl text-sm font-semibold inline-flex items-center" style={{ border: `1px solid ${C.petrol}`, color: C.petrol, textDecoration: "none" }}>חייג</a>}
+        {next && <Btn kind="primary" disabled={!!busy} onClick={next.run}>{busy === "next" ? "שולח…" : next.label}</Btn>}
+        <MoreMenu items={more} />
+      </div>
       {flash && <p className="m-0 text-sm rounded-xl px-3 py-2" style={{ background: C.mist, color: C.petrol }}>{flash}</p>}
-      {c.issues.length > 0 && <div className="flex flex-wrap gap-2">{c.issues.map((i, k) => <span key={k} className="text-xs font-bold px-2.5 py-1 rounded-full" style={{ background: TONE[i.tone].bg, color: TONE[i.tone].color }}>{i.text}</span>)}</div>}
+      {waOpen && (
+        <div id="wa-panel">
+          <WaPanel
+            messages={data.messages}
+            who={m => (m.role === "user" ? "בעל העסק" : m.source === "admin" ? "נציג" : "עוזר התפעול")}
+            placeholder={c.ownerPhone ? "נשלח מהמספר של צ׳אטור" : "אין טלפון לבעל העסק"}
+            status={<span className="text-xs" style={{ color: "#3E5A5B" }}>עוזר התפעול עונה לו כאן</span>}
+            onSend={async body => (await act("msg", { action: "customer.message", id, body }, "נשלח")).ok}
+            name={data.lead?.name}
+            voice={c.ownerPhone ? { to: "customer", id } : null}
+            onSent={() => void reload()}
+          />
+        </div>
+      )}
 
-      <div className="flex flex-wrap gap-4 items-start">
-        <div className="flex-[999_1_480px] min-w-0 flex flex-col gap-4">
-          {waOpen && (
-            <WaPanel
-              messages={data.messages}
-              who={m => (m.role === "user" ? "בעל העסק" : m.source === "admin" ? "נציג" : "עוזר התפעול")}
-              placeholder={c.ownerPhone ? "נשלח מהמספר של צ׳אטור" : "אין טלפון לבעל העסק"}
-              status={<span className="text-xs" style={{ color: "#3E5A5B" }}>עוזר התפעול עונה לו כאן</span>}
-              onSend={async body => (await act("msg", { action: "customer.message", id, body }, "נשלח")).ok}
-              name={data.lead?.name}
-              voice={c.ownerPhone ? { to: "customer", id } : null}
-              onSent={() => void reload()}
-            />
-          )}
-          <Card collapsible title="שלבי ההקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.current ? ` · ${st.current.label}` : ""}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
-            <ol className="m-0 p-0 list-none flex flex-col gap-2">
-              {st.steps.map((s, i) => {
-                const isCurrent = !s.done && st.steps.findIndex(x => !x.done) === i;
-                return (
-                  <li key={s.key} className="flex items-center gap-2.5">
-                    <span className="w-6 h-6 rounded-full text-xs font-bold inline-flex items-center justify-center shrink-0" style={s.done ? { background: TONE.ok.bg, color: TONE.ok.color } : isCurrent ? { background: TONE.warn.bg, color: TONE.warn.color } : { background: C.soft, color: C.muted }}>{s.done ? "✓" : i + 1}</span>
-                    <span className="text-sm flex-1" style={{ fontWeight: isCurrent ? 700 : 400, color: s.done || isCurrent ? C.ink : C.muted }}>{s.label}{s.key === "agent" && !s.done && st.missingAgentFields.length ? ` (חסרות ${st.missingAgentFields.length} תשובות חובה)` : ""}</span>
-                    <span className="text-xs" style={{ color: C.muted }}>{s.done ? d(s.at) : isCurrent ? "כאן הוא עכשיו" : ""}</span>
-                  </li>
-                );
-              })}
-            </ol>
-          </Card>
+      {/* 3 · Boxes that open */}
+      <Card collapsible title="הקמה" aside={st.isLive ? "חי" : `${st.doneCount}/${st.steps.length}${st.current ? ` · ${st.current.label}` : ""}${st.stuckHours >= 24 ? ` · תקוע ${Math.floor(st.stuckHours / 24) || 1} ימים` : ""}`}>
+        <ol className="m-0 p-0 list-none flex flex-col gap-2">
+          {st.steps.map((s, i) => {
+            const isCurrent = !s.done && st.steps.findIndex(x => !x.done) === i;
+            return (
+              <li key={s.key} className="flex items-center gap-2.5">
+                <span className="w-6 h-6 rounded-full text-xs font-bold inline-flex items-center justify-center shrink-0" style={s.done ? { background: TONE.ok.bg, color: TONE.ok.color } : isCurrent ? { background: TONE.warn.bg, color: TONE.warn.color } : { background: C.soft, color: C.muted }}>{s.done ? "✓" : i + 1}</span>
+                <span className="text-sm flex-1" style={{ fontWeight: isCurrent ? 700 : 400, color: s.done || isCurrent ? C.ink : C.muted }}>{s.label}{s.key === "agent" && !s.done && st.missingAgentFields.length ? ` (חסרות ${st.missingAgentFields.length} תשובות חובה)` : ""}</span>
+                <span className="text-xs" style={{ color: C.muted }}>{s.done ? d(s.at) : isCurrent ? "כאן הוא עכשיו" : ""}</span>
+              </li>
+            );
+          })}
+        </ol>
+      </Card>
 
-          <Card collapsible title="הסוכן שלו" aside={`${answered}/${ag.fields.length} תשובות · ${ag.enabled ? "פעיל" : "כבוי"}`}>
-            {ag.customPrompt && <p className="m-0 mb-3 text-[13px] rounded-lg px-3 py-2" style={{ background: TONE.warn.bg, color: TONE.warn.color }}>לעסק הזה יש פרומפט שנכתב ביד, אז התשובות למטה לא משפיעות עליו והוא לא מקבל שיפורים של הבסיס.</p>}
-            <div className="flex flex-col">
-              {ag.fields.map(f => {
-                const has = f.value !== null && f.value !== "";
-                const shown = typeof f.value === "boolean" ? (f.value ? "כן" : "לא") : (f.value as string | null);
-                return (
-                  <div key={f.key} className="py-2.5 flex flex-col gap-1" style={{ borderTop: `1px solid ${C.soft}` }}>
-                    <div className="flex justify-between gap-2 items-start">
-                      <span className="text-[13px] font-semibold" title={f.question}>{f.label}{f.core && <span style={{ color: "#B42318" }}> *</span>}</span>
-                      <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing(f.key); setVal(typeof f.value === "boolean" ? String(f.value) : (f.value as string) ?? (typeof f.default === "string" ? f.default : "")); }}>{has ? "שנה" : "מלא"}</button>
-                    </div>
-                    {editing === f.key ? (
-                      <div className="flex flex-wrap gap-2 items-center">
-                        {f.type === "choice" && f.options ? (
-                          <select value={val} onChange={e => setVal(e.target.value)} className="h-10 rounded-lg px-2 text-sm" style={{ border: "1px solid #C7D8D5" }}>{f.options.map(o => <option key={o} value={o}>{o}</option>)}</select>
-                        ) : f.type === "bool" ? (
-                          <select value={val} onChange={e => setVal(e.target.value)} className="h-10 rounded-lg px-2 text-sm" style={{ border: "1px solid #C7D8D5" }}><option value="true">כן</option><option value="false">לא</option></select>
-                        ) : (
-                          <input value={val} onChange={e => setVal(e.target.value)} className="flex-1 min-w-[200px] h-10 rounded-lg px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
-                        )}
-                        <Btn kind="dark" disabled={busy === "setup"} onClick={async () => { const r = await act("setup", { action: "customer.setup", id, key: f.key, value: f.type === "bool" ? val === "true" : val }, "נשמר בסוכן שלו"); if (r.ok) setEditing(null); }}>שמור</Btn>
-                        <Btn kind="ghost" onClick={() => setEditing(null)}>ביטול</Btn>
-                      </div>
+      <Card collapsible title="תשובות הסוכן" aside={`${answered}/${ag.fields.length} תשובות · ${ag.enabled ? "פעיל" : "כבוי"}`}>
+        <p className="m-0 mb-3 text-[13px]" style={{ color: C.muted }}>השבוע: {data.quality.conversationsWeek} שיחות · {data.quality.agentBookingsWeek} תורים מהסוכן · {data.quality.escalatedWeek} הועברו לאדם · {c.apptsWeek} תורים מכל המקורות</p>
+        {ag.customPrompt && <p className="m-0 mb-3 text-[13px] rounded-lg px-3 py-2" style={{ background: TONE.warn.bg, color: TONE.warn.color }}>לעסק הזה יש פרומפט שנכתב ביד, אז התשובות למטה לא משפיעות עליו והוא לא מקבל שיפורים של הבסיס.</p>}
+        <div className="flex flex-col">
+          {ag.fields.map(f => {
+            const has = f.value !== null && f.value !== "";
+            const shown = typeof f.value === "boolean" ? (f.value ? "כן" : "לא") : (f.value as string | null);
+            return (
+              <div key={f.key} className="py-2.5 flex flex-col gap-1" style={{ borderTop: `1px solid ${C.soft}` }}>
+                <div className="flex justify-between gap-2 items-start">
+                  <span className="text-[13px] font-semibold" title={f.question}>{f.label}{f.core && <span style={{ color: "#B42318" }}> *</span>}</span>
+                  <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing(f.key); setVal(typeof f.value === "boolean" ? String(f.value) : (f.value as string) ?? (typeof f.default === "string" ? f.default : "")); }}>{has ? "שנה" : "מלא"}</button>
+                </div>
+                {editing === f.key ? (
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {f.type === "choice" && f.options ? (
+                      <select value={val} onChange={e => setVal(e.target.value)} className="h-10 rounded-lg px-2 text-sm" style={{ border: "1px solid #C7D8D5" }}>{f.options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+                    ) : f.type === "bool" ? (
+                      <select value={val} onChange={e => setVal(e.target.value)} className="h-10 rounded-lg px-2 text-sm" style={{ border: "1px solid #C7D8D5" }}><option value="true">כן</option><option value="false">לא</option></select>
                     ) : (
-                      <span className="text-[13px]" style={{ color: has ? "#3E5A5B" : "#B42318" }}>{has ? shown : "לא ענה"}</span>
+                      <input value={val} onChange={e => setVal(e.target.value)} className="flex-1 min-w-[200px] h-10 rounded-lg px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
                     )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="py-2.5 flex flex-col gap-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
-              <div className="flex justify-between gap-2 items-start">
-                <span className="text-[13px] font-semibold">דברים אישיים של העסק <span className="text-[11px] font-normal" style={{ color: C.muted }}>רק צוות צ&apos;אטור, בעל העסק לא רואה</span></span>
-                {editing !== "platformNotes" && <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing("platformNotes"); setVal(ag.platformNotes); }}>{ag.platformNotes ? "שנה" : "הוסף"}</button>}
-              </div>
-              {editing === "platformNotes" ? (
-                <div className="flex flex-col gap-2">
-                  <textarea value={val} onChange={e => setVal(e.target.value)} rows={4} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} placeholder="שורה לכל דבר. מה שאין לו שאלה משלו, למשל: יש ספרים שמתחילים ב-10:00" />
-                  <div className="flex gap-2">
-                    <Btn kind="dark" disabled={busy === "setup"} onClick={async () => { const r = await act("setup", { action: "customer.setup", id, key: "platformNotes", value: val }, "נשמר בסוכן שלו"); if (r.ok) setEditing(null); }}>שמור</Btn>
+                    <Btn kind="dark" disabled={busy === "setup"} onClick={async () => { const r = await act("setup", { action: "customer.setup", id, key: f.key, value: f.type === "bool" ? val === "true" : val }, "נשמר בסוכן שלו"); if (r.ok) setEditing(null); }}>שמור</Btn>
                     <Btn kind="ghost" onClick={() => setEditing(null)}>ביטול</Btn>
                   </div>
-                </div>
-              ) : (
-                <span className="text-[13px] whitespace-pre-line" style={{ color: ag.platformNotes ? "#3E5A5B" : C.muted }}>{ag.platformNotes || "אין"}</span>
-              )}
-            </div>
-            {ag.faqs.length > 0 && <p className="m-0 mt-2 text-xs" style={{ color: C.muted }}>{ag.faqs.length} שאלות ותשובות נפוצות שמורות.</p>}
-            {ag.history.length > 0 && (
-              <details className="mt-3">
-                <summary className="text-[13px] cursor-pointer min-h-[32px]" style={{ color: C.petrol }}>היסטוריית שינויים ({ag.history.length})</summary>
-                {ag.history.map((h, i) => (
-                  <div key={h.id} className="flex justify-between items-center text-xs py-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
-                    <span>{d(h.createdAt)} · {AUTHOR[h.author] ?? h.author}{i === 0 ? " · הגרסה הנוכחית" : ""}</span>
-                    {i > 0 && <button type="button" className="underline min-h-[28px]" style={{ color: C.petrol }} onClick={() => confirm("להחזיר את התשובות לגרסה הזאת?") && act("restore", { action: "customer.setupRestore", id, historyId: h.id }, "הגרסה הוחזרה")}>החזר לגרסה הזאת</button>}
-                  </div>
-                ))}
-              </details>
-            )}
-          </Card>
+                ) : (
+                  <span className="text-[13px]" style={{ color: has ? "#3E5A5B" : "#B42318" }}>{has ? shown : "לא ענה"}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
-
-        <aside className="flex-[1_1_320px] min-w-0 flex flex-col gap-4">
-          <Card collapsible title="איכות הסוכן · 7 ימים" aside={`${data.quality.conversationsWeek} שיחות · ${data.quality.agentBookingsWeek} תורים`}>
-            {[["שיחות", data.quality.conversationsWeek], ["תורים שהסוכן קבע", data.quality.agentBookingsWeek], ["הועברו לאדם", data.quality.escalatedWeek], ["תורים השבוע (כל המקורות)", c.apptsWeek]].map(([l, v]) => (
-              <div key={String(l)} className="flex justify-between text-sm py-1.5" style={{ borderBottom: `1px solid ${C.soft}` }}><span style={{ color: C.muted }}>{l}</span><b style={NUM}>{v}</b></div>
+        <div className="py-2.5 flex flex-col gap-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
+          <div className="flex justify-between gap-2 items-start">
+            <span className="text-[13px] font-semibold">דברים אישיים של העסק <span className="text-[11px] font-normal" style={{ color: C.muted }}>רק צוות צ&apos;אטור, בעל העסק לא רואה</span></span>
+            {editing !== "platformNotes" && <button type="button" className="text-xs underline min-h-[28px] shrink-0" style={{ color: C.petrol }} onClick={() => { setEditing("platformNotes"); setVal(ag.platformNotes); }}>{ag.platformNotes ? "שנה" : "הוסף"}</button>}
+          </div>
+          {editing === "platformNotes" ? (
+            <div className="flex flex-col gap-2">
+              <textarea value={val} onChange={e => setVal(e.target.value)} rows={4} className="rounded-lg px-3 py-2 text-sm" style={{ border: "1px solid #C7D8D5" }} placeholder="שורה לכל דבר. מה שאין לו שאלה משלו, למשל: יש ספרים שמתחילים ב-10:00" />
+              <div className="flex gap-2">
+                <Btn kind="dark" disabled={busy === "setup"} onClick={async () => { const r = await act("setup", { action: "customer.setup", id, key: "platformNotes", value: val }, "נשמר בסוכן שלו"); if (r.ok) setEditing(null); }}>שמור</Btn>
+                <Btn kind="ghost" onClick={() => setEditing(null)}>ביטול</Btn>
+              </div>
+            </div>
+          ) : (
+            <span className="text-[13px] whitespace-pre-line" style={{ color: ag.platformNotes ? "#3E5A5B" : C.muted }}>{ag.platformNotes || "אין"}</span>
+          )}
+        </div>
+        {ag.faqs.length > 0 && <p className="m-0 mt-2 text-xs" style={{ color: C.muted }}>{ag.faqs.length} שאלות ותשובות נפוצות שמורות.</p>}
+        {ag.history.length > 0 && (
+          <details className="mt-3">
+            <summary className="text-[13px] cursor-pointer min-h-[32px]" style={{ color: C.petrol }}>היסטוריית שינויים ({ag.history.length})</summary>
+            {ag.history.map((h, i) => (
+              <div key={h.id} className="flex justify-between items-center text-xs py-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
+                <span>{d(h.createdAt)} · {AUTHOR[h.author] ?? h.author}{i === 0 ? " · הגרסה הנוכחית" : ""}</span>
+                {i > 0 && <button type="button" className="underline min-h-[28px]" style={{ color: C.petrol }} onClick={() => confirm("להחזיר את התשובות לגרסה הזאת?") && act("restore", { action: "customer.setupRestore", id, historyId: h.id }, "הגרסה הוחזרה")}>החזר לגרסה הזאת</button>}
+              </div>
             ))}
-          </Card>
+          </details>
+        )}
+      </Card>
 
-          <PlanCard id={id} data={data.billing} busy={busy} act={act} />
-
-          <Card collapsible title="כסף" aside={b.suspendedAt ? "מושהה" : b.paidAt ? "משלם" : b.trialEndsAt ? "בניסיון" : undefined}>
+      <div id="box-money" className="flex flex-col gap-4 scroll-mt-4">
+        <Card key={box === "money" ? "money-open" : "money"} collapsible defaultOpen={box === "money"} title="כסף וחשבוניות" aside={`עולה לנו ${ils(c.costIls)}`}>
+          <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2 text-sm">
-              <div className="flex justify-between"><span style={{ color: C.muted }}>מצב</span><b>{b.suspendedAt ? "מושהה" : b.paidAt ? `משלם מ-${d(b.paidAt).split(",")[0]}` : b.trialEndsAt ? `ניסיון עד ${d(b.trialEndsAt).split(",")[0]}` : "—"}</b></div>
+              <div className="flex justify-between"><span style={{ color: C.muted }}>מצב</span><b>{b.suspendedAt ? "מושהה" : b.paidAt ? `משלם מ-${day(b.paidAt)}` : b.trialEndsAt ? `ניסיון עד ${day(b.trialEndsAt)}` : "בהקמה"}</b></div>
               <div className="flex justify-between"><span style={{ color: C.muted }}>עולה לנו החודש</span><b style={{ ...NUM, color: c.price > 0 && c.costIls > c.price ? "#B42318" : C.ink }}>{ils(c.costIls)} ({c.pkgPct}% מהחבילה)</b></div>
               <label className="flex justify-between items-center gap-2"><span style={{ color: C.muted }}>מחיר חודשי (₪)</span>
                 <span className="flex gap-1.5"><input type="number" min={0} placeholder={String(b.monthlyPrice ?? "")} value={price} onChange={e => setPrice(e.target.value)} className="w-24 h-9 rounded-lg px-2" style={{ border: "1px solid #C7D8D5" }} /><Btn className="!min-h-[36px]" disabled={!price || !!busy} onClick={() => patchBiz("price", { monthlyPrice: Number(price) }, "המחיר עודכן").then(() => setPrice(""))}>שמור</Btn></span>
@@ -193,43 +268,37 @@ export default function CustomerCard({ id }: { id: string }) {
               <label className="flex justify-between items-center gap-2"><span style={{ color: C.muted }}>חבילת סוכן (₪ עלות)</span>
                 <span className="flex gap-1.5"><input type="number" min={0} placeholder={String(b.tokenBudgetIls)} value={budget} onChange={e => setBudget(e.target.value)} className="w-24 h-9 rounded-lg px-2" style={{ border: "1px solid #C7D8D5" }} /><Btn className="!min-h-[36px]" disabled={!budget || !!busy} onClick={() => patchBiz("budget", { tokenBudgetIls: Number(budget) }, "החבילה עודכנה").then(() => setBudget(""))}>שמור</Btn></span>
               </label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {!b.paidAt && <Btn kind="primary" disabled={!!busy} onClick={() => confirm("לסמן שהעסק עבר לתשלום?") && patchBiz("paid", { markPaid: true }, "סומן כמשלם")}>סמן משלם</Btn>}
-                {!b.paidAt && <Btn disabled={!!busy} onClick={() => patchBiz("trial", { extendTrialDays: 7 }, "הניסיון הוארך בשבוע")}>+7 ימי ניסיון</Btn>}
-                <Btn kind={b.suspendedAt ? "outline" : "danger"} disabled={!!busy} onClick={() => confirm(b.suspendedAt ? "להחזיר את העסק לפעילות?" : "להשהות את העסק? הוא לא יוכל להיכנס והסוכן ייעצר.") && patchBiz("susp", { suspend: !b.suspendedAt }, b.suspendedAt ? "העסק הוחזר" : "העסק הושהה")}>{b.suspendedAt ? "החזר לפעילות" : "השהה"}</Btn>
-              </div>
             </div>
-          </Card>
-
-          <InvoicesCard id={id} data={data.billing} busy={busy} act={act} />
-
-          {(data.referral.referredBy || data.referral.brought.length > 0) && (
-            <Card collapsible title="חבר מביא חבר" aside={data.referral.brought.some(r => r.rewardedAt && !r.appliedAt) ? "יש חודש חינם לתת" : data.referral.brought.length ? `הביא ${data.referral.brought.length}` : undefined}>
-              <div className="flex flex-col gap-2 text-sm">
-                {data.referral.referredBy && <p className="m-0">הגיע בהמלצה של <Link href={`/admin/crm/customers/${data.referral.referredBy.id}`} style={{ color: C.petrol }}>{data.referral.referredBy.name}</Link> <span style={{ color: C.muted }}>({data.referral.referredBy.source === "phone" ? "לפי טלפון" : "מהקישור"})</span></p>}
-                {data.referral.brought.map(r => (
-                  <div key={r.id} className="flex items-center justify-between gap-2 py-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
-                    <span className="min-w-0"><Link href={`/admin/crm/customers/${r.businessId}`} style={{ color: C.petrol }}>{r.name}</Link> <span className="text-xs" style={{ color: C.muted }}>{r.rewardedAt ? (r.appliedAt ? `החודש ניתן ב-${d(r.appliedAt).split(",")[0]}` : "התחיל לשלם: מגיע חודש חינם") : `נרשם ב-${d(r.at).split(",")[0]}`}</span></span>
-                    {r.rewardedAt && <Btn className="!min-h-[36px] shrink-0" kind={r.appliedAt ? "ghost" : "primary"} disabled={!!busy} onClick={() => act(`ref-${r.id}`, { action: "referral.applied", id: r.id, applied: !r.appliedAt }, r.appliedAt ? "סומן שלא ניתן" : "סומן שהחודש ניתן")}>{r.appliedAt ? "בטל סימון" : "נתתי באינוויס"}</Btn>}
-                  </div>
-                ))}
-              </div>
-            </Card>
-          )}
-
-
-          <ShopReportsCard reports={data.reports ?? []} onChanged={reload} />
-          <Card collapsible title="הערות וציר זמן" aside={data.notes.length ? `${data.notes.length} הערות` : undefined}>
-            <div className="flex gap-2 mb-3">
-              <label className="sr-only" htmlFor="cust-note">הערה</label>
-              <input id="cust-note" value={note} onChange={e => setNote(e.target.value)} placeholder="מה חשוב לזכור" className="flex-1 h-11 rounded-xl px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
-              <Btn kind="dark" disabled={!note.trim() || !!busy} onClick={async () => { const r = await act("note", { action: "customer.note", id, body: note }); if (r.ok) setNote(""); }}>הוסף</Btn>
-            </div>
-            {data.notes.map(n => <p key={n.id} className="m-0 mb-2 text-[13px]"><b>{n.author}</b> · <span style={{ color: C.muted }}>{d(n.createdAt)}</span><br />{n.body}</p>)}
-            {data.lead && <p className="m-0 text-xs" style={{ color: C.muted }}>הגיע כליד ב-{d(data.lead.createdAt)} · <Link href={`/admin/crm/leads/${data.lead.id}`} style={{ color: C.petrol }}>לכרטיס הליד</Link></p>}
-          </Card>
-        </aside>
+            <PlanCard id={id} data={data.billing} busy={busy} act={act} />
+            <InvoicesCard id={id} data={data.billing} busy={busy} act={act} />
+          </div>
+        </Card>
       </div>
+
+      {(data.referral.referredBy || data.referral.brought.length > 0) && (
+        <Card collapsible title="חבר מביא חבר" aside={data.referral.brought.some(r => r.rewardedAt && !r.appliedAt) ? "יש חודש חינם לתת" : data.referral.brought.length ? `הביא ${data.referral.brought.length}` : undefined}>
+          <div className="flex flex-col gap-2 text-sm">
+            {data.referral.referredBy && <p className="m-0">הגיע בהמלצה של <Link href={`/admin/crm/customers/${data.referral.referredBy.id}`} style={{ color: C.petrol }}>{data.referral.referredBy.name}</Link> <span style={{ color: C.muted }}>({data.referral.referredBy.source === "phone" ? "לפי טלפון" : "מהקישור"})</span></p>}
+            {data.referral.brought.map(r => (
+              <div key={r.id} className="flex items-center justify-between gap-2 py-1.5" style={{ borderTop: `1px solid ${C.soft}` }}>
+                <span className="min-w-0"><Link href={`/admin/crm/customers/${r.businessId}`} style={{ color: C.petrol }}>{r.name}</Link> <span className="text-xs" style={{ color: C.muted }}>{r.rewardedAt ? (r.appliedAt ? `החודש ניתן ב-${day(r.appliedAt)}` : "התחיל לשלם: מגיע חודש חינם") : `נרשם ב-${day(r.at)}`}</span></span>
+                {r.rewardedAt && <Btn className="!min-h-[36px] shrink-0" kind={r.appliedAt ? "ghost" : "primary"} disabled={!!busy} onClick={() => act(`ref-${r.id}`, { action: "referral.applied", id: r.id, applied: !r.appliedAt }, r.appliedAt ? "סומן שלא ניתן" : "סומן שהחודש ניתן")}>{r.appliedAt ? "בטל סימון" : "נתתי באינוויס"}</Btn>}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      <ShopReportsCard reports={data.reports ?? []} onChanged={reload} />
+      <Card collapsible title="הערות וציר זמן" aside={data.notes.length ? `${data.notes.length} הערות` : undefined}>
+        <div className="flex gap-2 mb-3">
+          <label className="sr-only" htmlFor="cust-note">הערה</label>
+          <input id="cust-note" value={note} onChange={e => setNote(e.target.value)} placeholder="מה חשוב לזכור" className="flex-1 h-11 rounded-xl px-3 text-sm" style={{ border: "1px solid #C7D8D5" }} />
+          <Btn kind="dark" disabled={!note.trim() || !!busy} onClick={async () => { const r = await act("note", { action: "customer.note", id, body: note }); if (r.ok) setNote(""); }}>הוסף</Btn>
+        </div>
+        {data.notes.map(n => <p key={n.id} className="m-0 mb-2 text-[13px]"><b>{n.author}</b> · <span style={{ color: C.muted }}>{d(n.createdAt)}</span><br />{n.body}</p>)}
+        {data.lead && <p className="m-0 text-xs" style={{ color: C.muted }}>הגיע כליד ב-{d(data.lead.createdAt)} · <Link href={`/admin/crm/leads/${data.lead.id}`} style={{ color: C.petrol }}>לכרטיס הליד</Link></p>}
+      </Card>
     </div>
   );
 }
