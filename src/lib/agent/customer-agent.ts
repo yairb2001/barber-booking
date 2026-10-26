@@ -832,9 +832,14 @@ export async function execTool(
           if (afterStart > start) start = afterStart;
         }
         const MAX_SCAN_DAYS = 30;
-        for (let d = 0; d < MAX_SCAN_DAYS; d++) {
-          const dObj = new Date(start.getTime() + d * 24 * 60 * 60 * 1000);
-          const ds = dObj.toISOString().slice(0, 10);
+        // A far date (16.12 asked on 25.10) is past the calendar's horizon, so
+        // nothing is open after it: then the closest open day BEFORE it is the
+        // answer, not "nothing in 30 days" (המספרה של דני, 25.10.2026).
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const back = Math.min(60, Math.round((start.getTime() - todayStart.getTime()) / DAY_MS));
+        const days = [...Array.from({ length: MAX_SCAN_DAYS }, (_, d) => ({ d, ds: new Date(start.getTime() + d * DAY_MS).toISOString().slice(0, 10) })),
+          ...Array.from({ length: back }, (_, d) => ({ d: -1 - d, ds: new Date(start.getTime() - (d + 1) * DAY_MS).toISOString().slice(0, 10) }))];
+        for (const { d, ds } of days) {
           const blockedForCaller = await callerBlockedStaffIds(bizId, callerPhone);
           const byStaff = (await computeDayAvailability(bizId, ds, inputStaffId, inputServiceId, { exemptHoldsCustomerId: await callerCustomerId(bizId, callerPhone), exemptHoldsHolderKey: callerPhone ? holderKeyForPhone(callerPhone) : null }))
             .map(r => blockedForCaller.has(r.staffId) ? { ...r, slots: [] } : r);
@@ -849,11 +854,12 @@ export async function execTool(
             const warn = byStaff.length > 1
               ? `\n\n⚠️ כל שורה היא ספר נפרד; השעה פנויה רק אצל הספר שלצדה. מותר לעבור בין ספרים כדי למצוא שעה שמתאימה ללקוח, אבל כל שעה שתציע ותקבע חייבת לבוא מהשורה של הספר שאצלו תקבע בפועל.`
               : "";
-            return `התאריך הפנוי הקרוב ביותר הוא ${hebDayDate(ds)} (${ds}) — זו כל הזמינות באותו יום, בוקר עד ערב:\n${lines}${warn}`;
+            const before = d < 0 ? `אחרי התאריך שביקש אין עדיין תורים פתוחים. הכי קרוב לפניו: ` : "";
+            return `${before}התאריך הפנוי הקרוב ביותר הוא ${hebDayDate(ds)} (${ds}) — זו כל הזמינות באותו יום, בוקר עד ערב:\n${lines}${warn}`;
           }
         }
         console.warn(`[agent] find_next_available returned empty — biz=${bizId} staffId=${inputStaffId ?? "any"} serviceId=${inputServiceId ?? "any"} scanned=${MAX_SCAN_DAYS}d`);
-        return `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
+        return back ? `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים שאחרי התאריך שביקש, וגם לא לפניו.` : `לא נמצאו תורים פנויים ב-${MAX_SCAN_DAYS} הימים הקרובים.`;
       }
 
       // ── find_parallel_slots ──────────────────────────────────────────────────
@@ -2861,7 +2867,7 @@ async function runCustomerAgentCore(opts: {
         // useless bubble before the system's question (real chat, 22.9.2026).
         const preText = (response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("\n").trim().split(/\n\s*\n+/)[0] ?? "").trim();
         const preWords = preText.split(/\s+/).filter(w => /[a-zA-Zא-ת]/.test(w));
-        const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)\b/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך/.test(preText);
+        const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)(?![א-ת])/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך/.test(preText);
         assistantText = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
         break;
       }
