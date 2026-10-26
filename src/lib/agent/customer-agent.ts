@@ -287,6 +287,8 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // request, and the "stuck agent" alarm counted lifetime messages. A fresh day =
 // a fresh conversation (the customer record still supplies name/appointments).
 const CONTEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** "הכלי", "מהכלי", "the tool": internal words that never reach a customer. */
+const TOOL_TALK = /(^|[^א-ת])(מה|שה|וה|ב|ל|ה)כלי($|[^א-ת])|\b(the )?tool\b/i;
 
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
@@ -2912,7 +2914,11 @@ async function runCustomerAgentCore(opts: {
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
   // with a personal greeting ("היי יאיר, מה נשמע?") and then follow up, the way a
   // human texts. Within each bubble there are no line breaks.
-  const bubbles = assistantText.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+  // A bubble about our tools ("מצטען, כמה דקות שחזר מהכלי?", DOMINANT 14.10.2026)
+  // is the model talking to itself, never to the customer.
+  const allBubbles = assistantText.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
+  const forCustomer = allBubbles.filter(b => !TOOL_TALK.test(b));
+  const bubbles = forCustomer.length ? forCustomer : allBubbles;
 
   for (let i = 0; i < bubbles.length; i++) {
     await prisma.conversationMessage.create({
