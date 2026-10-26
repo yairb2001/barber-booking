@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { C, NUM, TONE, Card, useCrm, ils } from "../ui";
 import type { saasDashboard } from "@/lib/crm/saas";
+import { Few, Stat, Stats, Note, days } from "./parts";
+import Accounts from "./Accounts";
 
 /**
  * The SaaS dashboard (26.10.2026, Yair: "פירוט מעמיק מאוד לסאאס"; the order after GPT's review):
@@ -11,41 +13,33 @@ import type { saasDashboard } from "@/lib/crm/saas";
  * Data: view=saas (src/lib/crm/saas.ts). A rate on too little data says so.
  */
 type Data = Awaited<ReturnType<typeof saasDashboard>>;
-const RANGES = [["30", "30 יום"], ["90", "90 יום"], ["all", "מההתחלה"]] as const;
-const STAGE: Record<string, [string, string, string]> = {
-  setup: ["בהקמה", TONE.warn.bg, TONE.warn.color], trial: ["בניסיון", C.mist, C.petrol], paying: ["משלם", TONE.ok.bg, TONE.ok.color], suspended: ["מושהה", C.soft, C.muted],
-};
-const days = (n: number | null) => (n == null ? "—" : n < 1 ? "באותו יום" : n === 1 ? "יום" : `${n % 1 ? n.toFixed(1) : n} ימים`);
+const RANGES = [["30", "30 יום"], ["90", "90 יום"], ["all", "מההתחלה"], ["custom", "טווח תאריכים"]] as const;
+const isoDay = (offset: number) => new Date(Date.now() + offset * 86400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Jerusalem" });
 const pct = (n: number, of: number) => (of > 0 ? `${Math.round((n / of) * 100)}%` : "—");
 
-function Few({ n, few }: { n: number; few: number }) {
-  return n < few ? <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={{ background: TONE.warn.bg, color: TONE.warn.color }}>מעט נתונים ({n})</span> : null;
-}
-function Stat({ v, l, tone }: { v: React.ReactNode; l: string; tone?: "bad" | "warn" | "ok" }) {
-  return (
-    <div className="flex flex-col min-w-0">
-      <b className="text-[22px] leading-tight" style={{ ...NUM, color: tone ? TONE[tone].color : C.petrol }}>{v}</b>
-      <span className="text-[12px] leading-snug" style={{ color: C.muted }}>{l}</span>
-    </div>
-  );
-}
-function Stats({ children }: { children: React.ReactNode }) {
-  return <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))" }}>{children}</div>;
-}
-function Note({ children }: { children: React.ReactNode }) {
-  return <p className="m-0 mt-3 text-[12px] leading-relaxed" style={{ color: C.muted }}>{children}</p>;
-}
-
 export default function Dashboard() {
-  const [range, setRange] = useState<"30" | "90" | "all">("30");
-  const { data, error } = useCrm<Data>(`view=saas&range=${range}`);
+  const [range, setRange] = useState<(typeof RANGES)[number][0]>("30");
+  // A range of dates of his own (Yair, 26.10.2026: "לבחור טווח תאריכים").
+  const [from, setFrom] = useState(isoDay(-30));
+  const [to, setTo] = useState(isoDay(0));
+  const [allActions, setAllActions] = useState(false);
+  const { data, error } = useCrm<Data>(range === "custom" ? `view=saas&range=custom&from=${from}&to=${to}` : `view=saas&range=${range}`);
 
+  const field = "h-9 rounded-lg px-2 text-[13px] bg-white";
   const picker = (
-    <div role="tablist" aria-label="תקופה" className="flex gap-1.5">
+    <div className="flex flex-col gap-2">
+    <div role="tablist" aria-label="תקופה" className="flex flex-wrap gap-1.5">
       {RANGES.map(([k, l]) => (
         <button key={k} type="button" role="tab" aria-selected={range === k} onClick={() => setRange(k)} className="h-9 px-3 rounded-full text-[13px] font-semibold"
           style={range === k ? { background: C.mist, color: C.petrol, border: `1px solid ${C.petrol2}` } : { background: "#fff", color: C.muted, border: `1px solid ${C.line}` }}>{l}</button>
       ))}
+    </div>
+    {range === "custom" && (
+      <div className="flex flex-wrap items-center gap-2 text-[13px]" style={{ color: C.muted }}>
+        <label className="flex items-center gap-1.5">מתאריך<input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
+        <label className="flex items-center gap-1.5">עד<input type="date" value={to} min={from} max={isoDay(0)} onChange={e => e.target.value && setTo(e.target.value)} className={field} style={{ border: `1px solid ${C.line}`, color: C.ink }} /></label>
+      </div>
+    )}
     </div>
   );
   if (error) return <>{picker}<p className="text-red-700">{error}</p></>;
@@ -92,7 +86,7 @@ export default function Dashboard() {
       <Card title="מה דורש פעולה" aside={data.action.length ? `${data.action.length} עסקים` : "הכל בסדר"}>
         {data.action.length === 0 && <p className="m-0 text-sm" style={{ color: C.muted }}>אין עסק שמחכה להתערבות.</p>}
         <div className="flex flex-col">
-          {data.action.map((a, i) => (
+          {(allActions ? data.action : data.action.slice(0, 5)).map((a, i) => (
             <Link key={a.id} href={`/admin/crm/customers/${a.id}`} className="flex items-center gap-2.5 py-2.5" style={{ borderTop: i ? `1px solid ${C.soft}` : undefined, color: C.ink, textDecoration: "none" }}>
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: TONE[a.tone as "bad" | "warn"].dot }} />
               <span className="flex-1 min-w-0"><b className="text-[15px]">{a.name}</b><span className="block text-[13px]" style={{ color: TONE[a.tone as "bad" | "warn"].color }}>{a.reason}</span></span>
@@ -100,32 +94,11 @@ export default function Dashboard() {
             </Link>
           ))}
         </div>
+        {data.action.length > 5 && <button type="button" onClick={() => setAllActions(v => !v)} className="mt-1 min-h-[40px] text-sm font-semibold" style={{ color: C.petrol }}>{allActions ? "פחות" : `ועוד ${data.action.length - 5}`}</button>}
       </Card>
 
-      {/* Every account */}
-      <Card title="כל עסק" aside="שבוע אחרון · עלות 30 יום">
-        <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-          {data.accounts.map(a => {
-            const [label, bg, color] = STAGE[a.stage];
-            return (
-              <Link key={a.id} href={`/admin/crm/customers/${a.id}`} className="rounded-2xl p-3.5 flex flex-col gap-2.5" style={{ background: C.ground, color: C.ink, textDecoration: "none" }}>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0"><b className="text-[15px]">{a.name}</b><span className="block text-[12px]" style={{ color: C.muted }}>{a.days} ימים מההרשמה · {a.live ? "חי" : `הקמה ${a.setupDone}/${a.setupTotal}`}</span></div>
-                  <span className="text-[11px] font-bold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: bg, color }}>{label}{a.trialDaysLeft != null && a.stage === "trial" ? ` · ${a.trialDaysLeft} ימים` : ""}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <Stat v={a.firstValueDays == null ? "עוד לא" : days(a.firstValueDays)} l="ערך ראשון" tone={a.firstValueDays == null && a.live ? "warn" : undefined} />
-                  <Stat v={a.appts7} l="תורים מהסוכן" />
-                  <Stat v={a.convs7} l="שיחות" />
-                  <Stat v={a.convs7 ? pct(a.escalated7, a.convs7) : "—"} l="הועברו לאדם" />
-                  <Stat v={ils(a.cost30Ils)} l="עלות הסוכן" tone={a.price > 0 && a.cost30Ils > a.price ? "bad" : undefined} />
-                  <Stat v={a.failed7 + a.reportsOpen} l="תקלות ודיווחים" tone={a.failed7 + a.reportsOpen > 0 ? "bad" : undefined} />
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </Card>
+      {/* Every account: a bar by state, the week's totals, a short list with the ones needing care first */}
+      <Accounts accounts={data.accounts} needsCare={new Set(data.action.map(x => x.id))} />
 
       {/* The funnel and sales */}
       <Card title="משפך הגיוס" aside={<Few n={data.funnel[0].n} few={few} />}>

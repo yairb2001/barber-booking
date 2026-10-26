@@ -690,7 +690,7 @@ export async function GET(req: NextRequest) {
     if (view === "customer") { const v = await customerView(sp.get("id") ?? ""); return v ? NextResponse.json(v) : NextResponse.json({ error: "not_found" }, { status: 404 }); }
     if (view === "invoices") return NextResponse.json(await invoicesView());
     // The SaaS dashboard (26.10.2026): src/lib/crm/saas.ts.
-    if (view === "saas") return NextResponse.json(await (await import("@/lib/crm/saas")).saasDashboard(sp.get("range")));
+    if (view === "saas") return NextResponse.json(await (await import("@/lib/crm/saas")).saasDashboard(sp.get("range"), sp.get("from"), sp.get("to")));
     if (view === "settings") {
       const { crmPushDevices } = await import("@/lib/crm/notify");
       const { getCrmText } = await import("@/lib/crm/core");

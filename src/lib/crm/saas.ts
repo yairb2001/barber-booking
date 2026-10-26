@@ -13,6 +13,7 @@ import { computeSetup } from "@/lib/crm/setup-progress";
 import { getCrmSettings } from "@/lib/crm/core";
 import { shopReports, OPEN_STAGES } from "@/lib/agent/shop-reports";
 import { waFunnelView } from "@/lib/agent/wa-funnel-run";
+import { appointmentInstant } from "@/lib/utils";
 
 const DAY = 86400_000;
 /** Below this many, a rate is shown with "מעט נתונים". */
@@ -23,7 +24,7 @@ const monthKey = (d: Date) => d.toLocaleDateString("en-CA", { timeZone: "Asia/Je
 const endOfMonth = (key: string) => { const [y, m] = key.split("-").map(Number); return new Date(Date.UTC(y, m, 1) - 1); };
 const addMonths = (key: string, k: number) => { const [y, m] = key.split("-").map(Number); return new Date(Date.UTC(y, m - 1 + k, 1)).toISOString().slice(0, 7); };
 
-export type SaasRange = "30" | "90" | "all";
+export type SaasRange = "30" | "90" | "all" | "custom";
 export type Account = {
   id: string; name: string; stage: "setup" | "trial" | "paying" | "suspended"; days: number;
   live: boolean; setupDone: number; setupTotal: number; current: string | null; stuckHours: number;
@@ -31,9 +32,18 @@ export type Account = {
   cost30Ils: number; reportsOpen: number; trialDaysLeft: number | null; price: number;
 };
 
-export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
-  const range: SaasRange = rangeRaw === "90" || rangeRaw === "all" ? rangeRaw : "30";
-  const since = range === "all" ? new Date(0) : new Date(now.getTime() - Number(range) * DAY);
+const isDay = (s: string | null): s is string => !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+/** An Israel calendar day's first (or last) instant. */
+const israelDay = (day: string, end = false) => new Date(appointmentInstant(new Date(`${day}T00:00:00Z`), end ? "23:59" : "00:00").getTime() + (end ? 59_999 : 0));
+
+/** range: 30 / 90 days back, "all", or "custom" with from and to (YYYY-MM-DD, Israel days; Yair: "לבחור טווח תאריכים"). */
+export async function saasDashboard(rangeRaw: string | null, fromRaw: string | null = null, toRaw: string | null = null, now = new Date()) {
+  const custom = rangeRaw === "custom" && isDay(fromRaw) && isDay(toRaw) && fromRaw <= toRaw;
+  const range: SaasRange = custom ? "custom" : rangeRaw === "90" || rangeRaw === "all" ? rangeRaw : "30";
+  const since = custom ? israelDay(fromRaw!) : range === "all" ? new Date(0) : new Date(now.getTime() - Number(range) * DAY);
+  const until = custom ? new Date(Math.min(israelDay(toRaw!, true).getTime(), now.getTime())) : now;
+  const within = (d: Date | null | undefined) => !!d && d >= since && d <= until;
+  const span = { gte: since, lte: until };
   const d7 = new Date(now.getTime() - 7 * DAY), d30 = new Date(now.getTime() - 30 * DAY);
   const settings = await getCrmSettings();
 
@@ -52,10 +62,10 @@ export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
     prisma.agentUsage.groupBy({ by: ["businessId"], where: { businessId: { in: ids }, createdAt: { gte: d30 }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } }),
     prisma.messageLog.groupBy({ by: ["businessId"], where: { businessId: { in: ids }, status: "failed", createdAt: { gte: d7 } }, _count: { _all: true } }),
     shopReports(ids),
-    prisma.lead.findMany({ where: { createdAt: { gte: since } }, select: { source: true, stage: true, businessId: true } }),
-    prisma.salesCall.findMany({ where: { startsAt: { gte: since } }, select: { status: true, outcome: true } }),
-    prisma.crmInvoice.findMany({ where: { issuedAt: { gte: since } }, select: { amountIls: true, status: true } }),
-    prisma.agentUsage.aggregate({ where: { businessId: DEMO_BUSINESS_ID, createdAt: { gte: since }, ...NOT_TEST_USAGE }, _sum: { costUsd: true } }),
+    prisma.lead.findMany({ where: { createdAt: span }, select: { source: true, stage: true, businessId: true } }),
+    prisma.salesCall.findMany({ where: { startsAt: span }, select: { status: true, outcome: true } }),
+    prisma.crmInvoice.findMany({ where: { issuedAt: span }, select: { amountIls: true, status: true } }),
+    prisma.agentUsage.aggregate({ where: { businessId: DEMO_BUSINESS_ID, createdAt: span, ...NOT_TEST_USAGE }, _sum: { costUsd: true } }),
     waFunnelView(now),
   ]);
   const of = <T extends { businessId: string }>(rows: T[], id: string) => rows.find(r => r.businessId === id);
@@ -78,7 +88,7 @@ export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
     };
   });
   const bizOf = (id: string) => bizs.find(b => b.id === id)!;
-  const inRange = accounts.filter(a => bizOf(a.id).createdAt >= since);
+  const inRange = accounts.filter(a => within(bizOf(a.id).createdAt));
 
   // ── What needs action (one reason per account, the most serious) ───────────
   const action = accounts.filter(a => a.stage !== "suspended").flatMap(a => {
@@ -136,8 +146,8 @@ export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
   // ── Revenue (from paid date, suspension and monthly price; no price history yet) ──
   const payingNow = accounts.filter(a => a.stage === "paying");
   const mrr = payingNow.reduce((s, a) => s + a.price, 0);
-  const newMrr = bizs.filter(b => b.paidAt && b.paidAt >= since && !b.suspendedAt).reduce((s, b) => s + (b.monthlyPrice ?? 0), 0);
-  const churnedMrr = bizs.filter(b => b.paidAt && b.suspendedAt && b.suspendedAt >= since).reduce((s, b) => s + (b.monthlyPrice ?? 0), 0);
+  const newMrr = bizs.filter(b => within(b.paidAt) && !b.suspendedAt).reduce((s, b) => s + (b.monthlyPrice ?? 0), 0);
+  const churnedMrr = bizs.filter(b => b.paidAt && within(b.suspendedAt)).reduce((s, b) => s + (b.monthlyPrice ?? 0), 0);
   const months: string[] = [];
   for (let i = 5; i >= 0; i--) { const d = new Date(now); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - i); months.push(monthKey(d)); }
   const history = months.map(m => {
@@ -151,7 +161,7 @@ export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
     collected: invoices.filter(i => i.status === "paid").reduce((s, i) => s + i.amountIls, 0),
     failedInvoices: invoices.filter(i => i.status === "failed").length,
     trialsEnding7: trialsEnding.length,
-    trialToPaid: { paid: bizs.filter(b => b.paidAt && b.paidAt >= since).length, ended: bizs.filter(b => b.trialEndsAt && b.trialEndsAt >= since && b.trialEndsAt <= now).length },
+    trialToPaid: { paid: bizs.filter(b => within(b.paidAt)).length, ended: bizs.filter(b => within(b.trialEndsAt)).length },
   };
 
   // ── Costs ────────────────────────────────────────────────────────────────
@@ -178,8 +188,8 @@ export async function saasDashboard(rangeRaw: string | null, now = new Date()) {
     return { month: m, signed: group.length, m1: at(1), m2: at(2), m3: at(3), paying: group.filter(b => b.paidAt && !b.suspendedAt).length };
   });
   const startActive = bizs.filter(b => b.createdAt < since && (!b.suspendedAt || b.suspendedAt >= since)).length;
-  const suspendedInRange = bizs.filter(b => b.suspendedAt && b.suspendedAt >= since).length;
+  const suspendedInRange = bizs.filter(b => within(b.suspendedAt)).length;
   const retention = { cohorts, suspendedInRange, logoChurnPct: range === "all" ? null : pct(suspendedInRange, startActive), startActive };
 
-  return { range, since: since.toISOString(), action, firstValue, accounts, funnel, bySource, sales, revenue, costs, retention, few: FEW };
+  return { range, since: since.toISOString(), until: until.toISOString(), action, firstValue, accounts, funnel, bySource, sales, revenue, costs, retention, few: FEW };
 }
