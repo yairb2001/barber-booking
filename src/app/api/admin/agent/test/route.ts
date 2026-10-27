@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       results.greenapi = "NOT CONFIGURED (missing Instance ID / Token in settings)";
     } else {
       const base = `https://api.green-api.com/waInstance${id}`;
-      const expectedWebhook = `${req.nextUrl.origin}/api/webhook/whatsapp`;
+      const expectedWebhook = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/api/webhook/whatsapp`;
 
       // 4a. Instance state — must be "authorized" (WhatsApp linked)
       try {

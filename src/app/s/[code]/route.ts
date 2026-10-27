@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { redirectTo } from "@/lib/redirect";
 
 export const dynamic = "force-dynamic";
 
@@ -7,5 +8,5 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest, { params }: { params: { code: string } }) {
   const code = (params.code || "").trim();
   const row = /^[2-9A-Za-z]{6,16}$/.test(code) ? await prisma.shortLink.findUnique({ where: { code }, select: { url: true } }) : null;
-  return NextResponse.redirect(row?.url || new URL("/", req.url).toString(), 302);
+  return row?.url ? NextResponse.redirect(row.url, 302) : redirectTo("/");
 }

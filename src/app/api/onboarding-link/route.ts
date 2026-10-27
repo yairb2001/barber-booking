@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyOnboardingToken, signSession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
+import { redirectTo } from "@/lib/redirect";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   if (!biz || biz.suspendedAt) return NextResponse.json({ error: "business unavailable" }, { status: 404 });
 
   const session = await signSession({ businessId: biz.id, role: "owner" });
-  const res = NextResponse.redirect(new URL("/admin/onboarding", req.url));
+  const res = redirectTo("/admin/onboarding", 307);
   res.cookies.set(COOKIE_NAME, session, COOKIE_OPTIONS);
   return res;
 }

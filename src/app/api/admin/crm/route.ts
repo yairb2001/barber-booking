@@ -1212,7 +1212,7 @@ export async function POST(req: NextRequest) {
         const email = str("email");
         if (email) { const st = biz.settings ? JSON.parse(biz.settings) : {}; st.billingEmail = email; await prisma.business.update({ where: { id: biz.id }, data: { settings: JSON.stringify(st) } }); }
         const url = await createStandingOrderLink({
-          origin: req.nextUrl.origin, businessId: biz.id, fullName: biz.name, email, phone: ownerPhoneOf(biz) ?? "",
+          origin: process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin, businessId: biz.id, fullName: biz.name, email, phone: ownerPhoneOf(biz) ?? "",
           amountIls: biz.monthlyPrice ?? 287, itemName: "Chator מנוי חודשי", qa: b.qa === true,
         });
         return NextResponse.json({ ok: true, url });

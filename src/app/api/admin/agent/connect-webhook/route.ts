@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const webhookUrl = `${req.nextUrl.origin}/api/webhook/whatsapp`;
+  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/api/webhook/whatsapp`;
 
   try {
     const res = await fetch(`https://api.green-api.com/waInstance${id}/setSettings/${token}`, {
