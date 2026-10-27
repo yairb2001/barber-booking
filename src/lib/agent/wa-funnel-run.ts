@@ -129,7 +129,9 @@ export async function runWaFunnel(now: Date = new Date(), dryRun?: { phone: stri
     // He wrote in the meantime → his chat is live again; the agent is on it.
     const newer = await prisma.conversationMessage.findFirst({ where: { conversationId: c.id, role: "user", createdAt: { gt: c.facts.lastUserAt ?? new Date(0) } }, select: { id: true } });
     if (newer) continue;
-    await saveSalesState(c.id, { ...c.state, wa: { ...c.state.wa, sent: { ...c.state.wa?.sent, [plan.next.key]: now.toISOString() } } });
+    const stamp = now.toISOString();
+    const skipped = Object.fromEntries((plan.next.skip ?? []).map(k => [k, stamp]));
+    await saveSalesState(c.id, { ...c.state, wa: { ...c.state.wa, sent: { ...c.state.wa?.sent, ...skipped, [plan.next.key]: stamp } } });
     await salesReply(c.id, c.phone, [text]);
     sent++;
   }

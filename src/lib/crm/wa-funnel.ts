@@ -208,6 +208,8 @@ export function stepDueAt(step: FunnelStep, anchor: Date): Date {
 const IG_WINDOW_MS = 23 * 3600_000;
 /** Two follow-ups never go out less than an hour apart (after Shabbat, say). */
 const MIN_GAP_MS = 3600_000;
+/** A follow-up this late is stale: when a later step is waiting, it is skipped (27.10.2026). */
+const STALE_MS = 6 * 3600_000;
 
 /** What we know about one chat, from the database. */
 export type ContactFacts = {
@@ -226,7 +228,8 @@ export type ContactFacts = {
 export type ContactPlan = {
   stage: WaStage;
   exit: WaExit | null;
-  next: { key: string; step: FunnelStep; sendAt: Date } | null;
+  /** skip: earlier steps that were overdue together with this one; marked sent with it, never sent. */
+  next: { key: string; step: FunnelStep; sendAt: Date; skip?: string[] } | null;
   /** No more steps: when he turns "not relevant" if he stays quiet. */
   notRelevantAt: Date | null;
 };
@@ -247,6 +250,12 @@ export function planContact(f: ContactFacts, cfg: FunnelConfig, now = new Date()
   const anchor = f.lastUserAt;
   if (anchor && f.lastIsOurs && !f.escalated && !f.academy && (!cfg.enabledAt || anchor.getTime() >= new Date(cfg.enabledAt).getTime())) {
     const lastSent = Math.max(0, ...Object.values(t.sent ?? {}).map(x => new Date(x).getTime()).filter(Number.isFinite));
+    // Several steps overdue together (the follow-ups were down, the steps changed, the night): only the
+    // latest of them goes out and the earlier ones are skipped; one more than STALE_MS late gives way to
+    // the next step when there is one. Before 27.10.2026 they went out one by one, an hour apart: three
+    // follow-ups in a row the morning the new server came up.
+    const skip: string[] = [];
+    let nextDue = 0;
     for (const step of cfg.stages[stage]) {
       const key = `${stage}:${step.id}`;
       if (!step.on || !step.text.trim() || t.sent?.[key]) continue;
@@ -254,8 +263,14 @@ export function planContact(f: ContactFacts, cfg: FunnelConfig, now = new Date()
       if (f.ig && due.getTime() - anchor.getTime() > IG_WINDOW_MS) continue;
       const at = nextAllowed(new Date(Math.max(due.getTime(), lastSent ? lastSent + MIN_GAP_MS : 0)), cfg.hours);
       if (f.ig && at.getTime() - anchor.getTime() > IG_WINDOW_MS) continue;
-      next = { key, step, sendAt: at };
-      break;
+      const overdue = due.getTime() <= now.getTime();
+      if (next) {
+        if (!overdue && now.getTime() - nextDue <= STALE_MS) break;
+        skip.push(next.key);
+      }
+      next = { key, step, sendAt: at, skip: [...skip] };
+      nextDue = due.getTime();
+      if (!overdue) break;
     }
   }
   // Quiet N days after our last message, with nothing more to send → not relevant.
