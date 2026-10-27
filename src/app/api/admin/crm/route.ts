@@ -1246,7 +1246,7 @@ export async function POST(req: NextRequest) {
         const biz = await prisma.business.findUnique({ where: { id: str("id") }, select: { id: true, name: true, phone: true, settings: true } });
         const to = biz ? ownerPhoneOf(biz) : null;
         if (!biz || !to) return NextResponse.json({ error: "אין טלפון לבעל העסק" }, { status: 400 });
-        const body = `היי, כאן Chator. הוואטסאפ של ${biz.name} התנתק מהמערכת, אז הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.\nלחיבור מחדש, פחות מדקה: ${req.nextUrl.origin}/admin/settings/whatsapp ושם "חבר את הטלפון".`;
+        const body = `היי, כאן Chator. הוואטסאפ של ${biz.name} התנתק מהמערכת, אז הלקוחות לא מקבלים מענה אוטומטי ותזכורות לא יוצאות.\nלחיבור מחדש, פחות מדקה: ${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/admin/settings/whatsapp ושם "חבר את הטלפון".`;
         const phone = normalizeIsraeliPhone(to);
         const r = await sendMessage({ businessId: DEMO_BUSINESS_ID, customerPhone: phone, kind: "manual", body });
         if (!r.ok) return NextResponse.json({ error: r.error || "send_failed" }, { status: 502 });
