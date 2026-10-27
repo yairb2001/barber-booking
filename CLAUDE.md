@@ -16,7 +16,7 @@ SaaS booking system for barbershops (Hebrew, RTL). Multi-tenant from the schema 
 |---|---|
 | Framework | Next.js 14 App Router (TypeScript) |
 | DB | PostgreSQL on Neon, Prisma ORM |
-| Storage | `src/lib/storage.ts`: R2 when configured, else Vercel Blob |
+| Storage | `src/lib/storage.ts`: server disk (`STORAGE_DIR`=/data/files, served at `/files/...`), nightly copy to the Mac (~/Backups/chator-files) |
 | Auth | JWT via `jose`, cookie `admin_session`, `bcryptjs` for passwords |
 | WhatsApp | GreenAPI (`src/lib/messaging/green-api.ts`) |
 | AI | Anthropic SDK (`@anthropic-ai/sdk`) — customer agent in `src/lib/agent/` |
