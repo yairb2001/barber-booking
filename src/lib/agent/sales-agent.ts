@@ -181,12 +181,11 @@ async function funnelFor(sandbox?: DemoSandbox): Promise<FunnelConfig | null> {
 const LANDING_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/for-business`;
 /**
  * "כמה זה עולה?" (Yair, 26.10.2026: "ליצור כמה בועות, ולהניע לפעולה ... תמיד לחתוך לנקודה שנרשם
- * או שיקבע שיחה"): the price, the plans page, and the free signup, each its own WhatsApp bubble.
+ * או שיקבע שיחה"): the price with the plans page, and the free signup; two bubbles (27.10: "מינימום").
  */
 const PRICE_BUBBLES = [
-  PRICE_TEXT_V2,
-  `את כל המסלולים אפשר לראות כאן: ${LANDING_URL}#plans`,
-  `נרשמים בחינם, ותוך 15 דקות אתה רואה איך זה עובד במספרה שלך:\n${SIGNUP_URL}`,
+  `${PRICE_TEXT_V2} כל המסלולים: ${LANDING_URL}#plans`,
+  `נרשמים בחינם, ותוך 15 דקות זה עובד במספרה שלך:\n${SIGNUP_URL}`,
 ];
 
 /** True when a message would open a demo/prospect conversation (kept for the tests and the source tag). */
@@ -717,12 +716,13 @@ ${ctx}
 רוצה לדבר עם בן אדם: הצע שיחה עם ${rep} עם שתי שעות מהרשימה, זו המטרה. מעבירים ל${rep} (handoff_to_rep) רק כשמתעקש שיחזרו אליו עכשיו או כשאין שעות פנויות, וגם כשמבקש הנחה, שואל שאלה שאין עליה תשובה בידע למטה, מתלונן, או לקוח קיים עם בעיה.
 
 גבולות:
-- עד שלוש הודעות קצרות, עם שורה ריקה ביניהן (כל אחת נשלחת כבועה נפרדת), כל אחת עד שני משפטים. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
+- הודעה אחת קצרה, עד שני משפטים. מינימום מילים: לא מסבירים יותר ממה ששאל. בלי רשימות, בלי מקפים, בלי כוכביות, כמעט בלי אימוג'ים, בלי מילים באנגלית כשכותבים אליך בעברית. אל תפתח ב"היי" אם כבר דיברתם.
 - כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
-- תמיד מקדמים לצעד: כשאתה עונה על שאלה, ההודעה האחרונה מציעה להירשם בחינם (send_signup_link) או שיחה קצרה, אלא אם הצעת את זה בהודעה הקודמת שלך.
+- כל הודעה נגמרת בדבר אחד בלבד: שאלה אחת, או הצעה אחת (להירשם בחינם עם send_signup_link, או שיחה קצרה). לא שניהם, ולא אותה הצעה פעמיים ברצף.
 - מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות.
+- שאל שוב משהו שכבר ענית עליו: לא חוזרים על ההסבר. משפט אחד, ואז הרשמה בחינם (send_signup_link).
 - "לא מעוניין" או "לא עכשיו": not_interested ומשפט אדיב אחד.
 - אל תגיד שמישהו יתקשר אליו או שנקבעה שיחה, אלא אם כתוב למעלה "שיחה קבועה". אין שיחה: הצע לקבוע.
 
@@ -950,9 +950,9 @@ async function runSalesTurn(p: { conversationId: string; phone: string; text: st
   if (v2 && ctx.callBooked && !state.prepAsked) state = { ...state, prepAsked: true };
 
   await saveState(p.conversationId, state);
-  // v2: up to three short WhatsApp bubbles a turn (26.10.2026, Yair: "ליצור כמה בועות"; before, one
-  // message); only allowed amounts.
-  const parts = v2 ? replies.slice(0, 3) : replies;
+  // v2: one WhatsApp message a turn (27.10.2026, Yair: "הוא לא מפסיק לחפור ... צריך מינימום"; for a day
+  // it was up to three bubbles); only allowed amounts.
+  const parts = v2 ? [replies.join("\n\n")].filter(Boolean) : replies;
   // v2: the first reply always says who is writing (on Instagram: that it is the automated agent).
   if (v2 && firstTurn && parts.length && !/כאן (הסוכן האוטומטי של )?צ['׳]אטור/.test(parts.join(" "))) {
     const first = (state.fullName ?? "").trim().split(/\s+/)[0];

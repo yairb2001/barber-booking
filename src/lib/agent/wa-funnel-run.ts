@@ -33,7 +33,9 @@ const ACADEMY_RE = /קורס|אקדמי|סדנ[אה]|מחזור|תלמיד/;
 
 const firstName = (c: { state: SalesState; whatsappName: string | null }): string | null => {
   const raw = c.state.fullName || (c.whatsappName && !isPhoneLikeName(c.whatsappName) ? c.whatsappName : "");
-  return raw.trim().split(/\s+/)[0] || null;
+  const first = raw.trim().split(/\s+/)[0] || "";
+  // Only plain Hebrew or English letters: a WhatsApp name in a fancy font reads oddly in a message (27.10.2026).
+  return /^[\u05D0-\u05EAA-Za-z'\u05F3]{2,20}$/.test(first) ? first : null;
 };
 
 /** Every sales chat on Chator's number that moved in the last `sinceDays` days, with what the funnel needs. */
