@@ -207,6 +207,9 @@ export async function POST(request: NextRequest) {
   const manualSource = (typeof referralSource === "string" ? referralSource.trim() : "") || null;
   const newCustomerSource = manualSource || attrDisplaySource;
 
+  // לקוח חדש לגמרי = אין לו כרטיס בכלל לפני ההזמנה הזו, ולכן גם אין לו שום תור קודם.
+  // בשבילו בלבד הפיקסל יורה Schedule (28.10.2026, יאיר).
+  const brandNewCustomer = !customer;
   if (!customer) {
     customer = await prisma.customer.create({
       data: {
@@ -543,6 +546,7 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ...appointment,
+    newCustomer: brandNewCustomer,
     waitlistEntries: sameDayWaitlist.map(w => ({
       id: w.id,
       dateLabel: w.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }),

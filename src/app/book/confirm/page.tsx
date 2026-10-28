@@ -371,7 +371,7 @@ function ConfirmPageContent() {
 
   // After a successful booking, if the customer is on the waitlist for the same
   // day, ask whether to remove them from it (booking made it redundant).
-  type BookedAppt = { id: string; staff: { name: string }; service: { name: string }; waitlistEntries?: { id: string; dateLabel: string }[] };
+  type BookedAppt = { id: string; staff: { name: string }; service: { name: string }; newCustomer?: boolean; waitlistEntries?: { id: string; dateLabel: string }[] };
   const [waitlistPrompt, setWaitlistPrompt] = useState<{ appointment: BookedAppt; entries: { id: string; dateLabel: string }[] } | null>(null);
   const [waitlistRemoving, setWaitlistRemoving] = useState(false);
 
@@ -426,7 +426,12 @@ function ConfirmPageContent() {
         const apptId = searchParams.get("appointmentId");
         const firedKey = apptId ? `px_sched_${apptId}` : null;
         try { if (firedKey && localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
-        fbq("track", "Schedule", { value: Number(searchParams.get("price")) || 0, currency: "ILS" }, apptId ? { eventID: `appt-${apptId}` } : undefined);
+        // לקוח חדש לגמרי: Schedule, שעליו הקמפיינים לומדים. לקוח קבוע: אירוע נפרד, שנספר אבל לא
+        // מלמד את הקמפיין (28.10.2026, יאיר: "חשוב שידווח גם וגם, אבל מה שמעניין אותי זה החדשים").
+        const params = { value: Number(searchParams.get("price")) || 0, currency: "ILS" };
+        const opts = apptId ? { eventID: `appt-${apptId}` } : undefined;
+        if (searchParams.get("nc") === "1") fbq("track", "Schedule", params, opts);
+        else fbq("trackCustom", "ScheduleReturning", params, opts);
         try { if (firedKey) localStorage.setItem(firedKey, "1"); } catch { /* ignore */ }
       } else {
         fbq("track", "InitiateCheckout");
@@ -672,7 +677,7 @@ function ConfirmPageContent() {
   // Navigate to the success screen for a freshly-booked appointment.
   function goToSuccess(appointment: BookedAppt) {
     router.push(
-      publicHref(slug, `/book/confirm?success=true&appointmentId=${appointment.id}` +
+      publicHref(slug, `/book/confirm?success=true&appointmentId=${appointment.id}&nc=${appointment.newCustomer ? 1 : 0}` +
       `&staffId=${staffId}&serviceId=${serviceId}` +
       `&staffName=${encodeURIComponent(appointment.staff.name)}` +
       `&serviceName=${encodeURIComponent(appointment.service.name)}` +
