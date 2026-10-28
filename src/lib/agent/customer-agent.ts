@@ -1888,10 +1888,10 @@ async function catalogCore(businessId: string): Promise<string> {
       orderBy: { sortOrder: "asc" },
       select: {
         id: true, name: true, nickname: true, inQuickPool: true, gender: true,
-        staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true, priceFrom: true } } } },
+        staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
       },
     }),
-    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true, category: true, priceFrom: true } }),
+    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true } }),
   ]);
   const [biz, schedules] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true, businessType: true, settings: true } }),
@@ -1907,22 +1907,18 @@ async function catalogCore(businessId: string): Promise<string> {
   const info = [biz?.address ? `כתובת: ${biz.address}` : "", biz?.phone ? `טלפון: ${biz.phone}` : "", daysLine, biz?.about ? biz.about.replace(/\s+/g, " ").slice(0, 300) : ""].filter(Boolean).join(" · ");
   if (!staff.length || !services.length) return info ? `פרטי העסק: ${info}` : "";
   const hasPool = staff.some(s => s.inQuickPool);
-  // "החל מ" (a price set at a consultation) rides along, so the agent never quotes it as the price.
-  const svc = (name: string, price: number, dur: number, note: string | null, id: string, from = false) => `${name} ${from ? "החל מ-" : ""}${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
-  const own = (s: (typeof staff)[number]) => [...s.staffServices].sort((a, b) => a.service.sortOrder - b.service.sortOrder);
-  const who = (s: (typeof staff)[number]) => {
+  const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
+  const lines = staff.map(s => {
+    const own = [...s.staffServices].sort((a, b) => a.service.sortOrder - b.service.sortOrder);
+    const list = own.length
+      ? own.map(ss => svc(ss.customName ?? ss.service.name, ss.customPrice ?? ss.service.price, ss.customDuration ?? ss.service.durationMinutes, ss.customNote ?? ss.service.note, ss.service.id))
+      : services.map(sv => svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id));
     // A team member of the other gender than the business default (a male stylist
     // in a women's salon) is marked, so the agent says "הוא פנוי" about him (16.10.2026).
     const fem = staffFemOf(s, v);
     const mark = fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
     const pool = hasPool && !s.inQuickPool ? (fem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
-    return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}`;
-  };
-  const lines = staff.map(s => {
-    const list = own(s).length
-      ? own(s).map(ss => svc(ss.customName ?? ss.service.name, ss.customPrice ?? ss.service.price, ss.customDuration ?? ss.service.durationMinutes, ss.customNote ?? ss.service.note, ss.service.id, ss.service.priceFrom))
-      : services.map(sv => svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id, sv.priceFrom));
-    return `${who(s)}: ${list.join("; ")}`;
+    return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
   // Two staff with the same first name ("יאיר בוחבוט" / "יאיר הרוש"): name them
   // explicitly, so "אצל יאיר" is never resolved by guess.
@@ -1930,27 +1926,8 @@ async function catalogCore(businessId: string): Promise<string> {
   for (const s of staff) { const f0 = s.name.trim().split(/\s+/)[0]; if (f0) byFirst.set(f0, [...(byFirst.get(f0) ?? []), s.name.trim()]); }
   const twins = Array.from(byFirst.entries()).filter(([, names]) => names.length > 1)
     .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
-  // A long menu in several categories (a mixed salon, 28.10.2026): the agent asks by category first.
-  const cats = Array.from(new Set(services.map(sv => sv.category?.trim()).filter((c): c is string => !!c)));
-  const domains = services.length > 8 && cats.length > 1
-    ? "\nתחומים: " + cats.map(c => `${c} (${services.filter(sv => sv.category?.trim() === c).map(sv => sv.name).join(", ")})`).join(" · ")
-    : "";
-  const tail = domains + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
-  let block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + tail;
-  // Too long per person (a salon with the full starter menu and 4 stylists):
-  // each service once, and per person only names and what differs. It used to
-  // drop the whole list and leave the agent on tools (28.10.2026).
-  if (block.length > 4500) {
-    const differs = (ss: (typeof staff)[number]["staffServices"][number]) => [
-      ss.customPrice != null && ss.customPrice !== ss.service.price ? `${ss.customPrice}₪` : "",
-      ss.customDuration != null && ss.customDuration !== ss.service.durationMinutes ? `${ss.customDuration} דק׳` : "",
-    ].filter(Boolean).join("/");
-    block = `השירותים (עדכני. המחיר והמשך הרגילים; המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` +
-      services.map(sv => `• ${svc(sv.name, sv.price, sv.durationMinutes, sv.note, sv.id, sv.priceFrom)}`).join("\n") +
-      `\n${v.staffPluralDef} ומה כל ${v.staff} עושה (מחיר או משך אחר בסוגריים):\n` +
-      staff.map(s => `${who(s)}: ${own(s).length ? own(s).map(ss => { const d = differs(ss); return `${ss.customName ?? ss.service.name}${d ? ` (${d})` : ""}`; }).join(", ") : "כל השירותים"}`).join("\n") + tail;
-    if (block.length > 9000) return info ? `פרטי העסק: ${info}` : "";
-  }
+  const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
+  if (block.length > 4500) return info ? `פרטי העסק: ${info}` : "";
   // What each service includes, from its description on the services screen
   // (16.10.2026, Yair: "לכתוב בתיאור של השירות שהסוכן ימשוך נתונים"). Once per
   // service, not per staff member, within its own small budget.
