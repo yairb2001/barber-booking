@@ -149,8 +149,20 @@ export function agentReplyForType(text: string, words: Words): string {
   // WhatsApp shows "**" as is (28.10.2026: "**שירן נייל:**" in a service list).
   // "יש המון מקום" makes a business sound empty (Yair, 28.10.2026: "לא אהבתי
   // שהוא אומר המון מקום"); "מלא" only after "יש", since "היום מלא" means full.
-  return out.replace(/\*\*/g, "")
+  return atMostThreeTimes(out.replace(/\*\*/g, "")
     .replace(/(יש (?:עוד )?)?(המון|הרבה|מלא) (מקומות|מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
       q === "מלא" && !yesh ? m : `${yesh ?? ""}כמה ${what.startsWith("מקום") ? "תורים פנויים" : what}`)
-    .replace(/(יש (?:עוד )?)המון(?= עד|\s*[).,!]|$)/gm, "$1כמה");
+    .replace(/((?:ו?יש (?:עוד )?)|(?:ו?עוד ))המון(?= עד|\s*[).,!]|$)/gm, "$1כמה")
+    // A long dash between words (the instructions already forbid it): a comma. Between times it stays.
+    .replace(/[ \t]+(?:—|--)[ \t]+/g, (m, at: number, s: string) => /\d/.test(s[at - 1] ?? "") && /\d/.test(s[at + m.length] ?? "") ? m : ", "));
+}
+
+/** At most 3 times in a row, as the instructions say (29.10.2026: 12 slots for one gel
+ *  manicure). The rest is "ועוד" unless the reply already says there is more. */
+function atMostThreeTimes(text: string): string {
+  return text.replace(/\d{1,2}:\d{2}(?:[ \t]*(?:,|·|או|ו-?)[ \t]*\d{1,2}:\d{2}){3,}/g, (list: string, at: number, s: string) => {
+    const cut = list.match(/^\d{1,2}:\d{2}(?:[ \t]*(?:,|·|או|ו-?)[ \t]*\d{1,2}:\d{2}){2}/)![0];
+    const more = /^[ \t]*[(,–-]?[ \t]*(?:ו?יש עוד|ועוד|עוד)/.test(s.slice(at + list.length));
+    return more ? cut : `${cut} ועוד`;
+  });
 }
