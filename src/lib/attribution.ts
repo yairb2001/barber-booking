@@ -15,10 +15,14 @@ export type Attribution = {
   medium?: string;    // utm_medium   — paid | organic | ...
   campaign?: string;  // utm_campaign — campaign name (Meta fills automatically)
   content?: string;   // utm_content  — the specific ad name
+  fbclid?: string;    // מזהה הלחיצה של מטא (28.10.2026)
   ts: number;         // capture timestamp (for TTL)
 };
 
 const KEY = "bk_attr";
+/** הביקור האחרון שהגיע עם מקור (28.10.2026): הוא נשמר על התור, והראשון נשאר על הלקוח. */
+const LAST_KEY = "bk_attr_last";
+const LAST_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 /**
@@ -40,8 +44,12 @@ export function captureAttribution(): void {
       medium:   pick("utm_medium"),
       campaign: pick("utm_campaign"),
       content:  pick("utm_content"),
+      fbclid:   pick("fbclid"),
     };
     if (!Object.values(incoming).some(Boolean)) return; // no tracking params
+
+    // הביקור האחרון: תמיד מתעדכן, כדי שהתור יירשם על הלחיצה שהביאה אותו.
+    localStorage.setItem(LAST_KEY, JSON.stringify({ ...incoming, ts: Date.now() }));
 
     // First-touch: keep the earliest valid attribution.
     if (getStoredAttribution()) return;
@@ -67,4 +75,21 @@ export function getStoredAttribution(): Attribution | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * המקור שנשמר על התור (28.10.2026): הביקור האחרון שהגיע עם מקור ב־30 הימים האחרונים,
+ * ואם אין כזה, הכניסה הראשונה.
+ */
+export function getVisitAttribution(): Attribution | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LAST_KEY);
+    if (raw) {
+      const a = JSON.parse(raw) as Attribution;
+      if (a && typeof a.ts === "number" && Date.now() - a.ts <= LAST_TTL_MS) return a;
+      localStorage.removeItem(LAST_KEY);
+    }
+  } catch { /* ignore */ }
+  return getStoredAttribution();
 }

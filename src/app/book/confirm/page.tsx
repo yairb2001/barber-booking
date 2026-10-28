@@ -6,7 +6,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 import { useVocab, useG } from "@/components/VocabProvider";
-import { getStoredAttribution } from "@/lib/attribution";
+import { getStoredAttribution, getVisitAttribution } from "@/lib/attribution";
 import { ConfirmNotices } from "@/components/BookingNotice";
 
 type StaffInfo = { id: string; name: string; avatarUrl?: string | null };
@@ -421,7 +421,13 @@ function ConfirmPageContent() {
     const success = searchParams.get("success") === "true";
     const fire = (fbq: (...a: unknown[]) => void) => {
       if (success) {
-        fbq("track", "Schedule", { value: Number(searchParams.get("price")) || 0, currency: "ILS" });
+        // פעם אחת לכל תור (28.10.2026): רענון או חזרה לדף ירו שוב, ומטא ספרה 148 אירועים
+        // על כ־64 תורים. מזהה התור הוא גם מזהה האירוע, כך שגם מטא מסננת כפילויות.
+        const apptId = searchParams.get("appointmentId");
+        const firedKey = apptId ? `px_sched_${apptId}` : null;
+        try { if (firedKey && localStorage.getItem(firedKey)) return; } catch { /* ignore */ }
+        fbq("track", "Schedule", { value: Number(searchParams.get("price")) || 0, currency: "ILS" }, apptId ? { eventID: `appt-${apptId}` } : undefined);
+        try { if (firedKey) localStorage.setItem(firedKey, "1"); } catch { /* ignore */ }
       } else {
         fbq("track", "InitiateCheckout");
       }
@@ -629,6 +635,8 @@ function ConfirmPageContent() {
           replaceAppointmentIds: existingDecision === "cancel" ? (replaceIds.length ? replaceIds : (existingAppts?.length === 1 ? [existingAppts[0].id] : [])) : undefined,
           // Marketing attribution captured from the booking-link URL (?ref/?utm_*).
           attribution: getStoredAttribution() || undefined,
+          // המקור של הביקור הזה, נשמר על התור עצמו (28.10.2026).
+          visitAttribution: getVisitAttribution() || undefined,
         }),
       });
       if (!res.ok) {

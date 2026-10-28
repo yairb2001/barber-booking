@@ -49,6 +49,7 @@ export async function POST(request: NextRequest) {
     note,          // optional customer note for this appointment
     otpToken,      // short-lived JWT from /api/otp/verify
     attribution,   // marketing attribution captured from the booking-link URL
+    visitAttribution, // המקור של הביקור שבו נקבע התור, נשמר על התור (28.10.2026)
 
     // When the customer already has an upcoming appointment we stop and ask them
     // (in the UI) whether they want this as an EXTRA appointment ("additional")
@@ -341,6 +342,7 @@ export async function POST(request: NextRequest) {
         price,
         status: "confirmed",
         referralSource,
+        attribution: cleanVisitAttribution(visitAttribution),
         note: (typeof note === "string" && note.trim()) ? note.trim() : null,
         source: "customer", // customer booked via the public site
         ...bookingRecord(shape),
@@ -546,4 +548,18 @@ export async function POST(request: NextRequest) {
       dateLabel: w.date.toLocaleDateString("he-IL", { weekday: "long", day: "numeric", month: "long" }),
     })),
   }, { status: 201 });
+}
+
+/** רק השדות המוכרים, מחרוזות קצרות, כ־JSON; null כשאין כלום (28.10.2026). */
+function cleanVisitAttribution(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const out: Record<string, string | number> = {};
+  for (const k of ["source", "medium", "campaign", "content", "ref", "fbclid"]) {
+    const v = r[k];
+    if (typeof v === "string" && v.trim()) out[k] = v.trim().slice(0, k === "fbclid" ? 300 : 120);
+  }
+  if (!Object.keys(out).length) return null;
+  if (typeof r.ts === "number" && Number.isFinite(r.ts)) out.ts = r.ts;
+  return JSON.stringify(out);
 }

@@ -436,6 +436,8 @@ model Appointment {
   // (same principle as ProductSale). null = no tip recorded.
   tipAmount      Float?   @map("tip_amount")
   referralSource String?  @map("referral_source")
+  /// המקור של הביקור שבו נקבע התור באתר: utm, ref ו־fbclid, כ־JSON (28.10.2026). null = לא מהאתר או בלי מקור.
+  attribution    String?
   referredById   String?  @map("referred_by_id")
   walkIn         Boolean  @default(false) @map("walk_in")
   // Who created this appointment: "customer" (public booking) | "agent" (WhatsApp
