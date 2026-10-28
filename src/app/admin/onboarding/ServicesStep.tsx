@@ -5,18 +5,32 @@
  * "הקמה עצמית ליופי"). Everyone in the service's domain is marked; a
  * specialist service (laser, balayage) starts with nobody, so the owner says
  * who. Saved services keep their price and minutes; who does them stays
- * editable.
+ * editable. Cosmetics with two people or more: do they share rooms? Then the
+ * system books a room for each treatment.
  */
 import { C, input, num, chip, Help, Bubble } from "./ui";
 import { whoOf, waitOf, type Member, type Svc } from "./model";
 
-export default function ServicesStep({ services, setServices, members }: {
+export default function ServicesStep({ services, setServices, members, rooms, setRooms }: {
   services: Svc[]; setServices: (f: (s: Svc[]) => Svc[]) => void; members: Member[];
+  /** Shared treatment rooms in cosmetics (0 = each has her own); undefined = not asked here. */
+  rooms?: number; setRooms: (n: number) => void;
 }) {
   const edit = (i: number, patch: Partial<Svc>) => setServices(a => a.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const named = members.filter(m => m.name.trim());
   return (
     <>
+      {rooms !== undefined && (
+        <div className="rounded-2xl p-3 mb-3" style={{ background: C.mist }}>
+          <p className="text-sm font-semibold" style={{ color: C.petrol }}>חדרי הטיפול בקוסמטיקה</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <button type="button" onClick={() => setRooms(0)} className={chip(rooms === 0)} style={rooms === 0 ? { background: C.petrol } : {}}>לכל אחת חדר משלה</button>
+            <button type="button" onClick={() => setRooms(rooms || 1)} className={chip(rooms > 0)} style={rooms > 0 ? { background: C.petrol } : {}}>חדרים משותפים</button>
+            {rooms > 0 && <label className="flex items-center gap-1.5 text-[13px] text-slate-600">כמה? <input value={rooms} onChange={e => setRooms(Math.max(1, Math.min(9, parseInt(e.target.value) || 1)))} className={num} type="number" inputMode="numeric" dir="ltr" aria-label="כמה חדרים" /></label>}
+          </div>
+          {rooms > 0 && <p className="text-[12px] text-slate-500 mt-1.5">המערכת תשבץ חדר לכל טיפול, ולא יקבעו שני טיפולים באותו חדר באותה שעה.</p>}
+        </div>
+      )}
       <div className="space-y-2">
         {services.map((s, i) => {
           const who = whoOf(s, named);

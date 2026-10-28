@@ -124,7 +124,7 @@ export default function SignupPage() {
           <div>
             <h1 className="text-2xl font-bold" style={{ color: C.ink }}>פתיחת עסק חדש</h1>
             <p className="text-[15px] mt-1.5 font-medium" style={{ color: C.petrol }}>החודש הראשון עלינו. בלי כרטיס אשראי ובלי התחייבות.</p>
-            {ref && <p className="text-sm font-semibold mt-3 rounded-xl px-3 py-2" style={{ background: "#E3F7EF", color: C.petrol }}>{ref.name ? `הגעת בהמלצה של ${ref.name}. ברוך הבא!` : "הגעת בהמלצה של חבר. ברוך הבא!"}</p>}
+            {ref && <p className="text-sm font-semibold mt-3 rounded-xl px-3 py-2" style={{ background: "#E3F7EF", color: C.petrol }}>{ref.name ? `הגעת בהמלצה של ${ref.name}.` : "הגעת בהמלצה של חבר."}</p>}
           </div>
 
           <div>
@@ -162,7 +162,7 @@ export default function SignupPage() {
             {!ref && (askRef ? (
               <div>
                 <input type="tel" value={referrerPhone} onChange={e => setReferrerPhone(e.target.value)} placeholder="הנייד של מי שהמליץ (לא חובה)" dir="rtl" className={input} />
-                <p className="text-xs text-slate-500 mt-1.5">ככה הוא יקבל חודש חינם כשתתחיל לשלם.</p>
+                <p className="text-xs text-slate-500 mt-1.5">ככה מי שהמליץ יקבל חודש חינם, כשהעסק יתחיל לשלם.</p>
               </div>
             ) : (
               <button type="button" onClick={() => setAskRef(true)} className="block mx-auto text-sm font-medium" style={{ color: C.petrol }}>מישהו המליץ לך עלינו?</button>

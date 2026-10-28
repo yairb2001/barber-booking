@@ -86,6 +86,7 @@ export default function OnboardingPage() {
   const [domains, setDomains] = useState<Domain[]>([]);
   const [members, setMembers] = useState<Member[]>(() => [newMember([], DEFAULT_HOURS.map(h => h.on))]);
   const [services, setServices] = useState<Svc[]>([]);
+  const [sharedRooms, setSharedRooms] = useState(0); // cosmetics: shared treatment rooms (0 = each has her own)
   // agent
   const [agentName, setAgentName] = useState("הסוכן");
   const [setup, setSetup] = useState<SetupConfig>({});
@@ -251,6 +252,14 @@ export default function OnboardingPage() {
     try {
       const team = members.filter(m => m.id && m.name.trim());
       const idOf = new Map(team.map(m => [m.key, m.id!]));
+      // Shared rooms in cosmetics: the rooms there are, and new ones up to the number she gave.
+      let roomIds: string[] = [];
+      if (sharedRooms > 0 && team.filter(m => m.domains.includes("cosmetics")).length > 1) {
+        const have: { id: string }[] = await fetch("/api/admin/rooms").then(r => (r.ok ? r.json() : [])).catch(() => []);
+        const made = await Promise.all(Array.from({ length: Math.max(0, sharedRooms - have.length) }, (_, i) =>
+          fetch("/api/admin/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: `חדר ${have.length + i + 1}` }) }).then(r => (r.ok ? r.json() : null)).catch(() => null)));
+        roomIds = [...have, ...made.filter(Boolean)].slice(0, sharedRooms).map(r => r.id);
+      }
       // In parallel, each with its place in the list (they all came in at 0 before, so the order was lost),
       // and with who does it (before 28.10.2026 everyone got every service).
       const out = await Promise.all(valid.map(async (s, i): Promise<Svc | null> => {
@@ -259,7 +268,7 @@ export default function OnboardingPage() {
         const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
           name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, sortOrder: i, category: s.category ?? null, priceFrom: !!s.priceFrom, rebookDays: s.rebookDays ?? null,
           ...(s.about ? { description: s.about } : {}), ...(s.segments ? { segments: JSON.stringify(s.segments) } : {}), bufferAfterMin: s.bufferAfterMin ?? 0, ...(s.consultFirst ? { note: CONSULT_FIRST_NOTE } : {}),
-          staffIds: who.map(k => idOf.get(k)).filter(Boolean),
+          staffIds: who.map(k => idOf.get(k)).filter(Boolean), ...(roomIds.length && s.domain === "cosmetics" ? { roomIds } : {}),
         }) }).catch(() => null);
         return r?.ok ? { ...s, id: (await r.json()).id, who, savedWho: who } : null;
       }));
@@ -505,7 +514,8 @@ export default function OnboardingPage() {
 
       {step === 3 && (
         <Card title="השירותים" sub="הכנו רשימה במחירי שוק. אפשר לשנות, למחוק ולהוסיף, ולסמן אצל מי עושים כל שירות.">
-          <ServicesStep services={services} setServices={setServices} members={members} />
+          <ServicesStep services={services} setServices={setServices} members={members} setRooms={setSharedRooms}
+            rooms={members.filter(m => m.name.trim() && m.domains.includes("cosmetics")).length > 1 ? sharedRooms : undefined} />
           <Primary onClick={saveServices} busy={busy}>המשך</Primary>
         </Card>
       )}
