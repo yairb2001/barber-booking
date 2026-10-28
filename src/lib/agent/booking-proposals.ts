@@ -487,7 +487,11 @@ export async function handleIncomingForProposal(p: {
       const finish = async (full: string): Promise<ProposalOutcome> => {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { customerName: full, note: JSON.stringify({ ...meta, awaitingName: false, partialName: null }) } });
         const grp = (meta as { group?: GroupItem[] }).group;
-        return { reply: grp?.length
+        // A visit (one person, several services) reads as a visit; only several people read as a group
+        // (28.10.2026: "תספורת + זקן" after the name came out "2 תורים לתספורת: רועי ב-17:00 ו ב-17:30").
+        return { reply: isVisit(grp)
+          ? visitConfirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp!, lang: await convLang(pending.conversationId) })
+          : grp?.length
           ? groupConfirmationQuestion({ firstName: firstNameOf(full), mainName: full, serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp, lang: await convLang(pending.conversationId) })
           : confirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", mentionStaff: !!meta.mentionStaff, date: dateISO, startTime: pending.startTime ?? "", lang: await convLang(pending.conversationId) }) };
       };
