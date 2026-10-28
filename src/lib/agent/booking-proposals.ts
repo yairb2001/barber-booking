@@ -506,7 +506,7 @@ export async function handleIncomingForProposal(p: {
     // A "כן" answers the agent's LAST message. When the agent wrote after the
     // confirmation question (e.g. "15:45 כבר לא פנויה, נותרת 15:00, לתפוס?"),
     // booking the pending proposal booked the old slot (DOMINANT 11.10.2026).
-    const lastIsQuestion = !p.lastAssistant || p.lastAssistant.createdAt <= pending.createdAt || /(מאשר|מאשרת|confirm)\s*\??\s*$/i.test(p.lastAssistant.content.trim());
+    const lastIsQuestion = !p.lastAssistant || p.lastAssistant.createdAt <= pending.createdAt || /(מאשר|מאשרת|לאשר|confirm)\s*\??\s*$/i.test(p.lastAssistant.content.trim());
     if (isPlainYes(text, pending.startTime) && !lastIsQuestion) {
       return { context: `אחרי שאלת האישור (${what}) כתבת ללקוח: "${p.lastAssistant!.content.slice(0, 200)}", והוא ענה "${text.slice(0, 60)}". התשובה שלו היא להודעה האחרונה שלך. הצעת בה שעה, יום, ספר או שירות אחרים → קרא ל-propose_booking עם הפרטים החדשים ו-customerConfirmed=true. זו אותה הצעה → אותם פרטים ו-customerConfirmed=true.` };
     }

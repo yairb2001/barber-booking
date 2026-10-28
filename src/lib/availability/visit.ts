@@ -154,9 +154,12 @@ function orders<T>(xs: T[]): T[][] {
  * את כל הווריאציות האפשריות עם מינימום הזמן"): every order (unless the order is
  * fixed), every start, every staff member who does each; the shortest visits
  * first, then the earliest; options at least an hour apart. Empty when none fits.
+ * `from`/`to` (minutes) keep only visits that start in that part of the day
+ * ("בצהריים"); `starts` = every start that works that day, so the agent never
+ * reads three morning options as "nothing at noon" (28.10.2026).
  */
-export function findVisitOptions(ctx: DayContext, steps: VisitStep[], o: { limit?: number; maxGap?: number; keepOrder?: boolean } = {}): VisitItem[][] {
-  if (!steps.length || !ctx.staff.length) return [];
+export function findVisitOptions(ctx: DayContext, steps: VisitStep[], o: { limit?: number; maxGap?: number; keepOrder?: boolean; from?: number; to?: number } = {}): { options: VisitItem[][]; starts: number[] } {
+  if (!steps.length || !ctx.staff.length) return { options: [], starts: [] };
   const perms = o.keepOrder ? [steps] : orders(steps.slice(0, 4));
   const firsts = new Set(perms.map(p => p[0]));
   const cands = new Set<number>();
@@ -177,15 +180,27 @@ export function findVisitOptions(ctx: DayContext, steps: VisitStep[], o: { limit
     }
     if (best) found.push(best);
   }
+  const starts = found.map(c => c[0].start);
   const span = (c: VisitItem[]) => c[c.length - 1].end - c[0].start;
-  found.sort((a, b) => span(a) - span(b) || a[0].start - b[0].start);
+  const fits = found.filter(c => (o.from === undefined || c[0].start >= o.from) && (o.to === undefined || c[0].start < o.to));
+  fits.sort((a, b) => span(a) - span(b) || a[0].start - b[0].start);
   const out: VisitItem[][] = [];
-  for (const c of found) {
+  for (const c of fits) {
     if (out.some(x => Math.abs(x[0].start - c[0].start) < 60)) continue;
     out.push(c);
     if (out.length >= (o.limit ?? 3)) break;
   }
-  return out.sort((a, b) => a[0].start - b[0].start);
+  return { options: out.sort((a, b) => a[0].start - b[0].start), starts };
+}
+
+/** Starts as ranges: "09:00–11:15, 14:00–17:45". */
+export function startRanges(starts: number[], step: number): string {
+  const r: [number, number][] = [];
+  for (const t of starts) {
+    const last = r[r.length - 1];
+    if (last && t - last[1] <= Math.max(step, 15)) last[1] = t; else r.push([t, t]);
+  }
+  return r.map(([a, b]) => a === b ? toHHMM(a) : `${toHHMM(a)}–${toHHMM(b)}`).join(", ");
 }
 
 /** Exactly these treatments at these times — still bookable together? */

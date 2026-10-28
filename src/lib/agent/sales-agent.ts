@@ -155,8 +155,8 @@ const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מס
 // A first message that sounds like a customer booking a haircut opens the demo
 // shop right away; one about the product starts the getting-to-know questions
 // (Yair, 14.10.2026: "אם ההקשר הוא היי אני רוצה לקבוע תור לתספורת, זה מפעיל את
-// הסוכן של המספרה של דני").
-const BOOKING_INTENT_RE = /תור|תספורת|להסתפר|זקן|יש מקום|פנוי|פנויה/;
+// הסוכן של המספרה של דני"). Since 28.10.2026 the demo shop is also a beauty salon.
+const BOOKING_INTENT_RE = /תור|תספורת|להסתפר|זקן|יש מקום|פנוי|פנויה|לק ג['׳]?ל|ציפורניים|גבות|גוונים|שעווה|טיפול פנים/;
 const ABOUT_SYSTEM_RE = /מערכת|צ['׳]אטור|chator|סוכן|בוט|פרטים|מחיר|עולה|לעסק|יש לי מספרה|המספרה שלי|אני ספר(?![א-ת])|בעל מספרה/i;
 const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור. התור לא אמיתי, וככה בדיוק הלקוחות שלך יקבלו מענה.";
 /** The first question (27.10.2026, Yair: "לצאת מנקודת הנחה שיש לו מספרה ... ולא להשאיר את השאלה פתוחה"). */
@@ -616,7 +616,7 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
   const next: SalesState = { ...state, demoTurns: turns };
   // Not while the demo is in the middle of a booking (it just offered times or asked for a name).
   const lastDemo = await prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true } });
-  const midBooking = !!lastDemo && /\d{1,2}:\d{2}|שם|מאשר|לאשר|כרגיל|תספורת|זקן|שירות|איזו שעה|איזה שעה|מתי/.test(lastDemo.content);
+  const midBooking = !!lastDemo && /\d{1,2}:\d{2}|שם|מאשר|לאשר|כרגיל|תספורת|זקן|שירות|טיפול|איזו שעה|איזה שעה|מתי/.test(lastDemo.content);
   if (turns >= 3 && !state.demoNudged && !midBooking) {
     next.demoNudged = true;
     await saveState(convId, next);

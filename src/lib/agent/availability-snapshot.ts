@@ -37,6 +37,23 @@ export function compressSlots(slots: string[]): string {
   const rest = mins.length - shown.length;
   return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
 }
+/**
+ * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
+ * match first: at least half the words of the name, each at a word start
+ * (with up to two prefix letters: ו/ב/ל/ה/ש/מ/כ); a two-letter word must be
+ * whole ("לק" is not inside "חלק"). Geresh ignored ("גל" = "ג'ל").
+ */
+export function namedServices(text: string, services: { id: string; name: string }[]): string[] {
+  const norm = (x: string) => x.replace(/['׳’`"״]/g, "").toLowerCase();
+  const t = norm(text);
+  const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return services.map(sv => {
+    const words = norm(sv.name).split(/[\s+/,()\-–]+/).filter(w => w.length >= 2);
+    const hit = words.filter(w => new RegExp(`(^|[^א-תa-z0-9])[ובלהשמכ]{0,2}${esc(w)}${w.length <= 2 ? "(?![א-תa-z])" : ""}`).test(t)).length;
+    return { id: sv.id, hit, score: words.length ? hit / words.length : 0 };
+  }).filter(x => x.hit > 0 && x.score >= 0.5).sort((a, b) => b.score - a.score || b.hit - a.hit).map(x => x.id);
+}
+
 const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
 export async function buildAvailabilitySnapshot(p: {
@@ -56,18 +73,25 @@ export async function buildAvailabilitySnapshot(p: {
   customerId?: string | null;
   /** …and the slot the agent is holding for this phone (his own proposal). */
   holderKey?: string | null;
+  /** Beauty businesses: the treatment each person's times are for, when it isn't serviceId (28.10.2026). */
+  serviceOf?: (staffId: string) => { id: string; name: string } | null;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
   const rawIndex = await buildAvailabilityIndex(p.businessId, today, days, { exemptHoldsCustomerId: p.customerId, exemptHoldsHolderKey: p.holderKey });
   const excluded = new Set(p.excludeStaffIds ?? []);
-  const index = excluded.size ? { ...rawIndex, slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svc) } : rawIndex;
+  // A nail tech has no times for a haircut: her line shows her own treatment
+  // instead of "no room at all" (28.10.2026, "ביום ראשון אין לה מקום" while she was free).
+  const own = (id: string) => p.serviceOf?.(id) ?? null;
+  const svcFor = (id: string, svc: string | null) => own(id)?.id ?? svc;
+  const index = excluded.size || p.serviceOf ? { ...rawIndex, slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svcFor(id, svc)) } : rawIndex;
   const hasPool = index.staff.some(s => s.inQuickPool);
   const short = p.shortName ?? ((id, name) => name.trim().split(/\s+/)[0]);
   // Two barbers may share a first name (יאיר בוחבוט / יאיר הרוש) — disambiguate.
   const firsts = new Map<string, number>();
   for (const s of index.staff) firsts.set(short(s.id, s.name), (firsts.get(short(s.id, s.name)) ?? 0) + 1);
   const label = (s: { id: string; name: string }) => (firsts.get(short(s.id, s.name)) ?? 0) > 1 ? s.name : short(s.id, s.name);
+  const other = (s: { id: string }) => { const o = own(s.id); return o && o.id !== p.serviceId ? ` (${o.name})` : ""; };
 
   const lines: string[] = [];
   for (let d = 0; d < days; d++) {
@@ -82,7 +106,7 @@ export async function buildAvailabilitySnapshot(p: {
     for (const s of index.staff) {
       const slots = index.slots(s.id, iso, p.serviceId ?? null);
       if (!slots.length) continue;
-      parts.push(`${label(s)} ${compressSlots(slots)}`);
+      parts.push(`${label(s)}${other(s)} ${compressSlots(slots)}`);
     }
     lines.push(`${dayName} ${dd.getUTCDate()}.${dd.getUTCMonth() + 1}: ${parts.length ? parts.join(" | ") : "אין"}`);
   }
@@ -103,6 +127,7 @@ export async function buildAvailabilitySnapshot(p: {
     const ask = parseAvailabilityAsk(p.askText, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
     if (ask) focus = "\n" + focusLine(index, ask, p.serviceId ?? null, label, today, days, p.regularStaffId);
   }
-  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות). ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  const byTreatment = index.staff.some(s => other(s)) ? " שם בסוגריים = השעות לטיפול הזה; לטיפול אחר (משך אחר) → get_available_slots עם serviceId." : "";
+  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "") + focus;
 }

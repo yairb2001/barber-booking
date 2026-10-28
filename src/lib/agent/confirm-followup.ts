@@ -17,7 +17,7 @@ import { getBusinessNow, timeToMinutes } from "@/lib/utils";
 const HEB_DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
 export function parseFinalConfirm(text: string, todayISO: string): { dateISO: string; time: string } | null {
-  if (!/(מאשר|confirm)\s*\??\s*$/i.test(text.trim())) return null;
+  if (!/(מאשר|לאשר|confirm)\s*\??\s*$/i.test(text.trim())) return null;
   const dm = text.match(/\b(\d{1,2})\.(\d{1,2})\b/);
   const hm = text.match(/\b(\d{1,2}):(\d{2})\b/);
   if (!dm || !hm) return null;

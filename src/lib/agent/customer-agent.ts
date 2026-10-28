@@ -16,7 +16,8 @@
 import { dayDistance } from "@/lib/day-distance";
 import { sessionsBetween, bookSpot, cancelSpot, canCancelUntil, hasActiveClasses } from "@/lib/classes";
 import { notifyClass } from "@/lib/class-messages";
-import { loadDayContext, findVisitOptions, checkVisit } from "@/lib/availability/visit";
+import { loadDayContext, findVisitOptions, checkVisit, startRanges } from "@/lib/availability/visit";
+import { toHHMM } from "@/lib/availability/engine";
 import { writeChecked, SlotRefused } from "@/lib/availability/guard";
 import { bookingRecord } from "@/lib/availability/shape";
 import { agentReplyForType } from "@/lib/type-wording";
@@ -41,15 +42,15 @@ import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { isServiceList, agentSwitches, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
 import { compactAgentBody } from "@/lib/agent/prompt-template";
-import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, type Vocab } from "@/lib/vocab";
+import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Vocab } from "@/lib/vocab";
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { applyToolDescriptions, toolsForType } from "@/lib/agent/tool-descriptions";
-import { buildAvailabilitySnapshot, looksLikeBookingContext } from "@/lib/agent/availability-snapshot";
+import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
-import { getBusinessNow, addDaysISO } from "@/lib/utils";
+import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
 import { checkCancellationWindow, CANCELLATION_WINDOW_MESSAGE, getShopPhone } from "@/lib/cancellation-policy";
 import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { unansweredRun, runConfirmsSlot } from "@/lib/agent/pending-confirmation";
@@ -431,7 +432,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
     // Visits (16.10.2026): only beauty businesses get this tool (toolsForType).
     name: "find_visit_times",
     description:
-      "ביקור עם כמה טיפולים אחד אחרי השני (למשל לייזר ואז לק ג'ל אצל מישהי אחרת). קודם ברר עם הלקוחה את כל הטיפולים שהיא רוצה ('עוד משהו?'), ורק אז קרא עם כולם. " +
+      "ביקור עם כמה טיפולים אחד אחרי השני (למשל לייזר ואז לק ג'ל אצל מישהי אחרת). קודם ברר עם הלקוחה את כל הטיפולים שהיא רוצה ('עוד משהו?'), ורק אז קרא עם כולם. ביקשה חלק יום או שעה ('בצהריים', 'אחרי 16') → fromTime/toTime. " +
       "המערכת בודקת כל סדר אפשרי, כל נותנת שירות שעושה כל טיפול וכל שעה, ומחזירה את האפשרויות הכי קצרות. הצע ללקוחה רק אפשרות שחזרה מכאן, ואז propose_booking עם הטיפול הראשון ו-others לכל טיפול נוסף (serviceId, staffId, startTime — בלי forName).",
     input_schema: {
       type: "object" as const,
@@ -439,6 +440,8 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         date: { type: "string", description: "YYYY-MM-DD — היום שהיא רוצה. בלי תאריך: מחפש מהיום קדימה את היום הקרוב שבו הכל נכנס." },
         treatments: { type: "array", description: "כל הטיפולים שהיא רוצה בביקור.", items: { type: "object", properties: { serviceId: { type: "string" }, staffId: { type: "string", description: "רק אם ביקשה מישהי מסוימת לטיפול הזה" } }, required: ["serviceId"] } },
         keepOrder: { type: "boolean", description: "true רק אם אמרה במפורש באיזה סדר" },
+        fromTime: { type: "string", description: "HH:MM — רק ביקור שמתחיל מהשעה הזו (צהריים 12:00, אחרי הצהריים 14:00, ערב 17:00)" },
+        toTime: { type: "string", description: "HH:MM — רק ביקור שמתחיל לפני השעה הזו (בוקר 12:00, צהריים 16:00)" },
       },
       required: ["treatments"],
     },
@@ -922,20 +925,31 @@ export async function execTool(
         }
         const exempt = { customerId: await callerCustomerId(bizId, callerPhone), holderKeys: [callerPhone ? holderKeyForPhone(callerPhone) : null] };
         const keepOrder = String((input as Record<string, unknown>).keepOrder) === "true";
+        // The part of the day she asked for (28.10.2026: "בצהריים" got 09:00–11:00 back and "אין בצהריים").
+        const hhmm = (x: unknown) => typeof x === "string" && /^\d{1,2}:\d{2}$/.test(x.trim()) ? timeToMinutes(x.trim()) : undefined;
+        const from = hhmm((input as Record<string, unknown>).fromTime), to = hhmm((input as Record<string, unknown>).toTime);
+        const windowLabel = from !== undefined && to !== undefined ? `בין ${toHHMM(from)} ל-${toHHMM(to)}` : from !== undefined ? `מ-${toHHMM(from)}` : to !== undefined ? `לפני ${toHHMM(to)}` : "";
         const today = getBusinessNow().date;
-        const dates = input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date) ? [input.date] : Array.from({ length: 14 }, (_, i) => addDaysISO(today, i));
+        const oneDay = !!(input.date && /^\d{4}-\d{2}-\d{2}$/.test(input.date));
+        const dates = oneDay ? [input.date] : Array.from({ length: 14 }, (_, i) => addDaysISO(today, i));
         for (const d of dates) {
           const ctx = await loadDayContext(bizId, d, exempt);
-          const options = findVisitOptions(ctx, steps, { keepOrder });
-          if (!options.length) continue;
+          const { options, starts } = findVisitOptions(ctx, steps, { keepOrder, from, to });
+          if (!options.length) {
+            if (oneDay && windowLabel && starts.length) return `ב-${d} אין ביקור כזה שמתחיל ${windowLabel}. באותו יום אפשר להתחיל: ${startRanges(starts, ctx.step)}. הצע את הקרובה למה שביקשה, או קרא בלי date עם אותו fromTime/toTime כדי למצוא יום אחר.`;
+            continue;
+          }
           const lines = options.map((o, i) => {
             const span = o[o.length - 1].end - o[0].start;
             const path = o.map(it => `${it.startTime} ${it.serviceName} אצל ${it.staffName}`).join(" ← ");
             const call = `propose_booking staffId=${o[0].staffId} serviceId=${o[0].serviceId} startTime=${o[0].startTime}${o.length > 1 ? `, others=${JSON.stringify(o.slice(1).map(it => ({ serviceId: it.serviceId, staffId: it.staffId, startTime: it.startTime })))}` : ""}`;
             return `${i + 1}) ${path}. סה"כ ${span} דק', ₪${o.reduce((t, it) => t + it.price, 0)}.\n   לקביעה: ${call}`;
           });
-          return `ביקור ${dayLabelWithDistance(d)} (date=${d}) — האפשרויות הקצרות ביותר:\n${lines.join("\n")}\nהצע ללקוחה אחת או שתיים במשפט טבעי (מה, אצל מי, מתי), ורק אחרי שבחרה — propose_booking בדיוק כמו שכתוב.`;
+          return `ביקור ${dayLabelWithDistance(d)} (date=${d})${windowLabel ? ` שמתחיל ${windowLabel}` : ""} — האפשרויות הקצרות ביותר:\n${lines.join("\n")}\n` +
+            `באותו יום אפשר להתחיל את הביקור: ${startRanges(starts, ctx.step)}. אלה לא כל האפשרויות, אז בלי "אין מקום" ובלי "הכי מאוחר" לפיהן; ביקשה חלק יום אחר → קרא שוב עם fromTime/toTime.\n` +
+            `הצע ללקוחה אחת או שתיים במשפט טבעי (מה, אצל מי, מתי), ורק אחרי שבחרה — propose_booking בדיוק כמו שכתוב.`;
         }
+        if (windowLabel && !oneDay) return `בשבועיים הקרובים אין ביקור כזה שמתחיל ${windowLabel}. קרא שוב בלי fromTime/toTime כדי לראות שעות אחרות.`;
         return input.date
           ? `ב-${input.date} אין זמן שבו כל הטיפולים נכנסים ברצף. קרא שוב בלי date כדי למצוא את היום הקרוב שבו הכל נכנס, או הצע לפצל לשני ימים.`
           : "בשבועיים הקרובים אין יום שבו כל הטיפולים נכנסים ברצף. הצע לפצל לשני ביקורים (get_available_slots לכל טיפול).";
@@ -2706,7 +2720,23 @@ async function runCustomerAgentCore(opts: {
           serviceId = byName?.id ?? (await prisma.service.findFirst({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true } }))?.id ?? null;
         }
         const excludeStaffIds = Array.from(await callerBlockedStaffIds(businessId, sandbox?.contextPhone ?? phone));
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz) });
+        // Beauty (28.10.2026): the treatment she named, and each person's times
+        // for a treatment that person does — a nail tech is never "full" because
+        // the default service is a haircut she doesn't do.
+        let snapServiceId = serviceId, serviceOf: ((staffId: string) => { id: string; name: string } | null) | undefined;
+        if (businessTypeOf(biz) !== "barber_men") {
+          const rows = await prisma.staffService.findMany({ where: { staff: { businessId, isAvailable: true }, service: { isVisible: true } }, orderBy: { service: { sortOrder: "asc" } }, select: { staffId: true, service: { select: { id: true, name: true } } } });
+          const byStaff = new Map<string, { id: string; name: string }[]>();
+          for (const r of rows) byStaff.set(r.staffId, [...(byStaff.get(r.staffId) ?? []), r.service]);
+          const all = Array.from(new Map(rows.map(r => [r.service.id, r.service])).values());
+          const asked = namedServices([incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content)].join("\n"), all);
+          if (asked.length) snapServiceId = asked[0];
+          serviceOf = staffId => {
+            const mine = byStaff.get(staffId) ?? [];
+            return mine.find(x => asked.includes(x.id)) ?? mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
+          };
+        }
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz) });
         customerContext += `\n${snap}`;
         // Asked for a time that isn't free? Remember it quietly (not at night —
         // "מחר" is ambiguous then, see night-window.ts).

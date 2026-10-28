@@ -139,6 +139,11 @@ export function agentReplyForType(text: string, words: Words): string {
       .replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "מאשרת?")
       .split("אם תרצה לקבוע מחדש").join("אם תרצי לקבוע מחדש")
       .split(": אתה ב-").join(": את ב-");
+  } else if (v.type === "other") {
+    // A mixed place (a salon for men and women, 28.10.2026): the fixed question
+    // in a form that fits both, never "מאשר/ת?".
+    out = out.replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "לאשר?");
   }
-  return out;
+  // WhatsApp shows "**" as is (28.10.2026: "**שירן נייל:**" in a service list).
+  return out.replace(/\*\*/g, "");
 }
