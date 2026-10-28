@@ -108,11 +108,13 @@ async function ownerPhoneOf(businessId: string): Promise<{ phone: string | null;
   return { phone: phone ? normalizeIsraeliPhone(phone) : null, name: biz?.name ?? "", settings: biz?.settings ?? null, slug: biz?.slug ?? "", id: biz?.id ?? businessId };
 }
 
-type AlertKind = "token_alert_80" | "token_alert_100" | "free_alert_80" | "free_alert_100";
+type AlertKind = "token_alert_80" | "token_alert_90" | "token_alert_98" | "token_alert_100" | "free_alert_80" | "free_alert_90" | "free_alert_98" | "free_alert_100";
 const ALERT_TITLE: Record<AlertKind, string> = {
-  token_alert_80: "80% מחבילת הסוכן נוצלו", token_alert_100: "חבילת הסוכן נגמרה לחודש",
-  free_alert_80: "80% מהחבילה החינמית נוצלו", free_alert_100: "החבילה החינמית נגמרה",
+  token_alert_80: "80% מחבילת הסוכן נוצלו", token_alert_90: "90% מחבילת הסוכן נוצלו", token_alert_98: "98% מחבילת הסוכן נוצלו", token_alert_100: "חבילת הסוכן נגמרה לחודש",
+  free_alert_80: "80% מהחבילה החינמית נוצלו", free_alert_90: "90% מהחבילה החינמית נוצלו", free_alert_98: "98% מהחבילה החינמית נוצלו", free_alert_100: "החבילה החינמית נגמרה",
 };
+/** המדרגה של האזהרה (28.10.2026, יאיר: "80 90 98 זה מספיק"): כל אחת פעם אחת בחודש. */
+const warnStep = (pct: number): 80 | 90 | 98 => (pct >= 98 ? 98 : pct >= 90 ? 90 : 80);
 
 /** One alert per business per level: per month for a plan, once ever for the free package. Keyed on MessageLog. */
 async function alertOnce(businessId: string, kind: AlertKind, month: string, body: string): Promise<boolean> {
@@ -126,12 +128,15 @@ async function alertOnce(businessId: string, kind: AlertKind, month: string, bod
   const { channel } = await centerNotify({ businessId, kind: "system", title: ALERT_TITLE[kind], body, href: "/admin/settings/plan", noPush: true });
   if (owner.phone && channel === "whatsapp") {
     await sendMessage({ businessId, customerPhone: owner.phone, kind, body }).catch(e => console.error("[token-budget] alert send failed", e));
-  } else if (!owner.phone) {
-    await prisma.messageLog.create({ data: { businessId, customerPhone: "-", kind, body, status: "skipped", error: "no owner phone" } }).catch(() => {});
+  } else {
+    // בלי וואטסאפ אין שורה ביומן ההודעות, ובלעדיה הבדיקה למעלה לא ידעה שההתראה כבר יצאה:
+    // בעסק שבחר "תקלות" במסך בלבד נוצרה התראה חדשה בכל פנייה של הסוכן (28.10.2026, דומיננט).
+    await prisma.messageLog.create({ data: { businessId, customerPhone: owner.phone ?? "-", kind, body, status: "skipped", error: owner.phone ? `channel: ${channel}` : "no owner phone" } }).catch(() => {});
   }
   if (channel !== "screen") pushToOwner(businessId, { title: `${full ? "⛔" : "⚠️"} ${ALERT_TITLE[kind]}`, body: body.split("\n")[0], data: { type: "tokens", month } }).catch(() => {});
   // The free package running out is a sales moment: Yair hears about it right away.
-  notifyPlatformOwner(kind.startsWith("free_") ? `${full ? "⛔ החבילה החינמית נגמרה" : "⚠️ 80% מהחבילה החינמית"}: ${owner.name}${full ? ". זמן להתקשר ולצרף למסלול" : ""}` : `${full ? "⛔ 100%" : "⚠️ 80%"} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: full }).catch(() => {});
+  const step = kind.split("_").pop();
+  notifyPlatformOwner(kind.startsWith("free_") ? `${full ? "⛔ החבילה החינמית נגמרה" : `⚠️ ${step}% מהחבילה החינמית`}: ${owner.name}${full ? ". זמן להתקשר ולצרף למסלול" : ""}` : `${full ? "⛔ 100%" : `⚠️ ${step}%`} חבילת הסוכן: ${owner.name} (${month})`, { kind: "customer", businessId, push: full }).catch(() => {});
   // And from Chator's number, his personal card link (CRM automation "free_used_up", 14.10.2026).
   if (kind === "free_alert_100") { const { startAutomation } = await import("@/lib/crm/automations"); await startAutomation("free_used_up", { businessId }); }
   return true;
@@ -150,10 +155,10 @@ export async function tokenBudgetGate(businessId: string, phone: string): Promis
   if (state.level === "none" || state.level === "ok") return { blocked: false, state };
   if (state.level === "warn") {
     if (state.free) {
-      await alertOnce(businessId, "free_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מהחבילה החינמית. כשהיא תיגמר הסוכן יפסיק לענות ללקוחות עד שמצטרפים למסלול. להצטרפות: הגדרות ← המסלול שלי.`);
+      await alertOnce(businessId, `free_alert_${warnStep(state.pct)}`, state.month, `⚠️ נוצלו ${state.pct}% מהחבילה החינמית. כשהיא תיגמר הסוכן יפסיק לענות ללקוחות עד שמצטרפים למסלול. להצטרפות: הגדרות ← המסלול שלי.`);
       return { blocked: false, state };
     }
-    await alertOnce(businessId, "token_alert_80", state.month, `⚠️ נוצלו ${state.pct}% מחבילת הסוכן החודש. כשהחבילה תיגמר הסוכן יפסיק לענות ללקוחות עד תחילת החודש; תזכורות ואישורים ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
+    await alertOnce(businessId, `token_alert_${warnStep(state.pct)}`, state.month, `⚠️ נוצלו ${state.pct}% מחבילת הסוכן החודש. כשהחבילה תיגמר הסוכן יפסיק לענות ללקוחות עד תחילת החודש; תזכורות ואישורים ממשיכים. להוספת חבילה: הגדרות ← המסלול שלי.`);
     return { blocked: false, state };
   }
   // blocked

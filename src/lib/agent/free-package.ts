@@ -19,7 +19,7 @@ const EXEMPT = new Set([SUPER_ADMIN_BUSINESS_ID, DEMO_BUSINESS_ID]);
 export const onFreePackage = (biz: { id: string; paidAt: Date | null }) => !biz.paidAt && !EXEMPT.has(biz.id);
 
 /** Alerts to the owner ride on the business's log; they are not its traffic. */
-const NOT_TRAFFIC = ["wa_down_alert", "wa_up_alert", "wa_link_stuck", "token_alert_80", "token_alert_100", "free_alert_80", "free_alert_100"];
+const NOT_TRAFFIC = ["wa_down_alert", "wa_up_alert", "wa_link_stuck", "token_alert_80", "token_alert_90", "token_alert_98", "token_alert_100", "free_alert_80", "free_alert_90", "free_alert_98", "free_alert_100"];
 /** Our own runs on his account (quality review, cache warming). */
 const NOT_HIS_USAGE = ["review", "cache_warm"];
 
