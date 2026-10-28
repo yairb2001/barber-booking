@@ -9,6 +9,12 @@ import StyleHelper from "../agent/StyleHelper";
 import { DEFAULT_UNAVAILABLE_MESSAGE } from "@/lib/agent/unavailable-message";
 import { estimateAppts, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan-reco";
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
+import { C, input, chip, Help, Bubble } from "./ui";
+import { domainsOf, starterCatalog, CONSULT_FIRST_NOTE, type Domain } from "@/lib/domains";
+import { newMember, whoOf, type Member, type Svc } from "./model";
+import TeamStep from "./TeamStep";
+import ServicesStep from "./ServicesStep";
+import CheckStep, { blockingIssues } from "./CheckStep";
 
 /**
  * Setup wizard — stage 1 (docs/PLAN-MASTER.md, spec "אפיון שלב 1" §3).
@@ -20,11 +26,12 @@ import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/comp
  * set one. Reuses the admin APIs only.
  *
  *   0 welcome (+ password) · 1 business & hours · 2 team · 3 services ·
- *   4 the agent (form + a few words + preview) · 5 WhatsApp · 6 activate
+ *   4 the agent (form + a few words + preview) · 5 the check before "הפעל" ·
+ *   6 WhatsApp · 7 activate
  */
 
-const C = { petrol: "#0B3A3C", turquoise: "#4FE3B1", coral: "#FF6B57", ink: "#0B1F21", mist: "#E8F4F1" };
-const STEPS = ["פתיחה", "העסק", "הצוות", "שירותים", "הסוכן", "וואטסאפ", "הפעלה"] as const;
+
+const STEPS = ["פתיחה", "העסק", "הצוות", "שירותים", "הסוכן", "בדיקה", "וואטסאפ", "הפעלה"] as const;
 const DAYS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 type Hours = { on: boolean; start: string; end: string }[];
 const DEFAULT_HOURS: Hours = [0, 1, 2, 3, 4].map(() => ({ on: true, start: "09:00", end: "19:00" })).concat([{ on: true, start: "09:00", end: "14:00" }, { on: false, start: "09:00", end: "14:00" }]);
@@ -32,8 +39,6 @@ const DEFAULT_HOURS: Hours = [0, 1, 2, 3, 4].map(() => ({ on: true, start: "09:0
 /** What signup names a shop when no name was given: the wizard asks for the real one. */
 const SIGNUP_DEFAULT_NAME = "המספרה שלי";
 
-type Member = { id?: string; name: string; phone: string };
-type Svc = { id?: string; name: string; price: string; duration: string; category?: string; priceFrom?: boolean; rebookDays?: number };
 
 /** First setup asks only what shapes most chats: the must-answer ones and the tone. */
 const isMainQuestion = (f: SetupField) => f.core || f.key === "tone";
@@ -51,9 +56,6 @@ function ask(f: SetupField): { q: string; hint: string } {
   return { q, hint };
 }
 
-const input = "w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[15px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#4FE3B1]";
-const num = "w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[14px] text-center text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#4FE3B1]";
-const chip = (on: boolean) => `px-3 py-1.5 rounded-full text-sm border transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-600"}`;
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -65,7 +67,9 @@ export default function OnboardingPage() {
 
   // business
   const [bizType, setBizType] = useState("barber_men");
-  const vocab: Vocab = useMemo(() => vocabFor(bizType), [bizType]);
+  // The type's words with the business's own (settings.vocab: "מטפלת" in a beauty place of several domains).
+  const [words, setWords] = useState<Record<string, unknown> | null>(null);
+  const vocab: Vocab = useMemo(() => vocabFor(bizType, words), [bizType, words]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -79,7 +83,8 @@ export default function OnboardingPage() {
   const [copied, setCopied] = useState(false);
   const [tester, setTester] = useState(""); // test mode: the one number the agent answers before "הפעל"
   // team & services
-  const [members, setMembers] = useState<Member[]>([{ name: "", phone: "" }]);
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [members, setMembers] = useState<Member[]>(() => [newMember([], DEFAULT_HOURS.map(h => h.on))]);
   const [services, setServices] = useState<Svc[]>([]);
   // agent
   const [agentName, setAgentName] = useState("הסוכן");
@@ -96,7 +101,7 @@ export default function OnboardingPage() {
   const [waLinked, setWaLinked] = useState(false);  // the phone linked during this visit
   const [waOfficial, setWaOfficial] = useState(false); // asked for official WhatsApp
 
-  const fields: SetupField[] = useMemo(() => setupFieldsFor(bizType), [bizType]);
+  const fields: SetupField[] = useMemo(() => setupFieldsFor(bizType, vocab), [bizType, vocab]);
 
   // ── Load ──
   useEffect(() => {
@@ -105,22 +110,47 @@ export default function OnboardingPage() {
         const [bizRes, meRes, staffRes, svcRes, agentRes] = await Promise.all([
           fetch("/api/admin/business"), fetch("/api/admin/me"), fetch("/api/admin/staff"), fetch("/api/admin/services"), fetch("/api/admin/agent"),
         ]);
-        if (bizRes.ok) {
-          const b = await bizRes.json();
+        const b = bizRes.ok ? await bizRes.json() : null;
+        const s = b?.settings || {};
+        // What she does (signup's "מה עושים אצלכם"), and the team's domains and days this wizard kept.
+        const doms = domainsOf(b);
+        const wh: Hours = Array.isArray(s.onboarding?.hours) && s.onboarding.hours.length === 7 ? s.onboarding.hours : DEFAULT_HOURS;
+        const open = wh.map(h => h.on);
+        const team: Record<string, { domains?: Domain[]; days?: boolean[] }> = s.onboarding?.team ?? {};
+        if (b) {
           setName(b.name && b.name !== SIGNUP_DEFAULT_NAME ? b.name : ""); setPhone(b.phone || ""); setAddress(b.address || ""); setLogoUrl(b.logoUrl || null);
           if (b.businessType) setBizType(b.businessType);
-          const s = b.settings || {};
+          setDomains(doms);
+          if (s.vocab && typeof s.vocab === "object") setWords(s.vocab);
           if (typeof s.agentUnavailableMessage === "string" && s.agentUnavailableMessage.trim()) setUnavailableMsg(s.agentUnavailableMessage);
           if (Array.isArray(s.agentTesters) && typeof s.agentTesters[0] === "string") setTester(s.agentTesters[0]);
           if (s.onboarding) {
             if (typeof s.onboarding.step === "number") setStep(Math.min(Math.max(s.onboarding.step, 0), STEPS.length - 1));
             if (Array.isArray(s.onboarding.doneSteps)) setDone(s.onboarding.doneSteps);
-            if (Array.isArray(s.onboarding.hours) && s.onboarding.hours.length === 7) setHours(s.onboarding.hours);
           }
+          setHours(wh);
         }
         if (meRes.ok) { const me = await meRes.json(); if (me?.slug) setSlug(me.slug); if (me?.whatsappStatus) setWaStatus(me.whatsappStatus); if (me?.hasPassword) setHasPassword(true); }
-        if (staffRes.ok) { const st = await staffRes.json(); if (Array.isArray(st) && st.length) setMembers(st.map((x: { id: string; name: string; phone: string | null }) => ({ id: x.id, name: x.name, phone: x.phone || "" }))); }
-        if (svcRes.ok) { const sv = await svcRes.json(); if (Array.isArray(sv) && sv.length) setServices(sv.map((x: { id: string; name: string; price: number; durationMinutes: number }) => ({ id: x.id, name: x.name, price: String(x.price), duration: String(x.durationMinutes) }))); }
+        type StaffRow = { id: string; name: string; phone: string | null; gender: string | null; staffServices?: { serviceId: string }[] };
+        const st: unknown = staffRes.ok ? await staffRes.json().catch(() => []) : [];
+        const staffRows: StaffRow[] = Array.isArray(st) ? st : [];
+        const genderOf = (g: string | null): Member["gender"] => (g === "m" || g === "f" || g === "x" ? g : "");
+        setMembers(staffRows.length
+          ? staffRows.map(x => ({ key: x.id, id: x.id, name: x.name, phone: x.phone || "", gender: genderOf(x.gender), domains: team[x.id]?.domains ?? (doms.length === 1 ? doms : []), days: team[x.id]?.days ?? open }))
+          : [newMember(doms, open)]);
+        const all: unknown = svcRes.ok ? await svcRes.json().catch(() => []) : [];
+        // A service hidden (in the check, or on the services screen) stays out of the wizard.
+        const sv = Array.isArray(all) ? all.filter((x: { isVisible?: boolean }) => x.isVisible !== false) : [];
+        // Who does a saved service, and the rows behind it. In a men's barbershop someone with no rows does
+        // them all (strictServices): he is ticked, and saving writes his rows, so a new service doesn't leave him with one.
+        const doesAll = (m: StaffRow) => b?.businessType === "barber_men" && !m.staffServices?.length;
+        const rowsOf = (id: string) => staffRows.filter(m => m.staffServices?.some(ss => ss.serviceId === id)).map(m => m.id);
+        const whoSaved = (id: string) => staffRows.filter(m => doesAll(m) || m.staffServices?.some(ss => ss.serviceId === id)).map(m => m.id);
+        // Saved services with who does them; none yet → the starter list of her domains, only now that they are known
+        // (before 28.10.2026 it was set from the default type first, and a nail studio got the men's list).
+        setServices(sv.length
+          ? sv.map((x: { id: string; name: string; price: number; durationMinutes: number; category?: string | null }) => ({ id: x.id, name: x.name, price: String(x.price), duration: String(x.durationMinutes), category: x.category ?? undefined, who: whoSaved(x.id), savedWho: rowsOf(x.id) }))
+          : starterCatalog(doms).map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom, rebookDays: x.rebookDays, about: x.about, domain: x.domain, segments: x.segments, bufferAfterMin: x.bufferAfterMin, specialist: x.specialist, consultFirst: x.consultFirst, who: null })));
         if (agentRes.ok) {
           const a = await agentRes.json();
           if (a?.agentName) setAgentName(a.agentName);
@@ -132,19 +162,19 @@ export default function OnboardingPage() {
     })();
   }, []);
 
-  // Starter catalog once we know the type (only when the shop has no services yet).
-  useEffect(() => { setServices(s => s.length ? s : vocab.serviceCatalog.map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom, rebookDays: x.rebookDays }))); }, [vocab]);
 
   const saveProgress = useCallback(async (nextStep: number, nextDone: string[], extra?: Record<string, unknown>) => {
-    try { await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboarding: { step: nextStep, doneSteps: nextDone, hours, ...extra } }) }); } catch { /* best effort */ }
-  }, [hours]);
+    // The team's domains and days live here (the staff rows keep only who does which service).
+    const team = Object.fromEntries(members.filter(m => m.id).map(m => [m.id!, { domains: m.domains, days: m.days }]));
+    try { await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ onboarding: { step: nextStep, doneSteps: nextDone, hours, team, ...extra } }) }); } catch { /* best effort */ }
+  }, [hours, members]);
 
-  const goTo = useCallback((next: number, markDone?: string) => {
+  const goTo = useCallback((next: number, markDone?: string, extra?: Record<string, unknown>) => {
     setError("");
     const clamped = Math.min(Math.max(next, 0), STEPS.length - 1);
     let nextDone = done;
     if (markDone && !done.includes(markDone)) { nextDone = [...done, markDone]; setDone(nextDone); }
-    setStep(clamped); saveProgress(clamped, nextDone);
+    setStep(clamped); saveProgress(clamped, nextDone, extra);
     window.scrollTo({ top: 0 });
   }, [done, saveProgress]);
 
@@ -176,15 +206,16 @@ export default function OnboardingPage() {
       const r = await fetch("/api/admin/business", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: name.trim(), phone, address, logoUrl }) });
       if (!r.ok) { setError("שמירת פרטי העסק נכשלה"); setBusy(false); return; }
       // Apply the hours to staff that already exist (new ones get them on creation).
-      await Promise.all(members.filter(m => m.id).map(m => postSchedule(m.id!)));
+      await Promise.all(members.filter(m => m.id).map(m => postSchedule(m)));
       goTo(2, "business");
     } catch { setError("שגיאת רשת"); }
     setBusy(false);
   };
 
-  const postSchedule = (staffId: string) => fetch(`/api/admin/staff/${staffId}/schedule`, {
+  // The business hours, on the days this person works.
+  const postSchedule = (m: Member) => fetch(`/api/admin/staff/${m.id}/schedule`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(DAYS.map((_, i) => ({ dayOfWeek: i, isWorking: hours[i].on, start: hours[i].start, end: hours[i].end }))),
+    body: JSON.stringify(DAYS.map((_, i) => ({ dayOfWeek: i, isWorking: hours[i].on && m.days[i] !== false, start: hours[i].start, end: hours[i].end }))),
   });
 
   const saveTeam = async () => {
@@ -194,15 +225,21 @@ export default function OnboardingPage() {
     try {
       const out: Member[] = [];
       for (const m of valid) {
-        if (m.id) { out.push(m); continue; }
-        const r = await fetch("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: m.name.trim(), phone: m.phone || undefined }) });
-        if (!r.ok) { setError(`יצירת ${m.name} נכשלה`); setBusy(false); return; }
-        const created = await r.json();
-        await postSchedule(created.id);
-        out.push({ id: created.id, name: m.name.trim(), phone: m.phone });
+        // No mark = the business default; a business with several domains asks for it in the check.
+        const gender = m.gender || null;
+        let id = m.id;
+        if (id) await fetch(`/api/admin/staff/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gender }) });
+        else {
+          const r = await fetch("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: m.name.trim(), phone: m.phone || undefined, gender }) });
+          if (!r.ok) { setError(`יצירת ${m.name} נכשלה`); setBusy(false); return; }
+          id = (await r.json()).id as string;
+        }
+        const saved = { ...m, id, name: m.name.trim(), daysEdited: false };
+        if (!m.id || m.daysEdited) await postSchedule(saved);
+        out.push(saved);
       }
       setMembers(out);
-      goTo(3, "team");
+      goTo(3, "team", { team: Object.fromEntries(out.map(m => [m.id!, { domains: m.domains, days: m.days }])) });
     } catch { setError("שגיאת רשת"); }
     setBusy(false);
   };
@@ -212,18 +249,26 @@ export default function OnboardingPage() {
     if (!valid.length) { setError("צריך לפחות שירות אחד"); return; }
     setBusy(true); setError("");
     try {
-      const out: Svc[] = [];
-      for (const s of valid) {
-        if (s.id) { out.push(s); continue; }
-        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, category: s.category ?? null, priceFrom: !!s.priceFrom, rebookDays: s.rebookDays ?? null, sortOrder: valid.indexOf(s) }) });
-        if (!r.ok) { setError(`יצירת ${s.name} נכשלה`); setBusy(false); return; }
-        out.push({ ...s, id: (await r.json()).id });
-      }
-      setServices(out);
-      // Everyone does everything (default of the spec); editable later per member.
-      await Promise.all(members.filter(m => m.id).flatMap(m => out.filter(s => s.id).map(s =>
-        fetch(`/api/admin/staff/${m.id}/services`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceId: s.id, enabled: true }) }).catch(() => null),
-      )));
+      const team = members.filter(m => m.id && m.name.trim());
+      const idOf = new Map(team.map(m => [m.key, m.id!]));
+      // In parallel, each with its place in the list (they all came in at 0 before, so the order was lost),
+      // and with who does it (before 28.10.2026 everyone got every service).
+      const out = await Promise.all(valid.map(async (s, i): Promise<Svc | null> => {
+        const who = whoOf(s, team);
+        if (s.id) return { ...s, who };
+        const r = await fetch("/api/admin/services", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+          name: s.name.trim(), price: parseFloat(s.price) || 0, durationMinutes: parseInt(s.duration) || 30, sortOrder: i, category: s.category ?? null, priceFrom: !!s.priceFrom, rebookDays: s.rebookDays ?? null,
+          ...(s.about ? { description: s.about } : {}), ...(s.segments ? { segments: JSON.stringify(s.segments) } : {}), bufferAfterMin: s.bufferAfterMin ?? 0, ...(s.consultFirst ? { note: CONSULT_FIRST_NOTE } : {}),
+          staffIds: who.map(k => idOf.get(k)).filter(Boolean),
+        }) }).catch(() => null);
+        return r?.ok ? { ...s, id: (await r.json()).id, who, savedWho: who } : null;
+      }));
+      // A saved service: turn on or off only who changed (a turn-on rewrites her own price and name for it).
+      const changes = out.flatMap(s => (s && s.savedWho ? team.filter(m => s.who!.includes(m.key) !== s.savedWho!.includes(m.key)).map(m => ({ s, m })) : []));
+      const sent = await Promise.all(changes.map(({ s, m }) => fetch(`/api/admin/staff/${m.id}/services`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ serviceId: s.id, enabled: s.who!.includes(m.key) }) }).then(r => r.ok).catch(() => false)));
+      const failed = valid.filter((_, i) => !out[i]);
+      setServices(valid.map((s, i) => (out[i] ? { ...out[i]!, savedWho: out[i]!.who! } : s)));
+      if (failed.length || sent.includes(false)) { setError(failed.length ? `יצירת ${failed.map(s => s.name).join(", ")} נכשלה` : "שמירה של מי עושה מה נכשלה, נסו שוב"); setBusy(false); return; }
       goTo(4, "services");
     } catch { setError("שגיאת רשת"); }
     setBusy(false);
@@ -275,17 +320,17 @@ export default function OnboardingPage() {
     if (r?.ok) setWaOfficial(true); else setError("לא הצלחנו לשמור, נסה שוב");
     setBusy(false);
   };
-  useEffect(() => { if (step === 6 && !tester && members[0]?.phone) setTester(members[0].phone); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (step === 7 && !tester && members[0]?.phone) setTester(members[0].phone); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
   // Which plan fits, now that the team is known (16.10.2026, Yair: "בהקמה").
   const [plans, setPlans] = useState<{ key: string; name: string; priceIls: number; apptsEstimate: number }[]>([]);
-  useEffect(() => { if (step === 6 && !plans.length) fetch("/api/plans").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.plans?.length) setPlans(j.plans); }).catch(() => {}); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (step === 7 && !plans.length) fetch("/api/plans").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.plans?.length) setPlans(j.plans); }).catch(() => {}); }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (step !== 5) return;
+    if (step !== 6) return;
     fetch("/api/admin/whatsapp/official").then(r => (r.ok ? r.json() : null)).then(j => { if (j?.wanted) setWaOfficial(true); }).catch(() => {});
   }, [step]);
   // Came back to this step with a device already opened earlier → straight to the box.
   useEffect(() => {
-    if (step === 5 && waStatus === "requested" && !waBox && !waLinked) void connectWhatsApp();
+    if (step === 6 && waStatus === "requested" && !waBox && !waLinked) void connectWhatsApp();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, waStatus]);
 
@@ -299,6 +344,8 @@ export default function OnboardingPage() {
   const activate = async () => {
     setBusy(true); setError("");
     try {
+      // What would make the agent book wrong stops "הפעל" (the check screen shows it).
+      if (await blockingIssues()) { setBusy(false); goTo(5); setError("יש מה לתקן לפני ההפעלה, מסומן באדום"); return; }
       const wasOn = agentEnabled;
       const r = await fetch("/api/admin/agent", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isEnabled: true }) });
       if (!r.ok) { setError("הפעלת הסוכן נכשלה"); setBusy(false); return; }
@@ -402,11 +449,11 @@ export default function OnboardingPage() {
       {error && <div className="mb-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{error}</div>}
 
       {step === 0 && (
-        <Card title={`בוא נקים את צ׳אטור ל${vocab.place} שלך`} sub="עשר דקות, מהנייד. כל שלב נשמר, אפשר לעצור ולחזור.">
+        <Card title={`מקימים את צ׳אטור ל${vocab.place} שלך`} sub="עשר דקות, מהנייד. כל שלב נשמר, אפשר לעצור ולחזור.">
           <ul className="text-sm text-slate-600 space-y-1.5 mb-5">
             {["פרטי העסק ושעות הפעילות", `${vocab.staffPluralDef} והשירותים`, "איך הסוכן מדבר עם הלקוחות", "חיבור הוואטסאפ של העסק"].map(t => <li key={t} className="flex gap-2"><span style={{ color: C.turquoise }}>●</span>{t}</li>)}
           </ul>
-          <p className="text-sm rounded-xl px-3 py-2.5 mb-1" style={{ background: C.mist, color: C.petrol }}>החודש החינמי מתחיל רק כשתלחץ &quot;הפעל&quot; בסוף.</p>
+          <p className="text-sm rounded-xl px-3 py-2.5 mb-1" style={{ background: C.mist, color: C.petrol }}>החודש החינמי מתחיל רק בלחיצה על &quot;הפעל&quot; בסוף.</p>
           {/* Signup already set a password; only someone who came in through a personal link has none. */}
           {!hasPassword && (
             <div className="mt-4">
@@ -433,7 +480,7 @@ export default function OnboardingPage() {
             <div className="space-y-1.5">
               {DAYS.map((d, i) => (
                 <div key={d} className="flex items-center gap-2 text-sm">
-                  <button type="button" onClick={() => setHours(h => h.map((x, j) => j === i ? { ...x, on: !x.on } : x))} className={chip(hours[i].on)} style={hours[i].on ? { background: C.petrol } : {}}>{d}</button>
+                  <button type="button" onClick={() => { const on = !hours[i].on; setHours(h => h.map((x, j) => j === i ? { ...x, on } : x)); setMembers(ms => ms.map(m => ({ ...m, days: m.days.map((d, j) => (j === i ? on : d)) }))); }} className={chip(hours[i].on)} style={hours[i].on ? { background: C.petrol } : {}}>{d}</button>
                   {hours[i].on ? (
                     <>
                       <input type="time" value={hours[i].start} onChange={e => setHours(h => h.map((x, j) => j === i ? { ...x, start: e.target.value } : x))} className="rounded-lg border border-slate-200 px-2 py-1 text-sm" />
@@ -450,52 +497,15 @@ export default function OnboardingPage() {
       )}
 
       {step === 2 && (
-        <Card title="הצוות" sub={`מי ${vocab.works} אצלכם, כולל אתה.`}>
-          <div className="space-y-2">
-            {members.map((m, i) => (
-              <div key={i} className="flex gap-2">
-                <input value={m.name} onChange={e => setMembers(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} placeholder={i === 0 ? "השם שלך" : `שם ${vocab.staff}`} disabled={!!m.id} />
-                <input value={m.phone} onChange={e => setMembers(a => a.map((x, j) => j === i ? { ...x, phone: e.target.value } : x))} className={input} dir="ltr" placeholder={i === 0 ? "הנייד שלך" : "נייד"} inputMode="tel" disabled={!!m.id} />
-                {!m.id && members.length > 1 && <button type="button" onClick={() => setMembers(a => a.filter((_, j) => j !== i))} className="text-slate-400 px-1">✕</button>}
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => setMembers(a => [...a, { name: "", phone: "" }])} className="mt-3 text-sm font-medium" style={{ color: C.petrol }}>+ עוד {vocab.staff}</button>
-          <Help label="למה צריך נייד?">
-            <Bubble>הנייד האישי של כל אחד, לא של העסק. אליו מגיעות ההתראות, ואיתו נכנסים ליומן. כולם מקבלים את כל השירותים ואת שעות הפעילות, ואפשר לדייק לכל אחד אחר כך.</Bubble>
-          </Help>
+        <Card title="הצוות" sub={`מי ${vocab.works} אצלכם, ומה כל אחד עושה. גם את עצמך.`}>
+          <TeamStep members={members} setMembers={setMembers} domains={domains} vocab={vocab} openDays={hours.map(h => h.on)} />
           <Primary onClick={saveTeam} busy={busy}>המשך</Primary>
         </Card>
       )}
 
       {step === 3 && (
-        <Card title="השירותים" sub="הכנו רשימה במחירי שוק. שנה, מחק, הוסף.">
-          {/* The name gets the full width (it was cut off on a phone), price and minutes under it. */}
-          <div className="space-y-2">
-            {services.map((s, i) => (
-              <div key={i}>
-              {/* Beauty catalogs come by category (16.10.2026). */}
-              {s.category && s.category !== services[i - 1]?.category && <p className="text-[12px] font-semibold mt-3 mb-1.5" style={{ color: C.petrol }}>{s.category}</p>}
-              <div className="rounded-2xl border border-slate-200 p-2">
-                <div className="flex items-center gap-2">
-                  <input value={s.name} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} className={input} placeholder="שם השירות" disabled={!!s.id} />
-                  {!s.id ? <button type="button" onClick={() => setServices(a => a.filter((_, j) => j !== i))} className="shrink-0 w-8 text-slate-400" aria-label="מחק שירות">✕</button> : <span className="shrink-0 w-8 text-center text-emerald-500 text-sm">✓</span>}
-                </div>
-                <div className="flex items-center gap-1.5 mt-1.5 text-[13px] text-slate-500">
-                  <input value={s.price} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, price: e.target.value } : x))} className={num} type="number" inputMode="numeric" dir="ltr" disabled={!!s.id} aria-label="מחיר" />
-                  <span>₪</span>
-                  <input value={s.duration} onChange={e => setServices(a => a.map((x, j) => j === i ? { ...x, duration: e.target.value } : x))} className={`${num} ms-3`} type="number" inputMode="numeric" dir="ltr" disabled={!!s.id} aria-label="דקות" />
-                  <span>דקות</span>
-                  {s.priceFrom && <span className="ms-auto text-[11px] font-semibold px-2 py-0.5 rounded-full" style={{ background: C.mist, color: C.petrol }}>החל מ</span>}
-                </div>
-              </div>
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => setServices(a => [...a, { name: "", price: "", duration: "30" }])} className="mt-3 text-sm font-medium" style={{ color: C.petrol }}>+ שירות</button>
-          <Help label="מה משנים המחיר והדקות?">
-            <Bubble>המחיר מופיע ללקוחות בעמוד קביעת התור, והסוכן אומר אותו כששואלים. הדקות קובעות כמה זמן התור תופס ביומן, אז מציעים ללקוח רק זמנים שהשירות נכנס בהם.</Bubble>
-          </Help>
+        <Card title="השירותים" sub="הכנו רשימה במחירי שוק. אפשר לשנות, למחוק ולהוסיף, ולסמן אצל מי עושים כל שירות.">
+          <ServicesStep services={services} setServices={setServices} members={members} />
           <Primary onClick={saveServices} busy={busy}>המשך</Primary>
         </Card>
       )}
@@ -543,6 +553,12 @@ export default function OnboardingPage() {
       )}
 
       {step === 5 && (
+        <Card title="בדיקה לפני הפעלה" sub="המערכת בודקת שהכל נכון, ומנסה את הסוכן כמו לקוחה. שום דבר לא נשלח.">
+          <CheckStep onFix={n => goTo(n)} onDone={() => goTo(6, "check")} />
+        </Card>
+      )}
+
+      {step === 6 && (
         <Card title="הוואטסאפ של העסק" sub="הסוכן עונה מהמספר שהלקוחות כבר מכירים.">
           {waStatus === "connected" || waLinked ? (
             <div className="rounded-2xl px-4 py-5 text-center" style={{ background: C.mist }}>
@@ -584,12 +600,12 @@ export default function OnboardingPage() {
             </div>
           )}
           <div className="flex items-center justify-between mt-5">
-            <button type="button" onClick={() => goTo(6, waStatus === "connected" || waLinked ? "whatsapp" : undefined)} className="text-sm text-slate-500">{waStatus === "connected" || waLinked ? "המשך" : "אמשיך בלי לחבר עכשיו"}</button>
+            <button type="button" onClick={() => goTo(7, waStatus === "connected" || waLinked ? "whatsapp" : undefined)} className="text-sm text-slate-500">{waStatus === "connected" || waLinked ? "המשך" : "אמשיך בלי לחבר עכשיו"}</button>
           </div>
         </Card>
       )}
 
-      {step === 6 && (
+      {step === 7 && (
         <Card title="הפעלה" sub="בדיקה אחרונה, ומפעילים.">
           <ul className="space-y-2 text-sm">
             {[
@@ -622,7 +638,7 @@ export default function OnboardingPage() {
             // Without WhatsApp the free month would run while the agent answers no one: connect first.
             <>
               <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4 leading-relaxed">הוואטסאפ לא מחובר: הסוכן לא יענה, והחודש החינמי ירוץ בכל זאת. כדאי לחבר קודם, פחות מדקה.</p>
-              <Primary onClick={() => goTo(5)} busy={busy}>לחבר את הוואטסאפ</Primary>
+              <Primary onClick={() => goTo(6)} busy={busy}>לחבר את הוואטסאפ</Primary>
               <button type="button" onClick={activate} disabled={busy} className="mt-3 w-full text-sm text-slate-500 underline disabled:opacity-50">להפעיל בכל זאת</button>
             </>
           )}
@@ -630,7 +646,7 @@ export default function OnboardingPage() {
             <div className="mt-6 pt-5 border-t border-slate-100">
               <p className="text-sm font-semibold text-slate-800">להפעיל אחר כך</p>
               <p className="text-xs text-slate-500 mt-0.5">למשל בתחילת החודש. עד אז זה מצב בדיקה.</p>
-              <Field label="מספר לבדיקה" help="עד ההפעלה הסוכן עונה בוואטסאפ רק למספר הזה, כדי שתוכל לבדוק אותו. לקוחות לא קובעים, ותורים בבדיקה לא נשמרים. ההודעות יורדות מהחבילה החינמית.">
+              <Field label="מספר לבדיקה" help="עד ההפעלה הסוכן עונה בוואטסאפ רק למספר הזה, כדי שאפשר יהיה לבדוק אותו. לקוחות לא קובעים, ותורים בבדיקה לא נשמרים. ההודעות יורדות מהחבילה החינמית.">
                 <input value={tester} onChange={e => setTester(e.target.value)} className={input} dir="ltr" inputMode="tel" placeholder={members[0]?.phone || "הנייד שלך"} />
               </Field>
               <button type="button" onClick={() => void finishWithoutActivating()} disabled={busy} className="mt-3 w-full rounded-2xl py-3 text-[15px] font-semibold border disabled:opacity-50" style={{ borderColor: C.petrol, color: C.petrol }}>סיים, אפעיל אחר כך</button>
@@ -690,27 +706,6 @@ function Field({ label, help, children }: { label: string; help?: React.ReactNod
         )}
       </div>
       {help && open && <Bubble>{help}</Bubble>}
-      {children}
-    </div>
-  );
-}
-
-function Help({ label, children }: { label: string; children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-3">
-      <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: C.petrol }}>
-        <span className="w-5 h-5 rounded-full inline-flex items-center justify-center text-[11px]" style={open ? { background: C.petrol, color: "#fff" } : { background: C.mist }}>?</span>{label}
-      </button>
-      {open && <div className="mt-2 space-y-2">{children}</div>}
-    </div>
-  );
-}
-
-function Bubble({ title, children }: { title?: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-2 rounded-2xl px-3 py-2.5 text-[13px] leading-relaxed" style={{ background: C.mist, color: C.petrol }}>
-      {title && <div className="font-bold mb-1">{title}</div>}
       {children}
     </div>
   );

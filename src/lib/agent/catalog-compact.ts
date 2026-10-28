@@ -9,15 +9,15 @@
  */
 import { staffFemOf, type Vocab } from "@/lib/vocab";
 
-type Svc = { id: string; name: string; price: number; durationMinutes: number; note: string | null; category: string | null; priceFrom?: boolean };
+type Svc = { id: string; name: string; price: number; durationMinutes: number; note: string | null; category: string | null; priceFrom: boolean };
 type Own = { customName: string | null; customPrice: number | null; customDuration: number | null; customNote: string | null; service: { id: string } };
 type StaffRow = {
   id: string; name: string; nickname: string | null; inQuickPool: boolean; gender: string | null;
   staffServices: Own[];
 };
 
-// "החל מ" (a price set at a consultation) rides along, so the agent never quotes it as the price.
-const line = (name: string, price: number, dur: number, note: string | null, from = false) => `${name} ${from ? "החל מ-" : ""}${price}₪/${dur} דק׳${note ? ` (${note})` : ""}`;
+// "החל מ": the price is set at the consultation, so the agent never quotes it as final.
+const line = (name: string, price: number, dur: number, note: string | null, from: boolean) => `${name} ${from ? "החל מ-" : ""}${price}₪/${dur} דק׳${note ? ` (${note})` : ""}`;
 
 export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { header: string; body: string } {
   const hasPool = staff.some(s => s.inQuickPool);
@@ -27,16 +27,12 @@ export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { 
     const pool = hasPool && !s.inQuickPool ? ` (לא ${fem ? "מציעים אותה" : "מציעים אותו"} ביוזמתנו; רק בשם או ${fem ? "כשהיא הקבועה" : "כשהוא הקבוע"})` : "";
     return `${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}`;
   });
-  // Who does each service: her own rows, or every service for someone with no rows (as the per-staff list read it).
+  // Who does each service: only her own rows, as the booking guard reads it in these businesses (strictServices).
   const rows = services.map(sv => {
-    const by = staff.flatMap((s): { s: StaffRow; own: Own | null }[] => {
-      if (!s.staffServices.length) return [{ s, own: null }];
-      const own = s.staffServices.find(x => x.service.id === sv.id);
-      return own ? [{ s, own }] : [];
-    });
+    const by = staff.flatMap(s => s.staffServices.filter(x => x.service.id === sv.id).map(own => ({ s, own })));
     if (!by.length) return null;
-    const own = by.filter(b => b.own && (b.own.customName || b.own.customPrice != null || b.own.customDuration != null || b.own.customNote))
-      .map(({ s, own: o }) => `אצל ${s.name}: ${line(o!.customName ?? sv.name, o!.customPrice ?? sv.price, o!.customDuration ?? sv.durationMinutes, o!.customNote ?? sv.note, sv.priceFrom)}`);
+    const own = by.filter(({ own: o }) => o.customName || o.customPrice != null || o.customDuration != null || o.customNote)
+      .map(({ s, own: o }) => `אצל ${s.name}: ${line(o.customName ?? sv.name, o.customPrice ?? sv.price, o.customDuration ?? sv.durationMinutes, o.customNote ?? sv.note, sv.priceFrom)}`);
     return { cat: sv.category?.trim() || "", text: `• ${line(sv.name, sv.price, sv.durationMinutes, sv.note, sv.priceFrom)} [id: ${sv.id}] · אצל: ${by.map(b => b.s.name).join(", ")}${own.length ? ` (${own.join("; ")})` : ""}` };
   }).filter((r): r is { cat: string; text: string } => !!r);
   const cats = Array.from(new Set(rows.map(r => r.cat)));

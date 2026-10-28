@@ -89,7 +89,13 @@ export type Vocab = {
    *  consultation; from Israeli price guides (דפי זהב, מידרג), durations by
    *  common practice. rebookDays: when she usually comes back for it (root
    *  5 weeks, gel 3, laser 6 to 8), for the "הגיע הזמן לתור" nudge. */
-  serviceCatalog: { name: string; price: number; duration: number; category?: string; priceFrom?: boolean; rebookDays?: number }[];
+  serviceCatalog: { name: string; price: number; duration: number; category?: string; priceFrom?: boolean; rebookDays?: number;
+    /** 28.10.2026: work and wait parts (colour: she is free while it sets), cleaning after, */
+    segments?: { m: number; busy: boolean }[]; bufferAfterMin?: number;
+    /** not everyone in the domain does it (the wizard asks who), and a consultation the first time. */
+    specialist?: boolean; consultFirst?: boolean;
+    /** What a "החל מ" price depends on: the service's description, which the agent reads. */
+    about?: string }[];
 };
 
 const BASE: Record<BusinessType, Vocab> = {
@@ -122,15 +128,15 @@ const BASE: Record<BusinessType, Vocab> = {
       { category: "עיצוב", name: "פן קצר", price: 70, duration: 30 },
       { category: "עיצוב", name: "פן ארוך", price: 110, duration: 45 },
       { category: "עיצוב", name: "בייביליס", price: 180, duration: 45 },
-      { category: "עיצוב", name: "תסרוקת ערב", price: 350, duration: 60, priceFrom: true },
-      { category: "צבע", name: "צבע שורש", price: 200, duration: 80, rebookDays: 35 },
-      { category: "צבע", name: "צבע מלא", price: 300, duration: 100, priceFrom: true, rebookDays: 42 },
-      { category: "צבע", name: "גוונים חלקיים", price: 400, duration: 130, priceFrom: true, rebookDays: 56 },
-      { category: "צבע", name: "גוונים מלאים", price: 600, duration: 170, priceFrom: true, rebookDays: 70 },
-      { category: "צבע", name: "בלייאז'", price: 700, duration: 210, priceFrom: true, rebookDays: 90 },
+      { category: "עיצוב", name: "תסרוקת ערב", price: 350, duration: 60, priceFrom: true, about: "המחיר הסופי לפי התסרוקת" },
+      { category: "צבע", name: "צבע שורש", price: 200, duration: 80, rebookDays: 35, segments: [{ m: 25, busy: true }, { m: 35, busy: false }, { m: 20, busy: true }] },
+      { category: "צבע", name: "צבע מלא", price: 300, duration: 100, priceFrom: true, rebookDays: 42, segments: [{ m: 30, busy: true }, { m: 40, busy: false }, { m: 30, busy: true }], about: "המחיר הסופי לפי אורך ועובי השיער" },
+      { category: "צבע", name: "גוונים חלקיים", price: 400, duration: 130, priceFrom: true, rebookDays: 56, about: "המחיר הסופי לפי אורך ועובי השיער" },
+      { category: "צבע", name: "גוונים מלאים", price: 600, duration: 170, priceFrom: true, rebookDays: 70, about: "המחיר הסופי לפי אורך ועובי השיער" },
+      { category: "צבע", name: "בלייאז'", price: 700, duration: 210, priceFrom: true, rebookDays: 90, specialist: true, consultFirst: true, about: "המחיר הסופי לפי אורך ועובי השיער" },
       { category: "צבע", name: "שטיפת צבע", price: 200, duration: 45 },
-      { category: "טיפולים", name: "החלקת קרטין", price: 900, duration: 180, priceFrom: true, rebookDays: 105 },
-      { category: "טיפולים", name: "החלקה אורגנית", price: 1200, duration: 240, priceFrom: true, rebookDays: 105 },
+      { category: "טיפולים", name: "החלקת קרטין", price: 900, duration: 180, priceFrom: true, rebookDays: 105, specialist: true, about: "המחיר הסופי לפי אורך ועובי השיער" },
+      { category: "טיפולים", name: "החלקה אורגנית", price: 1200, duration: 240, priceFrom: true, rebookDays: 105, specialist: true, about: "המחיר הסופי לפי אורך ועובי השיער" },
       { category: "ייעוץ", name: "ייעוץ צבע", price: 0, duration: 15 },
     ],
   },
@@ -145,14 +151,14 @@ const BASE: Record<BusinessType, Vocab> = {
     emoji: "💅", treatment: "טיפול",
     slangAllowed: false,
     serviceCatalog: [
-      { category: "ג'ל", name: "מניקור ג'ל", price: 120, duration: 60, rebookDays: 21 },
-      { category: "ג'ל", name: "לק ג'ל ברגליים", price: 110, duration: 50, rebookDays: 28 },
-      { category: "בנייה", name: "בניית ציפורניים", price: 250, duration: 110, rebookDays: 21 },
-      { category: "בנייה", name: "מילוי", price: 170, duration: 80, rebookDays: 21 },
+      { category: "ג'ל", name: "מניקור ג'ל", price: 120, duration: 60, rebookDays: 21, bufferAfterMin: 10 },
+      { category: "ג'ל", name: "לק ג'ל ברגליים", price: 110, duration: 50, rebookDays: 28, bufferAfterMin: 10 },
+      { category: "בנייה", name: "בניית ציפורניים", price: 250, duration: 110, rebookDays: 21, bufferAfterMin: 10 },
+      { category: "בנייה", name: "מילוי", price: 170, duration: 80, rebookDays: 21, bufferAfterMin: 10 },
       { category: "בנייה", name: "הסרת ג'ל או בנייה", price: 45, duration: 25 },
       { category: "מניקור ופדיקור", name: "מניקור קלאסי", price: 110, duration: 40, rebookDays: 14 },
-      { category: "מניקור ופדיקור", name: "פדיקור ספא", price: 170, duration: 60, rebookDays: 28 },
-      { category: "מניקור ופדיקור", name: "פדיקור רפואי", price: 200, duration: 60, rebookDays: 28 },
+      { category: "מניקור ופדיקור", name: "פדיקור ספא", price: 170, duration: 60, rebookDays: 28, bufferAfterMin: 10 },
+      { category: "מניקור ופדיקור", name: "פדיקור רפואי", price: 200, duration: 60, rebookDays: 28, bufferAfterMin: 10, specialist: true },
       { category: "תוספות", name: "עיטור לציפורן", price: 10, duration: 10 },
       { category: "תוספות", name: "פרנץ'", price: 40, duration: 15 },
       { category: "תוספות", name: "תיקון ציפורן", price: 15, duration: 10 },
@@ -178,10 +184,10 @@ const BASE: Record<BusinessType, Vocab> = {
       { category: "שעווה", name: "שעווה שפם", price: 40, duration: 10, rebookDays: 21 },
       { category: "שעווה", name: "שעווה בתי שחי", price: 60, duration: 15, rebookDays: 28 },
       { category: "שעווה", name: "שעווה רגליים מלאות", price: 180, duration: 45, rebookDays: 35 },
-      { category: "לייזר", name: "לייזר אזור קטן", price: 150, duration: 15, priceFrom: true, rebookDays: 35 },
-      { category: "לייזר", name: "לייזר רגליים", price: 350, duration: 50, priceFrom: true, rebookDays: 49 },
-      { category: "איפור קבוע", name: "גבות בשיטת השערה", price: 1500, duration: 170, priceFrom: true, rebookDays: 42 },
-      { category: "איפור קבוע", name: "אייליינר קבוע", price: 1200, duration: 120, priceFrom: true, rebookDays: 42 },
+      { category: "לייזר", name: "לייזר אזור קטן", price: 150, duration: 15, priceFrom: true, rebookDays: 35, specialist: true, consultFirst: true, about: "המחיר הסופי לפי גודל האזור" },
+      { category: "לייזר", name: "לייזר רגליים", price: 350, duration: 50, priceFrom: true, rebookDays: 49, specialist: true, consultFirst: true, about: "המחיר הסופי לפי גודל האזור" },
+      { category: "איפור קבוע", name: "גבות בשיטת השערה", price: 1500, duration: 170, priceFrom: true, rebookDays: 42, specialist: true, consultFirst: true, about: "המחיר הסופי נקבע בייעוץ" },
+      { category: "איפור קבוע", name: "אייליינר קבוע", price: 1200, duration: 120, priceFrom: true, rebookDays: 42, specialist: true, consultFirst: true, about: "המחיר הסופי נקבע בייעוץ" },
       { category: "ייעוץ", name: "ייעוץ ובדיקת רגישות", price: 0, duration: 20 },
     ],
   },

@@ -26,6 +26,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cleanupSandbox } from "@/lib/agent/sandbox-cleanup";
 import { anthropicFor, hasTestKey } from "@/lib/anthropic-clients";
 import { requireOwner, getRequestSession, getSessionBusiness } from "@/lib/session";
 
@@ -127,23 +128,6 @@ const SCENARIOS: Record<string, { label: string; messages: string[] }> = {
 // with 0) — the earlier 9725099… range collided with real 050‑99 customers.
 const SANDBOX_PHONE = /^972000\d{7}$/;
 
-async function cleanupSandbox(businessId: string, phone: string) {
-  const convs = await prisma.conversation.findMany({ where: { businessId, phone }, select: { id: true } });
-  if (convs.length) {
-    await prisma.conversationMessage.deleteMany({ where: { conversationId: { in: convs.map(c => c.id) } } }).catch(() => {});
-    await prisma.conversation.deleteMany({ where: { id: { in: convs.map(c => c.id) } } }).catch(() => {});
-  }
-  await prisma.messageLog.deleteMany({ where: { businessId, customerPhone: phone } }).catch(() => {});
-  await prisma.bookingProposal.deleteMany({ where: { businessId, phone } }).catch(() => {});
-  // A sandbox turn may have auto-created a Customer (+ implicit waitlist rows)
-  // for the fake phone — remove them too, so nothing fake reaches the CRM.
-  const fakeCustomers = await prisma.customer.findMany({ where: { businessId, phone: { in: [phone, phone.replace(/^972/, "0")] } }, select: { id: true } });
-  if (fakeCustomers.length) {
-    const ids = fakeCustomers.map(c => c.id);
-    await prisma.waitlist.deleteMany({ where: { customerId: { in: ids } } }).catch(() => {});
-    await prisma.customer.deleteMany({ where: { id: { in: ids }, appointments: { none: {} } } }).catch(() => {});
-  }
-}
 
 export async function POST(req: NextRequest) {
   const guard = requireOwner(req);

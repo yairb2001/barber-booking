@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { BUSINESS_TYPES } from "@/lib/vocab";
+import { DOMAINS, setupForDomains, type Domain } from "@/lib/domains";
 import { TYPICAL_BUSINESS, recommendPlan } from "@/lib/crm/plan-reco";
 import { CHATOR_PIXEL_ID } from "@/lib/lead-attribution";
 
@@ -58,7 +58,11 @@ const input = "w-full rounded-xl border border-slate-200 bg-white px-3.5 py-3 te
 export default function SignupPage() {
   const router = useRouter();
   const [businessName, setBusinessName] = useState("");
-  const [businessType, setBusinessType] = useState("barber_men");
+  // What they do, as many as apply (28.10.2026, spec "הקמה עצמית ליופי"); "עסק אחר" stands alone.
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [otherBiz, setOtherBiz] = useState(false);
+  const businessType = setupForDomains(domains).businessType;
+  const toggleDomain = (d: Domain) => { setOtherBiz(false); setDomains(a => (a.includes(d) ? a.filter(x => x !== d) : [...a, d])); };
   // The plans are shown, not picked (25.10.2026, Yair): the first month is free and the
   // plan is chosen at its end. The one that fits his type is marked.
   const [plans, setPlans] = useState<{ key: string; name: string; apptsEstimate: number; messages: number; priceIls: number }[]>([]);
@@ -85,6 +89,7 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    if (!domains.length && !otherBiz) { setError("מה עושים אצלכם? אפשר לבחור כמה"); return; }
     if (!phone) { setError("נא להזין טלפון"); return; }
     if (password.length < 6) { setError("סיסמה חייבת להיות לפחות 6 תווים"); return; }
     if (password !== confirmPassword) { setError("הסיסמאות לא תואמות"); return; }
@@ -92,7 +97,7 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, businessType, phone, password, confirmPassword, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined, attribution: readAttribution() }),
+        body: JSON.stringify({ businessName, domains, phone, password, confirmPassword, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined, attribution: readAttribution() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -123,18 +128,16 @@ export default function SignupPage() {
           </div>
 
           <div>
-            <p className={section} style={{ color: C.ink }}>העסק</p>
+            <p className={section} style={{ color: C.ink }}>מה עושים אצלכם? <span className="font-normal text-slate-400">(אפשר לבחור כמה)</span></p>
             <div className="flex flex-wrap gap-2 mb-3">
-              {BUSINESS_TYPES.map(t => {
-                const on = businessType === t.id;
-                return (
-                  <button key={t.id} type="button" onClick={() => setBusinessType(t.id)}
-                    className={`px-3.5 py-2 rounded-full text-sm border transition ${on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-600"}`}
-                    style={on ? { background: C.petrol } : {}}>
-                    {t.label}
-                  </button>
-                );
-              })}
+              {[...DOMAINS.map(d => ({ id: d.id as string, label: d.label, on: domains.includes(d.id), pick: () => toggleDomain(d.id) })),
+                { id: "other", label: "עסק אחר", on: otherBiz, pick: () => { setDomains([]); setOtherBiz(o => !o); } }].map(t => (
+                <button key={t.id} type="button" onClick={t.pick} aria-pressed={t.on}
+                  className={`px-3.5 py-2 rounded-full text-sm border transition ${t.on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-600"}`}
+                  style={t.on ? { background: C.petrol } : {}}>
+                  {t.label}
+                </button>
+              ))}
             </div>
             <input type="text" value={businessName} onChange={e => setBusinessName(e.target.value)} placeholder="שם העסק (אפשר גם אחר כך)" className={input} />
           </div>
@@ -142,7 +145,7 @@ export default function SignupPage() {
           <div className="space-y-3">
             <p className={section} style={{ color: C.ink }}>הכניסה שלך</p>
             <div>
-              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="הנייד של המספרה" dir="rtl" className={input} />
+              <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="הנייד של העסק" dir="rtl" className={input} />
               <p className="text-xs text-slate-500 mt-1.5">המספר שהלקוחות כותבים אליו. עליו הסוכן יענה.</p>
             </div>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="סיסמה (לפחות 6 תווים)" dir="rtl" className={input} />

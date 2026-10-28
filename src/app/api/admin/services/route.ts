@@ -63,6 +63,8 @@ export async function POST(req: NextRequest) {
       businessId: business.id,
       name: body.name,
       description: body.description || null,
+      // The line the agent and the booking page show next to it ("בפעם הראשונה: קודם ייעוץ", 28.10.2026).
+      note: typeof body.note === "string" && body.note.trim() ? body.note.trim().slice(0, 200) : null,
       price: parseFloat(body.price),
       durationMinutes: parseInt(body.durationMinutes),
       isVisible: body.isVisible ?? true,
