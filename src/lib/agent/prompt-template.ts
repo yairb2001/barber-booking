@@ -68,7 +68,7 @@ export function compactAgentBody(p: TemplateParams): string {
   // Who is writing (28.10.2026, a mixed salon wrote "את/ה מחפש/ת"): a men's
   // barbershop keeps its text as it was; elsewhere by her words, never slashes.
   const addressing = v.type === "barber_men" ? ""
-    : `\n- פנייה: ${v.type === "other" ? "לא ידוע מראש אם כותב גבר או אישה" : v.customerFem ? "בלשון נקבה כברירת מחדל" : "בלשון זכר כברירת מחדל"}. לפי איך שכותבים על עצמם ("אני צריכה" → נקבה, "אני צריך" → זכר); לא ברור → ניסוח בלי מגדר ("איזה טיפול מתאים?", "מה נוח לך?"). לעולם בלי לוכסנים (את/ה, מחפש/ת, ברוך/ה).`;
+    : `\n- פנייה: ${v.type === "other" ? "לא ידוע מראש אם כותב גבר או אישה" : v.customerFem ? "בלשון נקבה כברירת מחדל" : "בלשון זכר כברירת מחדל"}. לפי איך שכותבים על עצמם ("אני צריכה" → נקבה, "אני צריך" → זכר); לא ברור → ניסוח בלי מגדר ("היי" ולא "ברוך הבא", "איזה טיפול מתאים?", "מה נוח לך?"). לעולם בלי לוכסנים (את/ה, מחפש/ת, ברוך/ה).${v.type === "other" ? "\n- שירות שיש לו גרסה לנשים ולגברים (תספורת נשים / תספורת גברים): לפי הלשון שכותבים בה (\"אני צריכה תספורת\" → תספורת נשים), בלי לשאול. לא ברור → שאלה אחת בלבד." : ""}`;
   const tone = str(a.tone);
   const addressStyle = p.addressStyle ?? (str(a.address) || null);
   const address = addressStyle === "אחי" && v.slangAllowed && tone !== "רשמי"
