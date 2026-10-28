@@ -29,15 +29,15 @@ export function looksLikeBookingContext(texts: string[]): boolean {
 /** Explicit list ("13:00 · 13:30 · 14:00"), at most MAX_LISTED per barber-day.
  *  Ranges ("15:10–19:10 כל 30") were tried and misread by the model: on 21.9.2026
  *  it told a customer "nothing after 17:00" while 17:40–19:10 were free.
- *  The rest ends with the last START ("עד 16:45" was read as closing time and a
- *  75-minute facial was taken off it again, 28.10.2026). */
+ *  The time after "עד" is the last START; the header says so (28.10.2026: it was
+ *  read as closing time and a 75-minute facial taken off it again). */
 const MAX_LISTED = 12;
 export function compressSlots(slots: string[]): string {
   if (!slots.length) return "";
   const mins = Array.from(new Set(slots.map(timeToMinutes))).sort((a, b) => a - b);
   const shown = mins.slice(0, MAX_LISTED).map(fmt);
   const rest = mins.length - shown.length;
-  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest}, התור האחרון ב-${fmt(mins[mins.length - 1])}` : "");
+  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
 }
 /**
  * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
@@ -136,6 +136,6 @@ export async function buildAvailabilitySnapshot(p: {
   }
   const byTreatment = (index.staff.some(s => other(s)) ? " שם בסוגריים = השעות לטיפול הזה; לטיפול אחר (משך אחר) → get_available_slots עם serviceId." : "") +
     (index.staff.length < rawIndex.staff.length ? " מופיעים רק מי שעושים את מה שהלקוח ביקש; מי שלא מופיע לא עושה אותו (זה לא אומר שאין לו מקום)." : "");
-  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום; get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום ("ועוד 8 עד 18:30" = עוד 8 שעות התחלה, האחרונה ב-18:30); get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "") + focus;
 }
