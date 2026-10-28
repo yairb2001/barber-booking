@@ -61,6 +61,7 @@ export const maxDuration = 60; // seconds — needed for Claude API call
 interface GreenApiWebhook {
   typeWebhook: string;
   idMessage?: string;          // unique message ID from Green API — used for dedup
+  timestamp?: number;          // when the message was SENT (seconds), not when it reached us
   instanceData?: { idInstance: string | number };
   senderData?: {
     chatId: string;
@@ -450,6 +451,28 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (existingMsg) {
     console.warn(`[webhook] duplicate message skipped — conv=${conv.id} idMessage=${body.idMessage ?? "n/a"}`);
     return NextResponse.json({ ok: true, skipped: "duplicate_message" });
+  }
+
+  // A re-sync, not a new message (28.10.2026): when the phone of the line opens WhatsApp, the linked
+  // device gets older messages again, and the agent answered them a second time hours later. A message
+  // sent more than 10 minutes ago whose text is already in this chat is skipped.
+  const sentAgoMs = body.timestamp ? Date.now() - body.timestamp * 1000 : 0;
+  if (!isNonText && text && sentAgoMs > 10 * 60_000) {
+    const seen = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "user", content: text, createdAt: { gte: new Date(Date.now() - 3 * 86400_000) } }, select: { id: true } });
+    if (seen) {
+      console.warn(`[webhook] re-synced old message skipped — conv=${conv.id} sent ${Math.round(sentAgoMs / 60_000)} min ago`);
+      return NextResponse.json({ ok: true, skipped: "resync_old_message" });
+    }
+  }
+  // Chator's own line: the same question again after it was answered (two days) gets no second answer;
+  // an ad's text comes again when the ad is tapped again (Yair: "למה הוא קיבל ב-14:43 הודעה").
+  if (biz.id === DEMO_BUSINESS_ID && !isNonText && text && text.length >= 6) {
+    const earlier = await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "user", content: text, createdAt: { gte: new Date(Date.now() - 2 * 86400_000) } }, orderBy: { createdAt: "desc" }, select: { createdAt: true } });
+    const answered = earlier ? await prisma.conversationMessage.findFirst({ where: { conversationId: conv.id, role: "assistant", createdAt: { gt: earlier.createdAt } }, select: { id: true } }) : null;
+    if (answered) {
+      console.warn(`[webhook] repeated question on Chator's line skipped — conv=${conv.id}`);
+      return NextResponse.json({ ok: true, skipped: "repeat_question" });
+    }
   }
 
   const fmd = body.messageData?.fileMessageData;
