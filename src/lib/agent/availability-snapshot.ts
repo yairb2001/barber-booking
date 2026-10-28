@@ -73,7 +73,7 @@ export async function buildAvailabilitySnapshot(p: {
   customerId?: string | null;
   /** …and the slot the agent is holding for this phone (his own proposal). */
   holderKey?: string | null;
-  /** Beauty businesses: the treatment each person's times are for, when it isn't serviceId (28.10.2026). */
+  /** Beauty businesses: the treatment each person's times are for (28.10.2026); null = not shown (doesn't do what she asked). */
   serviceOf?: (staffId: string) => { id: string; name: string } | null;
 }): Promise<string> {
   const days = p.days ?? 6;
@@ -81,10 +81,15 @@ export async function buildAvailabilitySnapshot(p: {
   const rawIndex = await buildAvailabilityIndex(p.businessId, today, days, { exemptHoldsCustomerId: p.customerId, exemptHoldsHolderKey: p.holderKey });
   const excluded = new Set(p.excludeStaffIds ?? []);
   // A nail tech has no times for a haircut: her line shows her own treatment
-  // instead of "no room at all" (28.10.2026, "ביום ראשון אין לה מקום" while she was free).
+  // instead of "no room at all" (28.10.2026, "ביום ראשון אין לה מקום" while she
+  // was free), and whoever doesn't do what she asked is left out.
   const own = (id: string) => p.serviceOf?.(id) ?? null;
   const svcFor = (id: string, svc: string | null) => own(id)?.id ?? svc;
-  const index = excluded.size || p.serviceOf ? { ...rawIndex, slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svcFor(id, svc)) } : rawIndex;
+  const index = excluded.size || p.serviceOf ? {
+    ...rawIndex,
+    staff: p.serviceOf ? rawIndex.staff.filter(s => own(s.id)) : rawIndex.staff,
+    slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svcFor(id, svc)),
+  } : rawIndex;
   const hasPool = index.staff.some(s => s.inQuickPool);
   const short = p.shortName ?? ((id, name) => name.trim().split(/\s+/)[0]);
   // Two barbers may share a first name (יאיר בוחבוט / יאיר הרוש) — disambiguate.

@@ -2733,7 +2733,9 @@ async function runCustomerAgentCore(opts: {
           if (asked.length) snapServiceId = asked[0];
           serviceOf = staffId => {
             const mine = byStaff.get(staffId) ?? [];
-            return mine.find(x => asked.includes(x.id)) ?? mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
+            // She named a treatment: only who does it (the others confused the model, "ליאור בשישי").
+            if (asked.length) return mine.find(x => asked.includes(x.id)) ?? null;
+            return mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
           };
         }
         const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz) });
