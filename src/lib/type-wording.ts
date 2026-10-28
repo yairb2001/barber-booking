@@ -150,6 +150,7 @@ export function agentReplyForType(text: string, words: Words): string {
   // "יש המון מקום" makes a business sound empty (Yair, 28.10.2026: "לא אהבתי
   // שהוא אומר המון מקום"); "מלא" only after "יש", since "היום מלא" means full.
   return out.replace(/\*\*/g, "")
-    .replace(/(יש (?:עוד )?)?(המון|מלא) (מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
-      q === "מלא" && !yesh ? m : `${yesh ?? ""}כמה ${what === "מקום" ? "תורים פנויים" : what}`);
+    .replace(/(יש (?:עוד )?)?(המון|הרבה|מלא) (מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
+      q === "מלא" && !yesh ? m : `${yesh ?? ""}כמה ${what === "מקום" ? "תורים פנויים" : what}`)
+    .replace(/(יש (?:עוד )?)המון(?= עד|\s*[).,!]|$)/gm, "$1כמה");
 }
