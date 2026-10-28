@@ -1892,7 +1892,7 @@ async function catalogCore(businessId: string): Promise<string> {
         staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
       },
     }),
-    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true, category: true } }),
+    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true, category: true, priceFrom: true } }),
   ]);
   const [biz, schedules] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true, businessType: true, settings: true } }),
