@@ -9,7 +9,7 @@ import { useParams } from "next/navigation";
 type StaffInfo = {
   id: string;
   name: string;
-  /** "m" | "f"; null = the business default (16.10.2026). */
+  /** "m" | "f" | "x" (not saying); null = the business default (16.10.2026). */
   gender?: string | null;
   phone: string | null;
   tagline: string | null;
@@ -301,7 +301,7 @@ export default function StaffSettingsPage() {
   if (!staff) return <div className="p-8 text-red-500">{v.staff} לא {v.staffFem ? "נמצאה" : "נמצא"}</div>;
   // Words about this person follow her own mark (16.10.2026), else the business default.
   const fem = staffFemOf(staff, v);
-  async function setGender(g: "m" | "f") {
+  async function setGender(g: "m" | "f" | "x") {
     setStaff(x => (x ? { ...x, gender: g } : x));
     await fetch(`/api/admin/staff/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ gender: g }) });
   }
@@ -323,9 +323,9 @@ export default function StaffSettingsPage() {
           <h1 className="text-2xl font-bold text-neutral-900">{staff.name}</h1>
           {staff.phone && <p className="text-sm text-neutral-500" dir="ltr">{staff.phone}</p>}
           <div className="flex gap-1 mt-1.5">
-            {([["m", "זכר"], ["f", "נקבה"]] as const).map(([g, label]) => (
+            {([["m", "זכר"], ["f", "נקבה"], ["x", "לא לציין"]] as const).map(([g, label]) => (
               <button key={g} type="button" onClick={() => void setGender(g)}
-                className={`px-2.5 py-0.5 rounded-full text-xs border transition ${(fem ? "f" : "m") === g ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-500"}`}>
+                className={`px-2.5 py-0.5 rounded-full text-xs border transition ${(staff.gender === "x" ? "x" : fem ? "f" : "m") === g ? "bg-teal-600 text-white border-transparent" : "bg-white border-neutral-200 text-neutral-500"}`}>
                 {label}
               </button>
             ))}

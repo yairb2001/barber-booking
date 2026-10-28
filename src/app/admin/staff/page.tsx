@@ -14,7 +14,7 @@ type NextAppointment = {
 type Staff = {
   id: string;
   name: string;
-  /** "m" | "f"; null = the business default (16.10.2026). */
+  /** "m" | "f" | "x" (not saying); null = the business default (16.10.2026). */
   gender?: string | null;
   phone: string | null;
   avatarUrl: string | null;
@@ -69,7 +69,7 @@ export default function AdminStaffPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<string | null>(null);
   const [schedule, setSchedule] = useState(emptySchedule());
-  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "", gender: "" as "" | "m" | "f" });
+  const [newStaff, setNewStaff] = useState({ name: "", phone: "", avatarUrl: "", inQuickPool: true, copyFromStaffId: "", gender: "" as "" | "m" | "f" | "x" });
   const [saving, setSaving] = useState(false);
   const [setPasswordFor, setSetPasswordFor] = useState<Staff | null>(null);
   const [newPassword, setNewPassword] = useState("");
@@ -502,7 +502,7 @@ export default function AdminStaffPage() {
               <div>
                 <label className="text-xs text-neutral-500 block mb-1">מגדר <span className="text-neutral-400">(לנוסח: פעיל או פעילה, אישר או אישרה)</span></label>
                 <div className="flex gap-1.5">
-                  {([["m", "זכר"], ["f", "נקבה"]] as const).map(([g, label]) => {
+                  {([["m", "זכר"], ["f", "נקבה"], ["x", "לא לציין"]] as const).map(([g, label]) => {
                     const on = (newStaff.gender || (v.staffFem ? "f" : "m")) === g;
                     return (
                       <button key={g} type="button" onClick={() => setNewStaff(p => ({ ...p, gender: g }))}

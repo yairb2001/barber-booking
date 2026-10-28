@@ -289,7 +289,7 @@ export function vocabOf(biz: { businessType?: string | null; settings?: string |
 export function staffFemOf(staff: { gender?: string | null } | null | undefined, v: Vocab): boolean {
   return staff?.gender === "f" ? true : staff?.gender === "m" ? false : v.staffFem;
 }
-/** "m" | "f" | null from what a screen sent. */
-export function genderIn(x: unknown): "m" | "f" | null {
-  return x === "m" || x === "f" ? x : null;
+/** "m" | "f" | "x" (not saying: the agent uses the name only) | null from what a screen sent. */
+export function genderIn(x: unknown): "m" | "f" | "x" | null {
+  return x === "m" || x === "f" || x === "x" ? x : null;
 }
