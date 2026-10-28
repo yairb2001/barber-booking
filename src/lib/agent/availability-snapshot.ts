@@ -43,17 +43,22 @@ export function compressSlots(slots: string[]): string {
  * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
  * match first: at least half the words of the name, each at a word start
  * (with up to two prefix letters: ו/ב/ל/ה/ש/מ/כ); a two-letter word must be
- * whole ("לק" is not inside "חלק"). Geresh ignored ("גל" = "ג'ל").
+ * whole ("לק" is not inside "חלק"). Geresh ignored ("גל" = "ג'ל"). A partial
+ * match whose words a full match already explains is dropped ("תספורת וזקן"
+ * is "תספורת + זקן", not also "תספורת נשים").
  */
 export function namedServices(text: string, services: { id: string; name: string }[]): string[] {
   const norm = (x: string) => x.replace(/['׳’`"״]/g, "").toLowerCase();
   const t = norm(text);
   const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return services.map(sv => {
+  const found = services.map(sv => {
     const words = norm(sv.name).split(/[\s+/,()\-–]+/).filter(w => w.length >= 2);
-    const hit = words.filter(w => new RegExp(`(^|[^א-תa-z0-9])[ובלהשמכ]{0,2}${esc(w)}${w.length <= 2 ? "(?![א-תa-z])" : ""}`).test(t)).length;
-    return { id: sv.id, hit, score: words.length ? hit / words.length : 0 };
-  }).filter(x => x.hit > 0 && x.score >= 0.5).sort((a, b) => b.score - a.score || b.hit - a.hit).map(x => x.id);
+    const hits = words.filter(w => new RegExp(`(^|[^א-תa-z0-9])[ובלהשמכ]{0,2}${esc(w)}${w.length <= 2 ? "(?![א-תa-z])" : ""}`).test(t));
+    return { id: sv.id, hits, score: words.length ? hits.length / words.length : 0 };
+  }).filter(x => x.hits.length && x.score >= 0.5);
+  const covered = new Set(found.filter(x => x.score === 1).flatMap(x => x.hits));
+  return found.filter(x => x.score === 1 || x.hits.some(w => !covered.has(w)))
+    .sort((a, b) => b.score - a.score || b.hits.length - a.hits.length).map(x => x.id);
 }
 
 const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -136,6 +141,6 @@ export async function buildAvailabilitySnapshot(p: {
   }
   const byTreatment = (index.staff.some(s => other(s)) ? " שם בסוגריים = השעות לטיפול הזה; לטיפול אחר (משך אחר) → get_available_slots עם serviceId." : "") +
     (index.staff.length < rawIndex.staff.length ? " מופיעים רק מי שעושים את מה שהלקוח ביקש; מי שלא מופיע לא עושה אותו (זה לא אומר שאין לו מקום)." : "");
-  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום ("ועוד 8 עד 18:30" = עוד 8 שעות התחלה, האחרונה ב-18:30); get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
+  return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום ("ועוד 8 עד 18:30" = עוד 8 שעות התחלה שלא נכתבו, האחרונה ב-18:30; ביקש שעה בטווח הזה שלא כתובה → get_available_slots, לא "אין"); get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
     lines.join("\n") + (notes.length ? `\n(${notes.join("; ")})` : "") + focus;
 }
