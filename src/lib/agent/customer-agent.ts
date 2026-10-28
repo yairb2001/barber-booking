@@ -37,6 +37,7 @@ import { applyMessagingOptOut } from "@/lib/messaging/opt-out";
 import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
+import { compactCatalog } from "@/lib/agent/catalog-compact";
 import { computeDayAvailability, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
@@ -1891,7 +1892,7 @@ async function catalogCore(businessId: string): Promise<string> {
         staffServices: { where: { service: { isVisible: true } }, select: { customName: true, customPrice: true, customDuration: true, customNote: true, service: { select: { id: true, name: true, price: true, durationMinutes: true, note: true, sortOrder: true } } } },
       },
     }),
-    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true } }),
+    prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, price: true, durationMinutes: true, note: true, description: true, category: true } }),
   ]);
   const [biz, schedules] = await Promise.all([
     prisma.business.findUnique({ where: { id: businessId }, select: { address: true, phone: true, about: true, businessType: true, settings: true } }),
@@ -1906,6 +1907,17 @@ async function catalogCore(businessId: string): Promise<string> {
   const daysLine = open.size ? `ימי פעילות: ${dayNames.filter((_, i) => open.has(i)).join(", ")}${closed.length ? ` (${closed.join(", ")} סגור)` : ""}` : "";
   const info = [biz?.address ? `כתובת: ${biz.address}` : "", biz?.phone ? `טלפון: ${biz.phone}` : "", daysLine, biz?.about ? biz.about.replace(/\s+/g, " ").slice(0, 300) : ""].filter(Boolean).join(" · ");
   if (!staff.length || !services.length) return info ? `פרטי העסק: ${info}` : "";
+  // Two staff with the same first name ("יאיר בוחבוט" / "יאיר הרוש"): name them
+  // explicitly, so "אצל יאיר" is never resolved by guess.
+  const byFirst = new Map<string, string[]>();
+  for (const s of staff) { const f0 = s.name.trim().split(/\s+/)[0]; if (f0) byFirst.set(f0, [...(byFirst.get(f0) ?? []), s.name.trim()]); }
+  const twins = Array.from(byFirst.entries()).filter(([, names]) => names.length > 1)
+    .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
+  // Beauty and every other type: each service once, by category, with who does it (catalog-compact.ts).
+  if (v.type !== "barber_men") {
+    const c = compactCatalog(staff, services, v);
+    return withDescriptions(`${c.header}\n${c.body}${twins.length ? "\n" + twins.join("\n") : ""}${info ? `\nפרטי העסק: ${info}` : ""}`, services, info);
+  }
   const hasPool = staff.some(s => s.inQuickPool);
   const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
   const lines = staff.map(s => {
@@ -1920,17 +1932,15 @@ async function catalogCore(businessId: string): Promise<string> {
     const pool = hasPool && !s.inQuickPool ? (fem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
     return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
   });
-  // Two staff with the same first name ("יאיר בוחבוט" / "יאיר הרוש"): name them
-  // explicitly, so "אצל יאיר" is never resolved by guess.
-  const byFirst = new Map<string, string[]>();
-  for (const s of staff) { const f0 = s.name.trim().split(/\s+/)[0]; if (f0) byFirst.set(f0, [...(byFirst.get(f0) ?? []), s.name.trim()]); }
-  const twins = Array.from(byFirst.entries()).filter(([, names]) => names.length > 1)
-    .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
   const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
+  return withDescriptions(block, services, info);
+}
+
+/** The cap, then what each service includes, from its description on the services screen
+ *  (16.10.2026, Yair: "לכתוב בתיאור של השירות שהסוכן ימשוך נתונים"). Once per
+ *  service, not per staff member, within its own small budget. */
+function withDescriptions(block: string, services: { name: string; description: string | null }[], info: string): string {
   if (block.length > 4500) return info ? `פרטי העסק: ${info}` : "";
-  // What each service includes, from its description on the services screen
-  // (16.10.2026, Yair: "לכתוב בתיאור של השירות שהסוכן ימשוך נתונים"). Once per
-  // service, not per staff member, within its own small budget.
   let desc = "";
   for (const sv of services) {
     const d = (sv.description ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
