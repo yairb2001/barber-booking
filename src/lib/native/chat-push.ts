@@ -44,15 +44,32 @@ export async function recentHandlers(conversationId: string): Promise<string[]> 
   return rows.map(r => r.sentByStaffId!).filter(Boolean);
 }
 
+/**
+ * הספר שהלקוח שייך אליו, בשביל "רק שלי" של הבעלים (28.10.2026): הקבוע, אחרת הספר של
+ * התור הקרוב, אחרת של התור האחרון. null = לקוח בלי תורים, והבעלים מקבל עליו התראה.
+ */
+export async function customerStaffFor(businessId: string, phone: string): Promise<string | null> {
+  const regular = await regularStaffFor(businessId, phone).catch(() => null);
+  if (regular) return regular;
+  const todayUTC = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00.000Z");
+  const where = { businessId, customer: { phone: { in: phoneVariants(phone) } }, status: { notIn: ["cancelled_by_customer", "cancelled_by_staff", "no_show"] } };
+  const upcoming = await prisma.appointment.findFirst({ where: { ...where, date: { gte: todayUTC } }, orderBy: [{ date: "asc" }, { startTime: "asc" }], select: { staffId: true } });
+  if (upcoming) return upcoming.staffId;
+  const last = await prisma.appointment.findFirst({ where: { ...where, date: { lt: todayUTC } }, orderBy: { date: "desc" }, select: { staffId: true } });
+  return last?.staffId ?? null;
+}
+
 async function pushToPerson(businessId: string, staffId: string, type: NotifyType, payload: PushPayload, ownerStaffId: string | null) {
   if (ownerStaffId && staffId === ownerStaffId) return notifyOwnerWeb(businessId, type, payload);
   return notifyStaffWeb(staffId, type, payload);
 }
 
-async function pushToEveryone(businessId: string, type: NotifyType, payload: PushPayload) {
+async function pushToEveryone(businessId: string, type: NotifyType, payload: PushPayload, phone: string) {
   const barbers = await prisma.staff.findMany({ where: { businessId, role: "barber", canViewAllChats: true, isAvailable: true }, select: { id: true } });
+  // הבעלים דרך "רק שלי": לקוח של ספר אחר לא מגיע אליו (28.10.2026).
+  const custStaff = await customerStaffFor(businessId, phone).catch(() => null);
   await Promise.all([
-    notifyOwnerWeb(businessId, type, payload),
+    notifyOwnerWeb(businessId, type, payload, custStaff),
     ...barbers.map(b => notifyStaffWeb(b.id, type, payload)),
   ]);
 }
@@ -60,6 +77,8 @@ async function pushToEveryone(businessId: string, type: NotifyType, payload: Pus
 export async function pushChatEvent(opts: {
   businessId: string; conversationId: string; phone: string;
   event: "escalation" | "reply"; payload: PushPayload;
+  /** הספר שהשיחה שלו כבר ידוע (בקשת נציג אצל ספר מסוים): רק הוא מקבל, כמו ספר קבוע. */
+  staffId?: string | null;
 }): Promise<{ to: "handlers" | "regular" | "everyone"; staffIds: string[] }> {
   const { businessId, conversationId, phone, event, payload } = opts;
   const type: NotifyType = event === "escalation" ? "escalation" : "reply";
@@ -72,11 +91,11 @@ export async function pushChatEvent(opts: {
       return { to: "handlers", staffIds: handlers };
     }
   }
-  const regular = await regularStaffFor(businessId, phone).catch(() => null);
+  const regular = opts.staffId ?? await regularStaffFor(businessId, phone).catch(() => null);
   if (regular) {
     await pushToPerson(businessId, regular, type, payload, ownerStaffId).catch(() => {});
     return { to: "regular", staffIds: [regular] };
   }
-  await pushToEveryone(businessId, type, payload).catch(() => {});
+  await pushToEveryone(businessId, type, payload, phone).catch(() => {});
   return { to: "everyone", staffIds: [] };
 }

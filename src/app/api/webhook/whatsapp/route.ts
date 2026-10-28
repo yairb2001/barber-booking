@@ -40,7 +40,7 @@ import { putPublic, storageEnabled } from "@/lib/storage";
 import { handleClosureReply } from "@/lib/closures/reply";
 import { getBusinessNow } from "@/lib/utils";
 import { pushToOwner } from "@/lib/native/push";
-import { pushChatEvent } from "@/lib/native/chat-push";
+import { pushChatEvent, customerStaffFor } from "@/lib/native/chat-push";
 import { takeAgentTurn } from "@/lib/agent/agent-turn";
 import { isTester, runTesterTurn } from "@/lib/agent/test-mode";
 import { sendMessage } from "@/lib/messaging";
@@ -578,11 +578,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (!agentConfig?.isEnabled || !agentAllowedByTier) {
     // Agent is off (or not included in the tier) → a human must reply.
-    pushToOwner(biz.id, {
+    // "רק שלי" (28.10.2026): לקוח של ספר אחר לא מגיע לבעלים.
+    customerStaffFor(biz.id, phone).catch(() => null).then(sid => pushToOwner(biz.id, {
       title: `הודעה חדשה מ${senderName || phone}`,
       body: previewText(text),
       data: { type: "chat", conversationId: conv.id, phone },
-    }).catch(() => {});
+    }, sid)).catch(() => {});
     // Web push by the routing rules: whoever is in the conversation → the
     // customer's regular barber → everyone with inbox access.
     pushChatEvent({
@@ -628,7 +629,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const who = await prisma.customer.findFirst({ where: { businessId: biz.id, phone: { in: phoneVariants(phone) }, deletedAt: null }, select: { name: true } }).catch(() => null);
     const title = `💬 ${who?.name || senderName || phone}`;
     const bodyText = previewText(text);
-    pushToOwner(biz.id, { title: `הודעה חדשה מ${who?.name || senderName || phone}`, body: bodyText, data: { type: "chat", conversationId: conv.id, phone } }).catch(() => {});
+    customerStaffFor(biz.id, phone).catch(() => null).then(sid => pushToOwner(biz.id, { title: `הודעה חדשה מ${who?.name || senderName || phone}`, body: bodyText, data: { type: "chat", conversationId: conv.id, phone } }, sid)).catch(() => {});
     const chatUrl = `/admin/chats?phone=${encodeURIComponent(phone)}`;
     const replyPayload = {
       title, body: bodyText, url: chatUrl, tag: `chat-${conv.id}`,
@@ -679,11 +680,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // A media/voice message is saved and visible now, but the agent can't read it —
   // route it to a human instead of running the model on a "📷 תמונה" placeholder.
   if (isNonText) {
-    pushToOwner(biz.id, {
+    customerStaffFor(biz.id, phone).catch(() => null).then(sid => pushToOwner(biz.id, {
       title: `📎 הודעת מדיה מ${senderName || phone}`,
       body: previewText(text!),
       data: { type: "chat", conversationId: conv.id, phone },
-    }).catch(() => {});
+    }, sid)).catch(() => {});
     return NextResponse.json({ ok: true, media: true, saved: true });
   }
 

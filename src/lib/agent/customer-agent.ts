@@ -1154,7 +1154,7 @@ export async function execTool(
           body: `${service.name} אצל ${staff.name} · ${date} ${startTime}`,
           url: "/admin",
           tag: `appt-${appt.id}`,
-        }).catch(() => {});
+        }, staff.id).catch(() => {});
         notifyStaffWeb(staff.id, "appointment", {
           title: "תור חדש נקבע 📅 (בוט)",
           body: `${service.name} · ${date} ${startTime}`,
@@ -1717,7 +1717,7 @@ export async function escalateToHuman(opts: {
   });
   // Push: the customer's regular barber only; no regular barber → everyone.
   pushChatEvent({
-    businessId: bizId, conversationId, phone: callerPhone, event: "escalation",
+    businessId: bizId, conversationId, phone: callerPhone, event: "escalation", staffId: targetStaff?.id ?? null,
     payload: {
       title: "שיחה הופנתה אליך 👤",
       body: `${custLine} ממתין/ה לטיפול אנושי בצ׳אט${reason ? ` — ${reason.slice(0, 80)}` : ""}`,
