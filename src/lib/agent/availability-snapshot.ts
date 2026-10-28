@@ -28,14 +28,16 @@ export function looksLikeBookingContext(texts: string[]): boolean {
 
 /** Explicit list ("13:00 · 13:30 · 14:00"), at most MAX_LISTED per barber-day.
  *  Ranges ("15:10–19:10 כל 30") were tried and misread by the model: on 21.9.2026
- *  it told a customer "nothing after 17:00" while 17:40–19:10 were free. */
+ *  it told a customer "nothing after 17:00" while 17:40–19:10 were free.
+ *  The rest ends with the last START ("עד 16:45" was read as closing time and a
+ *  75-minute facial was taken off it again, 28.10.2026). */
 const MAX_LISTED = 12;
 export function compressSlots(slots: string[]): string {
   if (!slots.length) return "";
   const mins = Array.from(new Set(slots.map(timeToMinutes))).sort((a, b) => a - b);
   const shown = mins.slice(0, MAX_LISTED).map(fmt);
   const rest = mins.length - shown.length;
-  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
+  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest}, התור האחרון ב-${fmt(mins[mins.length - 1])}` : "");
 }
 /**
  * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
