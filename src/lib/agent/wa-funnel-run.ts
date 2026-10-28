@@ -62,8 +62,10 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
     last.set(g.conversationId, e);
   }
   const first = new Map<string, string>();
+  const turns = new Map<string, number>();
   const academy = new Set<string>();
   for (const m of firsts) {
+    turns.set(m.conversationId, (turns.get(m.conversationId) ?? 0) + 1);
     if (!first.has(m.conversationId)) first.set(m.conversationId, m.content);
     if (ACADEMY_RE.test(m.content)) academy.add(m.conversationId);
   }
@@ -89,6 +91,7 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
       signedUp: !ig && customers.has(c.phone),
       escalated: !!c.escalatedAt && now.getTime() - c.escalatedAt.getTime() < 24 * 3600_000,
       academy: academy.has(c.id),
+      userTurns: turns.get(c.id) ?? 0,
     };
     out.push({ id: c.id, phone: c.phone, whatsappName: c.whatsappName, lastMessageAt: c.lastMessageAt, state, facts, firstText: first.get(c.id) ?? null, leadId: lead?.id ?? (state.leadId && state.leadId !== "sandbox" ? state.leadId : null) });
   }

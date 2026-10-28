@@ -106,6 +106,22 @@ const ACK_RE = /^(תודה|תודה רבה|סבבה|אחלה|מעולה|אוקי
 const DECLINE_RE = /^(לא|לא תודה|לא מעוניין|לא רלוונטי|אין צורך|עזוב|לא צריך)(,?\s*(תודה|תודה רבה|אחי|בינתיים))*[\s!.]*$/;
 const YES_RE = /^(כן|כן בטח|בטח|ברור|נכון|אני|כן אני|מתאים|סגור|יאללה|yes|yep|ok|אוקיי)[\s!.]*$/i;
 const OPT_OUT_RE = /^(הסר|הסירו|להסיר|הסרה|stop|תסיר אותי|הסר אותי)[\s!.]*$/i;
+/** "לבטל את התור", "תבטל לי את התור לדוגמה", "ביטול תור". */
+const DEMO_CANCEL_RE = /(לבטל|תבטל|בטל|ביטול)[^?]*תור|תור[^?]*(לבטל|ביטול)/;
+
+/** His upcoming appointments at the demo shop, cancelled; returns when the first was ("29.10 ב14:30"), or null. */
+async function cancelDemoBookings(phone: string, sandbox: boolean): Promise<string | null> {
+  const customers = await prisma.customer.findMany({ where: { businessId: DEMO_BUSINESS_ID, phone: { in: [phone, phone.replace(/^972/, "0")] } }, select: { id: true } });
+  if (!customers.length) return null;
+  const appts = await prisma.appointment.findMany({
+    where: { businessId: DEMO_BUSINESS_ID, customerId: { in: customers.map(c => c.id) }, cancelledAt: null, status: { in: ["pending", "confirmed"] }, date: { gte: new Date(`${getBusinessNow().date}T00:00:00Z`) } },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }], select: { id: true, date: true, startTime: true },
+  });
+  if (!appts.length) return null;
+  if (!sandbox) await prisma.appointment.updateMany({ where: { id: { in: appts.map(a => a.id) } }, data: { status: "cancelled_by_customer", cancelledAt: new Date() } });
+  const a = appts[0];
+  return `${new Date(a.date).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "UTC" })} ב${a.startTime}`;
+}
 /** A lead asking to try the product himself. "דמו" alone = straight in (the automation tells him to write it). */
 const DEMO_ONLY_RE = /^(דמו|לנסות|רוצה לנסות|נסיון|ניסיון|תור דמו)[\s!.]*$/;
 const WANTS_TRY_RE = /לנסות|דמו|לראות איך|איך זה עובד|לבדוק את|ניסיון/;
@@ -439,6 +455,18 @@ export async function runDemoTurn(p: {
     // Anything else → the model answers it below (the question is dropped).
   }
 
+  // "לבטל את התור לדוגמה" outside the demo itself (after the pitch, or as a lead): cancelled here. The
+  // sales agent has no tool for it, and once only wrote "ביטלתי" while the appointment stayed and its
+  // reminder went out (Yair, 28.10.2026: "קבע תור ואז ביטל, ובסופו של דבר הוא עדיין קיבל תזכורת").
+  if (state.mode !== "demo" && state.mode !== "lead_demo" && DEMO_CANCEL_RE.test(text)) {
+    const when = await cancelDemoBookings(phone, !!p.sandbox);
+    if (when) {
+      const line = `ביטלתי את התור לדוגמה (${when}).`;
+      await reply(conv.id, phone, [line], p.sandbox);
+      return { handled: true, mode: state.mode, replies: [line] };
+    }
+  }
+
   // ── Lead ──
   if (state.mode === "lead" || state.mode === "choosing" || state.mode === "lead_demo") {
     if (state.mode === "lead_demo") {
@@ -723,6 +751,7 @@ ${ctx}
 - כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
 - כל הודעה נגמרת בדבר אחד בלבד: שאלה אחת, או הצעה אחת (להירשם בחינם עם send_signup_link, או שיחה קצרה). לא שניהם, ולא אותה הצעה פעמיים ברצף.
 - מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
+- אין לך דרך לקבוע או לבטל תורים במספרת ההדגמה: לעולם אל תכתוב שקבעת, הזזת או ביטלת תור.
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות. לא שואל אם יש לו מספרה.
 - שאל שוב משהו שכבר ענית עליו: לא חוזרים על ההסבר. משפט אחד, ואז הרשמה בחינם (send_signup_link).

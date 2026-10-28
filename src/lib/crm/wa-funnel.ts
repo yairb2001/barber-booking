@@ -225,6 +225,8 @@ export type ContactFacts = {
   escalated: boolean;
   /** Asked about a course (the academy shares the number): no follow-ups. */
   academy?: boolean;
+  /** How many messages he wrote: two or more = he talked with the agent, one follow-up only. */
+  userTurns?: number;
 };
 export type ContactPlan = {
   stage: WaStage;
@@ -255,9 +257,13 @@ export function planContact(f: ContactFacts, cfg: FunnelConfig, now = new Date()
     // only the latest of them goes out and the earlier ones are skipped; and one more than LATE_MS late
     // waits for the next step instead when that one is due within SOON_MS. Before 27.10.2026 they went out
     // one by one, an hour apart: three follow-ups in a row the morning the new server came up.
-    const skip: string[] = [];
+    // He already talked with the agent (two messages or more): one follow-up only, the stage's last (the
+    // next day's); the earlier ones are skipped (Yair, 28.10.2026: "מפסיקים לחפור לו", "הודעת המשך אחת בלבד").
+    const live = cfg.stages[stage].filter(st => st.on && st.text.trim());
+    const talked = (f.userTurns ?? 0) >= 2 && live.length > 1;
+    const skip: string[] = talked ? live.slice(0, -1).map(st => `${stage}:${st.id}`).filter(k => !t.sent?.[k]) : [];
     let nextDue = 0;
-    for (const step of cfg.stages[stage]) {
+    for (const step of talked ? live.slice(-1) : cfg.stages[stage]) {
       const key = `${stage}:${step.id}`;
       if (!step.on || !step.text.trim() || t.sent?.[key]) continue;
       const due = stepDueAt(step, anchor);
