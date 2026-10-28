@@ -141,8 +141,10 @@ export function agentReplyForType(text: string, words: Words): string {
       .split(": אתה ב-").join(": את ב-");
   } else if (v.type === "other") {
     // A mixed place (a salon for men and women, 28.10.2026): the fixed question
-    // in a form that fits both, never "מאשר/ת?".
-    out = out.replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "לאשר?");
+    // in a form that fits both, never "מאשר/ת?"; and a gendered "ברוך הבא" at
+    // the end of a greeting is dropped ("היי! ברוך הבא 😊" → "היי! 😊").
+    out = out.replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "לאשר?")
+      .replace(/[,\s]*(?:ברוך הבא|ברוכה הבאה)(?=[^א-תa-zA-Z0-9\n]*$)/gm, "");
   }
   // WhatsApp shows "**" as is (28.10.2026: "**שירן נייל:**" in a service list).
   return out.replace(/\*\*/g, "");
