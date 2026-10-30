@@ -82,7 +82,9 @@ export async function GET(req: NextRequest) {
     if (state === "authorized") {
       const since = new Date(now.getTime() - 30 * 60_000);
       const [failed, sent] = await Promise.all([
-        prisma.messageLog.count({ where: { businessId: biz.id, status: "failed", createdAt: { gte: since } } }),
+        // כשלון בגלל הנמען (מספר בלי וואטסאפ) לא אומר שהחיבור נפל (30.10.2026: מספר אחד כזה, שנוסה
+        // שוב כל רבע שעה, הוציא לדומיננט פעמיים "הוואטסאפ התנתק" כשהחיבור היה תקין).
+        prisma.messageLog.count({ where: { businessId: biz.id, status: "failed", createdAt: { gte: since }, OR: [{ error: null }, { NOT: { error: { contains: "not on whatsapp", mode: "insensitive" } } }] } }),
         prisma.messageLog.count({ where: { businessId: biz.id, sentAt: { gte: since } } }),
       ]);
       if (failed >= 3 && sent === 0) state = "send_failing";

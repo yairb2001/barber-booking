@@ -399,12 +399,17 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
               <span className="animate-pulse text-base">🔴</span>
               הוואטסאפ מנותק — הלקוחות לא מקבלים מענה אוטומטי
             </span>
-            <button
-              onClick={() => setQrOpen(true)}
-              className="shrink-0 bg-white text-red-700 font-bold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
-            >
-              חבר מחדש ←
-            </button>
+            {/* לכל הצוות (30.10.2026, יאיר); רק הבעלים מחבר מחדש */}
+            {me.isOwner ? (
+              <button
+                onClick={() => setQrOpen(true)}
+                className="shrink-0 bg-white text-red-700 font-bold rounded-lg px-3 py-1.5 hover:bg-red-50 transition whitespace-nowrap"
+              >
+                חבר מחדש ←
+              </button>
+            ) : (
+              <span className="shrink-0 text-xs font-semibold whitespace-nowrap">לעדכן את בעל העסק</span>
+            )}
           </div>
         )}
 

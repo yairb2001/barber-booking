@@ -96,6 +96,13 @@ export async function runPostVisitAutomations(): Promise<{ fired: number; skippe
         },
       });
       if (already) { skipped++; continue; }
+      // כשלון ניסו שוב בכל סריקה, כל רבע שעה, במשך שבוע (30.10.2026: 89 ניסיונות ביום למספר
+      // בלי וואטסאפ). מספר בלי וואטסאפ לא מנסים שוב, וכל כשלון אחר עד 3 ניסיונות.
+      const failedTries = await prisma.messageLog.findMany({
+        where: { businessId: auto.businessId, appointmentId: appt.id, kind: auto.type, status: "failed" },
+        select: { error: true }, take: 3,
+      });
+      if (failedTries.length >= 3 || failedTries.some(t => /not on whatsapp/i.test(t.error ?? ""))) { skipped++; continue; }
 
       // Respect blocked / opted-out customers — a "come back and book again"
       // nudge is exactly the proactive outreach opting out is meant to silence.
