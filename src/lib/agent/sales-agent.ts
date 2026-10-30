@@ -38,7 +38,7 @@ import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { attributionFromOpening } from "@/lib/lead-attribution";
 import { computeDayAvailability } from "@/lib/agent/availability";
 import { getBusinessNow, addDaysISO } from "@/lib/utils";
-import { hiddenChatPhones } from "@/lib/crm/json-settings";
+import { hiddenChatPhones, salesTesterPhones } from "@/lib/crm/json-settings";
 import { withWaTrack, mergeWa, getFunnelConfig, fillFunnelText, WANTS_REP_RE, WANTS_DETAILS_RE, type WaTrack, type FunnelConfig } from "@/lib/crm/wa-funnel";
 
 export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "lead_demo" | "choosing";
@@ -154,6 +154,8 @@ const DONE_RE = /^(סיימתי|סיימנו|די|מספיק|הבנתי את ה�
 const PRODUCT_Q_RE = /(איך|האם|מה|אפשר ש)\s*(זה|הוא|המערכת|הסוכן|הבוט)\s+(יכול|יודע|עובד|מחליף|עושה|מטפל|שולח|מזכיר|קובע)|זה יכול ל|הוא יכול ל|מה עוד (הוא|זה)|(להחליף|החלפה|החלפות) בין לקוחות|אצלי במספרה|במספרה שלי|ללקוחות שלי/;
 const FROM_DEMO_NOTE = "הוא היה בתוך הדמו ושאל שאלה על המערכת עצמה. ענה עליה ישירות ובקצרה מתוך הידע, בלי להגיד שהוא יצא מהדמו, ואז הצע להמשיך לנסות או שיחה עם יאיר.";
 const HANDOFF_WAIT = "השיחה אצל טיפול אנושי, יחזרו אליך בהקדם.";
+const RESET_RE = /^איפוס$/;
+const RESET_LINE = "התחלנו מחדש. מההודעה הבאה אני מתייחס אליך כמו לפונה חדש.";
 const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/signup`;
 const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
 const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
@@ -279,6 +281,14 @@ export async function runDemoTurn(p: {
   let state = parseSalesState(conv?.salesState);
   // A hidden chat (small talk with someone Yair knows, 27.10.2026): the agent never writes; the message is already saved.
   if (!p.sandbox && conv && (await hiddenChatPhones()).has(phone)) return { handled: true, mode: state?.mode, replies: [] };
+  // A shop owner trying the line as a new prospect (salesTesterPhones, 30.10.2026): "איפוס" closes
+  // this chat with one line, and his next message opens a fresh one (the webhook takes the newest).
+  const tester = !p.sandbox && (await salesTesterPhones()).has(phone);
+  if (tester && RESET_RE.test(text)) {
+    if (conv) await reply(conv.id, phone, [RESET_LINE]);
+    await createConv(phone);
+    return { handled: true, replies: [RESET_LINE] };
+  }
   // A person (a rep from the CRM, or the phone itself) took this chat over in the
   // last 24 hours → the agent stays quiet; the message is already saved.
   if (!p.sandbox && conv?.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000 && !OPT_OUT_RE.test(text)) {
@@ -295,7 +305,7 @@ export async function runDemoTurn(p: {
   }
   const lead: LeadRow | null = p.sandbox
     ? (p.sandbox.asLead ? { id: "sandbox-lead", name: "בדיקה כהן", businessName: "מספרת בדיקה", stage: "chatting", repId: null, optedOut: false } : null)
-    : await findLead(phone);
+    : tester ? null : await findLead(phone);
 
   // ── Opt-out, at any point ──
   if (OPT_OUT_RE.test(text)) {
@@ -331,7 +341,7 @@ export async function runDemoTurn(p: {
   // ── Stages 5–6 (14.10.2026): a number that owns a shop is a customer: setup help
   // or support, never sales. Wins over a lead and over any sales state.
   if (await salesV2On(p.sandbox)) {
-    const customer = p.sandbox ? (p.sandbox.asCustomerId ? await loadChatorCustomer(p.sandbox.asCustomerId) : null) : await findChatorCustomer(phone);
+    const customer = p.sandbox ? (p.sandbox.asCustomerId ? await loadChatorCustomer(p.sandbox.asCustomerId) : null) : tester ? null : await findChatorCustomer(phone);
     if (customer) {
       conv = conv ?? await createConv(phone);
       if (!p.alreadyPersisted) {
@@ -344,7 +354,7 @@ export async function runDemoTurn(p: {
   }
 
   // ── A Chator customer: not a sales conversation ──
-  if (!lead && !state && !p.sandbox && await isChatorCustomer(phone)) {
+  if (!lead && !state && !p.sandbox && !tester && await isChatorCustomer(phone)) {
     conv = conv ?? await createConv(phone);
     await alertRep(null, `לקוח של Chator כתב למספר של צ'אטור (${phone.replace(/^972/, "0")}): ${text.slice(0, 200)}`, { kind: "customer", push: true });
     await reply(conv.id, phone, [OWNER_REPLY], p.sandbox);

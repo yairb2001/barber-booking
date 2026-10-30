@@ -9,7 +9,7 @@ import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { normalizeIsraeliPhone, phoneVariants } from "@/lib/messaging/phone";
 import { parseSalesState, salesReply, saveSalesState, createLead, repName, demoFreeSlot, SIGNUP_URL, LANDING_URL, type SalesState } from "@/lib/agent/sales-agent";
 import { isPhoneLikeName } from "@/lib/agent/followup-shared";
-import { hiddenChatPhones } from "@/lib/crm/json-settings";
+import { hiddenChatPhones, salesTesterPhones } from "@/lib/crm/json-settings";
 import { chatorCustomerPhones } from "@/lib/agent/chator-support";
 import { attributionFromOpening } from "@/lib/lead-attribution";
 import { getFunnelConfig, planContact, fillFunnelText, okHours, whenLabel, WA_STAGES, WA_STAGE_LABEL, WA_EXIT_LABEL, type ContactFacts, type FunnelConfig, type WaExit, type WaStage } from "@/lib/crm/wa-funnel";
@@ -50,10 +50,11 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
   const kept = convs.filter(c => !hidden.has(c.phone));
   if (!kept.length) return [];
   const ids = kept.map(c => c.id);
-  const [lasts, firsts, customers] = await Promise.all([
+  const [lasts, firsts, customers, testers] = await Promise.all([
     prisma.conversationMessage.groupBy({ by: ["conversationId", "role"], where: { conversationId: { in: ids }, role: { in: ["user", "assistant"] } }, _max: { createdAt: true } }),
     prisma.conversationMessage.findMany({ where: { conversationId: { in: ids }, role: "user" }, orderBy: { createdAt: "asc" }, take: 5000, select: { conversationId: true, content: true } }),
     chatorCustomerPhones(),
+    salesTesterPhones(),
   ]);
   const last = new Map<string, { user?: Date; ours?: Date }>();
   for (const g of lasts) {
@@ -88,7 +89,7 @@ async function loadContacts(now: Date, opts: { sinceDays: number; phone?: string
       lastIsOurs: !!l.ours && (!l.user || l.ours.getTime() >= l.user.getTime()),
       isLead: !!lead,
       optedOut: !!lead?.optedOut,
-      signedUp: !ig && customers.has(c.phone),
+      signedUp: !ig && customers.has(c.phone) && !testers.has(c.phone), // a tester owns a shop yet plays a new prospect
       escalated: !!c.escalatedAt && now.getTime() - c.escalatedAt.getTime() < 24 * 3600_000,
       academy: academy.has(c.id),
       userTurns: turns.get(c.id) ?? 0,
