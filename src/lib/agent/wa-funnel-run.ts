@@ -150,6 +150,7 @@ function sourceLabel(c: Contact): string {
   const a = attributionFromOpening(c.firstText);
   if (a) { try { const j = JSON.parse(a) as { source?: string }; if (j.source === "meta") return "מודעה"; if (j.source === "site") return "כפתור הדמו"; } catch { /* ignore */ } }
   if (c.state.source === "landing") return "כפתור הדמו";
+  if (c.state.source === "ad") return "מודעה";
   return "רגיל";
 }
 

@@ -45,7 +45,7 @@ export type SalesMode = "demo" | "pitched" | "sales" | "lead" | "declined" | "le
 export type SalesState = {
   mode: SalesMode;
   taggedAt: string;
-  source?: string;        // "landing" | "keywords" | "lead" | "open"
+  source?: string;        // "landing" | "keywords" | "lead" | "open" | "intent" | "ad"
   pitchedAt?: string;
   leadId?: string;
   fullName?: string;
@@ -86,6 +86,11 @@ const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
  */
 const TRY_BOOK_RE = /לנסות\s+לקבוע\s+(לי\s+)?תור|תור\s+לדוגמה/;
 const TRY_BOOK_ENTRY = ["היי! 👋 כאן המספרה של דני", "למתי תרצה לקבוע? היום, מחר או יום אחר?"];
+// Meta's own line when the ad's buttons don't show (WhatsApp Web, an old app, a carousel card):
+// "Link:\n\nHello! Can I get more info on this?". It came from our ad, so it opens the demo like
+// a button and asks what to book, as the three buttons do (30.10.2026, the marketing manager).
+const AD_DEFAULT_RE = /can i get more info(?:rmation)? on this|מידע נוסף על זה/i;
+const AD_DEFAULT_ENTRY = [TRY_BOOK_ENTRY[0], "על מה לקבוע לך? ציפורניים, תספורת או גוונים?"];
 const TRY_BOOK_AFTER = "זו הייתה מספרת הדגמה, התור לא אמיתי 😉 ככה צ'אטור עונה ללקוחות שלך. רוצה לראות איך זה עובד אצלך?";
 /** Never answered after TRY_BOOK_ENTRY: after 2 hours a real free slot, the next day at 10:00 one more line, then stop. */
 const ENTRY_NUDGE_1 = (when: string | null) => (when ? `נו, יש לי מקום ${when} 😄 לשריין לך?` : "נו, למתי לשריין לך? 😄");
@@ -356,12 +361,14 @@ export async function runDemoTurn(p: {
     } else if (v2) {
       // v2: the site's "try it" button goes straight into the demo; anyone else is a prospect.
       const opener = looksLikeDemoOpener(text);
-      if (TRY_BOOK_RE.test(text)) {
-        state = { mode: "demo", taggedAt: new Date().toISOString(), source: opener.source ?? "intent", demoTurns: 0, revealDeferred: true };
+      const fromAd = AD_DEFAULT_RE.test(text);
+      if (fromAd || TRY_BOOK_RE.test(text)) {
+        state = { mode: "demo", taggedAt: new Date().toISOString(), source: fromAd ? "ad" : opener.source ?? "intent", demoTurns: 0, revealDeferred: true };
         await saveState(conv.id, state);
         if (!p.alreadyPersisted) await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
-        await reply(conv.id, phone, TRY_BOOK_ENTRY, p.sandbox);
-        return { handled: true, mode: state.mode, replies: TRY_BOOK_ENTRY };
+        const entry = fromAd ? AD_DEFAULT_ENTRY : TRY_BOOK_ENTRY;
+        await reply(conv.id, phone, entry, p.sandbox);
+        return { handled: true, mode: state.mode, replies: entry };
       }
       if (opener.source === "landing") {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "landing", demoTurns: 0 };
