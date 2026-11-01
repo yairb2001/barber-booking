@@ -176,7 +176,8 @@ const NO_STEMS = ["לא", "לאא", "פחות", "עזוב", "עזבי", "רגע"
 // Cancel verbs mean "no" to a booking question but "yes" to a cancellation question.
 const CANCEL_VERBS = ["בטל", "תבטל", "לבטל", "מבטל", "ביטול", "cancel"];
 const MOVE_HINTS = /זיז|עביר|דחה|דחות|קדים|שנה|שנות|במקום|נוסף|עוד תור|move|resched|instead/i;
-const CHANGE_HINTS = /אבל|רק|במקום|אחר|אחרת|יותר|פחות|מאוחר|מוקדם|אפשר|יש|מה|מתי|למה|איפה|אצל|עם|בלי|ספר|תספורת|זקן|מספריים/;
+// "כן אנחנו שלושה" is not a yes to ONE appointment: the model books everyone (1.11.2026).
+const CHANGE_HINTS = /אבל|רק|במקום|אחר|אחרת|יותר|פחות|מאוחר|מוקדם|אפשר|יש|מה|מתי|למה|איפה|אצל|עם|בלי|ספר|תספורת|זקן|מספריים|אנחנו|שניים|שלושה|ארבעה|ילדים|לשנינו|לכולנו/;
 const stripEmojiSkin = (t: string) => t.replace(/\uD83C[\uDFFB-\uDFFF]/g, ""); // skin-tone modifiers, no u-flag (es5 target)
 function tokens(text: string): string[] {
   return stripEmojiSkin(text.toLowerCase())

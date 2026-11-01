@@ -3,7 +3,7 @@ import { headers, cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { resolveTheme, previewTheme, THEME_PREVIEW_COOKIE, type Theme } from "@/lib/themes";
 import { fallbackBusiness, tenantSlugFromPathname } from "@/lib/tenant";
-import { bookingOrderOf, staffChoiceOf, type BookingOrder, type StaffChoice } from "@/lib/vocab";
+import { bookingOrderOf, siteStaffChoiceOf, type BookingOrder, type StaffChoice } from "@/lib/vocab";
 
 /**
  * Resolve the active business theme on the SERVER so the very first paint
@@ -33,7 +33,7 @@ export async function getServerBusinessProfile(): Promise<{ type: string | null;
   const out = (b: { businessType: string; settings: string | null } | null) => {
     let vocab: Record<string, unknown> | null = null;
     try { const s = b?.settings ? JSON.parse(b.settings) as { vocab?: unknown } : {}; if (s.vocab && typeof s.vocab === "object") vocab = s.vocab as Record<string, unknown>; } catch { /* none */ }
-    return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b), staffChoice: staffChoiceOf(b) };
+    return { type: b?.businessType ?? null, vocab, order: bookingOrderOf(b), staffChoice: siteStaffChoiceOf(b) };
   };
   try {
     // The admin area talks in the logged-in business's words (a nail studio's

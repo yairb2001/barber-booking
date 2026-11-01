@@ -127,6 +127,8 @@ async function cancelDemoBookings(phone: string, sandbox: boolean): Promise<stri
   const a = appts[0];
   return `${new Date(a.date).toLocaleDateString("he-IL", { day: "numeric", month: "numeric", timeZone: "UTC" })} ב${a.startTime}`;
 }
+/** After a demo booking: more people or a question about what was booked. */
+const DEMO_FOLLOWUP_RE = /קבעת|תקבע|עוד תור|להזיז|לשנות את התור|(שניים|שתיים|שלושה|שלוש|ארבעה) (אנשים|תורים)|נהיה (שניים|שלושה|ארבעה)|ילדים|הילד|הבן|הבת|לאשתי|לחבר|לשנינו|לכולנו/;
 /** A lead asking to try the product himself. "דמו" alone = straight in (the automation tells him to write it). */
 const DEMO_ONLY_RE = /^(דמו|לנסות|רוצה לנסות|נסיון|ניסיון|תור דמו)[\s!.]*$/;
 const WANTS_TRY_RE = /לנסות|דמו|לראות איך|איך זה עובד|לבדוק את|ניסיון/;
@@ -165,7 +167,13 @@ const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מס
 // הסוכן של המספרה של דני"). Since 28.10.2026 the demo shop is also a beauty salon.
 const BOOKING_INTENT_RE = /תור|תספורת|להסתפר|זקן|יש מקום|פנוי|פנויה|לק ג['׳]?ל|ציפורניים|גבות|גוונים|שעווה|טיפול פנים/;
 const ABOUT_SYSTEM_RE = /מערכת|צ['׳]אטור|chator|סוכן|בוט|פרטים|מחיר|עולה|לעסק|יש לי מספרה|המספרה שלי|אני ספר(?![א-ת])|בעל מספרה/i;
-const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור. התור לא אמיתי, וככה בדיוק הלקוחות שלך יקבלו מענה.";
+/** Two bubbles like DOMINANT: who we are, then the usual question (Yair, 1.11.2026: "התור לא
+ *  אמיתי בסוגריים, ואז השאלה הרגילה ... בשני בועות שונות"). What he already said is not asked again;
+ *  a day or a time in his first message goes to the demo shop's agent, which offers real times. */
+const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור (התור לא אמיתי)";
+const INTENT_WHEN_RE = /היום|מחר|ראשון|שני|שלישי|רביעי|חמישי|שישי|השבוע|בערב|בבוקר|בצהריים|\d{1,2}[:.]\d{2}|ב-?\d{1,2}\b/;
+const INTENT_WHAT_RE = /גבר|(^|[\sל])נשים|אישה|אשתי|ציפורניים|לק ג|גבות|שעווה|טיפול פנים|גוונים|צבע|(^|\s)פן|זקן|החלקה/;
+const intentQuestion = (text: string) => INTENT_WHAT_RE.test(text) ? "לאיזה יום ושעה נוח לך?" : "גברים או נשים? ולאיזה יום ושעה נוח לך?";
 /** The first question (27.10.2026, Yair: "לצאת מנקודת הנחה שיש לו מספרה ... ולא להשאיר את השאלה פתוחה"). */
 const HOW_Q = "איך אתה מתנהל היום עם הוואטסאפ של המספרה? עונה לבד בין תספורות, מישהו מהצוות, או מערכת תורים?";
 const V2_OPEN_STRANGER = `היי, כאן צ'אטור. ${HOW_Q}`;
@@ -396,6 +404,11 @@ export async function runDemoTurn(p: {
           await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
           await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
         }
+        if (!INTENT_WHEN_RE.test(text)) {
+          const lines = [V2_ENTRY_INTENT, intentQuestion(text)];
+          await reply(conv.id, phone, lines, p.sandbox);
+          return { handled: true, mode: state.mode, replies: lines };
+        }
         await reply(conv.id, phone, [V2_ENTRY_INTENT], p.sandbox);
         const out = await runDemoBooking(conv.id, phone, text, state, p, false, v2, lead);
         return { handled: true, mode: out.mode ?? state.mode, replies: [V2_ENTRY_INTENT, ...(out.replies ?? [])] };
@@ -482,6 +495,17 @@ export async function runDemoTurn(p: {
       await reply(conv.id, phone, [line], p.sandbox);
       return { handled: true, mode: state.mode, replies: [line] };
     }
+  }
+
+  // Right after a booking in the demo, a message about those appointments ("כמה תורים קבעת לי?",
+  // "מחמש לי ולילדים") goes back to the demo shop. The sale once answered it with "בדמו הזה אני לא
+  // באמת קובע תורים" and took a customer for a barber (Yair, 1.11.2026: "נוראי ... לא תקין").
+  if (v2 && state.afterDemoAt && (state.mode === "sales" || state.mode === "lead")
+    && Date.now() - new Date(state.afterDemoAt).getTime() < 30 * 60_000
+    && DEMO_FOLLOWUP_RE.test(text) && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text) && !PRODUCT_Q_RE.test(text)) {
+    state = { ...state, mode: state.mode === "lead" ? "lead_demo" : "demo", demoTurns: 0 };
+    await saveState(conv.id, state);
+    return runDemoBooking(conv.id, phone, text, state, p, state.mode === "lead_demo", v2, lead);
   }
 
   // ── Lead ──
@@ -622,9 +646,11 @@ const ABANDON_LINE = "*ככה הלקוחות שלך יקבלו כשהם ינסו
  */
 async function demoAfterTurnV2(convId: string, phone: string, state: SalesState, p: { sandbox?: DemoSandbox }, isLead: boolean, booked: boolean): Promise<DemoTurnResult> {
   if (booked) {
-    if (!p.sandbox) await new Promise(r => setTimeout(r, 3000));
-    const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), afterDemoAt: new Date().toISOString(), demoTurns: undefined, demoNudged: undefined, demoFollowedUp: undefined };
+    const again = !!state.afterDemoAt; // back from the sale for more people: the line was already sent
+    if (!p.sandbox && !again) await new Promise(r => setTimeout(r, 3000));
+    const next: SalesState = { ...state, mode: isLead ? "lead" : "sales", pitchedAt: new Date().toISOString(), afterDemoAt: again ? state.afterDemoAt : new Date().toISOString(), demoTurns: undefined, demoNudged: undefined, demoFollowedUp: undefined };
     await saveState(convId, next);
+    if (again) return { handled: true, mode: next.mode };
     const line = state.revealDeferred ? TRY_BOOK_AFTER : AFTER_DEMO_LINE;
     await reply(convId, phone, [line], p.sandbox);
     return { handled: true, mode: next.mode, replies: [line] };
@@ -768,7 +794,7 @@ ${ctx}
 - כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
 - כל הודעה נגמרת בדבר אחד בלבד: שאלה אחת, או הצעה אחת (להירשם בחינם עם send_signup_link, או שיחה קצרה). לא שניהם, ולא אותה הצעה פעמיים ברצף.
 - מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
-- אין לך דרך לקבוע או לבטל תורים במספרת ההדגמה: לעולם אל תכתוב שקבעת, הזזת או ביטלת תור.
+- אין לך דרך לקבוע או לבטל תורים במספרת ההדגמה: לעולם אל תכתוב שקבעת, הזזת או ביטלת תור. מה שנקבע בדמו נקבע באמת ביומן של מספרת ההדגמה, אז לעולם אל תגיד שהדמו לא קובע באמת. מי שכותב על התורים שלו או על עוד אנשים הוא לקוח, לא בעל מספרה: אל תמכור לו, ענה שאפשר לקבוע גם להם ממש כאן.
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות. לא שואל אם יש לו מספרה.
 - שאל שוב משהו שכבר ענית עליו: לא חוזרים על ההסבר. משפט אחד, ואז הרשמה בחינם (send_signup_link).

@@ -636,7 +636,7 @@ export default function HomePage() {
             </div>
           )}
           <p className="flex-1 font-bold text-[15px] tracking-wide text-slate-900" style={T.isDark ? { color: T.textPri } : undefined}>
-            {business?.name || "DOMINANT"}
+            {business?.name ?? ""}
           </p>
           <Link href={publicHref(slug, "/book")}
             className="flex-shrink-0 text-[12px] font-bold tracking-[0.1em] uppercase px-5 py-2 rounded-full text-white"
@@ -789,7 +789,8 @@ export default function HomePage() {
             // like "DOMINANT Barbershop" (renamed 9.10.2026) would say it twice and
             // wrap to two huge lines. Show the brand part only, and size long
             // names down so the title always stays on one line.
-            const full = business?.name || "DOMINANT";
+            // Empty while loading: another business's storefront once flashed "DOMINANT" (1.11.2026).
+            const full = business?.name ?? "";
             const title = full.replace(/\s*(barber\s*shop|ברברשופ)\s*$/i, "").trim() || full;
             const size = title.length <= 9 ? "clamp(2rem,10vw,4.5rem)" : `clamp(1.4rem,${Math.max(5, 88 / title.length).toFixed(1)}vw,3.6rem)`;
             return (
@@ -1142,7 +1143,7 @@ export default function HomePage() {
       <FooterCTA />
       <div className="py-6 text-center border-t border-slate-100" style={{ background: "var(--surface)" }}>
         <p className="text-[10px] tracking-[0.3em] uppercase text-slate-400">
-          {business?.name || "DOMINANT"} &copy; {new Date().getFullYear()}
+          {business?.name ?? ""} &copy; {new Date().getFullYear()}
         </p>
       </div>
     </div>

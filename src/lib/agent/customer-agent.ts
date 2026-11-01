@@ -57,6 +57,8 @@ import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 import { unansweredRun, runConfirmsSlot } from "@/lib/agent/pending-confirmation";
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+/** "אנחנו נהיה שלושה", "לי ולילדים": the booking is for more than one person. */
+const MORE_PEOPLE_RE = /אנחנו|נהיה (שניים|שלושה|ארבעה)|(שניים|שתיים|שלושה|שלוש|ארבעה) (אנשים|תורים)|ילדים|הילד|הבן|הבת|לאשתי|לחבר|לשנינו|לכולנו/;
 
 // Neon has intermittently returned a spurious empty read for a day/staff that
 // demonstrably had free slots seconds before and after (first hit: the "Dvir"
@@ -1278,6 +1280,13 @@ export async function execTool(
         // The customer already said yes in his own words (the classifier missed it,
         // the model caught it): book now instead of asking the same question again.
         if (String((input as Record<string, unknown>).customerConfirmed) === "true") {
+          // Demo only (Yair, 1.11.2026): "כן אנחנו נהיה שלושה אנשים" booked one. More people → all of them, one question.
+          if (bizId === DEMO_BUSINESS_ID && !(Array.isArray(othersIn) && othersIn.length) && conversationId) {
+            const last = await prisma.conversationMessage.findFirst({ where: { conversationId, role: "user" }, orderBy: { createdAt: "desc" }, select: { content: true } });
+            if (last && MORE_PEOPLE_RE.test(last.content)) {
+              return "שגיאה: הלקוח כתב שהם כמה אנשים. אל תקבע רק לו. שאל כמה הם ואיך קוראים לכל אחד (ואם צריך, איזה טיפול לכל אחד), מצא שעות עם find_parallel_slots (count = מספר האנשים), ואז propose_booking אחד עם others לכל אחד מהם.";
+            }
+          }
           const pending = await findPendingProposal(bizId, proposalPhone);
           const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
           if (same) {

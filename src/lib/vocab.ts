@@ -278,6 +278,16 @@ export function staffChoiceOf(biz: { settings?: string | null } | null | undefin
   return "customer";
 }
 
+/** The booking site only: the customer may pick who while the agent keeps assigning
+ *  (settings.siteStaffChoice; 1.11.2026, Yair on the demo: "חשוב שיהיה גם צוות"). */
+export function siteStaffChoiceOf(biz: { settings?: string | null } | null | undefined): StaffChoice {
+  try {
+    const v = biz?.settings ? (JSON.parse(biz.settings) as { siteStaffChoice?: unknown }).siteStaffChoice : undefined;
+    if (v === "customer" || v === "least" || v === "most") return v;
+  } catch { /* default */ }
+  return staffChoiceOf(biz);
+}
+
 /** vocabFor() straight from a business row: type column + settings.vocab overrides. */
 export function vocabOf(biz: { businessType?: string | null; settings?: string | null } | null | undefined): Vocab {
   let overrides: Record<string, unknown> | null = null;
