@@ -21,6 +21,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hiddenWhere } from "@/lib/analytics/hidden";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { computeOccupancy } from "@/lib/analytics/occupancy";
 import { appointmentInstant } from "@/lib/utils";
@@ -61,6 +62,7 @@ export async function GET(req: NextRequest) {
   const knownBeforeIds = new Set((await prisma.customer.findMany({ where: { businessId: bizId, knownBefore: true }, select: { id: true } })).map(c => c.id));
 
   const { searchParams } = req.nextUrl;
+  const hv               = hiddenWhere(searchParams);
   const fromStr          = searchParams.get("from") ?? "";
   const toStr            = searchParams.get("to")   ?? "";
   const staffId          = searchParams.get("staffId") || null;
@@ -108,7 +110,7 @@ export async function GET(req: NextRequest) {
 
   // ── 1. Active appointments in period ─────────────────────────────────────────
   const periodAll = await prisma.appointment.findMany({
-    where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, ...sf },
+    where: { businessId: bizId, ...hv, date: { gte: fromDate, lte: toDate }, ...sf },
     select: {
       id: true, customerId: true, staffId: true, price: true, status: true, date: true,
       tipAmount: true,
@@ -192,7 +194,7 @@ export async function GET(req: NextRequest) {
     const convByPhone = new Map(convs.map(c => [norm(c.phone), c.id]));
     const [created, inbound] = await Promise.all([
       prisma.appointment.findMany({
-        where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + H30D) }, status: { in: ["pending", "confirmed", "completed"] } },
+        where: { businessId: bizId, ...hv, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate, lte: new Date(toDate.getTime() + H30D) }, status: { in: ["pending", "confirmed", "completed"] } },
         select: { customerId: true, createdAt: true, source: true, price: true, status: true },
       }),
       convs.length ? prisma.conversationMessage.findMany({
@@ -265,7 +267,7 @@ export async function GET(req: NextRequest) {
     ]) : [[], []];
     const normP = (p: string) => p.replace(/\D/g, "").replace(/^0/, "972");
     const custByPhone = new Map(custs.map(c => [normP(c.phone), c.id]));
-    const created = custs.length ? await prisma.appointment.findMany({ where: { businessId: bizId, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate }, status: { in: ["pending", "confirmed", "completed"] } }, select: { customerId: true, createdAt: true } }) : [];
+    const created = custs.length ? await prisma.appointment.findMany({ where: { businessId: bizId, ...hv, customerId: { in: custs.map(c => c.id) }, createdAt: { gte: fromDate }, status: { in: ["pending", "confirmed", "completed"] } }, select: { customerId: true, createdAt: true } }) : [];
     const firstReply = new Map(convs.map(c => [c.phone, c.messages[0]?.createdAt]));
     const seen = new Set<string>();
     for (const e of newEvents) {
@@ -386,7 +388,7 @@ export async function GET(req: NextRequest) {
   // ── Today metrics (independent of from/to filter) ────────────────────────────
   const todayAppts = await prisma.appointment.findMany({
     where: {
-      businessId: bizId,
+      businessId: bizId, ...hv,
       date: { gte: todayStart, lte: todayEnd },
       status: { notIn: cancelledArr },
       ...sf,
@@ -400,7 +402,7 @@ export async function GET(req: NextRequest) {
   // regardless of when the appt itself is. Includes barber-created entries (no source filter).
   const bookingsCreatedToday = await prisma.appointment.count({
     where: {
-      businessId: bizId,
+      businessId: bizId, ...hv,
       createdAt: { gte: todayStart, lte: todayEnd },
       status: { notIn: cancelledArr },
       ...sf,
@@ -410,7 +412,7 @@ export async function GET(req: NextRequest) {
   // totalNoShows — all-time count, NOT date-scoped (unlike the metrics above).
   // Powers the "🚫 הברזות" dashboard card + drill-down list of repeat no-shows.
   const totalNoShows = await prisma.appointment.count({
-    where: { businessId: bizId, status: "no_show", ...sf },
+    where: { businessId: bizId, ...hv, status: "no_show", ...sf },
   });
 
   // ── Weekly summary (this week, last week, 12-week trend) ────────────────────
@@ -422,7 +424,7 @@ export async function GET(req: NextRequest) {
   const weekRanges = Array.from({ length: 12 }, (_, i) => getWeekRangeUTC(i - 11, weekBase));
   const weekAppts = await prisma.appointment.findMany({
     where: {
-      businessId: bizId,
+      businessId: bizId, ...hv,
       status: { notIn: cancelledArr },
       date: { gte: weekRanges[0].start, lte: weekRanges[11].end },
       ...sf,
@@ -442,8 +444,8 @@ export async function GET(req: NextRequest) {
   if (periodCustIds.length === 0) {
     // Even with empty period, return today metrics + occupancy
     const [occToday, occMonth] = await Promise.all([
-      computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
-      computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
+      computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId, visible: hv }),
+      computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId, visible: hv }),
     ]);
     return NextResponse.json({
       totalRevenue, totalAppointments, periodNoShows, cancellations, rhythmNudge,
@@ -472,7 +474,7 @@ export async function GET(req: NextRequest) {
   //   (b) staff   — only appointments with the filtered staff (for newToStaff)
   // (a) is always loaded; (b) is the same set when no staff filter, otherwise filtered.
   const globalHistory = await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: periodCustIds } },
+    where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: periodCustIds } },
     select: { customerId: true, staffId: true, date: true },
   });
 
@@ -523,7 +525,7 @@ export async function GET(req: NextRequest) {
   let todayNewToBusiness = 0;
   if (todayCustIds.length > 0) {
     const todayHistory = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: todayCustIds } },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: todayCustIds } },
       select: { customerId: true, date: true },
     });
     const tDates = new Map<string, Date[]>();
@@ -547,7 +549,7 @@ export async function GET(req: NextRequest) {
 
   // ── 4. Previous month cohort: new last month → how many returned this month ──
   const prevMonthAppts = await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: cancelledArr }, date: { gte: prevMonthStart, lte: prevMonthEnd }, ...sf },
+    where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, date: { gte: prevMonthStart, lte: prevMonthEnd }, ...sf },
     select: { customerId: true },
   });
   const prevCustIds = Array.from(new Set(prevMonthAppts.map((a: { customerId: string }) => a.customerId)));
@@ -555,7 +557,7 @@ export async function GET(req: NextRequest) {
   let prevMonthCohort = { newInPrevMonth: 0, returnedThisMonth: 0, rate: 0 };
   if (prevCustIds.length > 0) {
     const prevHistory = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: prevCustIds }, ...sf },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: prevCustIds }, ...sf },
       select: { customerId: true, date: true },
     });
     const prevDates = new Map<string, Date[]>();
@@ -582,7 +584,7 @@ export async function GET(req: NextRequest) {
   // ── 5. Activity breakdown — ALL-TIME customer visit counts ──────────────────
   const allTimeGroups = await prisma.appointment.groupBy({
     by: ["customerId"],
-    where: { businessId: bizId, status: { notIn: cancelledArr }, ...sf },
+    where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, ...sf },
     _count: { id: true },
   });
   const activityBreakdown = {
@@ -597,13 +599,13 @@ export async function GET(req: NextRequest) {
   windowStart.setDate(windowStart.getDate() - returnWindowDays);
 
   const wAppts = await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: cancelledArr }, date: { gte: windowStart }, ...sf },
+    where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, date: { gte: windowStart }, ...sf },
     select: { customerId: true, date: true },
   });
   const wCustIds = Array.from(new Set(wAppts.map(a => a.customerId)));
 
   const wHistory = wCustIds.length ? await prisma.appointment.findMany({
-    where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: wCustIds }, ...sf },
+    where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: wCustIds }, ...sf },
     select: { customerId: true, date: true },
     orderBy: { date: "asc" },
   }) : [];
@@ -646,7 +648,7 @@ export async function GET(req: NextRequest) {
 
       // Per-staff history (with this staff only) for newToStaff + secondVisit
       const stHist  = await prisma.appointment.findMany({
-        where: { businessId: bizId, status: { notIn: cancelledArr }, staffId: sid, customerId: { in: stCusts } },
+        where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, staffId: sid, customerId: { in: stCusts } },
         select: { customerId: true, date: true },
       });
       const stDates = new Map<string, Date[]>();
@@ -659,7 +661,7 @@ export async function GET(req: NextRequest) {
 
       // Global history for these same customers, to compute newAlsoToBusiness
       const stGlobalHist = await prisma.appointment.findMany({
-        where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: stCusts } },
+        where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: stCusts } },
         select: { customerId: true, date: true },
       });
       const stGlobalDates = new Map<string, Date[]>();
@@ -706,8 +708,8 @@ export async function GET(req: NextRequest) {
 
   // ── 8. Occupancy (today + period) ────────────────────────────────────────────
   const [occToday, occMonth] = await Promise.all([
-    computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId }),
-    computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId }),
+    computeOccupancy({ businessId: bizId, from: todayStart, to: todayEnd, staffId: effectiveStaffId, visible: hv }),
+    computeOccupancy({ businessId: bizId, from: fromDate,   to: occTo,    staffId: effectiveStaffId, visible: hv }),
   ]);
 
   // ── 9. Deep data — all-time unique customers per staff (owner view only) ──────
@@ -718,7 +720,7 @@ export async function GET(req: NextRequest) {
   if (!effectiveStaffId) {
     const pairs = await prisma.appointment.groupBy({
       by: ["staffId", "customerId"],
-      where: { businessId: bizId, status: { notIn: cancelledArr } },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr } },
     });
     const countByStaff = new Map<string, number>();
     for (const p of pairs) countByStaff.set(p.staffId, (countByStaff.get(p.staffId) ?? 0) + 1);

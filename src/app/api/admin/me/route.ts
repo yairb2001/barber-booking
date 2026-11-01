@@ -167,8 +167,12 @@ export async function GET(req: NextRequest) {
 
   // Group classes (16.10.2026): the menu shows "שיעורים" only to a business that has them.
   const hasClasses = (await prisma.classType.count({ where: { businessId: session.businessId, isActive: true } })) > 0;
+  // The dashboard ⋯ menu offers "הצג תורים מוסתרים" only where hiding is on (settings.hideAppointments).
+  let hideAppointments = false;
+  try { hideAppointments = JSON.parse(business?.settings || "{}").hideAppointments === true; } catch { /* off */ }
   const res = NextResponse.json({
     hasClasses,
+    hideAppointments,
     roleChanged: !!reissue,
     trialEnding,
     setupTasks,

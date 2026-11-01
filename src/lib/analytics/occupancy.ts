@@ -42,6 +42,7 @@ export async function computeOccupancy(opts: {
   from: Date;
   to: Date;
   staffId?: string | null;
+  visible?: { hiddenAt?: null }; // dashboard only: leaves hidden appointments out
 }): Promise<{ usedMinutes: number; availableMinutes: number; pct: number }> {
   const { businessId, from, to, staffId } = opts;
 
@@ -119,6 +120,7 @@ export async function computeOccupancy(opts: {
       date: { gte: from, lte: to },
       status: { notIn: CANCELLED },
       ...(staffId ? { staffId } : {}),
+      ...opts.visible,
     },
     select: { startTime: true, endTime: true },
   });

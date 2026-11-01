@@ -76,11 +76,11 @@ export async function resolveNewSince(businessId: string): Promise<{ date: strin
 }
 
 /** Customers whose first real visit was within `maxDays`, with everything needed for every smaller window. */
-export async function computeRetention(opts: { businessId: string; staffId?: string | null; now?: Date; windows?: readonly number[] }): Promise<RetentionResult> {
+export async function computeRetention(opts: { businessId: string; staffId?: string | null; now?: Date; windows?: readonly number[]; visible?: { hiddenAt?: null } }): Promise<RetentionResult> {
   const now = opts.now ?? new Date();
   const windows = [...(opts.windows ?? RETENTION_WINDOWS)].sort((a, b) => a - b);
   const maxDays = windows[windows.length - 1];
-  const sf = opts.staffId ? { staffId: opts.staffId } : {};
+  const sf = { ...(opts.staffId ? { staffId: opts.staffId } : {}), ...opts.visible };
   // Appointment dates are UTC-midnight of the ISRAEL calendar day, so "today"
   // must be the business day, not the UTC day (they differ from 21:00 UTC).
   const todayIL = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);

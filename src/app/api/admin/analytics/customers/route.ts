@@ -11,6 +11,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hiddenWhere } from "@/lib/analytics/hidden";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export async function GET(req: NextRequest) {
   const knownBeforeIds = new Set((await prisma.customer.findMany({ where: { businessId: bizId, knownBefore: true }, select: { id: true } })).map(c => c.id));
 
   const { searchParams } = req.nextUrl;
+  const hv = hiddenWhere(searchParams);
   const fromStr = searchParams.get("from") ?? "";
   const toStr   = searchParams.get("to") ?? "";
   const type    = searchParams.get("type") ?? "new";
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
   if (type === "new") {
     // ── New customers: first-ever appointment (globally or with staff) is in [from,to]
     const periodAppts = await prisma.appointment.findMany({
-      where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, status: { notIn: cancelledArr }, ...sf },
+      where: { businessId: bizId, ...hv, date: { gte: fromDate, lte: toDate }, status: { notIn: cancelledArr }, ...sf },
       select: { customerId: true, customer: { select: { id: true, name: true, phone: true, knownBefore: true } } },
     });
 
@@ -56,7 +58,7 @@ export async function GET(req: NextRequest) {
 
     // Get all-time history (respecting staff scope)
     const history = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: custIds }, ...sf },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: custIds }, ...sf },
       select: { customerId: true, date: true },
     });
 
@@ -95,7 +97,7 @@ export async function GET(req: NextRequest) {
 
     // Customers who had appointments last month
     const prevAppts = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, date: { gte: prevMonthStart, lte: prevMonthEnd }, ...sf },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, date: { gte: prevMonthStart, lte: prevMonthEnd }, ...sf },
       select: { customerId: true },
     });
     const prevCustIds = Array.from(new Set(prevAppts.map(a => a.customerId)));
@@ -103,7 +105,7 @@ export async function GET(req: NextRequest) {
 
     // Full history for these customers
     const prevHistory = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: prevCustIds }, ...sf },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: prevCustIds }, ...sf },
       select: { customerId: true, date: true },
     });
 
@@ -124,7 +126,7 @@ export async function GET(req: NextRequest) {
 
     // Current period customers
     const periodAppts = await prisma.appointment.findMany({
-      where: { businessId: bizId, date: { gte: fromDate, lte: toDate }, status: { notIn: cancelledArr }, ...sf },
+      where: { businessId: bizId, ...hv, date: { gte: fromDate, lte: toDate }, status: { notIn: cancelledArr }, ...sf },
       select: { customerId: true, customer: { select: { id: true, name: true, phone: true } } },
     });
     const periodCustSet = new Set(periodAppts.map(a => a.customerId));

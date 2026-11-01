@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 import { computeRetention } from "@/lib/analytics/retention";
+import { hiddenWhere } from "@/lib/analytics/hidden";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,6 @@ export async function GET(req: NextRequest) {
   if (!biz) return NextResponse.json({ error: "no business" }, { status: 404 });
   const requested = req.nextUrl.searchParams.get("staffId") || null;
   const staffId = (!session.isOwner && session.staffId) ? session.staffId : requested;
-  const result = await computeRetention({ businessId: biz.id, staffId });
+  const result = await computeRetention({ businessId: biz.id, staffId, visible: hiddenWhere(req.nextUrl.searchParams) });
   return NextResponse.json(result);
 }

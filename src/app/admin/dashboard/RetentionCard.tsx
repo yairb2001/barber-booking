@@ -17,7 +17,7 @@ function daysAgoISO(days: number): string {
   const d = new Date(todayIL + "T00:00:00.000Z"); d.setUTCDate(d.getUTCDate() - days); return d.toISOString().slice(0, 10);
 }
 
-export default function RetentionCard({ staffId, isOwner }: { staffId: string | null; isOwner: boolean }) {
+export default function RetentionCard({ staffId, isOwner, includeHidden }: { staffId: string | null; isOwner: boolean; includeHidden: boolean }) {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState(false);
   const [open, setOpen] = useState<number | null>(null);
@@ -28,12 +28,14 @@ export default function RetentionCard({ staffId, isOwner }: { staffId: string | 
   const load = useCallback(async () => {
     setError(false);
     try {
-      const qs = staffId ? `?staffId=${encodeURIComponent(staffId)}` : "";
-      const res = await fetch(`/api/admin/analytics/retention${qs}`, { cache: "no-store" });
+      const qs = new URLSearchParams();
+      if (staffId) qs.set("staffId", staffId);
+      if (includeHidden) qs.set("includeHidden", "1");
+      const res = await fetch(`/api/admin/analytics/retention?${qs}`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       setData(await res.json());
     } catch { setError(true); }
-  }, [staffId]);
+  }, [staffId, includeHidden]);
   useEffect(() => { setData(null); load(); }, [load]);
 
   async function saveSince(value: string | null) {

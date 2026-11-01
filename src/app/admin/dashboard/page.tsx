@@ -217,7 +217,7 @@ type Analytics = {
   };
 };
 
-type Me    = { isOwner: boolean; staffId: string | null; staff: { id: string; name: string; role: string } | null };
+type Me    = { isOwner: boolean; staffId: string | null; staff: { id: string; name: string; role: string } | null; hideAppointments?: boolean };
 type Staff = { id: string; name: string };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1235,6 +1235,10 @@ export default function Dashboard() {
   // Monthly stats include future (already-booked) appointments by default; the
   // owner can toggle this off to see only what has happened up to this moment.
   const [includeFuture,   setIncludeFuture]   = useState(true);
+  // Hidden appointments are out of every number; the ⋯ menu brings them back (owner, 1.11.2026).
+  const [showHidden,      setShowHidden]      = useState(false);
+  const [menuOpen,        setMenuOpen]        = useState(false);
+  const hiddenQs = showHidden ? "&includeHidden=1" : "";
   const [returnWindowDays, setReturnWindowDays] = useState(90);
   // Debounced — API is called only after slider stops moving (500ms)
   const debouncedWindowDays = useDebounce(returnWindowDays, 500);
@@ -1279,30 +1283,31 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/api/admin/me")
       .then(r => r.json())
-      .then((data: Me) => {
-        setMe(data);
-        // Fetch barber-specific gamified stats for non-owners
-        if (!data.isOwner) {
-          fetch("/api/admin/barber-stats")
-            .then(r => r.json())
-            .then(setBarberStats)
-            .catch(() => {});
-        }
-      })
+      .then((data: Me) => setMe(data))
       .catch(() => {});
     fetch("/api/admin/staff").then(r => r.json()).then((d: Staff[]) => setAllStaff(d)).catch(() => {});
   }, []);
+
+  // Barber-specific gamified stats for non-owners
+  useEffect(() => {
+    if (!me || me.isOwner) return;
+    fetch(`/api/admin/barber-stats?${hiddenQs}`)
+      .then(r => r.json())
+      .then(setBarberStats)
+      .catch(() => {});
+  }, [me, hiddenQs]);
 
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams({ from, to, returnWindowDays: String(debouncedWindowDays), date: todayViewDate });
     if (selStaff) params.set("staffId", selStaff);
     if (!includeFuture) params.set("includeFuture", "false");
+    if (showHidden) params.set("includeHidden", "1");
     fetch(`/api/admin/analytics?${params}`)
       .then(r => r.json())
       .then(d => { setAnalytics(d); setLoading(false); })
       .catch(() => setLoading(false));
-  }, [from, to, selStaff, debouncedWindowDays, includeFuture, todayViewDate]);
+  }, [from, to, selStaff, debouncedWindowDays, includeFuture, todayViewDate, showHidden]);
 
   // Browsing is capped to the last 30 days — matches the server-side clamp in
   // /api/admin/analytics, so the arrow can't request a date the API would reject.
@@ -1350,7 +1355,7 @@ export default function Dashboard() {
 
   function openCustomerList(type: "new" | "returning") {
     const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
-    const url = `/api/admin/analytics/customers?from=${from}&to=${to}&type=${type}${staffParam ? `&staffId=${staffParam}` : ""}`;
+    const url = `/api/admin/analytics/customers?from=${from}&to=${to}&type=${type}${staffParam ? `&staffId=${staffParam}` : ""}${hiddenQs}`;
     setCustLoading(true);
     fetch(url)
       .then(r => r.json())
@@ -1370,7 +1375,7 @@ export default function Dashboard() {
     const staffParam = selStaff || (!isOwner && me?.staffId ? me.staffId : "");
     // `no_show` is cumulative (all-time) — the `date` param is harmless noise,
     // the endpoint ignores it for that kind.
-    const url = `/api/admin/analytics/today?kind=${kind}&date=${todayViewDate}${staffParam ? `&staffId=${staffParam}` : ""}`;
+    const url = `/api/admin/analytics/today?kind=${kind}&date=${todayViewDate}${staffParam ? `&staffId=${staffParam}` : ""}${hiddenQs}`;
     const title = kind === "new" ? `חדשים ${todayViewLabel}`
       : kind === "appointments" ? `לקוחות ${todayViewLabel}`
       : kind === "booked" ? `נקבעו ${todayViewLabel}`
@@ -1400,20 +1405,47 @@ export default function Dashboard() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-xl font-bold text-neutral-900">{heading}</h1>
-        <div className="flex items-center gap-1 bg-white rounded-xl border border-neutral-200 px-2 py-1.5">
-          {/* ▶ on right = go to earlier month (RTL: right = past) */}
-          <button onClick={prevMonth}
-            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm">▶</button>
-          <span className="font-semibold text-neutral-800 text-xs min-w-[7rem] text-center">{monthLabel}</span>
-          {/* ◀ on left = go to later month (now allowed into the future, capped) */}
-          <button onClick={nextMonth} disabled={atMaxHorizon}
-            className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm disabled:opacity-30">◀</button>
-          {!isCurrentMonth && (
-            <button onClick={() => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); }}
-              className="text-xs text-teal-600 hover:underline px-1.5">החודש</button>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 bg-white rounded-xl border border-neutral-200 px-2 py-1.5">
+            {/* ▶ on right = go to earlier month (RTL: right = past) */}
+            <button onClick={prevMonth}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm">▶</button>
+            <span className="font-semibold text-neutral-800 text-xs min-w-[7rem] text-center">{monthLabel}</span>
+            {/* ◀ on left = go to later month (now allowed into the future, capped) */}
+            <button onClick={nextMonth} disabled={atMaxHorizon}
+              className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-neutral-100 text-neutral-500 text-sm disabled:opacity-30">◀</button>
+            {!isCurrentMonth && (
+              <button onClick={() => { setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); }}
+                className="text-xs text-teal-600 hover:underline px-1.5">החודש</button>
+            )}
+          </div>
+          {me?.hideAppointments && (
+            <div className="relative">
+              <button type="button" aria-label="עוד אפשרויות" aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}
+                className="w-[42px] h-[42px] flex items-center justify-center bg-white rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="12" r="2" /></svg>
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+                  <div role="menu" className="absolute top-12 end-0 z-20 w-64 bg-white rounded-2xl border border-neutral-200 shadow-lg p-1.5">
+                    <button type="button" role="menuitem" onClick={() => { setShowHidden(v => !v); setMenuOpen(false); }}
+                      className="w-full min-h-[44px] px-3 rounded-xl text-right text-sm text-neutral-800 hover:bg-neutral-50">
+                      {showHidden ? "הסתר שוב את התורים המוסתרים" : "הצג תורים מוסתרים"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
+      {showHidden && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-800">
+          <span>המספרים כוללים גם תורים מוסתרים</span>
+          <button type="button" onClick={() => setShowHidden(false)} className="text-xs font-medium underline">הסתר שוב</button>
+        </div>
+      )}
 
       {/* ── Future-month forecast notice ── */}
       {isFutureMonth && (
@@ -1571,7 +1603,7 @@ export default function Dashboard() {
           </div>
 
           {/* ── New customers & second-visit retention — strict, visit-based (20.9.2026) ── */}
-          <NewCustomersRetentionCard staffId={selStaff || (!isOwner && me?.staffId ? me.staffId : null)} isOwner={isOwner} />
+          <NewCustomersRetentionCard staffId={selStaff || (!isOwner && me?.staffId ? me.staffId : null)} isOwner={isOwner} includeHidden={showHidden} />
 
           {/* ── "הגיע הזמן לתור" — proactive nudges and what they brought ── */}
           {!isFutureMonth && a.rhythmNudge?.regular && a.rhythmNudge.new && (a.rhythmNudge.regular.customers + a.rhythmNudge.new.customers) > 0 && (

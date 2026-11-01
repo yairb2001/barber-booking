@@ -13,6 +13,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hiddenWhere } from "@/lib/analytics/hidden";
 import { getRequestSession, getSessionBusiness } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +29,7 @@ export async function GET(req: NextRequest) {
   const bizId = biz.id;
 
   const { searchParams } = req.nextUrl;
+  const hv = hiddenWhere(searchParams);
   const kind    = searchParams.get("kind") ?? "";
   const staffId = searchParams.get("staffId") || null;
   const dateStr = searchParams.get("date") || "";
@@ -52,7 +54,7 @@ export async function GET(req: NextRequest) {
   if (kind === "appointments") {
     const todayAppts = await prisma.appointment.findMany({
       where: {
-        businessId: bizId,
+        businessId: bizId, ...hv,
         date: { gte: todayStart, lte: todayEnd },
         status: { notIn: cancelledArr },
         ...sf,
@@ -76,7 +78,7 @@ export async function GET(req: NextRequest) {
   if (kind === "booked") {
     const bookedAppts = await prisma.appointment.findMany({
       where: {
-        businessId: bizId,
+        businessId: bizId, ...hv,
         createdAt: { gte: todayStart, lte: todayEnd },
         status: { notIn: cancelledArr },
         ...sf,
@@ -103,7 +105,7 @@ export async function GET(req: NextRequest) {
     // Cumulative, all-time — NOT scoped to `date` like the other kinds above.
     // Must match the totalNoShows count computed in /api/admin/analytics.
     const noShowAppts = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: "no_show", ...sf },
+      where: { businessId: bizId, ...hv, status: "no_show", ...sf },
       select: {
         customerId: true,
         customer: { select: { id: true, name: true, phone: true } },
@@ -123,7 +125,7 @@ export async function GET(req: NextRequest) {
   if (kind === "new") {
     const todayAppts = await prisma.appointment.findMany({
       where: {
-        businessId: bizId,
+        businessId: bizId, ...hv,
         date: { gte: todayStart, lte: todayEnd },
         status: { notIn: cancelledArr },
         ...sf,
@@ -138,7 +140,7 @@ export async function GET(req: NextRequest) {
     if (todayCustIds.length === 0) return NextResponse.json([]);
 
     const todayHistory = await prisma.appointment.findMany({
-      where: { businessId: bizId, status: { notIn: cancelledArr }, customerId: { in: todayCustIds } },
+      where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: todayCustIds } },
       select: { customerId: true, date: true },
     });
     const tDates = new Map<string, Date[]>();

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { hiddenWhere } from "@/lib/analytics/hidden";
 import { getRequestSession } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -80,6 +81,7 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
+  const hv = hiddenWhere(searchParams);
   const staffIdParam = searchParams.get("staffId");
 
   let staffId: string;
@@ -134,7 +136,7 @@ export async function GET(req: NextRequest) {
   // All non-cancelled appointments for this barber from the earliest needed date
   const allRecentAppts = await prisma.appointment.findMany({
     where: {
-      businessId: session.businessId,
+      businessId: session.businessId, ...hv,
       staffId,
       status: { notIn: CANCELLED },
       date: { gte: earliest, lte: thisWeekRange.end },
@@ -169,7 +171,7 @@ export async function GET(req: NextRequest) {
   // ── Lifetime stats ────────────────────────────────────────────────────────
   const lifetimeRaw = await prisma.appointment.groupBy({
     by:     ["customerId"],
-    where:  { businessId: session.businessId, staffId, status: { notIn: CANCELLED } },
+    where:  { businessId: session.businessId, ...hv, staffId, status: { notIn: CANCELLED } },
     _count: { _all: true },
   });
   const totalLifetime   = lifetimeRaw.reduce((s, r) => s + r._count._all, 0);
@@ -183,7 +185,7 @@ export async function GET(req: NextRequest) {
   // For each customer, find the date of their FIRST appointment with this barber
   const firstVisitPerCustomer = await prisma.appointment.groupBy({
     by:      ["customerId"],
-    where:   { businessId: session.businessId, staffId, status: { notIn: CANCELLED } },
+    where:   { businessId: session.businessId, ...hv, staffId, status: { notIn: CANCELLED } },
     _min:    { date: true },
   });
 
