@@ -1233,7 +1233,9 @@ export async function execTool(
         // A visit (16.10.2026): further treatments for the same customer, each with
         // its own serviceId — the whole chain checked together (order, staff, rooms,
         // never two chairs at once), confirmed by one question, booked together.
-        const visitMode = Array.isArray(othersIn) && othersIn.some((o: { serviceId?: unknown }) => !!o?.serviceId);
+        // A name on an item = another person (a group), even when the model also passed his serviceId (1.11.2026).
+        const visitMode = Array.isArray(othersIn) && othersIn.some((o: { serviceId?: unknown }) => !!o?.serviceId)
+          && !othersIn.some((o: { forName?: unknown }) => typeof o?.forName === "string" && o.forName.trim() !== "");
         let avail: Awaited<ReturnType<typeof computeDayAvailabilityRetrying>> = [];
         if (visitMode) {
           const items = [{ staffId: staff.id, serviceId: service.id, startTime }];
