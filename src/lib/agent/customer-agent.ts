@@ -463,6 +463,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         count:     { type: "number", description: "כמה ספרים צריכים להיות פנויים באותה שעה (מספר האנשים שמגיעים יחד). ברירת מחדל 2." },
         serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
         nearTime:  { type: "string", description: "HH:MM: השעה שהלקוח ביקש, אם ביקש (אופציונלי)" },
+        names:     { type: "array", items: { type: "string" }, description: "השמות של כולם, הלקוח ראשון (אופציונלי). כשהם יותר ממי שעושה את הטיפול ויש את כל השמות, המערכת בוחרת את הסידור הכי קרוב ושולחת ללקוח שאלת אישור אחת לכולם." },
       },
       required: [],
     },
@@ -975,6 +976,13 @@ export async function execTool(
           for (const ds of days) {
             const plans = await computeGroupPlans(bizId, ds, count, inputServiceId as string | undefined, dur, input.nearTime as string | undefined);
             if (!plans.length) continue;
+            // All the names are known: the system proposes the closest plan itself, one question for everyone.
+            const names = (Array.isArray(input.names) ? input.names as unknown[] : []).map(n => String(n ?? "").trim()).filter(Boolean);
+            if (names.length === count && inputServiceId) {
+              const [head, ...rest] = plans[0];
+              return execTool("propose_booking", { staffId: head.staffId, serviceId: inputServiceId, date: ds, startTime: head.time, customerName: names[0],
+                others: rest.map((x, i) => ({ staffId: x.staffId, startTime: x.time, forName: names[i + 1] })) } as unknown as Record<string, string>, bizId, conversationId, callerPhone, sandbox, askText);
+            }
             return `רק ${doers} עושים את הטיפול הזה, אז ${count} באותה שעה בדיוק לא יקרה בשום יום. סידורים מוכנים ב-${ds} (${doers} יחד ומי שנשאר מיד אחריהם):\n` +
               plans.map((p, i) => `${i + 1}. ${p.map(x => `${x.time} ${x.name} [id: ${x.staffId}]`).join(" + ")}`).join("\n") +
               `\n\nהצע ללקוח את הסידור הראשון במשפט אחד, עם השעות ומי אצל מי. כשהוא מסכים, קרא מיד ל-propose_booking אחד: האדם הראשון ב-staffId ו-startTime, וכל השאר ב-others (staffId, startTime, forName). אל תשאל "מתאים?" פעם נוספת.`;
@@ -1301,7 +1309,7 @@ export async function execTool(
           if (bizId === DEMO_BUSINESS_ID && !(Array.isArray(othersIn) && othersIn.length) && conversationId) {
             const last = await prisma.conversationMessage.findFirst({ where: { conversationId, role: "user" }, orderBy: { createdAt: "desc" }, select: { content: true } });
             if (last && MORE_PEOPLE_RE.test(last.content)) {
-              return "שגיאה: הלקוח כתב שהם כמה אנשים. אל תקבע רק לו. שאל כמה הם ואיך קוראים לכל אחד (ואם צריך, איזה טיפול לכל אחד), מצא שעות עם find_parallel_slots (count = מספר האנשים, nearTime = השעה שביקש), ואז propose_booking אחד עם others לכל אחד מהם.";
+              return "שגיאה: הלקוח כתב שהם כמה אנשים. אל תקבע רק לו. שאל כמה הם ואיך קוראים לכל אחד (ואם צריך, איזה טיפול לכל אחד), מצא שעות עם find_parallel_slots (count = מספר האנשים, nearTime = השעה שביקש, names = השמות של כולם כשיש), ואז propose_booking אחד עם others לכל אחד מהם.";
             }
           }
           const pending = await findPendingProposal(bizId, proposalPhone);
