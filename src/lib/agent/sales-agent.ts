@@ -659,7 +659,8 @@ async function demoAfterTurnV2(convId: string, phone: string, state: SalesState,
   const next: SalesState = { ...state, demoTurns: turns };
   // Not while the demo is in the middle of a booking (it just offered times or asked for a name).
   const lastDemo = await prisma.conversationMessage.findFirst({ where: { conversationId: convId, role: "assistant" }, orderBy: { createdAt: "desc" }, select: { content: true } });
-  const midBooking = !!lastDemo && /\d{1,2}:\d{2}|שם|מאשר|לאשר|כרגיל|תספורת|זקן|שירות|טיפול|איזו שעה|איזה שעה|מתי/.test(lastDemo.content);
+  // The shop just asked something ("איזה יום ושעה נוח לך?", "מה עדיף לך?"): the "סיימתי" line would cut in (1.11.2026).
+  const midBooking = !!lastDemo && (/[?؟]\s*$/.test(lastDemo.content.trim()) || /\d{1,2}:\d{2}|שם|מאשר|לאשר|כרגיל|תספורת|זקן|שירות|טיפול|איזו שעה|איזה שעה|מתי/.test(lastDemo.content));
   if (turns >= 3 && !state.demoNudged && !midBooking) {
     next.demoNudged = true;
     await saveState(convId, next);

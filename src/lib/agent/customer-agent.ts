@@ -966,6 +966,11 @@ export async function execTool(
             .map(r => `${r.time}: ${r.barbers.map(b => `${b.name} [id: ${b.staffId}]`).join(" | ")}`)
             .join("\n");
         const guide = `\n\n⚠️ אלה השעות היחידות שבהן ${count} ספרים באמת פנויים יחד. קבע כל אדם אצל ספר אחר מתוך הרשומים לצד השעה, עם ה-staffId שלו. שעה שלא מופיעה כאן — אין בה ${count} ספרים פנויים, אל תציע אותה.`;
+        // More people than people who do it (3 men, 2 barbers in the demo, 1.11.2026): "יום אחר" never comes.
+        const doers = await prisma.staff.count({ where: { businessId: bizId, isActive: true, isAvailable: true, ...(inputServiceId ? { staffServices: { some: { serviceId: inputServiceId as string } } } : {}) } });
+        if (doers >= 2 && count > doers) {
+          return `רק ${doers} עושים את הטיפול הזה, אז ${count} באותה שעה בדיוק לא יקרה בשום יום. אל תציע יום אחר בשביל זה. קרא שוב ל-find_parallel_slots עם count=${doers}, והצע: ${doers} יחד באותה שעה, ומי שנשאר מיד אחריהם אצל אחד מהם (שעה = ההתחלה + משך הטיפול), הכל ב-propose_booking אחד עם others.`;
+        }
         if (inDate) {
           const rows = await computeParallelSlots(bizId, inDate as string, count, inputServiceId as string | undefined);
           if (!rows.length) {
