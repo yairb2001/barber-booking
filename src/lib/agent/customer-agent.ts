@@ -38,7 +38,7 @@ import { pushToOwner } from "@/lib/native/push";
 import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { compactCatalog } from "@/lib/agent/catalog-compact";
-import { computeDayAvailability, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
+import { computeDayAvailability, computeGroupPlans, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { isServiceList, agentSwitches, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -462,6 +462,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         date:      { type: "string", description: "תאריך YYYY-MM-DD (אופציונלי — בלעדיו מוחזר היום הקרוב עם שעה מקבילה)" },
         count:     { type: "number", description: "כמה ספרים צריכים להיות פנויים באותה שעה (מספר האנשים שמגיעים יחד). ברירת מחדל 2." },
         serviceId: { type: "string", description: "מזהה שירות (אופציונלי)" },
+        nearTime:  { type: "string", description: "HH:MM: השעה שהלקוח ביקש, אם ביקש (אופציונלי)" },
       },
       required: [],
     },
@@ -969,7 +970,16 @@ export async function execTool(
         // More people than people who do it (3 men, 2 barbers in the demo, 1.11.2026): "יום אחר" never comes.
         const doers = await prisma.staff.count({ where: { businessId: bizId, isActive: true, isAvailable: true, ...(inputServiceId ? { staffServices: { some: { serviceId: inputServiceId as string } } } : {}) } });
         if (doers >= 2 && count > doers) {
-          return `רק ${doers} עושים את הטיפול הזה, אז ${count} באותה שעה בדיוק לא יקרה בשום יום. אל תציע יום אחר בשביל זה. קרא שוב ל-find_parallel_slots עם count=${doers}, והצע: ${doers} יחד באותה שעה, ומי שנשאר מיד אחריהם אצל אחד מהם (שעה = ההתחלה + משך הטיפול), הכל ב-propose_booking אחד עם others.`;
+          const dur = inputServiceId ? (await prisma.service.findFirst({ where: { id: inputServiceId as string, businessId: bizId }, select: { durationMinutes: true } }))?.durationMinutes ?? 30 : 30;
+          const days = inDate ? [inDate as string] : Array.from({ length: 14 }, (_, d) => addDaysISO(getBusinessNow().date, d));
+          for (const ds of days) {
+            const plans = await computeGroupPlans(bizId, ds, count, inputServiceId as string | undefined, dur, input.nearTime as string | undefined);
+            if (!plans.length) continue;
+            return `רק ${doers} עושים את הטיפול הזה, אז ${count} באותה שעה בדיוק לא יקרה בשום יום. סידורים מוכנים ב-${ds} (${doers} יחד ומי שנשאר מיד אחריהם):\n` +
+              plans.map((p, i) => `${i + 1}. ${p.map(x => `${x.time} ${x.name} [id: ${x.staffId}]`).join(" + ")}`).join("\n") +
+              `\n\nהצע ללקוח את הסידור הראשון במשפט אחד, עם השעות ומי אצל מי. כשהוא מסכים, קרא מיד ל-propose_booking אחד: האדם הראשון ב-staffId ו-startTime, וכל השאר ב-others (staffId, startTime, forName). אל תשאל "מתאים?" פעם נוספת.`;
+          }
+          return `רק ${doers} עושים את הטיפול הזה, ו${inDate ? `ב-${inDate}` : "בשבועיים הקרובים"} אין שעה שבה ${doers} פנויים יחד ומיד אחריהם עוד מקום. הצע יום אחר.`;
         }
         if (inDate) {
           const rows = await computeParallelSlots(bizId, inDate as string, count, inputServiceId as string | undefined);
@@ -1289,7 +1299,7 @@ export async function execTool(
           if (bizId === DEMO_BUSINESS_ID && !(Array.isArray(othersIn) && othersIn.length) && conversationId) {
             const last = await prisma.conversationMessage.findFirst({ where: { conversationId, role: "user" }, orderBy: { createdAt: "desc" }, select: { content: true } });
             if (last && MORE_PEOPLE_RE.test(last.content)) {
-              return "שגיאה: הלקוח כתב שהם כמה אנשים. אל תקבע רק לו. שאל כמה הם ואיך קוראים לכל אחד (ואם צריך, איזה טיפול לכל אחד), מצא שעות עם find_parallel_slots (count = מספר האנשים), ואז propose_booking אחד עם others לכל אחד מהם.";
+              return "שגיאה: הלקוח כתב שהם כמה אנשים. אל תקבע רק לו. שאל כמה הם ואיך קוראים לכל אחד (ואם צריך, איזה טיפול לכל אחד), מצא שעות עם find_parallel_slots (count = מספר האנשים, nearTime = השעה שביקש), ואז propose_booking אחד עם others לכל אחד מהם.";
             }
           }
           const pending = await findPendingProposal(bizId, proposalPhone);

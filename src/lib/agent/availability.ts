@@ -20,6 +20,7 @@ import {
   generateSlots,
   getDayOfWeekISO,
   timeToMinutes,
+  minutesToTime,
   getBusinessNow,
   addDaysISO,
 } from "@/lib/utils";
@@ -238,6 +239,32 @@ export async function computeParallelSlots(
     .filter(([, barbers]) => barbers.length >= count)
     .sort(([a], [b]) => timeToMinutes(a) - timeToMinutes(b))
     .map(([time, barbers]) => ({ time, barbers }));
+}
+
+/**
+ * More people than people who do it (3 men, 2 barbers in the demo, 1.11.2026): everyone who does
+ * it starts together and the rest follow at start + duration with the same people. Closest to
+ * `near` first; each plan is one propose_booking.
+ */
+export async function computeGroupPlans(bizId: string, date: string, count: number, serviceId: string | undefined, durationMin: number, near?: string, limit = 3): Promise<{ staffId: string; name: string; time: string }[][]> {
+  const byStaff = await computeDayAvailability(bizId, date, undefined, serviceId);
+  const times = Array.from(new Set(byStaff.flatMap(s => s.slots))).sort((a, b) => timeToMinutes(a) - timeToMinutes(b));
+  const plans: { staffId: string; name: string; time: string }[][] = [];
+  for (const t of times) {
+    const first = byStaff.filter(s => s.slots.includes(t));
+    if (first.length < 2) continue;
+    const plan = first.slice(0, count).map(s => ({ staffId: s.staffId, name: s.name, time: t }));
+    for (let at = t; plan.length < count;) {
+      at = minutesToTime(timeToMinutes(at) + durationMin);
+      const next = first.filter(s => s.slots.includes(at));
+      if (!next.length) break;
+      for (const s of next) if (plan.length < count) plan.push({ staffId: s.staffId, name: s.name, time: at });
+    }
+    if (plan.length === count) plans.push(plan);
+  }
+  const target = near && /^\d{1,2}:\d{2}$/.test(near) ? timeToMinutes(near) : null;
+  if (target !== null) plans.sort((a, b) => Math.abs(timeToMinutes(a[0].time) - target) - Math.abs(timeToMinutes(b[0].time) - target));
+  return plans.slice(0, limit);
 }
 
 /** Beauty businesses: a treatment is offered only by the people who do it (no "similar service" fallback). */
