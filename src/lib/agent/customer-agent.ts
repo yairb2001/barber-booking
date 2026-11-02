@@ -1600,7 +1600,7 @@ export async function execTool(
 
       // ── ask_owner (10.10.2026) ───────────────────────────────────────────────
       case "ask_owner": {
-        if (bizId === DEMO_BUSINESS_ID) return "זו מספרת ההדגמה של צ'אטור ואין בה צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
+        if (bizId === DEMO_BUSINESS_ID) return "זה סלון ההדגמה של צ'אטור ואין בו צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
         const q = (input.question || "").trim();
         if (!q) return "חסרה שאלה.";
         const { askOwner } = await import("@/lib/agent/learn");
@@ -1613,7 +1613,7 @@ export async function execTool(
         // Chator's demo shop has no staff: what it cannot answer is a question
         // about the product, and Chator answers it (sales-agent.ts sees this
         // tool call and hands the message to the sales agent). Never mutes the chat.
-        if (bizId === DEMO_BUSINESS_ID) return "זו מספרת ההדגמה של צ'אטור ואין בה צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
+        if (bizId === DEMO_BUSINESS_ID) return "זה סלון ההדגמה של צ'אטור ואין בו צוות. כתוב ללקוח רק: \"רגע, עונה לך על זה כצ'אטור.\"";
         const reason = (input.reason || "").trim() || "הלקוח ביקש לדבר עם נציג.";
         const { notified, targetStaffName } = await escalateToHuman({
           bizId,

@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { C, prefetchCrm } from "./ui";
 import { CardHost } from "./CardModal";
 import { AREAS, areaOf, CrmScope } from "./Areas";
+import { DEMO_BUSINESS_ID } from "@/lib/demo-widget";
 
 /**
  * Chator CRM shell — direction A ("חדר בקרה", chosen 9.10.2026): a petrol side
@@ -76,6 +77,12 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
   if (allowed === null) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-500 font-heebo" style={{ background: C.ground }}>טוען…</div>;
   if (!allowed) return <div dir="rtl" className="min-h-screen flex items-center justify-center text-slate-600 font-heebo" style={{ background: C.ground }}>ה-CRM פתוח רק לבעל הפלטפורמה.</div>;
 
+  // The demo salon as its owner sees it (Yair, 2.11.2026: "אופציה ב-CRM לראות את המספרה של דני").
+  async function enterDemo() {
+    const r = await fetch("/api/admin/super/impersonate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ businessId: DEMO_BUSINESS_ID }) });
+    if (r.ok) window.location.href = "/admin";
+  }
+
   const current = member ? "reports" : areaOf(pathname)?.key;
   const nav = member ? REPORTS_ONLY : AREAS;
   const badge = (key: string) => (key === "customers" ? requests + reports : 0);
@@ -99,6 +106,7 @@ export default function CrmShell({ children }: { children: React.ReactNode }) {
           </>
         ) : (
           <>
+            <button type="button" onClick={() => void enterDemo()} className="text-[13px] text-start" style={{ color: "#A9C9C4" }}>הסלון של דני (הדמו)</button>
             <Link href="/admin/super" className="text-[13px]" style={{ color: "#A9C9C4" }}>מסך הפלטפורמה הישן</Link>
             <Link href="/admin" className="text-[13px]" style={{ color: "#A9C9C4" }}>חזרה למספרה</Link>
           </>

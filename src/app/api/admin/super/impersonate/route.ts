@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { isSuperAdmin, SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
+import { isSuperAdmin } from "@/lib/super-admin";
 import { signSession, verifySession, COOKIE_NAME, COOKIE_OPTIONS } from "@/lib/auth";
 
 const ORIGIN_COOKIE = "super_origin";
@@ -50,7 +50,8 @@ export async function DELETE(req: NextRequest) {
   if (!originSession) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const res = NextResponse.json({ ok: true, to: originSession.businessId === SUPER_ADMIN_BUSINESS_ID ? "/admin/super" : "/admin/crm" });
+  // Back to the CRM, the platform owner's home now (the old /admin/super screen is a link there).
+  const res = NextResponse.json({ ok: true, to: "/admin/crm" });
   res.cookies.set(COOKIE_NAME, origin!, COOKIE_OPTIONS);
   res.cookies.set(ORIGIN_COOKIE, "", { ...COOKIE_OPTIONS, maxAge: 0 });
   return res;

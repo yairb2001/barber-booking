@@ -85,7 +85,7 @@ const LANDING_TEXT_RE = /ראיתי את הדמו באתר/;
  * Plain "רוצה לקבוע תור" keeps the explanation first (V2_ENTRY_INTENT, decision 9.10).
  */
 const TRY_BOOK_RE = /לנסות\s+לקבוע\s+(לי\s+)?תור|תור\s+לדוגמה/;
-const TRY_BOOK_ENTRY = ["היי! 👋 כאן המספרה של דני", "למתי תרצה לקבוע? היום, מחר או יום אחר?"];
+const TRY_BOOK_ENTRY = ["היי! 👋 כאן הסלון של דני", "למתי תרצה לקבוע? היום, מחר או יום אחר?"];
 // Meta's own line when the ad's buttons don't show (WhatsApp Web, an old app, a carousel card):
 // "Link:\n\nHello! Can I get more info on this?". It came from our ad, so it opens the demo like
 // a button and asks what to book, as the three buttons do (30.10.2026, the marketing manager).
@@ -135,7 +135,7 @@ const WANTS_TRY_RE = /לנסות|דמו|לראות איך|איך זה עובד|�
 const CHOOSE_DEMO_RE = /דמו|לנסות|תור|קודם לנסות|בעצמי/;
 const CHOOSE_CALL_RE = /שיחה|לדבר|טלפון|תתקשר|יאיר/;
 
-const REVEAL_TEXT = "היי! כאן המספרה של דני, מספרת ההדגמה של Chator. אפשר לקבוע פה תור כמו לקוח רגיל ולראות איך הסוכן עובד. התור לא אמיתי, אז אין לחץ.";
+const REVEAL_TEXT = "היי! כאן הסלון של דני, סלון ההדגמה של Chator. אפשר לקבוע פה תור כמו לקוח רגיל ולראות איך הסוכן עובד. התור לא אמיתי, אז אין לחץ.";
 const PITCH_BUBBLES = [
   "שמת לב? קבעת תור בלי שאף אחד ענה לך. ככה זה עובד אצל מספרות שעובדות עם Chator, על הוואטסאפ של המספרה עצמה.",
   "אתה ספר או בעל מספרה? אם כן, אשמח להראות לך איך זה ייראה אצלך.",
@@ -144,7 +144,7 @@ const PITCH_BUBBLES = [
 const REPLY_CAP_PER_DAY = 30;
 const OPT_OUT_REPLY = "הוסרת. לא נשלח לך יותר הודעות.";
 const OWNER_REPLY = "קיבלתי, מעביר לצוות של Chator ויחזרו אליך בהקדם.";
-const LEAD_DEMO_OPENER = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה איך הלקוחות שלך יקבלו מענה.";
+const LEAD_DEMO_OPENER = "מעולה. מעכשיו אני הסלון של דני, סלון ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה איך הלקוחות שלך יקבלו מענה.";
 // ── Version 2 (spec "הסוכן של צ'אטור", decisions 10.10.2026) ──
 // "כאן צ'אטור"; a stranger is a prospect first (not dropped into the demo);
 // the demo is entered on request and left with one message; the warm ones
@@ -159,8 +159,8 @@ const HANDOFF_WAIT = "השיחה אצל טיפול אנושי, יחזרו אלי
 const RESET_RE = /^איפוס$/;
 const RESET_LINE = "התחלנו מחדש. מההודעה הבאה אני מתייחס אליך כמו לפונה חדש.";
 const SIGNUP_URL = `${process.env.NEXT_PUBLIC_APP_URL || "https://barber-booking-indol.vercel.app"}/signup`;
-const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
-const V2_ENTRY = "מעולה. מעכשיו אני המספרה של דני, מספרת ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
+const V2_ENTRY_LANDING = "היי, כאן צ'אטור. מעכשיו אני הסלון של דני, סלון ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\", ותראה מה הלקוחות שלך יקבלו. התור לא אמיתי.";
+const V2_ENTRY = "מעולה. מעכשיו אני הסלון של דני, סלון ההדגמה. תכתוב לי כמו לקוח, למשל \"יש תור מחר בערב?\". התור לא אמיתי, וכשתסיים פשוט תכתוב \"סיימתי\".";
 // A first message that sounds like a customer booking a haircut opens the demo
 // shop right away; one about the product starts the getting-to-know questions
 // (Yair, 14.10.2026: "אם ההקשר הוא היי אני רוצה לקבוע תור לתספורת, זה מפעיל את
@@ -170,7 +170,7 @@ const ABOUT_SYSTEM_RE = /מערכת|צ['׳]אטור|chator|סוכן|בוט|פר�
 /** Two bubbles like DOMINANT: who we are, then the usual question (Yair, 1.11.2026: "התור לא
  *  אמיתי בסוגריים, ואז השאלה הרגילה ... בשני בועות שונות"). What he already said is not asked again;
  *  a day or a time in his first message goes to the demo shop's agent, which offers real times. */
-const V2_ENTRY_INTENT = "היי, כאן המספרה של דני, מספרת ההדגמה של צ'אטור (התור לא אמיתי)";
+const V2_ENTRY_INTENT = "היי, כאן הסלון של דני, סלון ההדגמה של צ'אטור (התור לא אמיתי)";
 const INTENT_WHEN_RE = /היום|מחר|ראשון|שני|שלישי|רביעי|חמישי|שישי|השבוע|בערב|בבוקר|בצהריים|\d{1,2}[:.]\d{2}|ב-?\d{1,2}\b/;
 const INTENT_WHAT_RE = /גבר|(^|[\sל])נשים|אישה|אשתי|ציפורניים|לק ג|גבות|שעווה|טיפול פנים|גוונים|צבע|(^|\s)פן|זקן|החלקה/;
 const intentQuestion = (text: string) => INTENT_WHAT_RE.test(text) ? "לאיזה יום ושעה נוח לך?" : "גברים או נשים? ולאיזה יום ושעה נוח לך?";
@@ -710,7 +710,7 @@ const NOT_INTERESTED_TOOL: Anthropic.Tool = {
 // v2
 const ENTER_DEMO_TOOL: Anthropic.Tool = {
   name: "enter_demo",
-  description: "הוא רוצה לנסות בעצמו לקבוע תור כמו לקוח. המערכת שולחת את משפט הכניסה לדמו ומעבירה אותו למספרת ההדגמה. אל תכתוב בעצמך את משפט הכניסה.",
+  description: "הוא רוצה לנסות בעצמו לקבוע תור כמו לקוח. המערכת שולחת את משפט הכניסה לדמו ומעבירה אותו לסלון ההדגמה. אל תכתוב בעצמך את משפט הכניסה.",
   input_schema: { type: "object", properties: {} },
 };
 // Instagram: no phone in the chat, so the call needs his mobile too.
@@ -730,7 +730,7 @@ const CAPTURE_TOOL_IG: Anthropic.Tool = {
 };
 const DEMO_LINK_TOOL: Anthropic.Tool = {
   name: "send_demo_link",
-  description: "הוא רוצה לנסות בעצמו. המערכת שולחת לו קישור לוואטסאפ של צ'אטור, ושם הוא קובע תור כמו לקוח במספרת ההדגמה. אל תכתוב בעצמך קישור.",
+  description: "הוא רוצה לנסות בעצמו. המערכת שולחת לו קישור לוואטסאפ של צ'אטור, ושם הוא קובע תור כמו לקוח בסלון ההדגמה. אל תכתוב בעצמך קישור.",
   input_schema: { type: "object", properties: {} },
 };
 const PREP_NOTE_TOOL: Anthropic.Tool = {
@@ -795,7 +795,7 @@ ${ctx}
 - כשאתה מציע שיחה, תמיד עם שתי שעות מהרשימה למעלה, במילים של העמודה "איך לומר". "הראשונה" / "השנייה" = לפי הסדר שבו הצעת: propose_call מיד. propose_call רק אחרי שבחר שעה שהצעת או זמן שקיים ברשימה.
 - כל הודעה נגמרת בדבר אחד בלבד: שאלה אחת, או הצעה אחת (להירשם בחינם עם send_signup_link, או שיחה קצרה). לא שניהם, ולא אותה הצעה פעמיים ברצף.
 - מחיר: אם שואל, אמור במילים האלה: "${PRICE_TEXT_V2}" את המסלולים הגדולים (367, 467) תזכיר רק אם שואל על מספרה גדולה או על המסלולים. אף מספר אחר, אף הנחה.
-- אין לך דרך לקבוע או לבטל תורים במספרת ההדגמה: לעולם אל תכתוב שקבעת, הזזת או ביטלת תור. מה שנקבע בדמו נקבע באמת ביומן של מספרת ההדגמה, אז לעולם אל תגיד שהדמו לא קובע באמת. מי שכותב על התורים שלו או על עוד אנשים הוא לקוח, לא בעל מספרה: אל תמכור לו, ענה שאפשר לקבוע גם להם ממש כאן.
+- אין לך דרך לקבוע או לבטל תורים בסלון ההדגמה: לעולם אל תכתוב שקבעת, הזזת או ביטלת תור. מה שנקבע בדמו נקבע באמת ביומן של סלון ההדגמה, אז לעולם אל תגיד שהדמו לא קובע באמת. מי שכותב על התורים שלו או על עוד אנשים הוא לקוח, לא בעל מספרה: אל תמכור לו, ענה שאפשר לקבוע גם להם ממש כאן.
 - לא ממציא פיצ'רים, מספרים, לקוחות או תוצאות. פיצ'ר שלא כתוב בידע: אמור בכנות שזה לא קיים היום. לא משווה למתחרים בשם.
 - לא חוזר על שאלה שכבר נשאלה, לא נכנס ללופים, ולא מנחש שכתבו לך בטעות. לא שואל אם יש לו מספרה.
 - שאל שוב משהו שכבר ענית עליו: לא חוזרים על ההסבר. משפט אחד, ואז הרשמה בחינם (send_signup_link).
@@ -831,7 +831,7 @@ function salesSystem(state: SalesState, senderName: string | null, rep: string, 
   return `אתה נציג המכירות של Chator (צ'אטור): מערכת ניהול תורים למספרות עם סוכן AI שעונה ללקוחות בוואטסאפ של המספרה. אתה מתכתב בוואטסאפ, על המספר של Chator.
 ${isLead
   ? `מולך ליד רשום. המטרה: לקבוע לו שיחה של 10 דקות עם ${rep} (הנציג מתקשר אליו). אם יש לו שיחה קבועה, עזור לו להזיז או לבטל, אל תציע שיחה חדשה.`
-  : `מולך מישהו שניסה את מספרת ההדגמה ("המספרה של דני"). המטרה: השם שלו, ואז capture_lead (שם המספרה לא חובה). שאלה אחת בכל הודעה.`}
+  : `מולך מישהו שניסה את סלון ההדגמה ("הסלון של דני"). המטרה: השם שלו, ואז capture_lead (שם המספרה לא חובה). שאלה אחת בכל הודעה.`}
 ${known ? `ידוע: ${known}.` : ""}${senderName ? ` השם בוואטסאפ: ${senderName}.` : ""}
 
 ${ctx}
@@ -1080,7 +1080,7 @@ async function demoLinkLine(): Promise<string> {
   const biz = await prisma.business.findUnique({ where: { id: DEMO_BUSINESS_ID }, select: { whatsappNumber: true } });
   const n = normalizeIsraeliPhone(biz?.whatsappNumber ?? "");
   if (!n) return `כרגע אין לי קישור לדמו. רוצה שיחת אפיון קצרה עם ${await repName(null)} במקום?`;
-  return `הנה הקישור לוואטסאפ של צ'אטור. לוחצים, שולחים את ההודעה שכבר כתובה, ושם קובעים תור כמו לקוח במספרת ההדגמה: https://wa.me/${n}?text=${encodeURIComponent(IG_DEMO_TEXT)}`;
+  return `הנה הקישור לוואטסאפ של צ'אטור. לוחצים, שולחים את ההודעה שכבר כתובה, ושם קובעים תור כמו לקוח בסלון ההדגמה: https://wa.me/${n}?text=${encodeURIComponent(IG_DEMO_TEXT)}`;
 }
 
 /**
