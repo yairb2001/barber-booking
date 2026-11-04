@@ -39,6 +39,7 @@ import { notifyOwnerWeb, notifyStaffWeb } from "@/lib/native/web-push";
 import { pushChatEvent } from "@/lib/native/chat-push";
 import { compactCatalog } from "@/lib/agent/catalog-compact";
 import { computeDayAvailability, computeGroupPlans, computeParallelSlots, resolveStaffService, staffDoesService } from "@/lib/agent/availability";
+import { worksLinkBubble, attachWantedPhoto } from "@/lib/works";
 import { parseAvailabilityAsk } from "@/lib/agent/availability-focus";
 import { runOpenAiAgentLoop } from "@/lib/agent/openai-driver";
 import { isServiceList, agentSwitches, compileSetupConfig, type SetupConfig } from "@/lib/agent/setup-fields";
@@ -498,7 +499,7 @@ const BASE_TOOLS: Anthropic.Tool[] = [
         mentionStaff: { type: "boolean", description: "true רק אם הלקוח ביקש ספר בשם או שסוכם על הקבוע שלו — אז שם הספר מופיע בשאלה." },
         originalRequest: { type: "string", description: "אופציונלי: מה שרצה במקור אם לא היה פנוי (למשל 'יום חמישי בבוקר') — המערכת תציע לו רשימת המתנה אחרי הקביעה." },
         customerConfirmed: { type: "boolean", description: "true רק כשהלקוח כבר ענה בחיוב, במילים שלו, לשאלת האישור שהמערכת שלחה על בדיוק התור הזה — אז המערכת קובעת מיד בלי לשאול שוב." },
-        note: { type: "string", description: "אופציונלי — הערה לספר: התור עבור מישהו אחר ('התור בפועל עבור: <שם>') או העדפה שהלקוח ציין ('רק תספורת בלי זקן')." },
+        note: { type: "string", description: "אופציונלי — הערה לספר: התור עבור מישהו אחר ('התור בפועל עבור: <שם>'), העדפה שהלקוח ציין ('רק תספורת בלי זקן'), או תמונה שבחר מהעבודות ('כמו בתמונה: <שם התמונה> <הקישור>', מהודעה שמתחילה ב'אני רוצה כמו בתמונה')." },
         others: { type: "array", description: "כשמבקש כמה תורים באותו יום (לו ולאח/בן): התורים הנוספים — כולם באותה קריאה, אישור אחד.", items: { type: "object", properties: { startTime: { type: "string" }, staffId: { type: "string", description: "ריק = אותו ספר" }, forName: { type: "string", description: "שם האדם" } }, required: ["startTime", "forName"] } },
       },
       required: ["staffId", "serviceId", "date", "startTime"],
@@ -2516,6 +2517,7 @@ async function runCustomerAgentCore(opts: {
 }, ctx: AgentRunCtx = {}): Promise<void> {
   const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
   if (sandbox) sandbox.proposalPhone = phone;
+  const turnStart = new Date();
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -2559,6 +2561,9 @@ async function runCustomerAgentCore(opts: {
       data: { lastMessageAt: new Date() },
     });
   }
+
+  // "כזה אני רוצה" from the works page goes on her next appointment (works.ts).
+  if (!sandbox) await attachWantedPhoto(businessId, phone, incomingText).catch(e => console.error("[agent] wanted photo", e));
 
   // The owner turned the agent off for this customer for good: the message is
   // saved for the inbox, nothing answers (every caller, not only the webhook).
@@ -3005,6 +3010,9 @@ async function runCustomerAgentCore(opts: {
   const allBubbles = assistantText.split(/\n\s*\n+/).map(b => b.trim()).filter(Boolean);
   const forCustomer = allBubbles.filter(b => !TOOL_TALK.test(b));
   const bubbles = forCustomer.length ? forCustomer : allBubbles;
+  // Times for a treatment with works on the site: one more bubble with the link (works.ts).
+  const works = await worksLinkBubble({ biz, conversationId: conversation.id, since: turnStart }).catch(() => null);
+  if (works) bubbles.push(works);
 
   for (let i = 0; i < bubbles.length; i++) {
     await prisma.conversationMessage.create({

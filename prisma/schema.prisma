@@ -721,6 +721,9 @@ model Story {
   id          String   @id @default(uuid())
   businessId  String   @map("business_id")
   staffId     String?  @map("staff_id")    // optional — who this work belongs to
+  // The treatment it shows (גוונים, החלקה): a tab on the works page, and the
+  // link the agent sends when a customer asks for that treatment (4.11.2026).
+  serviceId   String?  @map("service_id")
   mediaUrl    String   @map("media_url")   // image URL
   caption     String?
   isActive    Boolean  @default(true) @map("is_active")

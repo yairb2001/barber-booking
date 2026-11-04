@@ -30,10 +30,15 @@ export async function POST(req: NextRequest) {
     ? (body.staffId ?? null)
     : (session.staffId ?? null);
 
+  // The treatment must be this business's own.
+  const serviceId = typeof body.serviceId === "string" && body.serviceId
+    && await prisma.service.count({ where: { id: body.serviceId, businessId: business.id } }) ? body.serviceId : null;
+
   const story = await prisma.story.create({
     data: {
       businessId: business.id,
       staffId,
+      serviceId,
       mediaUrl: body.mediaUrl,
       caption: body.caption ?? null,
       sortOrder: body.sortOrder ?? 0,

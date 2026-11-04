@@ -909,7 +909,7 @@ export default function HomePage() {
       {!loading && stories.length > 0 && (
         <section className="py-10 border-b border-slate-100" style={{ background: "var(--surface)" }}>
           <SecLabel label="העבודות שלנו" sub={g("בחר סגנון", "בחרי סגנון")}
-            action={<Link href={publicHref(slug, "/book")} className="text-[12px] font-semibold" style={{ color: brand }}>{g("קבע תור", "קבעי תור")} →</Link>}
+            action={<Link href={publicHref(slug, "/works")} className="h-11 inline-flex items-center text-[13px] font-semibold" style={{ color: brand }}>לכל העבודות ←</Link>}
           />
           <PortfolioCarousel
             works={galleryStories.map(s => ({

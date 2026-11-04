@@ -3,8 +3,10 @@ import { useVocab } from "@/components/VocabProvider";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { worksKey } from "@/lib/works-shared";
 
 type StaffOption = { id: string; name: string; avatarUrl: string | null };
+type ServiceOption = { id: string; name: string; isVisible: boolean };
 
 type Story = {
   id: string;
@@ -12,27 +14,52 @@ type Story = {
   caption: string | null;
   isActive: boolean;
   sortOrder: number;
-  expiresAt: string | null;
-  createdAt: string;
+  serviceId: string | null;
   staff: { id: string; name: string; avatarUrl: string | null } | null;
 };
 
+/** The sheet: a new work (no id) for a treatment, or an existing one to edit. */
+type Draft = { id?: string; mediaUrl: string; caption: string; staffId: string; serviceId: string; isActive: boolean };
+
+const input = "w-full border border-neutral-200 rounded-xl px-3 h-11 text-[15px] focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white";
+
+/**
+ * The works, by treatment (skeleton approved 4.11.2026): each treatment with
+ * works gets a link, the agent sends it, and the works page shows it as a tab.
+ */
 export default function AdminStoriesPage() {
   const v = useVocab();
   const [stories, setStories] = useState<Story[]>([]);
   const [staffList, setStaffList] = useState<StaffOption[]>([]);
+  const [services, setServices] = useState<ServiceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isOwner, setIsOwner] = useState(true);
   const [myStaffId, setMyStaffId] = useState<string | null>(null);
+  const [publicPath, setPublicPath] = useState("/");
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  // New story form
-  const [newUrl, setNewUrl] = useState("");
-  const [newCaption, setNewCaption] = useState("");
-  const [newExpiry, setNewExpiry] = useState("");
-  const [newStaffId, setNewStaffId] = useState<string>("");
-  const [showAdd, setShowAdd] = useState(false);
+  async function load() {
+    const [storiesData, meData, staffData, servicesData] = await Promise.all([
+      fetch("/api/admin/stories").then(r => r.json()),
+      fetch("/api/admin/me").then(r => r.ok ? r.json() : null),
+      fetch("/api/staff").then(r => r.json()).catch(() => []),
+      fetch("/api/admin/services").then(r => r.json()).catch(() => []),
+    ]);
+    setStories(Array.isArray(storiesData) ? storiesData : []);
+    if (meData) {
+      setIsOwner(meData.isOwner ?? true);
+      setMyStaffId(meData.staff?.id ?? null);
+      if (meData.publicPath) setPublicPath(meData.publicPath);
+    }
+    setStaffList(Array.isArray(staffData) ? staffData : []);
+    setServices(Array.isArray(servicesData) ? servicesData.filter((s: ServiceOption) => s.isVisible) : []);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); }, []);
 
   async function uploadFile(file: File) {
     setUploading(true);
@@ -43,253 +70,182 @@ export default function AdminStoriesPage() {
     const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
     const data = await res.json();
     setUploading(false);
-    if (data.url) setNewUrl(data.url);
+    if (data.url) setDraft(d => d && { ...d, mediaUrl: data.url });
     else alert(data.error || "שגיאה בהעלאת תמונה");
   }
 
-  async function load() {
-    const [storiesData, meData, staffData] = await Promise.all([
-      fetch("/api/admin/stories").then(r => r.json()),
-      fetch("/api/admin/me").then(r => r.ok ? r.json() : null),
-      fetch("/api/staff").then(r => r.json()).catch(() => []),
-    ]);
-    setStories(Array.isArray(storiesData) ? storiesData : []);
-    if (meData) {
-      setIsOwner(meData.isOwner ?? true);
-      setMyStaffId(meData.staff?.id ?? null);
-    }
-    setStaffList(Array.isArray(staffData) ? staffData : []);
-    setLoading(false);
-  }
-
-  useEffect(() => { load(); }, []);
-
-  async function addStory() {
-    if (!newUrl.trim()) return;
+  async function save() {
+    if (!draft?.mediaUrl) return;
     setSaving(true);
-    await fetch("/api/admin/stories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mediaUrl: newUrl.trim(),
-        caption: newCaption.trim() || null,
-        expiresAt: newExpiry || null,
-        sortOrder: stories.length,
-        // owner passes selected staff, barber passes own id
-        staffId: isOwner ? (newStaffId || null) : myStaffId,
-      }),
-    });
-    setNewUrl("");
-    setNewCaption("");
-    setNewExpiry("");
-    setNewStaffId("");
-    setShowAdd(false);
+    const body = { caption: draft.caption.trim() || null, serviceId: draft.serviceId || null, staffId: draft.staffId || null };
+    if (draft.id) {
+      await fetch(`/api/admin/stories/${draft.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, isActive: draft.isActive }) });
+    } else {
+      await fetch("/api/admin/stories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // A barber's work is always his own (the API enforces it too).
+        body: JSON.stringify({ ...body, mediaUrl: draft.mediaUrl, sortOrder: stories.length, staffId: isOwner ? body.staffId : myStaffId }),
+      });
+    }
+    setDraft(null);
     setSaving(false);
     load();
   }
 
-  async function toggleActive(id: string, current: boolean) {
-    await fetch(`/api/admin/stories/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: !current }),
-    });
-    load();
-  }
-
-  async function deleteStory(id: string) {
-    if (!confirm("למחוק תמונה זו מהגלריה?")) return;
+  async function remove(id: string) {
+    if (!confirm("למחוק את התמונה?")) return;
     await fetch(`/api/admin/stories/${id}`, { method: "DELETE" });
+    setDraft(null);
     load();
   }
 
-  async function reorder(id: string, direction: -1 | 1) {
-    const idx = stories.findIndex(s => s.id === id);
-    if (idx < 0) return;
-    const newIdx = idx + direction;
-    if (newIdx < 0 || newIdx >= stories.length) return;
-
-    const reordered = [...stories];
-    [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
-
+  // Swap with the neighbour in the same treatment's row.
+  async function move(id: string, direction: -1 | 1) {
+    const row = stories.filter(s => s.serviceId === stories.find(x => x.id === id)?.serviceId);
+    const i = row.findIndex(s => s.id === id), j = i + direction;
+    if (i < 0 || j < 0 || j >= row.length) return;
     await Promise.all([
-      fetch(`/api/admin/stories/${reordered[idx].id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sortOrder: idx }),
-      }),
-      fetch(`/api/admin/stories/${reordered[newIdx].id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sortOrder: newIdx }),
-      }),
+      fetch(`/api/admin/stories/${row[i].id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sortOrder: row[j].sortOrder }) }),
+      fetch(`/api/admin/stories/${row[j].id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sortOrder: row[i].sortOrder === row[j].sortOrder ? row[j].sortOrder - direction : row[i].sortOrder }) }),
     ]);
+    setDraft(null);
     load();
   }
+
+  async function copyLink(serviceId: string) {
+    const url = `${window.location.origin}${publicPath === "/" ? "" : publicPath}/works?s=${worksKey(serviceId)}`;
+    await navigator.clipboard.writeText(url).catch(() => {});
+    setCopied(serviceId);
+    setTimeout(() => setCopied(c => (c === serviceId ? null : c)), 2000);
+  }
+
+  const known = new Set(services.map(s => s.id));
+  const loose = stories.filter(s => !s.serviceId || !known.has(s.serviceId));
+  const openNew = (serviceId: string) => setDraft({ mediaUrl: "", caption: "", staffId: isOwner ? "" : (myStaffId ?? ""), serviceId, isActive: true });
+  const openEdit = (s: Story) => isOwner && setDraft({ id: s.id, mediaUrl: s.mediaUrl, caption: s.caption ?? "", staffId: s.staff?.id ?? "", serviceId: s.serviceId ?? "", isActive: s.isActive });
+
+  const thumbs = (list: Story[], serviceId: string | null) => (
+    <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+      {list.map(s => (
+        <button key={s.id} type="button" onClick={() => openEdit(s)} aria-label={s.caption || "עבודה"}
+          className={`relative w-[72px] h-[88px] shrink-0 rounded-xl overflow-hidden bg-stone-100 ${s.isActive ? "" : "opacity-40"}`}>
+          <img src={s.mediaUrl} alt="" className="w-full h-full object-cover" />
+        </button>
+      ))}
+      {serviceId && (
+        <button type="button" onClick={() => openNew(serviceId)} aria-label="הוספת תמונה"
+          className="w-[72px] h-[88px] shrink-0 rounded-xl border-2 border-dashed border-neutral-300 text-neutral-500 text-2xl hover:bg-neutral-50 transition">+</button>
+      )}
+    </div>
+  );
 
   return (
-    <div className="p-6 overflow-auto h-full" dir="rtl">
-      <Link href="/admin/settings/storefront" className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-800 mb-6 transition-colors">
+    <div className="p-4 sm:p-6 overflow-auto h-full" dir="rtl">
+      <Link href="/admin/settings/storefront" className="inline-flex items-center gap-1 h-11 text-sm text-neutral-500 hover:text-neutral-800 transition-colors">
         ← הגדרות עסק
       </Link>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">עבודות נבחרות</h1>
-          <p className="text-neutral-500 text-sm mt-1">מוצגות בדף הבית תחת "העבודות שלנו"</p>
-        </div>
-        <button
-          onClick={() => setShowAdd(true)}
-          className="bg-teal-600 text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 transition"
-        >
-          + הוסף תמונה
-        </button>
+      <div className="mb-5">
+        <h1 className="text-2xl font-bold text-neutral-900">העבודות</h1>
+        <p className="text-neutral-500 text-[15px] mt-1">כל טיפול עם עבודות מקבל קישור, והסוכן שולח אותו ללקוחות שמבקשים אותו.</p>
       </div>
 
       {loading ? (
         <div className="text-center py-16 text-neutral-400">טוען...</div>
-      ) : stories.length === 0 ? (
-        <div className="text-center py-16 text-neutral-400">
-          <p className="text-4xl mb-4">🖼️</p>
-          <p>אין תמונות עדיין — הוסף את הראשונה!</p>
-        </div>
       ) : (
         <div className="space-y-3 max-w-2xl">
-          {stories.map((story, idx) => (
-            <div
-              key={story.id}
-              className={`bg-white rounded-2xl border p-4 flex items-center gap-4 transition ${
-                story.isActive ? "border-neutral-200" : "border-neutral-100 opacity-60"
-              }`}
-            >
-              {/* Thumbnail */}
-              <div className="w-16 h-16 rounded-xl overflow-hidden bg-stone-100 flex-shrink-0">
-                <img
-                  src={story.mediaUrl}
-                  alt={story.caption || ""}
-                  className="w-full h-full object-cover"
-                  onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                {/* Staff attribution */}
-                {story.staff ? (
-                  <div className="flex items-center gap-1.5 mb-1">
-                    {story.staff.avatarUrl ? (
-                      <img src={story.staff.avatarUrl} className="w-5 h-5 rounded-full object-cover border border-slate-200" alt="" />
-                    ) : (
-                      <div className="w-5 h-5 rounded-full bg-teal-100 flex items-center justify-center text-[9px] text-teal-700 font-bold">
-                        {story.staff.name[0]}
-                      </div>
-                    )}
-                    <span className="text-xs font-semibold text-slate-700">{story.staff.name}</span>
-                  </div>
-                ) : (
-                  <p className="text-xs text-slate-400 mb-1">ללא שיוך ל{v.staff}</p>
-                )}
-                {story.caption && (
-                  <p className="text-sm text-neutral-600 truncate">{story.caption}</p>
-                )}
-                {story.expiresAt && (
-                  <p className="text-[11px] text-slate-400 mt-0.5">
-                    פג תוקף: {new Date(story.expiresAt).toLocaleDateString("he-IL")}
-                  </p>
-                )}
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="flex flex-col gap-0.5">
-                  <button onClick={() => reorder(story.id, -1)} disabled={idx === 0}
-                    className="text-neutral-400 hover:text-neutral-700 disabled:opacity-20 text-xs px-1.5 py-0.5 rounded hover:bg-neutral-100 transition">▲</button>
-                  <button onClick={() => reorder(story.id, 1)} disabled={idx === stories.length - 1}
-                    className="text-neutral-400 hover:text-neutral-700 disabled:opacity-20 text-xs px-1.5 py-0.5 rounded hover:bg-neutral-100 transition">▼</button>
+          {loose.length > 0 && (
+            <section className="bg-white rounded-2xl border border-neutral-200 p-4">
+              <h2 className="font-bold text-neutral-900 text-[16px]">בלי טיפול</h2>
+              <p className="text-[13px] text-neutral-500 mt-0.5">מופיעות בדף הבית ובלשונית &quot;הכל&quot;. {isOwner ? "לחיצה על תמונה כדי לבחור לה טיפול." : ""}</p>
+              {thumbs(loose, null)}
+            </section>
+          )}
+          {services.map(svc => {
+            const list = stories.filter(s => s.serviceId === svc.id);
+            const live = list.filter(s => s.isActive).length;
+            return (
+              <section key={svc.id} className="bg-white rounded-2xl border border-neutral-200 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-bold text-neutral-900 text-[16px] min-w-0 truncate">{svc.name}</h2>
+                  {live > 0 ? (
+                    <button type="button" onClick={() => copyLink(svc.id)} className="shrink-0 h-9 text-[13px] text-teal-700 font-semibold">
+                      {live} {live === 1 ? "תמונה" : "תמונות"} · {copied === svc.id ? "הקישור הועתק" : "העתק קישור"}
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[13px] text-neutral-400">אין עדיין</span>
+                  )}
                 </div>
-                <button onClick={() => toggleActive(story.id, story.isActive)}
-                  className={`text-xs px-3 py-1.5 rounded-full border transition ${
-                    story.isActive ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-neutral-200 text-neutral-400"
-                  }`}>
-                  {story.isActive ? "מוצג" : "מוסתר"}
-                </button>
-                <button onClick={() => deleteStory(story.id)}
-                  className="text-xs px-3 py-1.5 rounded-full border border-red-100 text-red-400 hover:bg-red-50 transition">
-                  מחק
-                </button>
-              </div>
-            </div>
-          ))}
+                {thumbs(list, svc.id)}
+                {live === 0 && <p className="text-[13px] text-amber-700 mt-2">אין עבודות, אז הסוכן לא ישלח קישור לטיפול הזה.</p>}
+              </section>
+            );
+          })}
         </div>
       )}
 
-      {/* Add Modal */}
-      {showAdd && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setShowAdd(false)}>
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} dir="rtl">
-            <h3 className="font-bold text-neutral-900 mb-5 text-lg">הוסף תמונה לגלריה</h3>
+      {draft && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 sm:p-4" onClick={() => setDraft(null)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full max-w-sm shadow-2xl max-h-[92vh] overflow-y-auto" onClick={e => e.stopPropagation()} dir="rtl" role="dialog" aria-modal="true" aria-label={draft.id ? "עריכת תמונה" : "הוספת תמונה"}>
+            <h3 className="font-bold text-neutral-900 mb-4 text-lg">{draft.id ? "עריכת תמונה" : "הוספת תמונה"}</h3>
             <div className="space-y-3">
+              {draft.mediaUrl ? (
+                <div className="w-full aspect-[4/5] max-h-72 rounded-xl overflow-hidden bg-stone-100">
+                  <img src={draft.mediaUrl} alt="" className="w-full h-full object-cover" />
+                </div>
+              ) : (
+                <label className="flex items-center justify-center h-28 rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 text-[15px] font-medium text-slate-700 cursor-pointer hover:bg-slate-100 transition">
+                  {uploading ? "מעלה תמונה..." : "📷 בחירת תמונה מהמכשיר"}
+                  <input type="file" accept="image/*" className="hidden" disabled={uploading}
+                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
+                </label>
+              )}
 
-              {/* Staff picker — owner only */}
+              <div>
+                <label className="text-[13px] text-neutral-500 block mb-1">טיפול</label>
+                <select value={draft.serviceId} onChange={e => setDraft({ ...draft, serviceId: e.target.value })} className={input}>
+                  <option value="">בלי טיפול</option>
+                  {services.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
               {isOwner && staffList.length > 0 && (
                 <div>
-                  <label className="text-xs text-neutral-500 block mb-1.5">שייך ל{v.staff}</label>
-                  <select
-                    value={newStaffId}
-                    onChange={e => setNewStaffId(e.target.value)}
-                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
-                  >
-                    <option value="">ללא שיוך</option>
-                    {staffList.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
+                  <label className="text-[13px] text-neutral-500 block mb-1">מי עשה</label>
+                  <select value={draft.staffId} onChange={e => setDraft({ ...draft, staffId: e.target.value })} className={input}>
+                    <option value="">בלי שיוך ל{v.staff}</option>
+                    {staffList.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
               )}
 
-              {/* Barber — show their own name (auto-attributed) */}
-              {!isOwner && myStaffId && (
-                <div className="flex items-center gap-2 bg-teal-50 border border-teal-200 rounded-lg px-3 py-2">
-                  <span className="text-xs text-teal-700 font-medium">📌 התמונה תשויך אוטומטית אליך</span>
-                </div>
-              )}
-
-              {/* File upload */}
               <div>
-                <label className="text-xs text-neutral-500 block mb-1.5">העלאה מהמכשיר</label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <div className={`flex items-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed text-sm font-medium w-full justify-center transition
-                    ${uploading ? "border-slate-300 text-slate-400 bg-slate-50" : "border-slate-300 text-slate-700 bg-slate-50 hover:bg-slate-100"}`}>
-                    {uploading ? "⏳ מעלה תמונה..." : "📷 בחר תמונה מהמכשיר"}
+                <label className="text-[13px] text-neutral-500 block mb-1">שם לתמונה (לא חובה)</label>
+                <input value={draft.caption} onChange={e => setDraft({ ...draft, caption: e.target.value })} className={input} placeholder="למשל: בלייאז' דבש" />
+              </div>
+
+              {draft.id && (
+                <div className="flex items-center justify-between gap-2 pt-1">
+                  <button type="button" onClick={() => setDraft({ ...draft, isActive: !draft.isActive })}
+                    className={`h-10 px-4 rounded-full border text-[14px] ${draft.isActive ? "bg-emerald-50 border-emerald-300 text-emerald-700" : "border-neutral-200 text-neutral-500"}`}>
+                    {draft.isActive ? "מוצגת" : "מוסתרת"}
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => move(draft.id!, -1)} className="h-10 px-3 rounded-full text-[14px] text-neutral-600 hover:bg-neutral-100" aria-label="להזיז ימינה">→</button>
+                    <button type="button" onClick={() => move(draft.id!, 1)} className="h-10 px-3 rounded-full text-[14px] text-neutral-600 hover:bg-neutral-100" aria-label="להזיז שמאלה">←</button>
+                    <button type="button" onClick={() => remove(draft.id!)} className="h-10 px-3 rounded-full text-[14px] text-red-500 hover:bg-red-50">מחיקה</button>
                   </div>
-                  <input type="file" accept="image/*" className="hidden" disabled={uploading}
-                    onChange={e => { const f = e.target.files?.[0]; if (f) uploadFile(f); }} />
-                </label>
-              </div>
-
-              {/* Preview */}
-              {newUrl && (
-                <div className="w-full h-40 rounded-xl overflow-hidden bg-stone-100">
-                  <img src={newUrl} alt="" className="w-full h-full object-cover"
-                    onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
                 </div>
               )}
-
-              <div>
-                <label className="text-xs text-neutral-500 block mb-1">כיתוב (אופציונלי)</label>
-                <input value={newCaption} onChange={e => setNewCaption(e.target.value)}
-                  className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  placeholder="תיאור קצר..." />
-              </div>
             </div>
 
             <div className="flex gap-2 mt-5">
-              <button onClick={addStory} disabled={saving || uploading || !newUrl.trim()}
-                className="flex-1 bg-teal-600 text-white py-2 rounded-xl text-sm font-semibold hover:bg-teal-700 disabled:opacity-50">
-                {saving ? "שומר..." : "הוסף לגלריה"}
+              <button onClick={save} disabled={saving || uploading || !draft.mediaUrl}
+                className="flex-1 h-12 bg-teal-600 text-white rounded-xl text-[15px] font-semibold hover:bg-teal-700 disabled:opacity-50">
+                {saving ? "שומר..." : "שמירה"}
               </button>
-              <button onClick={() => setShowAdd(false)}
-                className="flex-1 bg-neutral-100 text-neutral-700 py-2 rounded-xl text-sm font-medium">
+              <button onClick={() => setDraft(null)} className="flex-1 h-12 bg-neutral-100 text-neutral-700 rounded-xl text-[15px] font-medium">
                 ביטול
               </button>
             </div>

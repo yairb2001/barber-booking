@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import type { Vocab } from "@/lib/vocab";
 
 const tilesFor = (v: Vocab) => [
-  { href: "/admin/stories", icon: "📸", label: "סטוריז", desc: "תמונות זמניות עם תפוגה, מוצגות בדף הבית" },
+  { href: "/admin/stories", icon: "📸", label: "העבודות", desc: "תמונות לפי טיפול: בדף הבית, בדף העבודות ובקישור שהסוכן שולח" },
   { href: "/admin/products", icon: "🛍️", label: "מוצרים", desc: "קטלוג מוצרים המוצג ללקוחות בדף הבית" },
   { href: "/admin/announcements", icon: "📢", label: "עדכונים", desc: "הודעות טקסט המוצגות ללקוחות" },
   { href: "/admin/portfolio", icon: "🖼️", label: "גלריית עבודות", desc: `גלריית תמונות עבודה קבועה, לכל ${v.staff}` },

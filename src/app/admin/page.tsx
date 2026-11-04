@@ -2062,7 +2062,7 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
       const expires = new Date(); expires.setDate(expires.getDate() + 7);
       const r = await fetch("/api/admin/stories", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mediaUrl: up.url, staffId: appt.staff.id, caption: appt.customServiceName || appt.service.name, expiresAt: expires.toISOString() }),
+        body: JSON.stringify({ mediaUrl: up.url, staffId: appt.staff.id, serviceId: appt.service.id, caption: appt.customServiceName || appt.service.name, expiresAt: expires.toISOString() }),
       });
       if (!r.ok) throw new Error("story failed");
       setStoryDone(true); setTimeout(() => setStoryDone(false), 2500);

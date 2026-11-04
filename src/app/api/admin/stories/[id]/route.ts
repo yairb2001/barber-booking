@@ -16,6 +16,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.isActive !== undefined && { isActive: body.isActive }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
       ...(body.caption !== undefined && { caption: body.caption }),
+      ...(body.staffId !== undefined && { staffId: body.staffId || null }),
+      ...(body.serviceId !== undefined && { serviceId: body.serviceId || null }),
     },
   });
   return NextResponse.json(story);
