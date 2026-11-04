@@ -2560,6 +2560,10 @@ async function runCustomerAgentCore(opts: {
     });
   }
 
+  // The owner turned the agent off for this customer for good: the message is
+  // saved for the inbox, nothing answers (every caller, not only the webhook).
+  if (conversation.agentOff && !sandbox) return;
+
   // ── Auto hand-off guard: too many messages without resolution ─────────────────
   // If the customer has sent more than the configured number of messages and the
   // conversation still isn't resolved, the agent is probably stuck in a loop (or

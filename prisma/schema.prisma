@@ -750,6 +750,10 @@ model Conversation {
   // for this conversation for 24h. Null = agent active. Logic is lazy:
   // checked on incoming message, cleared automatically when expired.
   escalatedAt   DateTime? @map("escalated_at")
+  // The agent never answers this customer (owner, 4.11.2026: "לחסום את הסוכן
+  // בצורה קבועה מלקוח מסוים"). Like escalatedAt with no 24h end: messages still
+  // reach the inbox and the staff push. Kept by the 90-day cleanup.
+  agentOff      Boolean   @default(false) @map("agent_off")
   // ── Manual reactivation marker: when an admin explicitly turns the agent
   // back ON (toggle-agent, active:true) after it had auto-muted itself for
   // running too long (escalateAfterMessages). The "too many messages" count

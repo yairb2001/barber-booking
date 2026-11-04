@@ -52,6 +52,8 @@ type ChatDetail = {
   customerId: string | null;
   status: string;
   escalated: boolean;
+  /** The agent never answers this customer (not the 24h mute). */
+  agentOff?: boolean;
   blocked?: boolean;
   staffBlocks?: string[];
   escalatedAt: string | null;
@@ -189,6 +191,9 @@ export default function ChatsPage() {
   const [reported, setReported] = useState<Record<string, string>>({});
   const [reportOpen, setReportOpen] = useState(false);
   const [headMenu, setHeadMenu] = useState(false);
+  // "כבה" asks for how long: 24 hours, or for good.
+  const [offPick, setOffPick] = useState(false);
+  useEffect(() => setOffPick(false), [selId]);
   useEffect(() => {
     setReported({}); setReportOpen(false);
     if (!selId) return;
@@ -311,12 +316,13 @@ export default function ChatsPage() {
   }
 
   // ── Toggle agent for this conversation ──────────────────────────────────────
-  async function toggleAgent(active: boolean) {
+  async function toggleAgent(active: boolean, forever = false) {
     if (!selId) return;
+    setOffPick(false);
     await fetch(`/api/admin/chats/${selId}/toggle-agent`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active }),
+      body: JSON.stringify({ active, forever }),
     });
     fetchDetail(selId);
     fetchList();
@@ -541,8 +547,23 @@ export default function ChatsPage() {
               <div className="shrink-0 px-4 py-1.5 text-[13px] font-semibold bg-red-50 text-red-700">🚫 לקוח חסום: הסוכן לא עונה לו</div>
             ) : activeThread.id ? (
               <div className={`shrink-0 flex items-center justify-between gap-2 px-4 py-1.5 text-[13px] font-semibold ${activeThread.escalated ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
-                <span className="min-w-0 truncate">{activeThread.escalated ? "🤖 הסוכן כבוי בשיחה הזו" : "🤖 הסוכן עונה בשיחה הזו"}{!!detail?.staffBlocks?.length && ` · חסום מ${detail.staffBlocks.join(", ")}`}</span>
-                <button type="button" onClick={() => toggleAgent(activeThread.escalated)} className="shrink-0 underline min-h-[32px]">{activeThread.escalated ? "הפעל" : "כבה"}</button>
+                <span className="min-w-0 truncate">{offPick ? "לכבות את הסוכן ללקוח הזה?" : detail?.agentOff ? "🤖 הסוכן לא עונה ללקוח הזה, לתמיד" : activeThread.escalated ? "🤖 הסוכן כבוי בשיחה הזו" : "🤖 הסוכן עונה בשיחה הזו"}{!offPick && !!detail?.staffBlocks?.length && ` · חסום מ${detail.staffBlocks.join(", ")}`}</span>
+                <span className="shrink-0 flex items-center gap-3">
+                  {offPick ? (
+                    <>
+                      <button type="button" onClick={() => toggleAgent(false)} className="underline min-h-[32px]">24 שעות</button>
+                      <button type="button" onClick={() => toggleAgent(false, true)} className="underline min-h-[32px]">לתמיד</button>
+                      <button type="button" onClick={() => setOffPick(false)} className="underline min-h-[32px] font-normal">ביטול</button>
+                    </>
+                  ) : activeThread.escalated ? (
+                    <>
+                      {!detail?.agentOff && <button type="button" onClick={() => toggleAgent(false, true)} className="underline min-h-[32px]">כבה לתמיד</button>}
+                      <button type="button" onClick={() => toggleAgent(true)} className="underline min-h-[32px]">הפעל</button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => setOffPick(true)} className="underline min-h-[32px]">כבה</button>
+                  )}
+                </span>
               </div>
             ) : null}
 
@@ -638,7 +659,9 @@ export default function ChatsPage() {
                 )}
               </div>
               <p className="text-[10px] text-slate-400 mt-1.5 text-center">
-                {activeThread.escalated
+                {detail?.agentOff
+                  ? "🤖 הסוכן כבוי ללקוח הזה לתמיד, עד שתפעיל אותו בפס למעלה"
+                  : activeThread.escalated
                   ? "🤖 הסוכן כבוי לשיחה זו (24 שעות מההודעה האחרונה שלך)"
                   : "💡 שליחה ידנית תכבה את הסוכן ל-24 שעות"
                 }

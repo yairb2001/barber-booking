@@ -100,6 +100,7 @@ export async function GET(req: NextRequest) {
         businessId:    biz.id,
         agentType:     "customer",
         escalatedAt:   null,
+        agentOff:      false,
         lastMessageAt: { lt: quietBefore, gte: notOlderThan },
         // Instagram chats ("ig:<IGSID>") have no agent yet, and their key is not a phone number.
         NOT:           { phone: { startsWith: "ig:" } },

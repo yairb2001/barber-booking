@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
   // Unread counts in ONE query (was one count per conversation — ~300 queries
   // per page load). Only conversations a human is handling can show unread.
   const humanIds = convs
-    .filter(c => !agentGloballyOn || (!!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS))
+    .filter(c => !agentGloballyOn || c.agentOff || (!!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS))
     .map(c => c.id);
   const unreadById = new Map<string, number>();
   if (humanIds.length) {
@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
   }
   const data = convs.map((c) => {
     const last = c.messages[0];
-    const escalated = !!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS;
+    const escalated = c.agentOff || (!!c.escalatedAt && (now - c.escalatedAt.getTime()) < ESCALATION_TTL_MS);
 
     // A conversation "needs human" when the agent is NOT handling it: either it
     // was escalated / a human took over (escalatedAt within 24h), or the agent

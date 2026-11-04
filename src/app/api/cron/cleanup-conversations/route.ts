@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   // Find old conversations
   const oldConvs = await prisma.conversation.findMany({
     where: {
+      agentOff: false, // the owner blocked the agent for this customer for good: the row holds that
       OR: [
         { lastMessageAt: { lt: cutoff } },
         { lastMessageAt: null, createdAt: { lt: cutoff } },

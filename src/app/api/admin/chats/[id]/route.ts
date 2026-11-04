@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     data: { lastReadAt: new Date() },
   }).catch(() => {});
 
-  const escalated = !!conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS;
+  const escalated = conv.agentOff || (!!conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS);
 
   // Display name resolution:
   //   1. Linked customer (DB) → 2. Phone match in customers → 3. WhatsApp name → 4. null
@@ -73,6 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     customerId,
     status: conv.status,
     escalated,
+    agentOff: conv.agentOff,
     blocked,
     staffBlocks,
     escalatedAt: conv.escalatedAt,

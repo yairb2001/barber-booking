@@ -571,7 +571,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // the human path below. The message is already persisted at this point.
   // Same burst coalescing + one-run-per-chat as the shop agent below: a message
   // sent mid-answer must never run a second, crossing turn (11.10.2026).
-  if (biz.id === DEMO_BUSINESS_ID && !isNonText && text) {
+  if (biz.id === DEMO_BUSINESS_ID && !conv.agentOff && !isNonText && text) {
     const release = await takeAgentTurn(conv.id, savedUserMsg.createdAt);
     if (!release) return NextResponse.json({ ok: true, coalesced: true });
     let demo: Awaited<ReturnType<typeof runDemoTurn>>;
@@ -591,7 +591,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // Before "הפעל": test mode (src/lib/agent/test-mode.ts, 14.10.2026). The
   // agent answers only the numbers set as testers, nothing is booked for real.
-  if (!biz.activatedAt && agentAllowedByTier && !isNonText && text && isTester(biz.settings, phone)) {
+  if (!biz.activatedAt && agentAllowedByTier && !conv.agentOff && !isNonText && text && isTester(biz.settings, phone)) {
     const release = await takeAgentTurn(conv.id, savedUserMsg.createdAt);
     if (!release) return NextResponse.json({ ok: true, coalesced: true });
     try { await runTesterTurn({ businessId: biz.id, phone, text }); }
@@ -642,7 +642,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // 24h escalation expiry — lazy check; clear flag if expired
   const ESCALATION_TTL_MS = 24 * 60 * 60 * 1000;
-  const isEscalated = conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS;
+  // agentOff: the owner turned the agent off for this customer for good.
+  const isEscalated = conv.agentOff || (conv.escalatedAt && (Date.now() - conv.escalatedAt.getTime()) < ESCALATION_TTL_MS);
   if (conv.escalatedAt && !isEscalated) {
     await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: null } });
   }

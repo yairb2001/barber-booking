@@ -4,10 +4,11 @@ import { getRequestSession, getEffectivePermissions, getSessionBusiness } from "
 import { canAccessConversation } from "@/lib/chat-access";
 
 // POST /api/admin/chats/[id]/toggle-agent
-// Body: { active: boolean }
+// Body: { active: boolean, forever?: boolean }
 //
-// active=true  → escalatedAt = null (agent will respond on next incoming msg)
-// active=false → escalatedAt = now() (agent muted for 24h)
+// active=true                → escalatedAt = null, agentOff = false (agent responds again)
+// active=false               → escalatedAt = now() (agent muted for 24h)
+// active=false, forever=true → agentOff = true (agent never answers this customer)
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = getRequestSession(req);
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const business = await getSessionBusiness(req, { id: true, chatsEnabled: true });
   if (!business?.chatsEnabled) return NextResponse.json({ error: "feature_disabled" }, { status: 403 });
 
-  const { active } = await req.json();
+  const { active, forever } = await req.json();
 
   // Permission enforcement: barber needs "view all chats" to manage the inbox.
   const perms = await getEffectivePermissions(req);
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     where: { id: conv.id },
     data: {
       escalatedAt: active ? null : new Date(),
+      ...(active ? { agentOff: false } : forever ? { agentOff: true } : {}),
       // Reactivating resets the "too many messages" counter's starting point —
       // otherwise messages sent before this mute still count, and a
       // conversation already over the limit re-escalates itself on the very
@@ -44,5 +46,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ok: true,
     escalated: !active,
     escalatedAt: updated.escalatedAt,
+    agentOff: updated.agentOff,
   });
 }

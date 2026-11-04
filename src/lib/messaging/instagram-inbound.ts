@@ -77,12 +77,12 @@ async function handleInbound(biz: { id: string; name: string; account: Instagram
   let conv = await prisma.conversation.findFirst({
     where: { businessId: biz.id, phone: key, agentType: { not: "owner" } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, whatsappName: true, escalatedAt: true },
+    select: { id: true, whatsappName: true, escalatedAt: true, agentOff: true },
   });
   if (!conv) {
     conv = await prisma.conversation.create({
       data: { businessId: biz.id, phone: key, agentType: "customer", status: "active", lastMessageAt: new Date() },
-      select: { id: true, whatsappName: true, escalatedAt: true },
+      select: { id: true, whatsappName: true, escalatedAt: true, agentOff: true },
     });
   }
 
@@ -102,7 +102,7 @@ async function handleInbound(biz: { id: string; name: string; account: Instagram
 
   // Chator's sales agent answers on @chator.il (only text: it can't see media), unless a
   // person took this chat in the last 24h. Same burst wait + one run per chat as WhatsApp.
-  const humanHasIt = !!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000;
+  const humanHasIt = conv.agentOff || (!!conv.escalatedAt && Date.now() - conv.escalatedAt.getTime() < 24 * 3600_000);
   const isText = !!str(msg.text).trim();
   if (biz.id === DEMO_BUSINESS_ID && isText && !humanHasIt && instagramAgentAnswers(biz.account, igsid)) {
     const release = await takeAgentTurn(conv.id, saved.createdAt);
