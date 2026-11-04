@@ -291,8 +291,12 @@ const MAX_HISTORY = 20; // messages loaded from DB per conversation turn
 // request, and the "stuck agent" alarm counted lifetime messages. A fresh day =
 // a fresh conversation (the customer record still supplies name/appointments).
 const CONTEXT_WINDOW_MS = 24 * 60 * 60 * 1000;
-/** "הכלי", "מהכלי", "the tool": internal words that never reach a customer. */
-const TOOL_TALK = /(^|[^א-ת])(מה|שה|וה|ב|ל|ה)כלי($|[^א-ת])|\b(the )?tool\b/i;
+/** "הכלי", "מהכלי", "the tool", or a bubble about "הלקוח" in the third person
+ * ("הלקוח שאל על יאיר, יש אצלנו שניים…", DOMINANT 30.10.2026): the model
+ * talking to itself, never to the customer. */
+const TOOL_TALK = /(^|[^א-ת])(מה|שה|וה|ב|ל|ה)כלי($|[^א-ת])|\b(the )?tool\b|^ה?לקוח(ה)? (שאל|כתב|ביקש|רוצה|פונה|אמר)/i;
+/** A customer asking for someone's own phone: "הנייד שלך", "מספר פרטי", "הפלאפון האישי שלך". */
+const PRIVATE_CONTACT = /(נייד|פלאפון|סלולרי|מספר|טלפון) ?ה?(פרטי|אישי)|ה?(נייד|פלאפון) (ה?פרטי )?שלך|ה?(מספר|טלפון) שלך ה?(פרטי|אישי)/;
 
 // Hebrew intent signals that justify the strong model from the very first turn.
 const SMART_INTENT = /לקבוע|תור|לבטל|ביטול|להזיז|להעביר|לשנות|דחוף|תלונה|טעות|לא עבד|בעיה/;
@@ -2717,6 +2721,14 @@ async function runCustomerAgentCore(opts: {
     else if (outcome.context) customerContext += `\n${outcome.context}`;
     else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }
   } catch (e) { console.error("[agent] proposal handling failed", e); }
+  // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
+  // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
+  // the model kept answering "אין לי נייד, אני הבוט".
+  if (!preHandledReply && PRIVATE_CONTACT.test(incomingText)) {
+    preHandledReply = "העברתי את ההודעה, יחזרו אליך בהקדם 🙏";
+    ctx.handoffReason = `הלקוח פונה אישית ומבקש מספר פרטי: «${incomingText.slice(0, 200)}»`;
+    ctx.conversationId = conversation.id;
+  }
   // After midnight: which date "מחר"/"היום" mean, and the verification rule.
   { const night = nightContextLine(); if (night) customerContext += `\n${night}`; }
   // Prompt v2 ("cartridges done right"): the rarely-needed procedures — group
