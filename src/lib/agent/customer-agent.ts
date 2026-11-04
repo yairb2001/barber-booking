@@ -2518,6 +2518,8 @@ async function runCustomerAgentCore(opts: {
   const { businessId, phone, incomingText, alreadyPersisted = false, sandbox } = opts;
   if (sandbox) sandbox.proposalPhone = phone;
   const turnStart = new Date();
+  // The treatments she named, when the availability block was built for them (works link).
+  let namedServiceIds: string[] = [];
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -2783,7 +2785,7 @@ async function runCustomerAgentCore(opts: {
           for (const r of rows) byStaff.set(r.staffId, [...(byStaff.get(r.staffId) ?? []), r.service]);
           const all = Array.from(new Map(rows.map(r => [r.service.id, r.service])).values());
           const asked = namedServices([incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content)].join("\n"), all);
-          if (asked.length) snapServiceId = asked[0];
+          if (asked.length) { snapServiceId = asked[0]; namedServiceIds = asked; }
           serviceOf = staffId => {
             const mine = byStaff.get(staffId) ?? [];
             // She named a treatment: only who does it (the others confused the model, "ליאור בשישי").
@@ -3011,7 +3013,7 @@ async function runCustomerAgentCore(opts: {
   const forCustomer = allBubbles.filter(b => !TOOL_TALK.test(b));
   const bubbles = forCustomer.length ? forCustomer : allBubbles;
   // Times for a treatment with works on the site: one more bubble with the link (works.ts).
-  const works = await worksLinkBubble({ biz, conversationId: conversation.id, since: turnStart }).catch(() => null);
+  const works = await worksLinkBubble({ biz, conversationId: conversation.id, since: turnStart, named: namedServiceIds }).catch(() => null);
   if (works) bubbles.push(works);
 
   for (let i = 0; i < bubbles.length; i++) {

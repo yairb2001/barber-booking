@@ -112,7 +112,9 @@ export async function buildAvailabilitySnapshot(p: {
     // for the wrong Wednesday otherwise (see day-distance.ts).
     const night = isNightWindow();
     const dayName = night && d <= 1 ? `${DAY[getDayOfWeekISO(iso)]} ${Number(iso.slice(8, 10))}.${Number(iso.slice(5, 7))}${d === 0 ? " (היום)" : ""}`
-      : d === 0 ? "היום" : d === 1 ? "מחר" : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
+      // The weekday too: "ביום חמישי" on a Wednesday met "מחר 5.11" and the model
+      // answered that Thursday was full (demo, 4.11.2026).
+      : d <= 1 ? `${d === 0 ? "היום" : "מחר"} ${DAY[getDayOfWeekISO(iso)]}` : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
     const dd = new Date(iso + "T00:00:00.000Z");
     const parts: string[] = [];
     for (const s of index.staff) {

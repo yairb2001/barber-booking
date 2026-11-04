@@ -5,13 +5,15 @@ import { getBusinessNow } from "@/lib/utils";
 import { worksKey, WANT_PHOTO } from "@/lib/works-shared";
 
 /** Tools whose input names the treatment the customer asked for. */
-const SLOT_TOOLS = ["get_available_slots", "find_visit_times", "find_parallel_slots", "propose_booking", "book_appointment"];
+const SLOT_TOOLS = ["get_available_slots", "find_next_available", "find_visit_times", "find_parallel_slots", "propose_booking", "book_appointment"];
 
 /**
- * After an agent turn that looked up times for a treatment with works on the
- * site: one more bubble with the link to them. Once per treatment per chat.
+ * After an agent turn about times for a treatment with works on the site: one
+ * more bubble with the link to them. Once per treatment per chat. The
+ * treatment comes from the slot tools, or from the availability block built
+ * for the treatment she named (named), which the agent answers from without a tool.
  */
-export async function worksLinkBubble(p: { biz: { id: string; slug: string | null }; conversationId: string; since: Date }): Promise<string | null> {
+export async function worksLinkBubble(p: { biz: { id: string; slug: string | null }; conversationId: string; since: Date; named?: string[] }): Promise<string | null> {
   const calls = await prisma.conversationMessage.findMany({
     where: { conversationId: p.conversationId, role: "tool", toolName: { in: SLOT_TOOLS }, createdAt: { gte: p.since } },
     orderBy: { createdAt: "asc" },
@@ -26,6 +28,7 @@ export async function worksLinkBubble(p: { biz: { id: string; slug: string | nul
       }
     } catch { /* not JSON */ }
   }
+  for (const id of p.named ?? []) if (!ids.includes(id)) ids.push(id);
   if (!ids.length) return null;
 
   const withWorks = await prisma.story.findMany({
