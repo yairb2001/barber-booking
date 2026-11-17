@@ -173,7 +173,8 @@ type Analytics = {
     appointments:      number;
     uniqueCustomers:   number;
     newToStaff:        number;
-    newAlsoToBusiness: number;
+    newToBusiness:     number; // first visit ever in the business was with this staff
+    movedFromOther:    number; // new to this staff, visited another staff before
     secondVisit:       number;
     secondVisitRate:   { cohortSize: number; returned: number; rate: number };
   }[];
@@ -918,78 +919,6 @@ function DeepDataCard({ total, perStaff }: { total: number; perStaff: Analytics[
   );
 }
 
-// ── BarberCard ────────────────────────────────────────────────────────────────
-function BarberCard({ row, selected, onClick, windowDays }: {
-  row: Analytics["staffSummary"][0]; selected: boolean; onClick: () => void; windowDays: number;
-}) {
-  const svr = row.secondVisitRate;
-  const pct = svr.rate;
-  const windowLabel = windowDays === 30 ? "30 יום" : windowDays === 60 ? "60 יום" :
-    windowDays === 90 ? "90 יום" : windowDays === 180 ? "חצי שנה" : "שנה";
-  return (
-    <button onClick={onClick}
-      className={`text-right w-full rounded-2xl border p-5 transition ${
-        selected ? "border-teal-600 bg-slate-50 shadow-sm" : "border-neutral-200 bg-white hover:border-slate-300"
-      }`}>
-      <div className="flex items-center gap-3 mb-4">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${selected ? "bg-teal-600" : "bg-slate-400"}`}>
-          {row.name[0]}
-        </div>
-        <div className="text-right">
-          <h3 className="font-semibold text-neutral-800 text-sm">{row.name}</h3>
-          <p className="text-xs text-neutral-400">לחץ לסינון</p>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3 text-right mb-4">
-        <div>
-          <p className="text-[10px] text-neutral-400 uppercase">הכנסה</p>
-          <p className="text-lg font-bold text-slate-800">₪{row.revenue.toLocaleString("he-IL")}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-neutral-400 uppercase">תורים</p>
-          <p className="text-lg font-bold text-neutral-800">{row.appointments}</p>
-        </div>
-        <div>
-          <p className="text-[10px] text-neutral-400 uppercase">חדשים אצלו</p>
-          <p className="text-lg font-bold text-teal-600">{row.newToStaff}</p>
-          {row.newAlsoToBusiness > 0 && (
-            <p className="text-[10px] text-emerald-600 mt-0.5">{row.newAlsoToBusiness} גם לעסק</p>
-          )}
-        </div>
-        <div>
-          <p className="text-[10px] text-neutral-400 uppercase">חזרו (חודש זה)</p>
-          <p className="text-lg font-bold text-emerald-600">{row.secondVisit}</p>
-        </div>
-      </div>
-      {/* Second-visit rate rolling window */}
-      <div className="border-t border-neutral-100 pt-3">
-        <div className="flex items-center justify-between mb-1.5">
-          <p className="text-[10px] text-neutral-400 uppercase">חזרה — {windowLabel}</p>
-          <span className={`text-sm font-black ${pct >= 40 ? "text-emerald-600" : pct >= 20 ? "text-slate-800" : "text-neutral-400"}`}>
-            {svr.cohortSize > 0 ? `${pct}%` : "—"}
-          </span>
-        </div>
-        {svr.cohortSize > 0 && (
-          <>
-            <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${pct >= 40 ? "bg-emerald-500" : pct >= 20 ? "bg-slate-600" : "bg-red-400"}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-[10px] text-neutral-400 mt-1">
-              {svr.returned} מתוך {svr.cohortSize} לקוחות חזרו
-            </p>
-          </>
-        )}
-        {svr.cohortSize === 0 && (
-          <p className="text-[10px] text-neutral-400">אין לקוחות חדשים בטווח זה</p>
-        )}
-      </div>
-    </button>
-  );
-}
-
 // ── MiniBarChart ──────────────────────────────────────────────────────────────
 function MiniBarChart({
   data, currentIdx, labelKey, tooltipFn, color = "bg-teal-500",
@@ -1706,7 +1635,7 @@ export default function Dashboard() {
                       </div>
                       <span className="font-semibold text-sm text-neutral-800">{row.name}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-right">
+                    <div className="grid grid-cols-4 items-end gap-2 text-right">
                       <div>
                         <p className="text-[10px] text-neutral-400">הכנסה</p>
                         <p className="font-bold text-sm text-slate-800">₪{row.revenue.toLocaleString("he-IL")}</p>
@@ -1716,8 +1645,12 @@ export default function Dashboard() {
                         <p className="font-bold text-sm">{row.appointments}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-neutral-400">חדשים</p>
-                        <p className="font-bold text-sm text-teal-600">{row.newToStaff}</p>
+                        <p className="text-[10px] text-neutral-400">חדשים ב{v.place}</p>
+                        <p className="font-bold text-sm text-teal-600">{row.newToBusiness}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-neutral-400">עברו מ{v.staff} {v.other}</p>
+                        <p className="font-bold text-sm">{row.movedFromOther}</p>
                       </div>
                     </div>
                     <p className="text-[10px] text-neutral-400 mt-2 pt-2 border-t border-neutral-100">

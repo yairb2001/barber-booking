@@ -475,12 +475,15 @@ export async function GET(req: NextRequest) {
   // (a) is always loaded; (b) is the same set when no staff filter, otherwise filtered.
   const globalHistory = await prisma.appointment.findMany({
     where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: periodCustIds } },
-    select: { customerId: true, staffId: true, date: true },
+    select: { customerId: true, staffId: true, date: true, startTime: true },
+    orderBy: [{ date: "asc" }, { startTime: "asc" }],
   });
 
   const globalDates = new Map<string, Date[]>();   // customer → ALL their dates
   const staffDates  = new Map<string, Date[]>();   // customer → dates with effectiveStaffId only
+  const firstStaffOf = new Map<string, string>();  // customer → staff of their first ever appointment
   for (const a of globalHistory) {
+    if (!firstStaffOf.has(a.customerId)) firstStaffOf.set(a.customerId, a.staffId);
     const d = new Date(a.date);
     const ga = globalDates.get(a.customerId) ?? [];
     ga.push(d);
@@ -498,6 +501,7 @@ export async function GET(req: NextRequest) {
   // ── 3. Classify: new customer + source ───────────────────────────────────────
   let newToBusiness = 0;
   let newToStaff = 0;
+  const newToBusinessIds = new Set<string>();
   const newBySrc      = new Map<string, number>();
   const returnedBySrc = new Map<string, number>();
 
@@ -509,7 +513,7 @@ export async function GET(req: NextRequest) {
     const isNewToBusiness = !knownBefore && gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate;
     const isNewToStaff    = !knownBefore && sDates[0] && sDates[0] >= fromDate && sDates[0] <= toDate;
 
-    if (isNewToBusiness) newToBusiness++;
+    if (isNewToBusiness) { newToBusiness++; newToBusinessIds.add(custId); }
     if (isNewToStaff)    newToStaff++;
 
     // Source breakdown follows the staff-scoped definition (matches existing UI semantics)
@@ -628,8 +632,10 @@ export async function GET(req: NextRequest) {
   type StaffRow = {
     staffId: string; name: string;
     revenue: number; appointments: number; uniqueCustomers: number;
-    newToStaff: number;          // customer's first visit WITH this staff is in period
-    newAlsoToBusiness: number;   // of newToStaff, also customer's first visit ANYWHERE is in period
+    newToStaff: number;          // first visit WITH this staff is in period (= newToBusiness + movedFromOther)
+    newToBusiness: number;       // first visit EVER in the business is in period and was with this staff.
+                                 // Summed over all staff this equals the top-level newToBusiness.
+    movedFromOther: number;      // new to this staff, but already visited another staff before
     secondVisit: number;
     secondVisitRate: { cohortSize: number; returned: number; rate: number };
   };
@@ -646,43 +652,27 @@ export async function GET(req: NextRequest) {
       const stRev   = appts.reduce((s: number, a: { price: number }) => s + a.price, 0);
       const stCusts = Array.from(new Set(appts.map(a => a.customerId)));
 
-      // Per-staff history (with this staff only) for newToStaff + secondVisit
-      const stHist  = await prisma.appointment.findMany({
-        where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, staffId: sid, customerId: { in: stCusts } },
-        select: { customerId: true, date: true },
-      });
+      // History with this staff only, for newToStaff + secondVisit. globalHistory
+      // already holds every appointment of the period's customers, sorted by date.
       const stDates = new Map<string, Date[]>();
-      for (const a of stHist) {
+      for (const a of globalHistory) {
+        if (a.staffId !== sid) continue;
         const arr = stDates.get(a.customerId) ?? [];
         arr.push(new Date(a.date));
         stDates.set(a.customerId, arr);
       }
-      stDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
-
-      // Global history for these same customers, to compute newAlsoToBusiness
-      const stGlobalHist = await prisma.appointment.findMany({
-        where: { businessId: bizId, ...hv, status: { notIn: cancelledArr }, customerId: { in: stCusts } },
-        select: { customerId: true, date: true },
-      });
-      const stGlobalDates = new Map<string, Date[]>();
-      for (const a of stGlobalHist) {
-        const arr = stGlobalDates.get(a.customerId) ?? [];
-        arr.push(new Date(a.date));
-        stGlobalDates.set(a.customerId, arr);
-      }
-      stGlobalDates.forEach(arr => arr.sort((a, b) => a.getTime() - b.getTime()));
 
       const barberWindowStart = new Date();
       barberWindowStart.setDate(barberWindowStart.getDate() - returnWindowDays);
 
-      let stNew = 0, stSec = 0, stNewAlsoBiz = 0;
+      let stNew = 0, stSec = 0, stNewBiz = 0;
       let barberCohortSize = 0, barberCohortReturned = 0;
       for (const custId of stCusts) {
         const dates = stDates.get(custId) ?? [];
-        const gDates = stGlobalDates.get(custId) ?? [];
-        if (dates[0] && dates[0] >= fromDate && dates[0] <= toDate) {
+        // Same rule as the top card: customers the business knew before the system are never "new".
+        if (!periodCustMap.get(custId)?.knownBefore && dates[0] && dates[0] >= fromDate && dates[0] <= toDate) {
           stNew++;
-          if (gDates[0] && gDates[0] >= fromDate && gDates[0] <= toDate) stNewAlsoBiz++;
+          if (newToBusinessIds.has(custId) && firstStaffOf.get(custId) === sid) stNewBiz++;
         }
         if (dates[1] && dates[1] >= fromDate && dates[1] <= toDate) stSec++;
         // Rolling second-visit cohort: first visit with this barber within the window
@@ -694,7 +684,7 @@ export async function GET(req: NextRequest) {
       staffSummary.push({
         staffId: sid, name,
         revenue: stRev, appointments: appts.length, uniqueCustomers: stCusts.length,
-        newToStaff: stNew, newAlsoToBusiness: stNewAlsoBiz,
+        newToStaff: stNew, newToBusiness: stNewBiz, movedFromOther: stNew - stNewBiz,
         secondVisit: stSec,
         secondVisitRate: {
           cohortSize: barberCohortSize,
