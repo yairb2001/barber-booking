@@ -95,6 +95,9 @@ const REGULAR_SHARE = 0.7;       // ≥70% of recent visits with one barber → 
 const SECOND_AFTER_DAYS = 5;
 const RELEASE_AFTER_DAYS = 42;   // 6 weeks past due → out until the next visit
 const PAST_DUE_WINDOW = 30;      // first nudge still allowed up to 30 days past due
+/** A waitlist entry for a day that already passed no longer blocks the nudge (Yair 20.11.2026).
+ *  Customers who were already due before this date stay skipped: no catch-up wave to the old backlog. */
+const STALE_WAITLIST_FROM = "2026-11-20";
 
 function todLabelWindow(tod: "morning" | "afternoon" | "evening" | null): (t: string) => boolean {
   if (!tod) return () => true;
@@ -233,7 +236,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
         id: true, name: true, phone: true, knownBefore: true,
         staffBlocks: { select: { staffId: true } },
         appointments: { select: { date: true, startTime: true, endTime: true, status: true, staffId: true, serviceId: true, customServiceName: true, createdAt: true, staff: { select: { name: true, isAvailable: true } }, service: { select: { name: true } } } },
-        waitlist: { where: { status: "waiting" }, select: { id: true }, take: 1 },
+        waitlist: { where: { status: "waiting" }, select: { date: true } },
       },
     });
     res.scanned = customers.length;
@@ -282,7 +285,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       const phone = normalizeIsraeliPhone(c.phone);
       if (!phone) { skip("no_phone"); continue; }
       if (c.appointments.some(a => a.date >= todayUTC && ["pending", "confirmed"].includes(a.status))) { skip("has_upcoming"); continue; }
-      if (c.waitlist.length) { skip("on_waitlist"); continue; }
+      if (c.waitlist.some(w => w.date >= todayUTC)) { skip("on_waitlist"); continue; }
       if (ins.visits === 0) { skip("no_visits"); continue; }
       // Fresh no-show / cancellation / message: he's already in touch (or just flaked) — "ראיתי שלא קבעת" would land wrong.
       if (cfg.quietAfterActivityDays > 0 && (recentInboundPhones.has(phone) ||
@@ -297,6 +300,7 @@ export async function runRhythmNudge(now = new Date(), opts: { dryRun?: boolean;
       const dueISO = addDaysISO(ins.lastVisitAt, interval);
       const daysToDue = Math.round((new Date(dueISO + "T00:00:00Z").getTime() - todayUTC.getTime()) / DAY);
       if (daysToDue < -RELEASE_AFTER_DAYS) { skip("released_6w"); continue; }
+      if (c.waitlist.length && dueISO < STALE_WAITLIST_FROM) { skip("old_waitlist_backlog"); continue; }
 
       const lastVisitDate = new Date(ins.lastVisitAt + "T00:00:00Z");
       const myNudges = (nudgesByPhone.get(phone) || []).filter(n => n.createdAt > lastVisitDate).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
