@@ -1,9 +1,13 @@
 /**
- * The fix agent's hands (15.10.2026). The morning run (a scheduled Claude Code
- * session on Yair's Mac, rules in docs/fix-agent.md) reads and writes the CRM's
- * improvements queue through this script only.
+ * The fix agent's hands (15.10.2026). Its runs (Claude Code on Yair's Mac, started the
+ * moment something comes in by ~/Projects/chator-fix-watch, rules in docs/fix-agent.md)
+ * read and write the CRM's improvements queue through this script only.
  *
  *   npx tsx --env-file=.env scripts/fix-agent.ts queue                 work to do, as JSON (with the conversations)
+ *   npx tsx --env-file=.env scripts/fix-agent.ts pending               shops' reports Yair has not sent to fixing yet, same shape
+ *   npx tsx --env-file=.env scripts/fix-agent.ts take <id> <why>       a pending report is critical → queued, the agent fixes it now
+ *   npx tsx --env-file=.env scripts/fix-agent.ts errors [sinceISO]     the agent's crashes (message_logs agent_error), last day by default
+ *   npx tsx --env-file=.env scripts/fix-agent.ts system <fault.json>   a crash worth fixing → a queued item (source "system")
  *   npx tsx --env-file=.env scripts/fix-agent.ts prompt-size <bizId>   the shop agent's fixed prompt, in characters
  *   npx tsx --env-file=.env scripts/fix-agent.ts prompt-size support   Chator's support agent (guide + rules)
  *   npx tsx --env-file=.env scripts/fix-agent.ts current <bizId>       the shop's setup answers, rules and FAQs now
@@ -13,6 +17,7 @@
  *   npx tsx --env-file=.env scripts/fix-agent.ts notify                one push to Yair (and the reports members) when something waits
  */
 import fs from "node:fs";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseFix, parseReports, closeReports, type Fix } from "@/lib/agent/fix-queue";
 import { stablePromptParams, buildCatalogBlock, buildSystemPrompt } from "@/lib/agent/customer-agent";
@@ -46,26 +51,53 @@ async function promptSize(target: string): Promise<number> {
   return blocks.reduce((n, b) => n + b.text.length, 0);
 }
 
+/** The items in these statuses, each with every conversation it points at (up to 3, full transcripts). */
+async function describe(where: Prisma.AgentImprovementWhereInput) {
+  const items = await prisma.agentImprovement.findMany({ where, orderBy: { createdAt: "asc" } });
+  const names = new Map((await prisma.business.findMany({ where: { id: { in: items.map(i => i.businessId) } }, select: { id: true, name: true } })).map(b => [b.id, b.name]));
+  const work = [];
+  for (const i of items) {
+    // Every conversation it points at: the stored one and any "שיחה 5a90d6b3" in the evidence.
+    const reports = parseReports(i.reports);
+    const ids = new Set<string>([i.conversationId, ...reports.map(r => r.conversationId)].filter((x): x is string => !!x));
+    for (const p of (i.evidence ?? "").match(/\b[0-9a-f]{8}\b/g) ?? []) {
+      const c = await prisma.conversation.findFirst({ where: { businessId: i.businessId, id: { startsWith: p } }, select: { id: true } });
+      if (c) ids.add(c.id);
+    }
+    work.push({
+      id: i.id, status: i.status, businessId: i.businessId, businessName: names.get(i.businessId) ?? "", kind: i.kind, source: i.source,
+      title: i.title, yairWords: i.proposal, yairNotes: i.note, evidence: i.evidence, reports, targetKey: i.targetKey, previousFix: parseFix(i.fix),
+      conversations: await Promise.all(Array.from(ids).slice(0, 3).map(async id => ({ id, transcript: await transcript(id) }))),
+    });
+  }
+  return work;
+}
+
 async function main() {
   if (cmd === "queue") {
-    const items = await prisma.agentImprovement.findMany({ where: { status: { in: ["queued", "publish", "revert"] } }, orderBy: { createdAt: "asc" } });
-    const names = new Map((await prisma.business.findMany({ where: { id: { in: items.map(i => i.businessId) } }, select: { id: true, name: true } })).map(b => [b.id, b.name]));
-    const work = [];
-    for (const i of items) {
-      // Every conversation it points at: the stored one and any "שיחה 5a90d6b3" in the evidence.
-      const reports = parseReports(i.reports);
-      const ids = new Set<string>([i.conversationId, ...reports.map(r => r.conversationId)].filter((x): x is string => !!x));
-      for (const p of (i.evidence ?? "").match(/\b[0-9a-f]{8}\b/g) ?? []) {
-        const c = await prisma.conversation.findFirst({ where: { businessId: i.businessId, id: { startsWith: p } }, select: { id: true } });
-        if (c) ids.add(c.id);
-      }
-      work.push({
-        id: i.id, status: i.status, businessId: i.businessId, businessName: names.get(i.businessId) ?? "", kind: i.kind, source: i.source,
-        title: i.title, yairWords: i.proposal, yairNotes: i.note, evidence: i.evidence, reports, targetKey: i.targetKey, previousFix: parseFix(i.fix),
-        conversations: await Promise.all(Array.from(ids).slice(0, 3).map(async id => ({ id, transcript: await transcript(id) }))),
-      });
-    }
-    out(work);
+    out(await describe({ status: { in: ["queued", "publish", "revert"] } }));
+  } else if (cmd === "pending") {
+    out(await describe({ status: "pending", source: "feedback" }));
+  } else if (cmd === "take") {
+    // "בינתיים מתקנים רק קריטי" (15.10.2026): only a critical report skips Yair's "לסוכן התיקונים".
+    const imp = await prisma.agentImprovement.findUnique({ where: { id: a1 } });
+    if (!imp || imp.status !== "pending" || !a2?.trim()) throw new Error(`take <pending id> <why it is critical>: ${a1}`);
+    const fix = parseFix(imp.fix);
+    const history = [...(fix?.history ?? []), { at: new Date().toISOString(), who: "סוכן", text: `קריטי, נכנס לטיפול: ${a2.trim()}` }];
+    await prisma.agentImprovement.update({ where: { id: a1 }, data: { status: "queued", fix: JSON.stringify({ ...(fix ?? { summary: "", appliesTo: "", plan: { type: "none" } }), history }) } });
+    out("queued");
+  } else if (cmd === "errors") {
+    const since = a1 ? new Date(a1) : new Date(Date.now() - 86400_000);
+    const rows = await prisma.messageLog.findMany({ where: { kind: "agent_error", createdAt: { gte: since } }, orderBy: { createdAt: "asc" }, take: 50, select: { id: true, businessId: true, customerPhone: true, error: true, body: true, createdAt: true, business: { select: { name: true } } } });
+    out(await Promise.all(rows.map(async r => ({
+      id: r.id, at: r.createdAt, businessId: r.businessId, businessName: r.business.name, error: r.error ?? r.body,
+      conversationId: (await prisma.conversation.findFirst({ where: { businessId: r.businessId, phone: r.customerPhone }, orderBy: { createdAt: "desc" }, select: { id: true } }))?.id ?? null,
+    }))));
+  } else if (cmd === "system") {
+    const f = JSON.parse(fs.readFileSync(a1, "utf8")) as { businessId: string; title: string; proposal: string; evidence?: string; conversationId?: string };
+    if (!f.businessId || !f.title || !f.proposal) throw new Error("businessId, title and proposal are required");
+    const row = await prisma.agentImprovement.create({ data: { businessId: f.businessId, source: "system", kind: "base", status: "queued", title: f.title.slice(0, 200), proposal: f.proposal.slice(0, 4000), evidence: f.evidence?.slice(0, 1000) ?? null, conversationId: f.conversationId ?? null } });
+    out(row.id);
   } else if (cmd === "prompt-size") {
     out(String(await promptSize(a1)));
   } else if (cmd === "current") {
@@ -104,7 +136,7 @@ async function main() {
     }
     out(String(review + question));
   } else {
-    out("usage: queue | prompt-size <bizId|support> | current <bizId> | report <id> <fix.json> | applied <id> [commit] | reverted <id> | notify");
+    out("usage: queue | pending | take <id> <why> | errors [sinceISO] | system <fault.json> | prompt-size <bizId|support> | current <bizId> | report <id> <fix.json> | applied <id> [commit] | reverted <id> | notify");
     process.exitCode = 1;
   }
 }

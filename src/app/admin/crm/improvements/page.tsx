@@ -27,7 +27,7 @@ type Item = {
 type Fb = { id: string; businessId: string; businessName: string; author: string | null; conversationId: string | null; text: string; status: string; createdAt: string; reviewNote: string | null };
 const KIND: Record<Item["kind"], [string, Tone]> = { rule: ["כלל של העסק", "info"], faq: ["שאלה ותשובה", "ok"], setup: ["הגדרת הסוכן", "warn"], base: ["בסיס, לכל הסוכנים", "bad"] };
 const FB_STATUS: Record<string, string> = { new: "חדש", in_review: "בבדיקה", applied: "טופל", dismissed: "נסגר" };
-const SOURCE: Record<string, string> = { feedback: "מהערה של בעל העסק", yair: "רעיון שלך", daily_review: "מהבדיקה היומית", chator_question: "מהסוכן של צ׳אטור" };
+const SOURCE: Record<string, string> = { feedback: "מהערה של בעל העסק", yair: "רעיון שלך", daily_review: "מהבדיקה היומית", chator_question: "מהסוכן של צ׳אטור", system: "תקלת מערכת" };
 
 // Questions Chator's own agent couldn't answer a customer (14.10.2026).
 type CQ = { id: string; question: string; stage: string; createdAt: string; businessId: string | null; businessName: string | null; phone: string; conversationId: string };
