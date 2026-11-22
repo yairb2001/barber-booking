@@ -7,6 +7,7 @@ import { NoticePopup, useBookingNotices, generalKey, staffKey, seen, markSeen, t
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 import { useVocab, useBookingOrder, useG } from "@/components/VocabProvider";
 import TreatmentList from "@/components/booking/TreatmentList";
+import { AnyStaffPill, StaffCircleGrid, shortName } from "@/components/booking/StaffCircles";
 
 type QuickSlot = {
   staffId: string;
@@ -67,6 +68,8 @@ export default function ChooseBarberPage() {
   const [quickSlots, setQuickSlots] = useState<QuickSlot[]>([]);
   // Nearest available slot per barber (covers ALL barbers, not just the quick pool)
   const [nearestByStaff, setNearestByStaff] = useState<Record<string, QuickSlot>>({});
+  // Barbers whose nearest-slot lookup finished (so "no slots" is real, not loading)
+  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [welcomeName, setWelcomeName] = useState("");
   // Returning referrer — thank-you + progress meter ("חבר מביא חבר")
@@ -115,7 +118,8 @@ export default function ChooseBarberPage() {
                   setNearestByStaff(prev => ({ ...prev, [member.id]: arr[0] }));
                 }
               })
-              .catch(() => {});
+              .catch(() => {})
+              .finally(() => setChecked(prev => new Set(prev).add(member.id)));
           });
         }
       })
@@ -275,189 +279,44 @@ export default function ChooseBarberPage() {
 
       {/* ── Quick slots strip ── */}
       {!serviceFirst && !loading && quickSlots.length > 0 && (
-        <div className="px-4 pt-5 pb-1">
-          <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="px-4 pt-5">
+          <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
+              <span className="relative flex h-2 w-2 flex-shrink-0">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
               </span>
-              <p className="text-[11px] font-semibold tracking-[0.2em] uppercase" style={{ color: "var(--brand)" }}>
-                התורים הקרובים - כל {v.staffPluralDef}
-              </p>
+              <p className="text-[13px] font-bold" style={{ color: "var(--text-sec)" }}>התורים הקרובים</p>
             </div>
-            <Link
-              href={publicHref(slug, "/book/team-upcoming")}
-              className="flex items-center gap-1 rounded-full px-3 py-1.5 active:scale-95 transition-transform"
-              style={{ background: "var(--bg-alt)", border: "1px solid var(--divider)" }}>
-              <span className="text-[11px] font-semibold" style={{ color: "var(--text-sec)" }}>כל התורים</span>
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.2}
-                style={{ color: "var(--text-sec)" }}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-              </svg>
+            <Link href={publicHref(slug, "/book/team-upcoming")}
+              className="text-[12px] font-semibold px-2 py-1" style={{ color: "var(--text-sec)" }}>
+              כל התורים ‹
             </Link>
           </div>
-          <div className="flex gap-2.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
             {quickSlots.map((slot, i) => (
               <Link key={i}
                 href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
-                className="flex-shrink-0 rounded-2xl p-3 active:scale-95 transition-transform"
-                style={{
-                  background: "var(--card)",
-                  border: "1px solid var(--divider)",
-                  minWidth: 100,
-                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-                }}>
-                <p className="text-[16px] font-bold tracking-widest leading-none" dir="ltr"
-                  style={{ color: "var(--brand)" }}>{slot.time}</p>
-                <p className="text-[10px] mt-1" style={{ color: "var(--text-sec)" }}>{slot.dayLabel}</p>
-                <p className="text-[10px] mt-0.5 truncate" style={{ color: "var(--text-muted)" }}>{slot.staffName}</p>
+                className="flex-shrink-0 flex flex-col rounded-xl px-3 py-1.5 active:scale-95 transition-transform"
+                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
+                <span className="text-[16px] font-bold leading-tight" dir="ltr" style={{ color: "var(--brand)", textAlign: "right" }}>{slot.time}</span>
+                <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-muted)" }}>{slotDayDisplay(slot)} · {shortName(slot.staffName, staff)}</span>
               </Link>
             ))}
           </div>
-
-          {/* Divider */}
-          <div className="mt-5 mb-1 flex items-center gap-3">
-            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-            <span className="text-[12px] font-bold tracking-[0.15em]" style={{ color: "var(--text-sec)" }}>או {v.choose} {v.staff}</span>
-            <div className="flex-1 h-px" style={{ background: "var(--divider)" }} />
-          </div>
         </div>
       )}
 
-      {/* ── Page title ── */}
-      {!serviceFirst && !loading && quickSlots.length === 0 && (
-        <div className="px-4 pt-6 pb-2">
-          <p className="text-[10px] tracking-[0.3em] uppercase font-medium" style={{ color: "var(--brand)" }}>הצוות שלנו</p>
-          <h2 className="text-xl font-semibold mt-1" style={{ color: "var(--text-pri)" }}>{v.choose} את {v.staffDef} שלך</h2>
+      {/* ── Choose barber: "any" pill + circles (22.11.2026) ── */}
+      {!serviceFirst && (
+        <div className="px-4 pt-3 pb-6 flex flex-col gap-4 w-full max-w-xl mx-auto">
+          {!loading && quickSlots.length === 0 && (
+            <h2 className="text-xl font-semibold pt-2" style={{ color: "var(--text-pri)" }}>{v.choose} את {v.staffDef} שלך</h2>
+          )}
+          {!loading && <AnyStaffPill slug={slug} staff={staff} />}
+          <StaffCircleGrid slug={slug} staff={staff} loading={loading} slotOf={getBarberSlot} checked={checked} dayText={slotDayDisplay} />
         </div>
       )}
-
-      {/* ── Staff grid — compact, fits all on screen ── */}
-      {!serviceFirst && <div className="px-3 pt-3 grid grid-cols-3 gap-2.5 pb-6">
-        {loading ? (
-          [1, 2, 3, 4, 5, 6].map(i => (
-            <div key={i} className="animate-pulse" style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--card)" }} />
-          ))
-        ) : (
-          <>
-            {/* ── "Any barber" card — same shape as a real barber, but its photo
-                 is a collage of the whole team and it leads to the shared
-                 (load-balanced) calendar. Only shown when there's more than one
-                 barber, since "doesn't matter" is meaningless with a single one.
-                 The collage cycles through the team's avatars so it always fills
-                 four cells regardless of how many barbers there are. ── */}
-            {staff.length > 1 && (() => {
-              const collage = Array.from({ length: 4 }, (_, i) => staff[i % staff.length]);
-              return (
-                <Link href={publicHref(slug, "/book/team-date")}
-                  className="relative overflow-hidden active:scale-[0.96] transition-transform block"
-                  style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--bg-alt)", boxShadow: "0 3px 12px rgba(0,0,0,0.1)" }}>
-
-                  {/* Collage of the team's photos (2×2) */}
-                  <div className="absolute inset-0 grid grid-cols-2 grid-rows-2">
-                    {collage.map((m, i) => (
-                      <div key={i} className="overflow-hidden" style={{ background: "var(--card)" }}>
-                        {m.avatarUrl ? (
-                          <img src={m.avatarUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-lg font-bold"
-                            style={{ color: "var(--text-muted)" }}>{m.name[0]}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="absolute inset-0"
-                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.28) 52%, rgba(0,0,0,0.12) 100%)" }} />
-
-                  {/* Badge — selling the benefit of "any barber": fastest slot */}
-                  <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded-full text-[8px] font-bold text-white"
-                    style={{ background: "var(--brand)" }}>הכי מהר</span>
-
-                  {/* Name */}
-                  <div className="absolute inset-x-0 z-10 px-2 text-center" style={{ bottom: 38 }}>
-                    <p className="font-bold text-[11px] text-white leading-tight"
-                      style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>לא משנה לי {v.staffDef}</p>
-                    <p className="text-[9px] text-white/85 leading-tight truncate mt-0.5"
-                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>התור הקרוב ביותר</p>
-                  </div>
-
-                  {/* CTA → shared calendar of everyone */}
-                  <div className="absolute bottom-1.5 inset-x-2 z-10 flex items-center justify-center py-1.5"
-                    style={{ background: "var(--brand)", borderRadius: 10 }}>
-                    <span className="text-[10px] font-bold text-white">כל {v.staffPluralDef}</span>
-                  </div>
-                </Link>
-              );
-            })()}
-
-            {staff.map(member => {
-            const slot = getBarberSlot(member.id);
-            const hasToday = slot?.dayLabel === "היום";
-
-            return (
-              <div key={member.id} className="relative overflow-hidden active:scale-[0.96] transition-transform"
-                style={{ borderRadius: 28, aspectRatio: "3/4", background: "var(--bg-alt)", boxShadow: "0 3px 12px rgba(0,0,0,0.1)" }}>
-
-                {/* Photo */}
-                <Link href={publicHref(slug, `/book/service?staffId=${member.id}`)} className="absolute inset-0">
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt={member.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-3xl font-bold"
-                      style={{ color: "var(--text-muted)" }}>
-                      {member.name[0]}
-                    </div>
-                  )}
-                  <div className="absolute inset-0"
-                    style={{ background: "linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.1) 55%, transparent 100%)" }} />
-                </Link>
-
-                {/* Live dot */}
-                {hasToday && (
-                  <span className="absolute top-2 left-2 flex h-2 w-2 z-10">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                  </span>
-                )}
-
-                {/* Name */}
-                <Link href={publicHref(slug, `/book/service?staffId=${member.id}`)}
-                  className="absolute inset-x-0 z-10 px-2 text-center"
-                  style={{ bottom: slot ? 38 : 10 }}>
-                  <p className="font-bold text-[11px] text-white leading-tight truncate"
-                    style={{ textShadow: "0 2px 6px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.9)" }}>{member.name}</p>
-                  {member.tagline && (
-                    <p className="text-[10px] text-white/85 leading-tight truncate mt-0.5"
-                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.85)" }}>{member.tagline}</p>
-                  )}
-                </Link>
-
-                {/* Slot / CTA */}
-                {slot ? (
-                  <Link
-                    href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
-                    className="absolute bottom-1.5 inset-x-2 z-10 flex flex-col items-center justify-center py-0.5 active:opacity-80 transition-opacity"
-                    style={{ background: "var(--brand)", borderRadius: 10 }}>
-                    <span className="text-[7px] font-medium text-white/75 leading-none mb-0.5">
-                      התור הקרוב{slotDayDisplay(slot) ? ` · ${slotDayDisplay(slot)}` : ""}
-                    </span>
-                    <span className="text-[10px] font-bold text-white leading-none">{slot.time}</span>
-                  </Link>
-                ) : (
-                  <Link
-                    href={publicHref(slug, `/book/service?staffId=${member.id}`)}
-                    className="absolute bottom-2 inset-x-2 z-10 flex items-center justify-center py-1.5 active:opacity-80"
-                    style={{ background: "rgba(255,255,255,0.14)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.22)", borderRadius: 14 }}>
-                    <span className="text-[10px] font-semibold text-white">{g("קבע תור", "קבעי תור")}</span>
-                  </Link>
-                )}
-              </div>
-            );
-          })}
-          </>
-        )}
-      </div>}
     </div>
   );
 }
