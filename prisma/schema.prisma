@@ -312,6 +312,8 @@ model StaffService {
   staffId           String  @map("staff_id")
   serviceId         String  @map("service_id")
   customPrice       Float?  @map("custom_price")
+  /// Intro price: shown struck through next to customPrice, with "מחיר היכרות". Null = none.
+  originalPrice     Float?  @map("original_price")
   customDuration    Int?    @map("custom_duration")
   customName        String? @map("custom_name")
   customDescription String? @map("custom_description")

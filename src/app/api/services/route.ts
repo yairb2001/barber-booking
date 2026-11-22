@@ -44,6 +44,7 @@ export async function GET(request: Request) {
       price: ss.customPrice ?? ss.service.price,
       durationMinutes: ss.customDuration ?? ss.service.durationMinutes,
       customPrice: ss.customPrice,
+      originalPrice: ss.originalPrice,
       customDuration: ss.customDuration,
       customName: ss.customName,
       customDescription: ss.customDescription,

@@ -15,6 +15,7 @@ type Service = {
   showDuration: boolean;
   note: string | null;
   customPrice: number | null;
+  originalPrice: number | null;
   customDuration: number | null;
 };
 
@@ -192,7 +193,17 @@ function ChooseServicePageContent() {
                   {/* Price + arrow */}
                   <div className="flex-shrink-0 flex items-center gap-2">
                     <div className="text-right">
-                      <p className="text-[22px] font-bold leading-none" style={{ color: "var(--brand)" }}>₪{price}</p>
+                      {service.originalPrice != null && service.originalPrice > price ? (
+                        <>
+                          <p className="flex items-baseline gap-1.5 leading-none">
+                            <span className="text-[14px] line-through" style={{ color: "var(--text-muted)" }}>₪{service.originalPrice}</span>
+                            <span className="text-[22px] font-bold" style={{ color: "var(--brand)" }}>₪{price}</span>
+                          </p>
+                          <p className="text-[11px] font-semibold mt-1" style={{ color: "var(--brand)" }}>מחיר היכרות</p>
+                        </>
+                      ) : (
+                        <p className="text-[22px] font-bold leading-none" style={{ color: "var(--brand)" }}>₪{price}</p>
+                      )}
                     </div>
                     <svg className="w-4 h-4 rotate-180 flex-shrink-0" fill="none" viewBox="0 0 24 24"
                       stroke="currentColor" strokeWidth={2} style={{ color: "var(--text-muted)" }}>
