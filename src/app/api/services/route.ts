@@ -17,6 +17,8 @@ export async function GET(request: Request) {
     // so a staffId cannot pull services from a different tenant).
     const staffServices = await prisma.staffService.findMany({
       where: { staffId, service: { businessId: resolvedBusinessId } },
+      // The owner's order (sortOrder) — without it the barber's list came out in DB order.
+      orderBy: { service: { sortOrder: "asc" } },
       include: {
         service: {
           select: {
