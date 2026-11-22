@@ -87,8 +87,9 @@ export function StaffCircleGrid<S extends CircleSlot>({ slug, staff, loading, sl
             </Link>
             {slot ? (
               <Link href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
-                className="text-[12px] leading-tight px-2 py-1" style={{ color: "var(--text-sec)" }}>
-                {dayText(slot)} {slot.time}
+                className="flex flex-col items-center text-[12px] leading-tight px-2 py-1" style={{ color: "var(--text-sec)" }}>
+                <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>התור הקרוב:</span>
+                <span>{dayText(slot)} {slot.time}</span>
               </Link>
             ) : (
               <span className="text-[12px] leading-tight px-2 py-1" style={{ color: "var(--text-muted)" }}>
