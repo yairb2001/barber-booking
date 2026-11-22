@@ -59,10 +59,10 @@ export function StaffCircleGrid<S extends CircleSlot>({ slug, staff, loading, sl
 }) {
   if (loading) {
     return (
-      <div className="grid grid-cols-3 sm:grid-cols-4 gap-y-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-y-2.5">
         {[1, 2, 3, 4, 5, 6].map(i => (
           <div key={i} className="flex flex-col items-center gap-2">
-            <div className="w-20 h-20 rounded-full animate-pulse" style={{ background: "var(--bg-alt)" }} />
+            <div className="w-[104px] h-[104px] rounded-full animate-pulse" style={{ background: "var(--bg-alt)" }} />
             <div className="w-12 h-3 rounded animate-pulse" style={{ background: "var(--bg-alt)" }} />
           </div>
         ))}
@@ -70,7 +70,7 @@ export function StaffCircleGrid<S extends CircleSlot>({ slug, staff, loading, sl
     );
   }
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-4 gap-y-3">
+    <div className="grid grid-cols-3 sm:grid-cols-4 gap-y-2.5">
       {staff.map(m => {
         const slot = slotOf(m.id);
         const none = !slot && checked.has(m.id);
@@ -78,18 +78,18 @@ export function StaffCircleGrid<S extends CircleSlot>({ slug, staff, loading, sl
         return (
           <div key={m.id} className="flex flex-col items-center text-center min-w-0">
             <Link href={href} className="flex flex-col items-center active:scale-95 transition-transform">
-              <span className="w-20 h-20 rounded-full p-[3px] mb-1.5"
+              <span className="w-[104px] h-[104px] rounded-full p-[3px] mb-1.5"
                 style={{ background: none ? "var(--divider)" : "var(--brand-soft)" }}>
-                <Avatar m={m} className={`w-full h-full rounded-full text-2xl ${none ? "grayscale opacity-60" : ""}`} />
+                <Avatar m={m} className={`w-full h-full rounded-full text-3xl ${none ? "grayscale opacity-60" : ""}`} />
               </span>
-              <span className="text-[14px] font-semibold leading-tight truncate max-w-[104px]"
+              <span className="text-[15px] font-semibold leading-tight truncate max-w-[110px]"
                 style={{ color: "var(--text-pri)" }}>{shortName(m.name, staff)}</span>
             </Link>
             {slot ? (
               <Link href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
                 className="flex flex-col items-center text-[12px] leading-tight px-2 py-1" style={{ color: "var(--text-sec)" }}>
                 <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>התור הקרוב:</span>
-                <span>{dayText(slot)} {slot.time}</span>
+                <span className="font-bold" style={{ color: "var(--brand)" }}>{dayText(slot)} {slot.time}</span>
               </Link>
             ) : (
               <span className="text-[12px] leading-tight px-2 py-1" style={{ color: "var(--text-muted)" }}>

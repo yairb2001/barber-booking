@@ -7,7 +7,7 @@ import { NoticePopup, useBookingNotices, generalKey, staffKey, seen, markSeen, t
 import { useSlug, apiWithSlug, publicHref, useSmartBack } from "@/lib/public-nav";
 import { useVocab, useBookingOrder, useG } from "@/components/VocabProvider";
 import TreatmentList from "@/components/booking/TreatmentList";
-import { AnyStaffPill, StaffCircleGrid, shortName } from "@/components/booking/StaffCircles";
+import { AnyStaffPill, StaffCircleGrid } from "@/components/booking/StaffCircles";
 
 type QuickSlot = {
   staffId: string;
@@ -277,42 +277,9 @@ export default function ChooseBarberPage() {
         </div>
       )}
 
-      {/* ── Quick slots strip ── */}
-      {!serviceFirst && !loading && quickSlots.length > 0 && (
-        <div className="px-4 pt-5">
-          <div className="flex items-center justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2 flex-shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-              </span>
-              <p className="text-[13px] font-bold" style={{ color: "var(--text-sec)" }}>התורים הקרובים</p>
-            </div>
-            <Link href={publicHref(slug, "/book/team-upcoming")}
-              className="text-[12px] font-semibold px-2 py-1" style={{ color: "var(--text-sec)" }}>
-              כל התורים ‹
-            </Link>
-          </div>
-          <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-            {quickSlots.map((slot, i) => (
-              <Link key={i}
-                href={publicHref(slug, `/book/confirm?staffId=${slot.staffId}&serviceId=${slot.serviceId}&date=${slot.date}&time=${slot.time}&from=home`)}
-                className="flex-shrink-0 flex flex-col rounded-xl px-3 py-1.5 active:scale-95 transition-transform"
-                style={{ background: "var(--card)", border: "1px solid var(--divider)" }}>
-                <span className="text-[16px] font-bold leading-tight" dir="ltr" style={{ color: "var(--brand)", textAlign: "right" }}>{slot.time}</span>
-                <span className="text-[11px] whitespace-nowrap" style={{ color: "var(--text-muted)" }}>{slotDayDisplay(slot)} · {shortName(slot.staffName, staff)}</span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Choose barber: "any" pill + circles (22.11.2026) ── */}
+      {/* ── Choose barber: "any" pill + circles (22.11.2026): big circles, 9 fit the first screen ── */}
       {!serviceFirst && (
         <div className="px-4 pt-3 pb-6 flex flex-col gap-4 w-full max-w-xl mx-auto">
-          {!loading && quickSlots.length === 0 && (
-            <h2 className="text-xl font-semibold pt-2" style={{ color: "var(--text-pri)" }}>{v.choose} את {v.staffDef} שלך</h2>
-          )}
           {!loading && <AnyStaffPill slug={slug} staff={staff} />}
           <StaffCircleGrid slug={slug} staff={staff} loading={loading} slotOf={getBarberSlot} checked={checked} dayText={slotDayDisplay} />
         </div>
