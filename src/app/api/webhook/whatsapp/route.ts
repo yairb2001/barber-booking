@@ -44,6 +44,7 @@ import { pushChatEvent, customerStaffFor } from "@/lib/native/chat-push";
 import { takeAgentTurn } from "@/lib/agent/agent-turn";
 import { isTester, runTesterTurn } from "@/lib/agent/test-mode";
 import { sendMessage } from "@/lib/messaging";
+import { bookConfirmWhileHandedOver } from "@/lib/agent/confirm-while-handed-over";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
 import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent, isNonHebrewMessage } from "@/lib/link-first";
@@ -648,6 +649,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     await prisma.conversation.update({ where: { id: conv.id }, data: { escalatedAt: null } });
   }
   if (isEscalated) {
+    // A "כן" to the agent's own "מאשר?" is still booked (confirm-while-handed-over.ts).
+    await bookConfirmWhileHandedOver({ businessId: biz.id, phone, conversationId: conv.id, text }).catch(e => console.error("[agent] confirm while handed over", e));
     // Conversation handed to a human → notify whoever handles the inbox, WITH
     // the message text, so nobody has to open the app to see what was said.
     const who = await prisma.customer.findFirst({ where: { businessId: biz.id, phone: { in: phoneVariants(phone) }, deletedAt: null }, select: { name: true } }).catch(() => null);
