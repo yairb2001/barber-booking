@@ -196,7 +196,7 @@ function ChooseServicePageContent() {
                       {service.originalPrice != null && service.originalPrice > price ? (
                         <>
                           <p className="flex items-baseline gap-1.5 leading-none">
-                            <span className="text-[14px] line-through" style={{ color: "var(--text-muted)" }}>₪{service.originalPrice}</span>
+                            <span className="text-[19px] font-semibold line-through" style={{ color: "var(--text-muted)" }}>₪{service.originalPrice}</span>
                             <span className="text-[22px] font-bold" style={{ color: "var(--brand)" }}>₪{price}</span>
                           </p>
                           <p className="text-[11px] font-semibold mt-1" style={{ color: "var(--brand)" }}>מחיר היכרות</p>

@@ -31,6 +31,7 @@ type ServiceRow = {
   enabled: boolean;
   owned: boolean;
   customPrice: number | null;
+  originalPrice: number | null;
   customDuration: number | null;
   customName: string | null;
   customDescription: string | null;
@@ -71,6 +72,7 @@ export default function StaffSettingsPage() {
   const [services, setServices] = useState<ServiceRow[]>([]);
   const [editingService, setEditingService] = useState<string | null>(null);
   const [customPrice, setCustomPrice] = useState("");
+  const [originalPrice, setOriginalPrice] = useState("");
   const [customDuration, setCustomDuration] = useState("");
   const [customName, setCustomName] = useState("");
   const [customDescription, setCustomDescription] = useState("");
@@ -226,6 +228,7 @@ export default function StaffSettingsPage() {
         serviceId,
         enabled: true,
         customPrice: customPrice ? Number(customPrice) : null,
+        originalPrice: originalPrice ? Number(originalPrice) : null,
         customDuration: customDuration ? Number(customDuration) : null,
         customName: customName.trim() || null,
         customDescription: customDescription.trim() || null,
@@ -390,6 +393,7 @@ export default function StaffSettingsPage() {
                     {svc.customName && <span className="text-neutral-400 font-normal"> ({svc.name})</span>}
                   </div>
                   <div className="text-xs text-neutral-400">
+                    {svc.originalPrice != null && <span className="line-through text-neutral-400 me-1">₪{svc.originalPrice}</span>}
                     {svc.customPrice != null ? `₪${svc.customPrice}` : `₪${svc.price}`}
                     {" · "}
                     {svc.customDuration != null ? `${svc.customDuration} דק'` : `${svc.durationMinutes} דק'`}
@@ -402,6 +406,7 @@ export default function StaffSettingsPage() {
                   <button onClick={() => {
                     setEditingService(svc.id);
                     setCustomPrice(svc.customPrice != null ? String(svc.customPrice) : "");
+                    setOriginalPrice(svc.originalPrice != null ? String(svc.originalPrice) : "");
                     setCustomDuration(svc.customDuration != null ? String(svc.customDuration) : "");
                     setCustomName(svc.customName ?? "");
                     setCustomDescription(svc.customDescription ?? "");
@@ -452,6 +457,14 @@ export default function StaffSettingsPage() {
                         placeholder={`${svc.durationMinutes} (ברירת מחדל)`}
                         className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
                     </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-neutral-500 block mb-1">מחיר היכרות: המחיר הרגיל (₪)</label>
+                    <input type="number" min={0} value={originalPrice}
+                      onChange={e => setOriginalPrice(e.target.value)}
+                      placeholder="ריק = בלי מחיר היכרות"
+                      className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+                    <p className="text-[11px] text-neutral-400 mt-1">ללקוח יופיע המחיר הזה מחוק, לידו המחיר המותאם, ומתחת &quot;מחיר היכרות&quot;. כדי לסיים: למחוק ולשמור.</p>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => saveCustomPriceDuration(svc.id)} disabled={saving}

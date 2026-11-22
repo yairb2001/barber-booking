@@ -48,6 +48,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       owned: s.ownerStaffId === params.id,          // belongs to this barber
       enabled: s.ownerStaffId === params.id ? true : !!staffMap[s.id],
       customPrice: staffMap[s.id]?.customPrice ?? null,
+      originalPrice: staffMap[s.id]?.originalPrice ?? null,
       customDuration: staffMap[s.id]?.customDuration ?? null,
       customName: staffMap[s.id]?.customName ?? null,
       customDescription: staffMap[s.id]?.customDescription ?? null,
@@ -156,6 +157,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const normName = typeof customName === "string" && customName.trim() ? customName.trim() : null;
   const normDescription = typeof customDescription === "string" && customDescription.trim() ? customDescription.trim() : null;
   const normNote = typeof customNote === "string" && customNote.trim() ? customNote.trim() : null;
+  // Intro price (22.11.2026): touched only when the form sends it, so other forms keep it.
+  const original = "originalPrice" in body
+    ? { originalPrice: typeof body.originalPrice === "number" && body.originalPrice > 0 ? body.originalPrice : null }
+    : {};
 
   if (enabled) {
     await prisma.staffService.upsert({
@@ -168,6 +173,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         customName: normName,
         customDescription: normDescription,
         customNote: normNote,
+        ...original,
       },
       update: {
         customPrice: customPrice ?? null,
@@ -175,6 +181,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         customName: normName,
         customDescription: normDescription,
         customNote: normNote,
+        ...original,
       },
     });
   } else {
