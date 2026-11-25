@@ -15,15 +15,19 @@ const NOT_MOVE = /לבטל|ביטול|תבטל|תור נוסף|עוד תור|מ�
 const EARLIER = /להקדים|תקדים|מוקדם יותר|יותר מוקדם|קודם/;
 const LATER = /לאחר|לדחות|תדחה|מאוחר יותר|יותר מאוחר|אחר כך/;
 const KEEP = /להשאיר|תשאיר|נשאר|לא להזיז|לא צריך|עזוב|סבבה ככה|בסדר ככה|נשאיר/;
-const SWAP_YES = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|^1\b/;
+const SWAP_YES = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|תבקש|לבקש|^1\b/;
+// He takes the first way out; "אולי אצל ספר אחר" / "לא משנה לי אצל מי" is not "keep it".
+const OTHER_WAY = /יום אחר|ספר אחר|ספרית אחרת|מישהו אחר|לא משנה (לי )?(אצל )?מי/;
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const MOVE_TTL_MS = 2 * 60 * 60 * 1000;
 
 type MoveMeta = {
   appointmentId: string; staffId: string; staffName: string; serviceId: string; serviceName: string;
   dateISO: string; startTime: string;                      // the existing appointment
-  stage: "target" | "pick" | "confirm" | "swapOrPick" | "keepOrOther";
+  stage: "target" | "pick" | "confirm" | "swapOrPick" | "keepOrOther" | "swapTime";
   targetDate?: string; targetTime?: string; options?: string[]; direction?: "earlier" | "later" | null;
+  /** keepOrOther on a full day: other customers hold appointments that day, so a swap can be asked for. */
+  canSwap?: boolean;
 };
 const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const dayName = (iso: string, today: string) => { const off = Math.round((Date.parse(iso) - Date.parse(today)) / 864e5); return off === 0 ? "היום" : off === 1 ? "מחר" : DAY[getDayOfWeekISO(iso)]; };
@@ -80,6 +84,25 @@ async function freeSlots(businessId: string, staffId: string, serviceId: string,
   return avail.find(a => a.staffId === staffId)?.slots ?? [];
 }
 
+/** What the shop allows: offering a swap at all, and whose approval it takes. */
+async function swapRules(businessId: string, staffName: string): Promise<{ on: boolean; needs: string }> {
+  const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { allowSwapOffers: true, requireSwapApproval: true } });
+  return { on: cfg?.allowSwapOffers !== false, needs: (cfg?.requireSwapApproval ?? true) ? `אישור שלו ושל ${staffName}` : "אישור שלו" };
+}
+
+/** Start times other customers hold with this staff member that day (still ahead of now): what a swap can be asked for. */
+async function heldTimes(businessId: string, staffId: string, dateISO: string, customerId?: string): Promise<string[]> {
+  const now = getBusinessNow();
+  const rows = await prisma.appointment.findMany({
+    where: { businessId, staffId, date: new Date(dateISO + "T00:00:00.000Z"), status: { in: ["pending", "confirmed"] }, NOT: { customerId: customerId ?? "" } },
+    select: { startTime: true }, orderBy: { startTime: "asc" },
+  });
+  return Array.from(new Set(rows.map(r => r.startTime))).filter(t => dateISO !== now.date || timeToMinutes(t) > now.minutes);
+}
+
+/** No free slot → always the same two ways out (owner, 25.11.2026): another day or staff member, or asking a customer to swap. */
+const twoWays = (lead: string, swapWith: string, needs: string) => `${lead}, או שאבקש מ${swapWith} להחליף איתך. החלפה דורשת ${needs}.\nמה עדיף לך?`;
+
 async function save(businessId: string, phone: string, conversationId: string, meta: MoveMeta, existingId?: string) {
   const ph = normalizeIsraeliPhone(phone);
   if (existingId) { await prisma.bookingProposal.update({ where: { id: existingId }, data: { note: JSON.stringify(meta), date: meta.targetDate ? new Date(meta.targetDate + "T00:00:00.000Z") : new Date(meta.dateISO + "T00:00:00.000Z"), startTime: meta.targetTime ?? meta.startTime } }); return; }
@@ -107,6 +130,19 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
   const what = `התור ${dayLabelHe(meta.dateISO)} בשעה ${meta.startTime} אצל ${meta.staffName}`;
   const ctx = (extra: string) => ({ context: `הלקוח מזיז את ${what} (מזהה ${meta.appointmentId}). ${extra} תשובתו עכשיו: "${text.slice(0, 120)}". שעה/יום ברורים → request_appointment_move; רוצה להשאיר → אמור שהתור נשאר; אחרת עזור בקצרה.` });
 
+  /** Ask for the swap at an hour another customer holds; nobody is told it is done. */
+  const askSwap = async (date: string, time: string): Promise<ProposalOutcome> => {
+    const result = await p.execTool("request_appointment_move", { appointmentId: meta.appointmentId, targetDate: date, targetStartTime: time, insistExactTime: "true" });
+    // The tool's two "request is out" answers; its refusals also say "בקשה" ("אל תפתח בקשה").
+    const ok = p.sandbox || /אז שלחתי ל|אז פניתי ישירות/.test(result);
+    await close(pending.id, ok ? "accepted" : "rejected");
+    if (ok) return { reply: `בודק מול ${meta.staffName} אפשרות להחלפה ל-${time}, אעדכן אותך ברגע שיש תשובה 👍` };
+    return { context: `הלקוח ביקש לנסות החלפה ל-${date} ${time} אבל זה לא הצליח: "${result.slice(0, 200)}". הסבר והצע חלופה.` };
+  };
+
+  if (meta.stage !== "confirm" && meta.stage !== "target" && OTHER_WAY.test(text) && !KEEP.test(text)) {
+    return ctx("נאמר לו שאין מקום במה שביקש, והוצע: יום אחר או ספר אחר, או בקשת החלפה מלקוח אחר. הוא בוחר ביום אחר / ספר אחר: מצא לו (find_next_available / get_available_slots), ולספר אחר request_appointment_move עם allowOtherBarber=true.");
+  }
   if (KEEP.test(text) || (meta.stage !== "confirm" && classifyReply(text) === "no")) { await close(pending.id, "rejected"); return { reply: `סבבה, ${what} נשאר כמו שהוא 👍` }; }
 
   if (meta.stage === "confirm" && meta.targetDate && meta.targetTime) {
@@ -126,14 +162,24 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
   if (meta.stage === "swapOrPick" && meta.targetDate && meta.targetTime) {
     const picked = parseTargetTime(text, null, meta.startTime);
     if (picked && (meta.options ?? []).includes(picked)) return advance(p, { ...meta, stage: "pick" }, text, pending.id);
-    if (SWAP_YES.test(text) && !picked) {
-      const result = await p.execTool("request_appointment_move", { appointmentId: meta.appointmentId, targetDate: meta.targetDate, targetStartTime: meta.targetTime, insistExactTime: "true" });
-      const ok = p.sandbox || /שלחתי|בקשה/.test(result);
-      await close(pending.id, ok ? "accepted" : "rejected");
-      if (ok) return { reply: `בודק מול ${meta.staffName} אפשרות להחלפה ל-${meta.targetTime}, אעדכן אותך ברגע שיש תשובה 👍` };
-      return { context: `הלקוח ביקש לנסות החלפה ל-${meta.targetDate} ${meta.targetTime} אבל זה לא הצליח: "${result.slice(0, 200)}". הסבר והצע חלופה.` };
-    }
+    if (SWAP_YES.test(text) && !picked) return askSwap(meta.targetDate, meta.targetTime);
     return advance(p, meta, text, pending.id);
+  }
+
+  // A full day, and he chose the swap: which hour to ask for, then the request.
+  if ((meta.stage === "swapTime" || (meta.stage === "keepOrOther" && meta.canSwap && SWAP_YES.test(text))) && meta.targetDate) {
+    const day = meta.targetDate;
+    const hour = parseTargetTime(text, null, day === meta.dateISO ? meta.startTime : null);
+    if (!hour && meta.stage === "swapTime" && !SWAP_YES.test(text)) return advance(p, meta, text, pending.id);
+    const held = await heldTimes(p.businessId, meta.staffId, day, p.customer?.id);
+    if (hour && held.includes(hour)) return askSwap(day, hour);
+    if (hour && (await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id)).includes(hour)) return advance(p, meta, text, pending.id);
+    await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "swapTime" }, pending.id);
+    const when = `${dayName(day, today)} ${Number(day.slice(8, 10))}.${Number(day.slice(5, 7))}`;
+    if (!hour) return { reply: `לאיזו שעה ${when} הכי נוח לך? אבקש מהלקוח שבשעה הזאת.` };
+    const near = held.map(t => ({ t, d: Math.abs(timeToMinutes(t) - timeToMinutes(hour)) })).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.t).sort();
+    if (!near.length) return ctx(`ביקש החלפה ל-${hour} אבל אין ${when} אצל ${meta.staffName} תור של לקוח אחר.`);
+    return { reply: `ב-${hour} אין אצל ${meta.staffName} תור שאפשר להחליף איתו. הכי קרוב: ${near.join(" · ")}. איזו שעה?` };
   }
 
   return advance(p, meta, text, pending.id);
@@ -162,7 +208,7 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
     const probeSlots = await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id);
     const probeSpan = probeSlots.length ? { first: timeToMinutes(probeSlots[0]), last: timeToMinutes(probeSlots[probeSlots.length - 1]) } : null;
     if (!saidDirection && !saidDay && !parseTargetTime(text, probeSpan, day === meta.dateISO ? meta.startTime : null)) {
-      const state = meta.stage === "swapOrPick" ? `הוצע לו: ${meta.targetTime} תפוס, פנוי ${(meta.options ?? []).join(", ")}, או החלפה.` : meta.stage === "pick" ? `הוצעו לו: ${(meta.options ?? []).join(", ")}.` : meta.stage === "confirm" ? `נשאל אם להעביר ל-${meta.targetDate} ${meta.targetTime}.` : "נשאל לאיזו שעה/יום.";
+      const state = meta.stage === "swapOrPick" ? `הוצע לו: ${meta.targetTime} תפוס, פנוי ${(meta.options ?? []).join(", ")}, או החלפה.` : meta.stage === "pick" ? `הוצעו לו: ${(meta.options ?? []).join(", ")}.` : meta.stage === "confirm" ? `נשאל אם להעביר ל-${meta.targetDate} ${meta.targetTime}.` : meta.stage === "swapTime" ? `בחר בהחלפה ב-${meta.targetDate} ונשאל לאיזו שעה.` : meta.stage === "keepOrOther" && meta.canSwap ? `נאמר לו שאין מקום ב-${meta.targetDate}, והוצע: יום אחר או ספר אחר (find_next_available / get_available_slots), או בקשת החלפה מלקוח אחר.` : "נשאל לאיזו שעה/יום.";
       return ctx(state);
     }
   }
@@ -181,14 +227,14 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
     // taken → nearest free the same day, plus the swap option when someone holds that slot
     const near = daySlots.map(s => ({ s, d: Math.abs(timeToMinutes(s) - timeToMinutes(time)) })).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.s).sort();
     const occupied = await prisma.appointment.findFirst({ where: { businessId: p.businessId, staffId: meta.staffId, date: new Date(day + "T00:00:00.000Z"), startTime: time, status: { in: ["pending", "confirmed"] }, NOT: { customerId: p.customer?.id ?? "" } }, select: { id: true } });
-    const cfg = await prisma.agentConfig.findUnique({ where: { businessId: p.businessId }, select: { allowSwapOffers: true } });
-    const swapOk = !!occupied && cfg?.allowSwapOffers !== false;
-    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", direction }, existingId ?? undefined); return { reply: `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר?` }; }
+    const rules = await swapRules(p.businessId, meta.staffName);
+    const swapOk = !!occupied && rules.on;
+    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", direction }, existingId ?? undefined); return { reply: `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
     const next: MoveMeta = { ...meta, stage: "swapOrPick", targetDate: day, targetTime: time, options: near, direction };
     await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
-    const alt = near.length ? `פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `אין לו שעה אחרת פנויה ${label}.`;
-    const swap = swapOk ? ` אפשר גם לנסות החלפה עם הלקוח שב-${time} (${meta.staffName} צריך לאשר).` : "";
-    return { reply: `${time} תפוס אצל ${meta.staffName}. ${alt}${swap} מה מעדיף?` };
+    const alt = near.length ? `${time} תפוס אצל ${meta.staffName}. פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}.`;
+    if (!swapOk) return { reply: `${alt} מה עדיף לך?` };
+    return { reply: `${alt}\n${twoWays(near.length ? "אפשר גם יום אחר או ספר אחר" : "אפשר לקבוע ליום אחר או אצל ספר אחר", `הלקוח שב-${time}`, rules.needs)}` };
   }
 
   // no time — a direction ("להקדים") or a day → list what fits
@@ -202,9 +248,13 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
       const verb = direction === "earlier" ? "להקדים" : direction === "later" ? "לדחות" : "להעביר";
       return { reply: `${hi}אפשר ${verb} אצל ${meta.staffName} ${sameDay ? "באותו יום" : label}: ${shown.join(" · ")}. איזו שעה?` };
     }
-    const next: MoveMeta = { ...meta, stage: "keepOrOther", targetDate: day, direction };
+    // Nothing free in what he asked for; a swap is on the table when other customers hold hours there.
+    const rules = await swapRules(p.businessId, meta.staffName);
+    const canSwap = rules.on && (await heldTimes(p.businessId, meta.staffId, day, p.customer?.id)).some(t => !sameDay || (direction === "earlier" ? timeToMinutes(t) < cur : direction === "later" ? timeToMinutes(t) > cur : true));
+    const next: MoveMeta = { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap };
     await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
     const none = direction === "earlier" ? `אין אצל ${meta.staffName} שעה מוקדמת יותר ${sameDay ? "באותו יום" : label}` : direction === "later" ? `אין אצל ${meta.staffName} שעה מאוחרת יותר ${sameDay ? "באותו יום" : label}` : `אין אצל ${meta.staffName} מקום ${label}`;
+    if (canSwap) return { reply: `${hi}${none}.\n${twoWays("אפשר לקבוע ליום אחר או אצל ספר אחר", `אחד הלקוחות ${sameDay ? "של אותו יום" : "של " + label}`, rules.needs)}` };
     return { reply: `${hi}${none}. להשאיר את התור ${dayLabelHe(meta.dateISO)} ב-${meta.startTime}, או לבדוק יום אחר / ספר אחר?` };
   }
   // plain "להזיז את התור" — ask for the target
