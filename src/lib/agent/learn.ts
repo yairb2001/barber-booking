@@ -51,14 +51,17 @@ export async function askOwner(p: { businessId: string; conversationId: string |
   }
 }
 
-/** The owner answered: to the customer (from the shop's number), and kept as an FAQ unless he said not to. */
+/** The owner answered: to the customer (from the shop's number, phrased in context), and kept as an FAQ unless he said not to. */
 export async function answerQuestion(p: { businessId: string; questionId: string; answer: string; save: boolean; by: string }): Promise<{ ok: boolean; error?: string }> {
   const q = await prisma.agentQuestion.findUnique({ where: { id: p.questionId } });
   if (!q || q.businessId !== p.businessId) return { ok: false, error: "השאלה לא נמצאה" };
   if (q.status !== "open") return { ok: false, error: "כבר נענתה" };
   const answer = p.answer.trim();
   if (!answer) return { ok: false, error: "צריך לכתוב תשובה" };
-  const sent = await sendProactiveMessage({ businessId: p.businessId, customerPhone: q.customerPhone, body: answer, kind: "owner_answer", escalate: false });
+  // The customer gets it tied back to his question (the chat may have moved on); the FAQ keeps the owner's own words.
+  const { phraseOwnerAnswer } = await import("@/lib/agent/owner-answer");
+  const body = await phraseOwnerAnswer({ businessId: p.businessId, conversationId: q.conversationId, customerName: q.customerName, question: q.question, answer });
+  const sent = await sendProactiveMessage({ businessId: p.businessId, customerPhone: q.customerPhone, body, kind: "owner_answer", escalate: false });
   const faqId = p.save ? await addFaq(p.businessId, q.question, answer) : null;
   await prisma.agentQuestion.update({ where: { id: q.id }, data: { status: "answered", answer, answeredBy: p.by, answeredAt: new Date(), faqId } });
   await prisma.businessNotification.updateMany({ where: { businessId: p.businessId, kind: "agent_question", meta: { contains: q.id } }, data: { doneAt: new Date(), readAt: new Date() } });

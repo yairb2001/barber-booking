@@ -50,7 +50,7 @@ function QuestionCard({ q, focus, onDone }: { q: Question; focus: boolean; onDon
         <span>{q.customerName || q.customerPhone} שאל את הסוכן</span><span>{ago(q.at)}</span>
       </div>
       <p className="text-sm font-semibold text-neutral-800">״{q.question}״</p>
-      <textarea value={answer} onChange={e => setAnswer(e.target.value)} rows={2} placeholder="מה לענות? התשובה תישלח אליו בוואטסאפ" className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
+      <textarea value={answer} onChange={e => setAnswer(e.target.value)} rows={2} placeholder="מה לענות? אפשר בקצרה. הלקוח יקבל את התשובה עם תזכורת לשאלה שלו" className="w-full border border-neutral-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
       <label className="flex items-center gap-2 text-xs text-neutral-600">
         <input type="checkbox" checked={save} onChange={e => setSave(e.target.checked)} className="accent-teal-600" />
         לשמור, כדי שהסוכן יענה על זה לבד בפעם הבאה
