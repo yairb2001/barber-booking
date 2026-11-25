@@ -222,7 +222,8 @@ export async function buildAvailabilitySnapshot(p: {
   // not only these days: a list of these days' offs was read as "she doesn't work Tuesdays" (25.11.2026).
   if (p.asks) {
     const open = new Set(index.staff.flatMap(s => index.weekDays(s.id)));
-    const partWeek = index.staff.filter(s => index.weekDays(s.id).length < open.size);
+    // No regular week at all (opened day by day) says nothing about his days.
+    const partWeek = index.staff.filter(s => { const n = index.weekDays(s.id).length; return n > 0 && n < open.size; });
     if (partWeek.length) notes.push(`${WORK_DAYS} ${partWeek.map(s => `${label(s)} ${index.weekDays(s.id).map(d => DAY[d]).join(", ")}`).join(" | ")} (יום אחר = לא עובדים בו, לא "מלא", ובלי רשימת המתנה ליום כזה)`);
     // A weekday past the list is not a day off ("רותם לא עובדת בימי שלישי", 25.11.2026: Tuesday was day 7).
     const past = addDaysISO(today, days), pastDay = DAY[getDayOfWeekISO(past)];
