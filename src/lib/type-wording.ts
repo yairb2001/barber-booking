@@ -151,11 +151,11 @@ export function agentReplyForType(text: string, words: Words): string {
   // "יש המון מקום" makes a business sound empty (Yair, 28.10.2026: "לא אהבתי
   // שהוא אומר המון מקום"); "מלא" only after "יש", since "היום מלא" means full.
   return atMostThreeTimes(out.replace(/\*\*/g, "")
-    .replace(/(יש (?:(?:לו|לה|להם|לנו|לי|אצלו|אצלה) )?(?:עוד )?)?(המון|הרבה|מלא) (מקומות|מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
+    .replace(/(יש (?:(?:לו|לה|להם|לנו|לי|אצלו|אצלה) )?(?:עוד )?)?(המון|הרבה|מלא) (מקומות|מקום|שעות|אפשרויות|תורים|זמנים)/g, (m, yesh: string | undefined, q: string, what: string) =>
       q === "מלא" && !yesh ? m : `${yesh ?? ""}כמה ${what.startsWith("מקום") ? "תורים פנויים" : what}`)
     .replace(/((?:ו?יש (?:עוד )?)|(?:ו?עוד ))המון(?= עד|\s*[).,!]|$)/gm, "$1כמה")
     // A long dash between words (the instructions already forbid it): a comma. Between times it stays.
-    .replace(/[ \t]+(?:—|--)[ \t]+/g, (m, at: number, s: string) => /\d/.test(s[at - 1] ?? "") && /\d/.test(s[at + m.length] ?? "") ? m : ", "));
+    .replace(/[ \t]+(?:—|--)[ \t]+/g, (m, at: number, s: string) => /\d:\d\d$/.test(s.slice(Math.max(0, at - 5), at)) && /^\d{1,2}:\d\d/.test(s.slice(at + m.length)) ? m : ", "));
 }
 
 /** At most 3 times in a row, as the instructions say (29.10.2026: 12 slots for one gel

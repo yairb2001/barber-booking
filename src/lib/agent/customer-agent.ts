@@ -972,6 +972,11 @@ export async function execTool(
       }
 
       case "find_parallel_slots": {
+        // "אחד אחרי השני" is not the same hour; the answer is the consecutive one, not a list of parallel times.
+        if (widerContext(bizId)) {
+          const said = (await prisma.conversationMessage.findMany({ where: { conversationId, role: "user" }, orderBy: { createdAt: "desc" }, take: 6, select: { content: true } })).map(m => m.content).join("\n");
+          if (IN_A_ROW_RE.test(said) && !/באותה שעה|באותו זמן|במקביל/.test(said)) return "הלקוח ביקש אחד אחרי השני, לא במקביל: קח שעה פנויה של איש צוות אחד, השני מתחיל כשהראשון מסיים, וקרא ל-propose_booking אחד עם others (startTime, forName, serviceId כשהשירות שונה).";
+        }
         const { date: inDate } = input;
         const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
         const count = Math.max(2, Number(input.count) || 2);
@@ -1279,13 +1284,13 @@ export async function execTool(
         } else {
           avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
           const free = avail.find(a => a.staffId === staff!.id)?.slots ?? [];
-          if (!free.includes(startTime)) {
+          if (!free.includes(startTime) && widerContext(bizId)) {
             const near = [...free].sort((x, y) => Math.abs(timeToMinutes(x) - timeToMinutes(startTime)) - Math.abs(timeToMinutes(y) - timeToMinutes(startTime))).slice(0, 3).sort();
             const others = (await computeDayAvailabilityRetrying(bizId, date, undefined, service.id, callerPhone)).filter(x => x.staffId !== staff!.id && x.slots.includes(startTime));
             const elsewhere = others.length ? ` באותה שעה פנוי אצל: ${others.map(x => `${x.name} [id: ${x.staffId}]`).join(", ")} (לא ביקש אף אחד בשם → propose_booking שם, בלי לשאול).` : "";
             if (near.length || elsewhere) return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name} ל${service.name}.${elsewhere}${near.length ? ` אצל ${staff.name} הקרובות אליה: ${near.join(", ")}.` : ""} הצע רק מה שכתוב כאן, או get_available_slots עם ה-serviceId הזה.`;
-            return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
           }
+          if (!free.includes(startTime)) return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
         }
         // Several appointments the same day (him + brother/son): all verified now,
         // confirmed by ONE question and booked together (owner, 14.10.2026).
@@ -1345,7 +1350,10 @@ export async function execTool(
             }
           }
           const pending = await findPendingProposal(bizId, proposalPhone);
-          const same = pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
+          // "כן" with a person who is not in the pending question is not a yes to it: both are asked together
+          // (25.11.2026, a brother's appointment was lost).
+          const pendingGroup = (() => { try { return (JSON.parse(pending?.note ?? "{}") as { group?: GroupItem[] }).group?.length ?? 0; } catch { return 0; } })();
+          const same = group.length <= pendingGroup && pending && pending.kind === "confirm" && pending.staffId === staff.id && pending.serviceId === service.id && pending.date?.toISOString().slice(0, 10) === date && pending.startTime === startTime;
           if (same) {
             // Same path as the code-handled "כן": the whole group, exact message, no partial "סגור".
             const r = await bookConfirmedProposal({
@@ -1908,7 +1916,10 @@ const WEEKDAY_DATE_RE = new RegExp(
   `(?:(\\d{1,2})\\s+ב(${HE_MONTHS.join("|")})|(\\d{1,2})\\.(\\d{1,2}))`,
   "g",
 );
-function correctHebrewWeekdayLabels(text: string): string {
+export function correctHebrewWeekdayLabels(raw: string): string {
+  // "מחר שישי" on a Wednesday (25.11.2026): the weekday is right, "מחר" is not.
+  const tomorrow = HE_WEEKDAYS[new Date(`${addDaysISO(getBusinessNow().date, 1)}T12:00:00.000Z`).getUTCDay()];
+  const text = raw.replace(new RegExp(`(?<![\\u05D0-\\u05EA])מחר,? \\(?(${HE_WEEKDAYS.join("|")})(?=[,.)?!:]|\\s*$|\\s+(?:\\d|ב-?\\d|בבוקר|בערב|בצהריים))`, "gm"), (full, day: string) => (day === tomorrow ? full : `ביום ${day}`));
   const anchor = new Date(`${getBusinessNow().date}T12:00:00.000Z`);
   const anchorYear = anchor.getUTCFullYear();
   return text.replace(
@@ -2602,6 +2613,15 @@ async function priceLine(serviceId: string): Promise<string> {
   return `${sv.name}: ${sv.priceFrom || Math.max(...prices) > low ? "החל מ " : ""}${low}₪.`;
 }
 
+/** The system cancelled for him just now; without this the model, which does not see it, cancelled again on every message. */
+async function afterCancelContext(businessId: string, phone: string): Promise<string | null> {
+  const done = await prisma.bookingProposal.findFirst({ where: { businessId, phone: normalizeIsraeliPhone(phone), kind: "cancel", status: "accepted", respondedAt: { gte: new Date(Date.now() - 3 * 3600_000) } }, orderBy: { respondedAt: "desc" }, select: { date: true, startTime: true, note: true } });
+  if (!done?.date) return null;
+  let what = "";
+  try { what = (JSON.parse(done.note ?? "{}") as { serviceName?: string }).serviceName ?? ""; } catch { /* no name */ }
+  return `המערכת כבר ביטלה לו את התור ${what} (${dayLabelWithDistance(done.date.toISOString().slice(0, 10))} ב-${done.startTime}). אל תבטל שוב. רוצה תור חדש ולא אמר טיפול → ${what || "אותו טיפול"}.`;
+}
+
 /** The customer cancelled an appointment in the last hours. */
 async function cancelledJustNow(businessId: string, phone: string, customerId?: string): Promise<boolean> {
   const since = new Date(Date.now() - 3 * 3600_000);
@@ -2839,6 +2859,10 @@ async function runCustomerAgentCore(opts: {
     else if (outcome.context) customerContext += `\n${outcome.context}`;
     else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }
   } catch (e) { console.error("[agent] proposal handling failed", e); }
+  if (!preHandledReply && widerContext(businessId)) {
+    const cancelled = await afterCancelContext(businessId, phone).catch(() => null);
+    if (cancelled) customerContext += `\n${cancelled}`;
+  }
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
   // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
   // the model kept answering "אין לי נייד, אני הבוט".
@@ -2907,7 +2931,8 @@ async function runCustomerAgentCore(opts: {
           const all = menShop ? await prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } })
             : Array.from(new Map(rows.map(r => [r.service.id, r.service])).values());
           const said = [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content)].join("\n");
-          const asked = namedServices(said, all);
+          // Nothing in the last messages: the newest older one that names a treatment ("תור לגבות" five messages ago, 25.11.2026).
+          const asked = [said, ...history.filter(h => h.role === "user").slice(0, -3).reverse().map(h => h.content)].map(t => namedServices(t, all)).find(ids => ids.length) ?? [];
           // The works link goes only for a treatment the text names beyond doubt.
           if (asked.length) { snapServiceId = asked[0]; if (!menShop) namedServiceIds = clearlyNamedServices(said, all); }
           serviceOf = staffId => {

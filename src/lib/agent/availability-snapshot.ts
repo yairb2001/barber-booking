@@ -18,7 +18,7 @@ import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { isNightWindow } from "@/lib/agent/night-window";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
-import { staffShort } from "@/lib/agent/staff-label";
+import { staffFirst, staffShort } from "@/lib/agent/staff-label";
 
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const BOOKING_CONTEXT = /תור|לקבוע|לקבע|פנוי|פנויה|פנויים|מקום|מחר|היום|השבוע|שבוע|יום |ביום|שעה|שעות|מתי|בוקר|צהריים|ערב|לילה|הכי קרוב|אצל|ספר|תספורת|זקן|מספריים|book|appointment|available|slot|tomorrow|today|week/i;
@@ -190,16 +190,24 @@ export async function buildAvailabilitySnapshot(p: {
   const askedHours = (text: string): string => {
     const ask = parseAvailabilityAsk(text, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
     if (!ask || ask.days.length !== 1 || ask.pick) return "";
-    const staff = ask.staffHint ? index.staff.filter(s => s.id === ask.staffHint) : index.staff.filter(s => !hasPool || s.inQuickPool || s.id === p.regularStaffId);
+    // Named in this message or just before it ("אצל רז" then "ב-17:00"); a two-letter name counts too.
+    const said = (p.asks ?? []).join("\n");
+    const named = index.staff.filter(s => new RegExp(`(^|[^א-ת])[לבש]?${staffFirst(s.name)}(?![א-ת])`).test(said));
+    const staff = named.length ? named : index.staff.filter(s => !hasPool || s.inQuickPool || s.id === p.regularStaffId);
     const free = (s: { id: string }) => index.slots(s.id, ask.days[0], p.serviceId ?? null);
     const hour = ask.from === undefined && ask.to === undefined ? namedHour(text) : null;
     if (hour !== null) {
-      const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour)).map(label);
-      return at.length ? `\nב-${fmt(hour)} ${ask.dayLabel} פנוי אצל: ${at.join(", ")} → propose_booking לשעה הזו.` : "";
+      const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour));
+      if (!at.length) return "";
+      // He named nobody and the business assigns by itself: one name, so there is nothing to ask.
+      const one = !named.length && p.silentAssign ? at.find(s => s.id === p.regularStaffId) ?? index.staffByLoad(ask.days[0]).map(x => at.find(s => s.id === x.id)).find(x => !!x) ?? at[0] : null;
+      return `\nב-${fmt(hour)} ${ask.dayLabel} פנוי אצל ${(one ? [one] : at).map(label).join(", ")} → propose_booking לשעה הזו${one ? ", בלי לשאול אצל מי" : ""}.`;
     }
-    if ((ask.from === undefined && ask.to === undefined) || !p.silentAssign || ask.staffHint || p.regularStaffId || staff.length < 2) return "";
+    if ((ask.from === undefined && ask.to === undefined) || !p.silentAssign || named.length || p.regularStaffId || staff.length < 2) return "";
     const all = Array.from(new Set(staff.flatMap(free))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
-    return all.length ? `\nהשעות של כולם יחד ${ask.dayLabel} ${ask.rangeLabel ?? ""}: ${all.slice(0, MAX_LISTED).join(" · ")}${all.length > MAX_LISTED ? " ועוד" : ""}. לא ביקשו מישהו בשם → הצע מכאן בלי שמות ובלי לשאול אצל מי, וקבע אצל מי שהשעה בשורה שלו.` : "";
+    if (!all.length) return "";
+    const answer = all.length > 3 ? `${all.slice(0, 3).join(", ")} ויש עוד עד ${all[all.length - 1]}` : all.join(", ");
+    return `\nהתשובה לשאלה שלו, אצל כולם יחד: ${ask.dayLabel} ${ask.rangeLabel ?? ""} יש ${answer}. כתוב אותה בלי שמות, בלי "רק אצל" ובלי לשאול אצל מי (לא ביקשו מישהו בשם); הקביעה אצל מי שהשעה בשורה שלו.`;
   };
   const notes: string[] = [];
   // Barbers with nothing free in the whole window are named explicitly — otherwise

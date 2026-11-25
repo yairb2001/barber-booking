@@ -3,8 +3,10 @@
 import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml } from "../src/lib/agent/reply-guards";
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn } from "../src/lib/agent/availability-snapshot";
-import { policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
+import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
 import { vocabFor } from "../src/lib/vocab";
+import { addDaysISO, getBusinessNow } from "../src/lib/utils";
+import { agentReplyForType } from "../src/lib/type-wording";
 import { looksLikeProspect } from "../src/lib/agent/sales-agent";
 
 let failed = 0;
@@ -49,5 +51,12 @@ eq("written", policyGapGuidance("אתם עובדים עם מכבי?", "עובד�
 eq("slang is not a brother", situationalGuidance("אהלן אחי יש משהו מחר?", [], undefined, true), "");
 eq("a brother is", situationalGuidance("תור לי ולאחי", [], undefined, true) !== "", true);
 eq("DOMINANT's guidance is as it was", situationalGuidance("אהלן אחי יש משהו מחר?", []) !== "", true);
+const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const dayIn = (n: number) => DAY[new Date(`${addDaysISO(getBusinessNow().date, n)}T12:00:00Z`).getUTCDay()];
+eq("מחר with the wrong weekday", correctHebrewWeekdayLabels(`הכי קרוב זה מחר ${dayIn(2)}. יש 09:00`), `הכי קרוב זה ביום ${dayIn(2)}. יש 09:00`);
+eq("מחר with the right one", correctHebrewWeekdayLabels(`מחר ${dayIn(1)}, 09:00`), `מחר ${dayIn(1)}, 09:00`);
+eq("מחר שני תורים stays", correctHebrewWeekdayLabels("מחר שני תורים פנויים"), "מחר שני תורים פנויים");
+eq("a long dash after a date", agentReplyForType("ביום שני 30.11 — 10:00, 11:00", vocabFor("barber_men")), "ביום שני 30.11, 10:00, 11:00");
+eq("a range keeps it", agentReplyForType("10:00 — 12:00", vocabFor("barber_men")), "10:00 — 12:00");
 
 process.exit(failed ? 1 : 0);
