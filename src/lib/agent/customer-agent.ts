@@ -1281,7 +1281,9 @@ export async function execTool(
           const free = avail.find(a => a.staffId === staff!.id)?.slots ?? [];
           if (!free.includes(startTime)) {
             const near = [...free].sort((x, y) => Math.abs(timeToMinutes(x) - timeToMinutes(startTime)) - Math.abs(timeToMinutes(y) - timeToMinutes(startTime))).slice(0, 3).sort();
-            if (near.length) return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name} ל${service.name}. הקרובות אליה שכן פנויות: ${near.join(", ")}. הצע רק אותן (יום מלא יותר → get_available_slots עם ה-serviceId הזה).`;
+            const others = (await computeDayAvailabilityRetrying(bizId, date, undefined, service.id, callerPhone)).filter(x => x.staffId !== staff!.id && x.slots.includes(startTime));
+            const elsewhere = others.length ? ` באותה שעה פנוי אצל: ${others.map(x => `${x.name} [id: ${x.staffId}]`).join(", ")} (לא ביקש אף אחד בשם → propose_booking שם, בלי לשאול).` : "";
+            if (near.length || elsewhere) return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name} ל${service.name}.${elsewhere}${near.length ? ` אצל ${staff.name} הקרובות אליה: ${near.join(", ")}.` : ""} הצע רק מה שכתוב כאן, או get_available_slots עם ה-serviceId הזה.`;
             return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
           }
         }
@@ -2917,7 +2919,7 @@ async function runCustomerAgentCore(opts: {
             return mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
           };
         }
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine || wide ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
           silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;

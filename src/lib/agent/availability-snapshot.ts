@@ -49,17 +49,22 @@ export function compressSlots(slots: string[], win?: Window | null): string {
   return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
 }
 
+/** "ב-16:30", "בשעה 12:00", "ב5" → minutes; a bare 1–7 is the afternoon. */
+function namedHour(text: string): number | null {
+  const m = text.match(/(?:^|[^\d:./])(\d{1,2}):(\d{2})(?!\d)/) ?? text.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה )-?(\d{1,2})()(?![\d:./])/);
+  if (!m || Number(m[1]) > 23) return null;
+  const h = Number(m[1]);
+  return (h >= 1 && h <= 7 ? h + 12 : h) * 60 + Number(m[2] || 0);
+}
+
 /** The hours the customer's last messages are about ("בערב", "אחרי 17:00", "ב-16:30"); the newest wins. */
 export function askedWindow(texts: string[], today: string): Window | null {
   for (const raw of texts) {
     const t = raw.replace(/["״]/g, "");
     const ask = parseAvailabilityAsk(t, today, 6);
     if (ask && (ask.from !== undefined || ask.to !== undefined)) return { from: ask.from ?? 0, to: ask.to ?? 24 * 60 };
-    const hm = t.match(/(?:^|[^\d:./])(\d{1,2}):(\d{2})(?!\d)/) ?? t.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה )-?(\d{1,2})()(?![\d:./])/);
-    if (hm && Number(hm[1]) <= 23) {
-      const h = Number(hm[1]), at = (h >= 1 && h <= 7 ? h + 12 : h) * 60 + Number(hm[2] || 0);
-      return { from: at - 60, to: at + 150 };
-    }
+    const at = namedHour(t);
+    if (at !== null) return { from: at - 60, to: at + 150 };
   }
   return null;
 }
@@ -180,6 +185,22 @@ export async function buildAvailabilitySnapshot(p: {
     }
     lines.push(`${dayName} ${dd.getUTCDate()}.${dd.getUTCMonth() + 1}: ${parts.length ? parts.join(" | ") : "אין"}`);
   }
+  /** One day asked about: who is free at the hour he named, or everyone's hours in the part of the day he named
+   *  (25.11.2026: "מחר בערב" got one barber's single hour while two others were free). */
+  const askedHours = (text: string): string => {
+    const ask = parseAvailabilityAsk(text, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
+    if (!ask || ask.days.length !== 1 || ask.pick) return "";
+    const staff = ask.staffHint ? index.staff.filter(s => s.id === ask.staffHint) : index.staff.filter(s => !hasPool || s.inQuickPool || s.id === p.regularStaffId);
+    const free = (s: { id: string }) => index.slots(s.id, ask.days[0], p.serviceId ?? null);
+    const hour = ask.from === undefined && ask.to === undefined ? namedHour(text) : null;
+    if (hour !== null) {
+      const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour)).map(label);
+      return at.length ? `\nב-${fmt(hour)} ${ask.dayLabel} פנוי אצל: ${at.join(", ")} → propose_booking לשעה הזו.` : "";
+    }
+    if ((ask.from === undefined && ask.to === undefined) || !p.silentAssign || ask.staffHint || p.regularStaffId || staff.length < 2) return "";
+    const all = Array.from(new Set(staff.flatMap(free))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
+    return all.length ? `\nהשעות של כולם יחד ${ask.dayLabel} ${ask.rangeLabel ?? ""}: ${all.slice(0, MAX_LISTED).join(" · ")}${all.length > MAX_LISTED ? " ועוד" : ""}. לא ביקשו מישהו בשם → הצע מכאן בלי שמות ובלי לשאול אצל מי, וקבע אצל מי שהשעה בשורה שלו.` : "";
+  };
   const notes: string[] = [];
   // Barbers with nothing free in the whole window are named explicitly — otherwise
   // the model "double-checks" them day by day (owner's replay, 20.9.2026).
@@ -206,13 +227,8 @@ export async function buildAvailabilitySnapshot(p: {
   if (p.askText) {
     const ask = parseAvailabilityAsk(p.askText, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
     if (ask) focus = "\n" + focusLine(index, ask, p.serviceId ?? null, label, today, days, p.regularStaffId);
-    // "מחר בערב" got one barber's single hour while two others were free (25.11.2026).
-    const bookable = index.staff.filter(s => !hasPool || s.inQuickPool);
-    if (ask && p.silentAssign && !ask.staffHint && !ask.pick && !p.regularStaffId && ask.days.length === 1 && bookable.length > 1) {
-      const all = Array.from(new Set(bookable.flatMap(s => index.slots(s.id, ask.days[0], p.serviceId ?? null)))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
-      if (all.length) focus += `\nהשעות של כולם יחד: ${all.slice(0, MAX_LISTED).join(" · ")}${all.length > MAX_LISTED ? " ועוד" : ""}. לא ביקשו מישהו בשם → הצע מכאן בלי שמות ובלי לשאול אצל מי, וקבע אצל מי שהשעה בשורה שלו.`;
-    }
   }
+  if (p.asks?.length) focus += askedHours(p.asks[0]);
   const byTreatment = (index.staff.some(s => other(s)) ? " שם בסוגריים = השעות לטיפול הזה; לטיפול אחר (משך אחר) → get_available_slots עם serviceId." : "") +
     (index.staff.length < rawIndex.staff.length ? " מופיעים רק מי שעושים את מה שהלקוח ביקש; מי שלא מופיע לא עושה אותו (זה לא אומר שאין לו מקום)." : "");
   return `זמינות ל-${days} הימים הקרובים, לכל ${p.vocab?.staff ?? "ספר"}, נכון לרגע זה (אותו מקור כמו הכלים; רק השעות הכתובות כאן פנויות, וכל השעות הכתובות כאן פנויות).${byTreatment} ענה ממנה והצע רק שעות שמופיעות כאן; ביקש טווח ("אחרי 17:00", "בבוקר") → סנן מהרשימה המלאה של אותו יום; "הכי מאוחר"/"הכי מוקדם" = השעה האחרונה/הראשונה ברשימה של אותו יום ("ועוד 8 עד 18:30" = עוד 8 שעות התחלה שלא נכתבו, האחרונה ב-18:30; ביקש שעה בטווח הזה שלא כתובה → get_available_slots, לא "אין"); get_available_slots / find_next_available רק לימים שאחרי או לבדיקה חוזרת:\n` +
