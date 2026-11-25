@@ -55,7 +55,7 @@ export function ownerAnswerPrompt(p: { place: string; businessName: string; turn
 
 /** The model's words, tidied; null when they cannot be the owner's answer (empty, or far longer than what he wrote). */
 export function tidyOwnerAnswer(text: string, answer: string): string | null {
-  const t = text.trim().replace(/^["״'`]+|["״'`]+$/g, "").replace(/\s*[—–]\s*/g, ", ").replace(/\s*\n+\s*/g, " ").trim();
+  const t = text.trim().replace(/^["״'`]+|["״'`]+$/g, "").replace(/\s+[—–]\s+/g, ", ").replace(/\s*\n+\s*/g, " ").trim();
   return t && t.length <= answer.length + 260 ? t : null;
 }
 
@@ -76,8 +76,9 @@ export async function phraseOwnerAnswer(p: {
     if (!biz) return fallback;
     const turns = rows.reverse().filter(m => m.content.trim() && !m.content.trim().startsWith("["));
     const { system, user } = ownerAnswerPrompt({ place: vocabOf(biz).place, businessName: biz.name, turns, customerName: p.customerName, question: p.question, answer: p.answer });
-    const res = await anthropicFor("prod").messages.create({ model: MODEL_SMART, max_tokens: 400, system, messages: [{ role: "user", content: user }] });
+    const res = await anthropicFor("prod").messages.create({ model: MODEL_SMART, max_tokens: 700, system, messages: [{ role: "user", content: user }] });
     void recordAgentUsage({ businessId: p.businessId, provider: "anthropic", model: MODEL_SMART, kind: "owner_answer", conversationId: p.conversationId ?? undefined, usage: res.usage });
+    if (res.stop_reason === "max_tokens") return fallback;                          // cut mid-sentence is not his answer
     return tidyOwnerAnswer(res.content.map(b => (b.type === "text" ? b.text : "")).join(""), p.answer) ?? fallback;
   } catch (e) {
     console.error("[owner-answer] phrasing failed", e);

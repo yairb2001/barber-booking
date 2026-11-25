@@ -1487,8 +1487,10 @@ export async function execTool(
           appointmentId:   input.appointmentId,
           targetDate:      input.targetDate,
           targetStartTime: input.targetStartTime,
-          allowOtherBarber: (input as Record<string, unknown>).allowOtherBarber === true,
-          insistExactTime: (input as Record<string, unknown>).insistExactTime === true,
+          // The code flow (move-flow.ts) sends its inputs as strings: "true" counts too,
+          // or its swap request ran as a plain move and was never opened (25.11.2026).
+          allowOtherBarber: [true, "true"].includes((input as Record<string, unknown>).allowOtherBarber as boolean | string),
+          insistExactTime: [true, "true"].includes((input as Record<string, unknown>).insistExactTime as boolean | string),
         });
       }
 

@@ -15,9 +15,11 @@ const NOT_MOVE = /לבטל|ביטול|תבטל|תור נוסף|עוד תור|מ�
 const EARLIER = /להקדים|תקדים|מוקדם יותר|יותר מוקדם|קודם/;
 const LATER = /לאחר|לדחות|תדחה|מאוחר יותר|יותר מאוחר|אחר כך/;
 const KEEP = /להשאיר|תשאיר|נשאר|לא להזיז|לא צריך|עזוב|סבבה ככה|בסדר ככה|נשאיר/;
-const SWAP_YES = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|תבקש|לבקש|^1\b/;
+const SWAP_WORD = /החלפה|להחליף|תחליף|תנסה|נסה|תבדוק|לבדוק|תבקש|לבקש/;
+const SWAP_YES = new RegExp(SWAP_WORD.source + "|^1\\b");
 // He takes the first way out; "אולי אצל ספר אחר" / "לא משנה לי אצל מי" is not "keep it".
-const OTHER_WAY = /יום אחר|ספר אחר|ספרית אחרת|מישהו אחר|לא משנה (לי )?(אצל )?מי/;
+// Whole words only: "היום אחרי 5" is a time today, not "יום אחר".
+const OTHER_WAY = /(^|\s)[ולב]?(יום|ספר|ספרית|מישהו) אחרת?(?![א-ת])|לא משנה (לי )?(אצל )?מי/;
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const MOVE_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -140,10 +142,20 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
     return { context: `הלקוח ביקש לנסות החלפה ל-${date} ${time} אבל זה לא הצליח: "${result.slice(0, 200)}". הסבר והצע חלופה.` };
   };
 
-  if (meta.stage !== "confirm" && meta.stage !== "target" && OTHER_WAY.test(text) && !KEEP.test(text)) {
-    return ctx("נאמר לו שאין מקום במה שביקש, והוצע: יום אחר או ספר אחר, או בקשת החלפה מלקוח אחר. הוא בוחר ביום אחר / ספר אחר: מצא לו (find_next_available / get_available_slots), ולספר אחר request_appointment_move עם allowOtherBarber=true.");
+  // The first way out: the model finds the other day or staff member, and this flow steps aside,
+  // so his next answer ("10:00" at the other one) is not read against the old day and staff member.
+  if (["swapOrPick", "keepOrOther", "swapTime"].includes(meta.stage) && OTHER_WAY.test(text) && !SWAP_WORD.test(text) && !KEEP.test(text)) {
+    await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "superseded", respondedAt: new Date() } });
+    return ctx("נאמר לו שאין מקום במה שביקש, והוא בוחר ביום אחר או ספר אחר: מצא לו (find_next_available / get_available_slots), ואחרי שאישר יעד קרא ל-request_appointment_move (לספר אחר עם allowOtherBarber=true).");
   }
-  if (KEEP.test(text) || (meta.stage !== "confirm" && classifyReply(text) === "no")) { await close(pending.id, "rejected"); return { reply: `סבבה, ${what} נשאר כמו שהוא 👍` }; }
+  // A "no" beside a swap word ("לא רוצה ספר אחר, תבקש החלפה" / "לא רוצה החלפה") is for the model to read, not a regex.
+  const swapOffered = meta.stage === "swapOrPick" || meta.stage === "swapTime" || (meta.stage === "keepOrOther" && !!meta.canSwap);
+  if (swapOffered && SWAP_WORD.test(text) && classifyReply(text) === "no" && !KEEP.test(text)) {
+    return ctx("הוצעו לו יום אחר או ספר אחר, או בקשת החלפה מלקוח אחר, ובתשובה שלו יש גם סירוב וגם החלפה. הבן מה הוא בוחר: רוצה החלפה → request_appointment_move עם insistExactTime=true (שאל לאיזו שעה אם חסרה); לא רוצה החלפה → הצע יום אחר או ספר אחר.");
+  }
+  // "אולי 12" / "לא משנה לי" to "which hour?" answers the question; it is not "keep it".
+  const answersHour = meta.stage === "swapTime" && (!!parseTargetTime(text, null) || /לא משנה/.test(text));
+  if (KEEP.test(text) || (meta.stage !== "confirm" && !answersHour && classifyReply(text) === "no")) { await close(pending.id, "rejected"); return { reply: `סבבה, ${what} נשאר כמו שהוא 👍` }; }
 
   if (meta.stage === "confirm" && meta.targetDate && meta.targetTime) {
     const cls = classifyReply(text, meta.targetTime);
@@ -167,11 +179,15 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
   }
 
   // A full day, and he chose the swap: which hour to ask for, then the request.
-  if ((meta.stage === "swapTime" || (meta.stage === "keepOrOther" && meta.canSwap && SWAP_YES.test(text))) && meta.targetDate) {
+  if ((meta.stage === "swapTime" || (meta.stage === "keepOrOther" && meta.canSwap && SWAP_WORD.test(text))) && meta.targetDate) {
     const day = meta.targetDate;
-    const hour = parseTargetTime(text, null, day === meta.dateISO ? meta.startTime : null);
-    if (!hour && meta.stage === "swapTime" && !SWAP_YES.test(text)) return advance(p, meta, text, pending.id);
+    const saidDay = parseTargetDay(text, today);
+    if (saidDay && saidDay !== day) return advance(p, meta, text, pending.id);      // another day is a new request
     const held = await heldTimes(p.businessId, meta.staffId, day, p.customer?.id);
+    // "7" is 19:00 when the day runs 10:00 to 19:30, the way advance() reads an hour.
+    const span = held.length ? { first: timeToMinutes(held[0]), last: timeToMinutes(held[held.length - 1]) } : null;
+    const hour = parseTargetTime(text, span, day === meta.dateISO ? meta.startTime : null);
+    if (!hour && meta.stage === "swapTime" && !SWAP_WORD.test(text)) return advance(p, meta, text, pending.id);
     if (hour && held.includes(hour)) return askSwap(day, hour);
     if (hour && (await freeSlots(p.businessId, meta.staffId, meta.serviceId, day, p.customer?.id)).includes(hour)) return advance(p, meta, text, pending.id);
     await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "swapTime" }, pending.id);
@@ -229,7 +245,7 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
     const occupied = await prisma.appointment.findFirst({ where: { businessId: p.businessId, staffId: meta.staffId, date: new Date(day + "T00:00:00.000Z"), startTime: time, status: { in: ["pending", "confirmed"] }, NOT: { customerId: p.customer?.id ?? "" } }, select: { id: true } });
     const rules = await swapRules(p.businessId, meta.staffName);
     const swapOk = !!occupied && rules.on;
-    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", direction }, existingId ?? undefined); return { reply: `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
+    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap: false }, existingId ?? undefined); return { reply: `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
     const next: MoveMeta = { ...meta, stage: "swapOrPick", targetDate: day, targetTime: time, options: near, direction };
     await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
     const alt = near.length ? `${time} תפוס אצל ${meta.staffName}. פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}.`;
