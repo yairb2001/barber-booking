@@ -138,7 +138,8 @@ export function agentReplyForType(text: string, words: Words): string {
     out = out
       .replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "מאשרת?")
       .split("אם תרצה לקבוע מחדש").join("אם תרצי לקבוע מחדש")
-      .split(": אתה ב-").join(": את ב-");
+      .split(": אתה ב-").join(": את ב-")
+      .replace(/[,\s]*(?:ברוך הבא|ברוכה הבאה)(?=[^א-תa-zA-Z0-9\n]*$)/gm, "");
   } else if (v.type === "other") {
     // A mixed place (a salon for men and women, 28.10.2026): the fixed question
     // in a form that fits both, never "מאשר/ת?"; and a gendered "ברוך הבא" at
@@ -150,7 +151,7 @@ export function agentReplyForType(text: string, words: Words): string {
   // "יש המון מקום" makes a business sound empty (Yair, 28.10.2026: "לא אהבתי
   // שהוא אומר המון מקום"); "מלא" only after "יש", since "היום מלא" means full.
   return atMostThreeTimes(out.replace(/\*\*/g, "")
-    .replace(/(יש (?:עוד )?)?(המון|הרבה|מלא) (מקומות|מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
+    .replace(/(יש (?:(?:לו|לה|להם|לנו|לי|אצלו|אצלה) )?(?:עוד )?)?(המון|הרבה|מלא) (מקומות|מקום|שעות|אפשרויות|תורים)/g, (m, yesh: string | undefined, q: string, what: string) =>
       q === "מלא" && !yesh ? m : `${yesh ?? ""}כמה ${what.startsWith("מקום") ? "תורים פנויים" : what}`)
     .replace(/((?:ו?יש (?:עוד )?)|(?:ו?עוד ))המון(?= עד|\s*[).,!]|$)/gm, "$1כמה")
     // A long dash between words (the instructions already forbid it): a comma. Between times it stays.

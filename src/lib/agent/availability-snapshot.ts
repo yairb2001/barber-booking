@@ -18,6 +18,7 @@ import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { isNightWindow } from "@/lib/agent/night-window";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
+import { staffShort } from "@/lib/agent/staff-label";
 
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const BOOKING_CONTEXT = /תור|לקבוע|לקבע|פנוי|פנויה|פנויים|מקום|מחר|היום|השבוע|שבוע|יום |ביום|שעה|שעות|מתי|בוקר|צהריים|ערב|לילה|הכי קרוב|אצל|ספר|תספורת|זקן|מספריים|book|appointment|available|slot|tomorrow|today|week/i;
@@ -32,13 +33,37 @@ export function looksLikeBookingContext(texts: string[]): boolean {
  *  The time after "עד" is the last START; the header says so (28.10.2026: it was
  *  read as closing time and a 75-minute facial taken off it again). */
 const MAX_LISTED = 12;
-export function compressSlots(slots: string[]): string {
+type Window = { from: number; to: number };
+export function compressSlots(slots: string[], win?: Window | null): string {
   if (!slots.length) return "";
   const mins = Array.from(new Set(slots.map(timeToMinutes))).sort((a, b) => a - b);
+  // The part of the day he asked about is listed, not the first hours of the morning
+  // (25.11.2026: "מחר בערב" got 17:00 from the only list that was not cut).
+  const asked = win && mins.length > MAX_LISTED ? mins.filter(m => m >= win.from && m < win.to) : [];
+  if (asked.length) {
+    const shown = asked.slice(0, MAX_LISTED);
+    return `${shown.map(fmt).join(" · ")} · ועוד ${mins.length - shown.length} שעות, מ-${fmt(mins[0])} עד ${fmt(mins[mins.length - 1])}`;
+  }
   const shown = mins.slice(0, MAX_LISTED).map(fmt);
   const rest = mins.length - shown.length;
   return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
 }
+
+/** The hours the customer's last messages are about ("בערב", "אחרי 17:00", "ב-16:30"); the newest wins. */
+export function askedWindow(texts: string[], today: string): Window | null {
+  for (const raw of texts) {
+    const t = raw.replace(/["״]/g, "");
+    const ask = parseAvailabilityAsk(t, today, 6);
+    if (ask && (ask.from !== undefined || ask.to !== undefined)) return { from: ask.from ?? 0, to: ask.to ?? 24 * 60 };
+    const hm = t.match(/(?:^|[^\d:./])(\d{1,2}):(\d{2})(?!\d)/) ?? t.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה )-?(\d{1,2})()(?![\d:./])/);
+    if (hm && Number(hm[1]) <= 23) {
+      const h = Number(hm[1]), at = (h >= 1 && h <= 7 ? h + 12 : h) * 60 + Number(hm[2] || 0);
+      return { from: at - 60, to: at + 150 };
+    }
+  }
+  return null;
+}
+
 /**
  * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
  * match first: at least half the words of the name, each at a word start
@@ -63,7 +88,8 @@ export function clearlyNamedServices(text: string, services: { id: string; name:
 
 function matchServices(text: string, services: { id: string; name: string }[]): { id: string; hits: string[]; score: number }[] {
   const norm = (x: string) => x.replace(/['׳’`"״]/g, "").toLowerCase();
-  const t = norm(text);
+  // "תספורת בלי זקן", "תספורת ולא פן": what he does not want is not a treatment he named.
+  const t = norm(text).replace(/(^|\s)(?:בלי|ו?לא)\s+\S+/g, " ");
   const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const found = services.map(sv => {
     const words = norm(sv.name).split(/[\s+/,()\-–]+/).filter(w => w.length >= 2);
@@ -96,6 +122,9 @@ export async function buildAvailabilitySnapshot(p: {
   holderKey?: string | null;
   /** Beauty businesses: the treatment each person's times are for (28.10.2026); null = not shown (doesn't do what she asked). */
   serviceOf?: (staffId: string) => { id: string; name: string } | null;
+  /** The customer's last messages, newest first: their part of the day is listed in full,
+   *  and who is off on which day is said (25.11.2026). Null = as before. */
+  asks?: string[] | null;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
@@ -112,13 +141,14 @@ export async function buildAvailabilitySnapshot(p: {
     slots: (id: string, iso: string, svc: string | null) => excluded.has(id) ? [] : rawIndex.slots(id, iso, svcFor(id, svc)),
   } : rawIndex;
   const hasPool = index.staff.some(s => s.inQuickPool);
-  const short = p.shortName ?? ((id, name) => name.trim().split(/\s+/)[0]);
+  const short = p.shortName ?? ((_id, name) => staffShort(name));
   // Two barbers may share a first name (יאיר בוחבוט / יאיר הרוש) — disambiguate.
   const firsts = new Map<string, number>();
   for (const s of index.staff) firsts.set(short(s.id, s.name), (firsts.get(short(s.id, s.name)) ?? 0) + 1);
   const label = (s: { id: string; name: string }) => (firsts.get(short(s.id, s.name)) ?? 0) > 1 ? s.name : short(s.id, s.name);
   const other = (s: { id: string }) => { const o = own(s.id); return o && o.id !== p.serviceId ? ` (${o.name})` : ""; };
 
+  const win = p.asks ? askedWindow(p.asks, today) : null;
   const lines: string[] = [];
   for (let d = 0; d < days; d++) {
     const iso = addDaysISO(today, d);
@@ -134,7 +164,7 @@ export async function buildAvailabilitySnapshot(p: {
     for (const s of index.staff) {
       const slots = index.slots(s.id, iso, p.serviceId ?? null);
       if (!slots.length) continue;
-      parts.push(`${label(s)}${other(s)} ${compressSlots(slots)}`);
+      parts.push(`${label(s)}${other(s)} ${compressSlots(slots, win)}`);
     }
     lines.push(`${dayName} ${dd.getUTCDate()}.${dd.getUTCMonth() + 1}: ${parts.length ? parts.join(" | ") : "אין"}`);
   }
@@ -146,6 +176,12 @@ export async function buildAvailabilitySnapshot(p: {
   if (hasPool) {
     const outside = index.staff.filter(s => !s.inQuickPool).map(label);
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);
+  }
+  // Off that day is not "full": no "אין לו מקום", and no waitlist for a day nobody opens.
+  if (p.asks) {
+    const isos = Array.from({ length: days }, (_, d) => addDaysISO(today, d)).filter(iso => index.staff.some(s => index.works(s.id, iso)));
+    const off = index.staff.map(s => ({ s, iso: isos.filter(iso => !index.works(s.id, iso)) })).filter(x => x.iso.length && x.iso.length < isos.length);
+    if (off.length) notes.push(`ימים שהם לא עובדים בהם (לא "מלא", ובלי רשימת המתנה לימים האלה): ${off.map(x => `${label(x.s)} ${x.iso.map(iso => DAY[getDayOfWeekISO(iso)]).join(", ")}`).join(" | ")}`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
   // Code-filtered answer for "מחר אחרי 17:00" / "בערב השבוע" / "הכי מוקדם מחר" —

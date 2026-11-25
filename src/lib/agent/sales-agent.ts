@@ -103,6 +103,20 @@ const IG_DEMO_TEXT_RE = /הגעתי מאינסטגרם ורוצה לנסות א�
 /** Decision 10.10: on Instagram the first message says it is the automated agent. */
 const IG_HELLO = "היי, כאן הסוכן האוטומטי של צ'אטור.";
 const DEMO_TAG_RE = /הדמו|דמו באתר|דמו של|chator|צ'אטור|צ׳אטור|לעסק שלי|בעל מספרה|אני ספר(?![א-ת])|יש לי מספרה|כמה עולה המערכת|הסוכן שלכם|המערכת שלכם/i;
+/** The owner of a business, in his words: any kind, men and women. Only "אני ספר" and "בעל מספרה" were known,
+ *  so a woman who owns a salon asked the ad "זה מתאים לי?" and the demo shop answered that it only books
+ *  appointments (25.11.2026). "12:00 מתאים לי" is a customer: "זה" and a question mark are required. */
+const PLACE = "מספר[הת]|סלון|סטודיו|מכון|עסק|קליניק[הת]|מרפא[הת]|מוסך|חדר כושר";
+const OWNER_RE = new RegExp([
+  "(^|[^א-ת])(אני|אנחנו) ה?(בעל|בעלת|בעלים|מנהל|מנהלת)(?![א-ת])",
+  "(^|[^א-ת])אני (ספר|ספרית|מעצב|מעצבת|מניקוריסטית|קוסמטיקאית|מאפרת|גבותנית|מאמן|מאמנת|מקעקע|מקעקעת|רופא|רופאה|פיזיותרפיסט|פיזיותרפיסטית)(?![א-ת])",
+  `(^|[^א-ת])יש (לי|לנו) (גם )?(${PLACE})`,
+  "(^|[^א-ת])יש (לי|לנו) [0-9]+ (ספרים|ספריות|עובדים|עובדות|מטפלים|מטפלות|כיסאות|חדרים|סניפים)",
+  "(המספרה|הסלון|הסטודיו|המכון|העסק|הקליניקה|המרפאה|המוסך) (שלי|שלנו)",
+  `(פתרון|מתאים|רלוונטי) ל(${PLACE})`,
+  "זה (מתאים|רלוונטי|עובד|יעבוד) [^?0-9]{0,20}\\?",
+  `^(${PLACE}|מאמן|מאמנת|מקעקע|מקעקעת)(?![א-ת])[^?]{0,20},`,
+].join("|"));
 /** Inside a demo: the customer is asking about the PRODUCT, not a haircut. */
 const PROSPECT_RE = /מערכת|סוכן|בוט|לעסק שלי|אני ספר(?![א-ת])|בעל מספרה|יש לי מספרה|מצטרפ|להצטרף|chator|צ'אטור|צ׳אטור|מנוי|לרכוש|איך זה עובד אצל/i;
 const PRICE_RE = /כמה זה עולה|מה המחיר|כמה עולה|מחיר/;
@@ -232,7 +246,7 @@ export function looksLikeDemoOpener(text: string): { tagged: boolean; source?: "
 export function looksLikeProspect(text: string, mode: SalesMode): boolean {
   if (mode === "sales" || mode === "lead") return true;
   if (mode === "declined") return false;
-  if (PROSPECT_RE.test(text)) return true;
+  if (PROSPECT_RE.test(text) || OWNER_RE.test(text)) return true;
   if (mode === "pitched") return PRICE_RE.test(text) || !ACK_RE.test(text);
   return false;
 }
@@ -397,7 +411,9 @@ export async function runDemoTurn(p: {
         await reply(conv.id, phone, [entry], p.sandbox);
         return { handled: true, mode: state.mode, replies: [entry] };
       }
-      if (BOOKING_INTENT_RE.test(text) && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text)) {
+      // "פן מחר אחרי 12" says what and when without the word "תור" (25.11.2026).
+      const wantsBooking = BOOKING_INTENT_RE.test(text) || (INTENT_WHAT_RE.test(text) && INTENT_WHEN_RE.test(text));
+      if (wantsBooking && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text) && !OWNER_RE.test(text)) {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "intent", demoTurns: 0 };
         await saveState(conv.id, state);
         if (!p.alreadyPersisted) {
@@ -512,7 +528,7 @@ export async function runDemoTurn(p: {
   if (state.mode === "lead" || state.mode === "choosing" || state.mode === "lead_demo") {
     if (state.mode === "lead_demo") {
       // v2: "סיימתי" or a question about the product ends the demo, back to the sale.
-      if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text) || PRODUCT_Q_RE.test(text))) {
+      if (v2 && (DONE_RE.test(text) || PROSPECT_RE.test(text) || OWNER_RE.test(text) || PRODUCT_Q_RE.test(text))) {
         state = { ...state, mode: "lead" };
         await saveState(conv.id, state);
         const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead, v2, note: DONE_RE.test(text) ? undefined : FROM_DEMO_NOTE });

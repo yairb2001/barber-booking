@@ -81,17 +81,11 @@ export function applyToolDescriptions<T extends { name: string; description?: st
   });
 }
 
-/**
- * The tools in the business's words (16.10.2026): a nail studio's agent reads
- * "מניקוריסטית", never "ספר", so it never says "ספר" to a customer. A men's
- * barbershop gets the tools untouched (same bytes, same prompt cache).
- */
-export function toolsForType<T extends { name: string; description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
-  // Visits with several treatments are a beauty thing: a barbershop's tools stay as they were.
-  if (v.type === "barber_men") return tools.filter(t => t.name !== "find_visit_times");
+/** The tools are written for a barbershop; this says them in the business's words. */
+function wordsForType(v: Vocab): (s: string) => string {
   const f = v.staffFem;
   const word = (w: string) => new RegExp(`(^|[^א-ת])${w}(?![א-ת])`, "g");
-  const swap = (s: string) => s
+  return (s: string) => s
     .split("כמה ספרים צריכים להיות פנויים").join(`כמה ${v.staffPlural} ${f ? "צריכות להיות פנויות" : "צריכים להיות פנויים"}`)
     .split("כמה ספרים פנויים").join(`כמה ${v.staffPlural} ${v.freePlural}`)
     .split("הספרים שפנויים").join(`${v.staffPluralDef} ש${v.freePlural}`)
@@ -104,6 +98,22 @@ export function toolsForType<T extends { name: string; description?: string; inp
     .replace(word("הספר"), (_m, p: string) => p + v.staffDef)
     .replace(word("לספר"), (_m, p: string) => `${p}ל${v.staff}`)
     .replace(word("ספר"), (_m, p: string) => p + v.staff);
+}
+
+/** What a tool answered, in the business's words (25.11.2026, a doctor's agent read "2 ספרים פנויים"). */
+export function toolResultForType(result: string, v: Vocab): string {
+  return v.type === "barber_men" || result.startsWith("PROPOSED\n") || result.startsWith("BOOKED\n") ? result : wordsForType(v)(result);
+}
+
+/**
+ * The tools in the business's words (16.10.2026): a nail studio's agent reads
+ * "מניקוריסטית", never "ספר", so it never says "ספר" to a customer. A men's
+ * barbershop gets the tools untouched (same bytes, same prompt cache).
+ */
+export function toolsForType<T extends { name: string; description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
+  // Visits with several treatments are a beauty thing: a barbershop's tools stay as they were.
+  if (v.type === "barber_men") return tools.filter(t => t.name !== "find_visit_times");
+  const swap = wordsForType(v);
   const deep = (x: unknown): unknown => {
     if (Array.isArray(x)) return x.map(deep);
     if (x && typeof x === "object") return Object.fromEntries(Object.entries(x).map(([k, val]) => [k, k === "description" && typeof val === "string" ? swap(val) : deep(val)]));
@@ -116,7 +126,7 @@ export function toolsForType<T extends { name: string; description?: string; inp
       const sch = out.input_schema as { properties?: { others?: { items?: { properties?: Record<string, unknown>; required?: string[] } } } };
       const items = sch.properties?.others?.items;
       if (items?.properties) {
-        items.properties.serviceId = { type: "string", description: "ביקור עם כמה טיפולים לאותה לקוחה: מזהה הטיפול הזה, כפי שחזר מ-find_visit_times (ואז בלי forName)." };
+        items.properties.serviceId = { type: "string", description: "ביקור עם כמה טיפולים לאותה לקוחה: מזהה הטיפול הזה, כפי שחזר מ-find_visit_times (ואז בלי forName). תור לאדם אחר (או כלב, רכב): forName, ו-serviceId כשהטיפול שלו אחר." };
         items.required = ["startTime"];
       }
       out.description = `${out.description ?? ""} ביקור עם כמה טיפולים: others עם serviceId, staffId ו-startTime לכל טיפול נוסף, בדיוק כפי שחזרו מ-find_visit_times.`;

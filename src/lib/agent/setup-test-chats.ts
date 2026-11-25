@@ -12,6 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { runCustomerAgent } from "@/lib/agent/customer-agent";
 import { cleanupSandbox } from "@/lib/agent/sandbox-cleanup";
 import { isServiceList } from "@/lib/agent/setup-fields";
+import { staffFirst } from "@/lib/agent/staff-label";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO } from "@/lib/utils";
 
 export type TestChat = { title: string; ok: boolean; why: string; lines: { who: "customer" | "agent"; text: string }[] };
@@ -98,7 +99,7 @@ function grade(tools: { toolName: string | null; toolInput: string | null }[], l
   if (c.serviceId) {
     const ok = new Set(c.doers(c.serviceId).map(s => s.id));
     for (const [id, n] of Array.from(c.name)) {
-      if (!ok.has(id) && new RegExp(`(^|[^א-ת])[בלשו]?${n.trim().split(/\s+/)[0]}(?![א-ת])`).test(said)) return `הוצע ${c.svcName.get(c.serviceId) ?? "שירות"} אצל ${n}, שלא עושה אותו`;
+      if (!ok.has(id) && new RegExp(`(^|[^א-ת])[בלשו]?${staffFirst(n)}(?![א-ת])`).test(said)) return `הוצע ${c.svcName.get(c.serviceId) ?? "שירות"} אצל ${n}, שלא עושה אותו`;
     }
   }
   for (const tool of tools) {
