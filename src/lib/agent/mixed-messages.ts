@@ -1,0 +1,71 @@
+/**
+ * Two things in one message (25.11.2026): a pattern that repeats in real chats and broke in the tests of 13
+ * business types. "כן. אגב כמה זה?" booked and dropped the question; "18:30 ותבטל את רביעי" cancelled and
+ * dropped the booking; "ראשון ב11, מורן שי" read the customer's name as a staff member. Text only, no DB, no AI.
+ */
+import { classifyReply, looksLikeName } from "@/lib/agent/booking-proposals";
+
+const REQUEST = /[?؟]|אגב|כמה (?:זה|עולה|יעלה|זמן)|איפה|כתובת|חניה|תבטל|לבטל|תזיז|להזיז|תעדכ[ןנ]|תגיד|האם|by the way|how much|where|cancel/i;
+const YES_PREFIX = /^\s*(?:כן+|מאשרת?|אוקיי?|סבבה|בסדר|מעולה|סגור|אישור|yes|yep|ok(?:ay)?|sure)(?![א-תa-z])[\s,.!]*/i;
+
+/** "כן" with another request beside it → the request; a yes alone (or a yes that only adds detail) → null. */
+export function requestBesideYes(text: string): string | null {
+  const t = text.trim();
+  if (!YES_PREFIX.test(t)) return null;
+  const rest = t.replace(YES_PREFIX, "").replace(/^\s*(?:תודה(?: רבה)?|אחי|thanks)[\s,.!]*/i, "").trim();
+  return rest && REQUEST.test(rest) && classifyReply(rest) !== "yes" ? rest : null;
+}
+
+/** Starts with a yes, whatever comes after it. */
+export const startsWithYes = (text: string): boolean => YES_PREFIX.test(text.trim());
+
+/** The answer to "מה השם המלא שלך?" with something beside it ("קרן אור, רגע כמה זה?"). */
+export function nameWithRequest(text: string): { name: NonNullable<ReturnType<typeof looksLikeName>>; rest: string } | null {
+  const m = text.trim().match(/^([^,.!?\n]+?)(?:[,.!\n]+|\s+(?=רגע|אבל|אגב|כמה|וכמה|איפה))\s*([\s\S]+)$/);
+  const name = m && looksLikeName(m[1]);
+  return name ? { name, rest: m[2].trim() } : null;
+}
+
+/** "ראשון ב11, מורן שי": a chosen time, and a full name that closes the message. */
+export function nameAtEnd(text: string): string | null {
+  const m = text.trim().match(/^([\s\S]*\d[\s\S]*)[,\n]\s*([^,\n\d?]+)$/);
+  return (m && looksLikeName(m[2])?.full) || null;
+}
+
+const CLOCK = /(?:^|[^\d:./])(\d{1,2}):?(\d{2})(?!\d|[./]\d)/g;
+/** He cancels one appointment and names an hour that is not its own: a new booking comes first. */
+export function cancelBesideNewTime(text: string, currentStart: string): boolean {
+  const times = Array.from(text.matchAll(CLOCK)).filter(m => Number(m[1]) < 24 && Number(m[2]) < 60).map(m => `${m[1].padStart(2, "0")}:${m[2]}`);
+  return times.some(t => t !== currentStart);
+}
+
+/** He asks to cancel ("ותבטל לי את רביעי"), not about cancelling and not "אם מישהו מבטל". */
+export const asksToCancel = (text: string): boolean => !/[?؟]/.test(text) && !/אל\s+תבטל|לא\s+לבטל|אם\s+\S*\s*(?:מבטל|יבטל|מתבטל|יתבטל)/.test(text) && /(?:^|\s)ו?(?:לבטל|תבטלי?|תבטלו|בטלי?)(?=\s|$)|cancel/i.test(text);
+
+/** "תקבע בינתיים ואם מתפנה היום אחרי 16 תגיד" → "היום אחרי 16": what he would rather have. */
+export function wantsIfOpens(text: string): string | null {
+  const m = text.match(/אם\s+(?:כן\s+)?(?:יתפנה|מתפנה|תתפנה|נפתח|ייפתח|יתבטל|מתבטל)\s*([^,.?!\n]*)/);
+  if (!m) return null;
+  return m[1].replace(/(?:^|\s)(?:תגיד|תעדכ[ןנ]|תודיע|תכתב)[\s\S]*$/, "").replace(/^\s*(?:לך|לכם|משהו)\s*/, "").trim() || "משהו מוקדם יותר";
+}
+
+const FINISH_BY = /(?:לצאת|לסיים|לגמור|ללכת|לזוז|אצא|לקום)\s+(?:עד\s+|לפני\s+)?(?:ה?שעה\s+)?ב?-?(\d{1,2})(?::(\d{2}))?(?!\d|[./]\d)/;
+/** "חייב לצאת עד 14" → 840 (minutes); the model got this subtraction wrong twice. */
+export function finishBy(text: string): number | null {
+  const m = text.match(FINISH_BY);
+  if (!m) return null;
+  const h = Number(m[1]), min = Number(m[2] ?? 0);
+  if (h > 23 || min > 59) return null;
+  return (h >= 1 && h <= 7 ? h + 12 : h) * 60 + min;
+}
+
+const STUCK = /פנצ['׳]?ר|תקוע|נתקעתי|פקק|מאחר|באיחור|לא (?:אספיק|מספיק|אגיע|מגיע|אצליח)|חולה|חום/;
+const SAYS_CHANGED = /(?:כבר\s+)?(?:הזזתי|שיניתי|ביטלתי|העברתי)/;
+/** What he writes is about the appointment he already has. Empty when there is none. */
+export function aboutHisAppointment(text: string, hasUpcoming: boolean): string {
+  if (!hasUpcoming) return "";
+  const parts: string[] = [];
+  if (STUCK.test(text)) parts.push("הוא כותב על עיכוב או תקלה, וזה על התור שרשום לו: ענה בהשתתפות קצרה ושאל אם להזיז (או לאחר) את התור. אל תענה שזה לא קשור אליך.");
+  if (SAYS_CHANGED.test(text)) parts.push("הוא אומר שכבר שינה את התור. התור שרשום למעלה נכון לרגע זה וכולל כל שינוי מהאתר, מהקישור ומהאפליקציה. לא תואם למה שאמר → השינוי לא נשמר: אמור לו מה רשום והצע לשנות. אל תאשר שינוי שלא מופיע, ואל תאמר שזה עוד יתעדכן.");
+  return parts.join("\n");
+}

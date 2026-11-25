@@ -23,6 +23,8 @@ import { dayDistance } from "@/lib/day-distance";
 import { randomUUID } from "crypto";
 import { loadDayContext, findUpsell } from "@/lib/availability/visit";
 import { prisma } from "@/lib/prisma";
+import { widerContext } from "@/lib/agent/wider-context";
+import { asksToCancel, cancelBesideNewTime, nameWithRequest, requestBesideYes, startsWithYes, wantsIfOpens } from "@/lib/agent/mixed-messages";
 import { agentSwitches } from "@/lib/agent/setup-fields";
 import { holdSlot, releaseHolds, holderKeyForPhone } from "@/lib/slot-holds";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
@@ -242,25 +244,59 @@ export async function maybeStartCancelFlow(p: { businessId: string; phone: strin
   const text = p.text.trim();
   if (!CANCEL_INTENT.test(text) || OTHER_INTENT.test(text) || text.split(/\s+/).length > 14 || !p.customer) return {};
   // The business said cancelling goes through it, not the agent (16.10.2026): the model escalates instead.
-  if (!agentSwitches((await prisma.agentConfig.findUnique({ where: { businessId: p.businessId }, select: { setupConfig: true } }))?.setupConfig).allowCancel) return {};
+  if (!(await agentMayCancel(p.businessId))) return {};
+  const upcoming = await upcomingAppointments(p.businessId, p.customer.id);
+  if (upcoming.length !== 1) return {};
+  const a = upcoming[0];
+  if (widerContext(p.businessId) && cancelBesideNewTime(text, a.startTime)) {
+    return { context: `בהודעה אחת הוא בוחר שעה לתור חדש וגם מבקש לבטל את התור ${dayLabelHe(a.date.toISOString().slice(0, 10))} בשעה ${a.startTime} אצל ${a.staff.name}. קודם התור החדש: propose_booking. את הביטול המערכת שואלת לבד אחרי שהחדש נקבע: אל תבטל ואל תשאל על הביטול עכשיו.` };
+  }
+  const { question } = await createCancelProposal({ ...p, phone: normalizeIsraeliPhone(p.phone) }, a);
+  const who = firstNameOf(p.customer.name) ? firstNameOf(p.customer.name) + ", " : "";
+  return { reply: `${who}${question(langOf(text))}` };
+}
+
+const agentMayCancel = async (businessId: string): Promise<boolean> =>
+  agentSwitches((await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true } }))?.setupConfig).allowCancel;
+
+/** His appointments from now on, at most three. */
+async function upcomingAppointments(businessId: string, customerId: string) {
   const nowBiz = getBusinessNow();
-  const todayStart = new Date(nowBiz.date + "T00:00:00.000Z");
-  const upcoming = (await prisma.appointment.findMany({
-    where: { businessId: p.businessId, customerId: p.customer.id, date: { gte: todayStart }, status: { in: ["pending", "confirmed"] } },
+  return (await prisma.appointment.findMany({
+    where: { businessId, customerId, date: { gte: new Date(nowBiz.date + "T00:00:00.000Z") }, status: { in: ["pending", "confirmed"] } },
     orderBy: [{ date: "asc" }, { startTime: "asc" }], take: 3,
     select: { id: true, date: true, startTime: true, staff: { select: { name: true } }, service: { select: { name: true } } },
   })).filter(a => a.date.toISOString().slice(0, 10) !== nowBiz.date || Number(a.startTime.split(":")[0]) * 60 + Number(a.startTime.split(":")[1]) >= nowBiz.minutes);
-  if (upcoming.length !== 1) return {};
-  const a = upcoming[0];
-  const phone = normalizeIsraeliPhone(p.phone);
+}
+
+/** Waits for his answer to "לבטל את התור…?" (`phone` as the proposals keep it). */
+async function createCancelProposal(p: { businessId: string; phone: string; conversationId: string }, a: Awaited<ReturnType<typeof upcomingAppointments>>[number]) {
+  const { phone } = p;
   const dateISO = a.date.toISOString().slice(0, 10);
   await prisma.bookingProposal.updateMany({ where: { businessId: p.businessId, phone, status: "pending" }, data: { status: "superseded", respondedAt: new Date() } });
   await prisma.bookingProposal.create({
     data: { businessId: p.businessId, phone, conversationId: p.conversationId, kind: "cancel", date: a.date, startTime: a.startTime, note: JSON.stringify({ appointmentId: a.id, staffName: a.staff.name, serviceName: a.service.name }), expiresAt: new Date(Date.now() + CONFIRM_TTL_MS) },
   });
-  const who = firstNameOf(p.customer.name) ? firstNameOf(p.customer.name) + ", " : "";
-  if (langOf(text) === "en") return { reply: `${who}Cancel your appointment ${dayLabelEn(dateISO)} at ${a.startTime} with ${a.staff.name}?` };
-  return { reply: `${who}לבטל את התור ${dayLabelHe(dateISO)} בשעה ${a.startTime} אצל ${a.staff.name}?` };
+  return { question: (lang: Lang) => lang === "en" ? `Cancel your appointment ${dayLabelEn(dateISO)} at ${a.startTime} with ${a.staff.name}?` : `לבטל את התור ${dayLabelHe(dateISO)} בשעה ${a.startTime} אצל ${a.staff.name}?` };
+}
+
+/** Asked to cancel the old one in the messages around this booking ("18:30 ותבטל את רביעי"): the question follows it. */
+async function cancelAskedBeside(prop: { businessId: string; phone: string; conversationId: string | null; date: Date | null; startTime: string | null }): Promise<string | null> {
+  if (!prop.conversationId || !widerContext(prop.businessId)) return null;
+  const said = await recentlySaid(prop.conversationId);
+  if (!said.some(asksToCancel) || !(await agentMayCancel(prop.businessId))) return null;
+  const since = new Date(Date.now() - 30 * 60_000);
+  if (await prisma.bookingProposal.count({ where: { conversationId: prop.conversationId, kind: "cancel", createdAt: { gte: since } } })) return null;
+  const customer = await prisma.customer.findFirst({ where: { businessId: prop.businessId, OR: [{ phone: prop.phone }, { phone: prop.phone.replace(/^972/, "0") }] }, select: { id: true } });
+  const others = customer ? (await upcomingAppointments(prop.businessId, customer.id)).filter(a => a.startTime !== prop.startTime || a.date.getTime() !== prop.date?.getTime()) : [];
+  if (others.length !== 1) return null;
+  return (await createCancelProposal({ businessId: prop.businessId, phone: prop.phone, conversationId: prop.conversationId }, others[0])).question(langOf(said[0]));
+}
+
+/** What the customer wrote here in the last half hour, newest first. */
+async function recentlySaid(conversationId: string): Promise<string[]> {
+  const rows = await prisma.conversationMessage.findMany({ where: { conversationId, role: "user", createdAt: { gte: new Date(Date.now() - 30 * 60_000) } }, orderBy: { createdAt: "desc" }, take: 8, select: { content: true } });
+  return rows.map(r => r.content ?? "");
 }
 
 export async function findPendingProposal(businessId: string, phone: string) {
@@ -343,7 +379,7 @@ const MULTI_ASK = /(^|[\s,])(2|שני|שתי)\s*תור|לשנינו|אחד (בש
  * failed, the agent gets a precise brief instead (what was booked, what wasn't).
  */
 export async function bookConfirmedProposal(p: {
-  pending: { id: string; staffId: string | null; serviceId: string | null; date: Date | null; startTime: string | null; customerName: string | null; note: string | null; conversationId: string | null };
+  pending: { id: string; businessId: string; phone: string; staffId: string | null; serviceId: string | null; date: Date | null; startTime: string | null; customerName: string | null; note: string | null; conversationId: string | null };
   execTool: ExecTool;
   sandbox?: boolean; fallbackName: string | null; noteOverride?: string | null;
 }): Promise<{ reply?: string; context?: string; booked: number }> {
@@ -376,8 +412,14 @@ export async function bookConfirmedProposal(p: {
   if (visit) return { booked: booked.length, reply: visitBookedMessage({ date: dateISO, items: booked, lang }) };
   if (jobs.length > 1) return { booked: booked.length, reply: groupBookedMessage({ staffName: meta.staffName ?? "", date: dateISO, booked: booked.map(b => ({ name: b.name, startTime: b.startTime, staffName: b.staffName })), lang }) };
   // No waitlist at this business → no "want me to let you know" line (16.10.2026).
+  if (!meta.originalRequest && pending.conversationId && widerContext(pending.businessId)) {
+    meta.originalRequest = (await recentlySaid(pending.conversationId)).map(wantsIfOpens).find(Boolean) ?? null;
+    if (meta.originalRequest) await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify(meta) } });
+  }
   const waitlistOk = !meta.originalRequest || !pending.conversationId || agentSwitches((await prisma.agentConfig.findFirst({ where: { business: { conversations: { some: { id: pending.conversationId } } } }, select: { setupConfig: true } }))?.setupConfig).offerWaitlist;
   let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: waitlistOk ? meta.originalRequest : null, lang });
+  const cancelAsk = await cancelAskedBeside(pending).catch(e => { console.error("[cancel-beside]", e); return null; });
+  if (cancelAsk) return { booked: booked.length, reply: `${reply}\n\n${cancelAsk}` };
   // The extra treatment right after it (16.10.2026), never after an offer that was itself extra.
   if (!meta.upsell && !meta.originalRequest) {
     const q = await offerUpsell({ proposalId: pending.id, dateISO, mainName, sandbox: !!p.sandbox }).catch(e => { console.error("[upsell]", e); return null; });
@@ -490,6 +532,9 @@ export async function handleIncomingForProposal(p: {
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: "rejected", respondedAt: new Date() } });
       return { reply: langOf(text) === "en" ? "Sure, your appointment stays as it is 👍" : `סבבה, התור נשאר כמו שהוא 👍` };
     }
+    if (widerContext(p.businessId) && startsWithYes(text) && !MOVE_HINTS.test(text) && !/[?؟]/.test(text)) {
+      return { context: `שאלת את הלקוח אם לבטל את ${what} והוא הסכים: "${text.slice(0, 120)}". קרא עכשיו ל-cancel_appointment עם המזהה שבהנחיות, בלי לשאול שוב.` };
+    }
     return { context: `שאלת את הלקוח אם לבטל את ${what} והוא ענה משהו אחר: "${text.slice(0, 120)}". אם הוא רוצה להזיז במקום לבטל — request_appointment_move; אם רוצה לבטל בכל זאת — cancel_appointment עם המזהה שבהנחיות, אחרי אישור.` };
   }
 
@@ -515,6 +560,12 @@ export async function handleIncomingForProposal(p: {
         await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify({ ...meta, partialName: nm.partial }) } });
         return { reply: nameQuestion(await convLang(pending.conversationId), true) };
       }
+      const beside = widerContext(p.businessId) ? nameWithRequest(text) : null;
+      const full = beside?.name.full ?? (beside?.name.partial && meta.partialName ? `${meta.partialName} ${beside.name.partial}` : null);
+      if (beside && full && isPureAck(beside.rest)) return finish(full);
+      if (beside && full) {
+        return { context: `הלקוח נתן את שמו המלא, "${full}", ובאותה הודעה כתב גם: "${beside.rest.slice(0, 120)}". ענה על זה במשפט קצר, ובאותה תשובה קרא ל-propose_booking על אותו תור (${what}) עם customerName="${full}". אל תבקש שם שוב.` };
+      }
       return { context: `ביקשת מהלקוח שם מלא כדי לסגור תור (${what}) והוא ענה משהו שאינו שם: "${text.slice(0, 120)}". טפל במה שכתב, ואז בקש שוב שם מלא (פרטי + משפחה); כשיש שם מלא קרא ל-propose_booking עם אותם פרטים ו-customerName.` };
     }
     // A "כן" answers the agent's LAST message. When the agent wrote after the
@@ -523,6 +574,10 @@ export async function handleIncomingForProposal(p: {
     const lastIsQuestion = !p.lastAssistant || p.lastAssistant.createdAt <= pending.createdAt || /(מאשר|מאשרת|לאשר|confirm)\s*\??\s*$/i.test(p.lastAssistant.content.trim());
     if (isPlainYes(text, pending.startTime) && !lastIsQuestion) {
       return { context: `אחרי שאלת האישור (${what}) כתבת ללקוח: "${p.lastAssistant!.content.slice(0, 200)}", והוא ענה "${text.slice(0, 60)}". התשובה שלו היא להודעה האחרונה שלך. הצעת בה שעה, יום, ספר או שירות אחרים → קרא ל-propose_booking עם הפרטים החדשים ו-customerConfirmed=true. זו אותה הצעה → אותם פרטים ו-customerConfirmed=true.` };
+    }
+    const besideYes = widerContext(p.businessId) && lastIsQuestion ? requestBesideYes(text) : null;
+    if (besideYes) {
+      return { context: `הלקוח אישר את התור (${what}) ובאותה הודעה כתב גם: "${besideYes.slice(0, 120)}". קרא עכשיו ל-propose_booking עם בדיוק אותם פרטים ו-customerConfirmed=true; אחרי שהתור נקבע תענה על השאר. אם מה שכתב משנה את התור עצמו (שעה, יום, טיפול, איש צוות) → propose_booking עם הפרטים החדשים, בלי customerConfirmed.` };
     }
     if (isPlainYes(text, pending.startTime)) {
       const r = await bookConfirmedProposal({ pending, execTool: p.execTool, sandbox: p.sandbox, fallbackName: p.customer?.name ?? null });

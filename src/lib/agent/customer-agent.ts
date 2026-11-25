@@ -50,10 +50,11 @@ import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
-import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
+import { widerContext } from "@/lib/agent/wider-context";
+import { aboutHisAppointment, finishBy, nameAtEnd, requestBesideYes } from "@/lib/agent/mixed-messages";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
@@ -2599,10 +2600,6 @@ async function assumedServiceId(businessId: string, callerPhone: string): Promis
 /** What a run asks for after it ends (19.10.2026): hand the chat to a person. */
 type AgentRunCtx = { handoffReason?: string; conversationId?: string };
 
-/** The 25.11.2026 additions to what the model reads every turn (the named treatment's times in a men's shop, the asked
- *  part of the day, who is off when, in-a-row guidance). DOMINANT keeps its own until Yair says yes. */
-const widerContext = (businessId: string): boolean => businessId !== SUPER_ADMIN_BUSINESS_ID;
-
 const setupSays = (setup: string | null | undefined, key: keyof SetupConfig): unknown => { try { return setup ? (JSON.parse(setup) as SetupConfig)[key] : undefined; } catch { return undefined; } };
 
 /** "תסרוקת ערב: החל מ־350₪" — from the services screen, with each person's own price in it. */
@@ -2620,6 +2617,24 @@ async function afterCancelContext(businessId: string, phone: string): Promise<st
   let what = "";
   try { what = (JSON.parse(done.note ?? "{}") as { serviceName?: string }).serviceName ?? ""; } catch { /* no name */ }
   return `המערכת כבר ביטלה לו את התור ${what} (${dayLabelWithDistance(done.date.toISOString().slice(0, 10))} ב-${done.startTime}). אל תבטל שוב. רוצה תור חדש ולא אמר טיפול → ${what || "אותו טיפול"}.`;
+}
+
+/** What the code can read in the message better than the model (mixed-messages.ts). */
+async function mixedMessageContext(businessId: string, text: string, customerContext: string): Promise<string> {
+  const parts = [aboutHisAppointment(text, customerContext.includes("יש לו כבר תור קבוע"))];
+  const name = customerContext.includes("לקוח חדש שעדיין לא רשום") ? nameAtEnd(text) : null;
+  if (name) {
+    const contains = name.split(" ")[0];
+    const [staff, services] = await Promise.all([prisma.staff.count({ where: { businessId, name: { contains } } }), prisma.service.count({ where: { businessId, name: { contains } } })]);
+    if (!staff && !services) parts.push(`"${name}" בסוף ההודעה נראה כמו שמו המלא של הלקוח, ואין איש צוות כזה: אם כן, המשך לקביעה עם customerName="${name}" ואל תענה שאין איש צוות בשם הזה.`);
+  }
+  const until = finishBy(text);
+  if (until !== null) {
+    const services = await prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, take: 15, select: { name: true, durationMinutes: true } });
+    const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    parts.push(`הוא חייב לסיים עד ${hhmm(until)}. שעת ההתחלה המאוחרת ביותר לפי המשך: ${services.map(x => `${x.name} ${hhmm(until - x.durationMinutes)}`).join(", ")}. הצע רק שעות פנויות עד אז, כולל המאוחרת שבהן.`);
+  }
+  return parts.filter(Boolean).join("\n");
 }
 
 /** The customer cancelled an appointment in the last hours. */
@@ -2862,6 +2877,8 @@ async function runCustomerAgentCore(opts: {
   if (!preHandledReply && widerContext(businessId)) {
     const cancelled = await afterCancelContext(businessId, phone).catch(() => null);
     if (cancelled) customerContext += `\n${cancelled}`;
+    const mixed = await mixedMessageContext(businessId, incomingText, customerContext).catch(() => "");
+    if (mixed) customerContext += `\n${mixed}`;
   }
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
   // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
@@ -3038,6 +3055,7 @@ async function runCustomerAgentCore(opts: {
   const MAX_ITERATIONS = 8;
 
   let askedOwner = false;
+  let bookedLine = "";
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await anthropicFor(sandbox ? "test" : "prod").messages.create({
       model,
@@ -3113,7 +3131,15 @@ async function runCustomerAgentCore(opts: {
         const preText = (response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("\n").trim().split(/\n\s*\n+/)[0] ?? "").trim();
         const preWords = preText.split(/\s+/).filter(w => /[a-zA-Zא-ת]/.test(w));
         const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)(?![א-ת])/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך|אסגור|אסגר|אקבע לך|לאישור/.test(preText);
-        assistantText = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
+        const sent = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
+        // "כן. אגב כמה זה?": booked, and the question still needs its answer (25.11.2026). One more call, once.
+        const beside = !bookedLine && widerContext(businessId) && (proposed.content as string).startsWith("BOOKED\n") && !/[?؟]\s*$/.test(sent) ? requestBesideYes(incomingText) : null;
+        if (beside) {
+          bookedLine = sent;
+          proposed.content = `התור נקבע, והמערכת כבר שולחת ללקוח: "${sent}". הוא כתב גם: "${beside}". כתוב עכשיו רק תשובה קצרה לזה, בלי לחזור על הקביעה ובלי לקרוא שוב ל-propose_booking.`;
+          continue;
+        }
+        assistantText = sent;
         break;
       }
       continue;
@@ -3141,6 +3167,7 @@ async function runCustomerAgentCore(opts: {
       if (block.type === "text") assistantText += block.text;
     }
   }
+  if (bookedLine) assistantText = [bookedLine, assistantText.trim()].filter(Boolean).join("\n\n");
   } // end Anthropic provider branch
 
   // A late message the reply above already answered: nothing more to send.
