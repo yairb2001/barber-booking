@@ -50,6 +50,15 @@ export function parseTargetDay(text: string, today: string): string | null {
   return null;
 }
 
+/** The day a question moves to ("משני 30.11 לרביעי 2.12" with his appointment on 30.11 → 2.12; garage, 25.11.2026: it
+ *  read the first one). No day but his own → that day; two other days → null, not for code to guess. */
+export function targetDayIn(question: string, ownISO: string, today: string): string | null {
+  const dated = Array.from(question.matchAll(/\d{1,2}[./]\d{1,2}(?![\d:])|מחרתיים|מחר|היום/g)).map(m => parseTargetDay(m[0], today));
+  const days = dated.length ? dated : question.split(/[\s,?.!]+/).map(w => parseTargetDay(w, today));
+  const others = Array.from(new Set(days.filter((d): d is string => !!d && d !== ownISO)));
+  return others.length > 1 ? null : others[0] ?? ownISO;
+}
+
 /** Time in the customer's text ("12", "12:00", "1430", "ב-6:30"). Ambiguous hours
  *  ("6") are resolved toward the barber's working span that day; `exclude` = the
  *  appointment's own time ("יש לי תור ב-17:30, אפשר להקדים?"). */
@@ -137,9 +146,9 @@ export async function maybeStartMoveFlow(p: { businessId: string; phone: string;
     const hour = yesToCancelAndRebook(text, question, a.startTime);
     if (!hour) return {};
     // Another staff member or treatment in the question: the model moves it, still without cancelling first.
-    const day = parseTargetDay(question, getBusinessNow().date) ?? a.date.toISOString().slice(0, 10);
-    if (!(await freeSlots(p.businessId, a.staffId, a.serviceId, day, p.customer.id)).includes(hour)) {
-      return { context: `הוא אישר להחליף את התור ${dayLabelHe(a.date.toISOString().slice(0, 10))} ב-${a.startTime} (מזהה ${a.id}) בתור ב-${hour}. אל תבטל: request_appointment_move, והתור הישן נשאר עד שהחדש נקבע.` };
+    const own = a.date.toISOString().slice(0, 10), day = targetDayIn(question, own, getBusinessNow().date);
+    if (!day || !(await freeSlots(p.businessId, a.staffId, a.serviceId, day, p.customer.id)).includes(hour)) {
+      return { context: `הוא אישר להחליף את התור ${dayLabelHe(own)} ב-${a.startTime} (מזהה ${a.id}) בתור ב-${hour}. אל תבטל: request_appointment_move, והתור הישן נשאר עד שהחדש נקבע.` };
     }
     text += ` ${day.slice(8, 10)}.${day.slice(5, 7)} ב-${hour}`;
   }

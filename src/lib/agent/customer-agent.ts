@@ -2671,7 +2671,7 @@ async function mixedMessageContext(businessId: string, text: string, earlier: st
     parts.push(`${day === today ? "היום" : day} נכנס עד ${hhmm(until)}: ${fits.filter(Boolean).join(", ") || "שום טיפול"}. הטיפול שביקש לא נכנס וקצר ממנו כן → הצע אותו בשמו.`);
   }
   const words = hourInWords(text);
-  if (words) parts.push(`הוא כתב שעה במילים: ${words}. השעה הזאת בדיוק לא פנויה → אמור שהיא לא פנויה, ואז את הקרובות.`);
+  if (words) parts.push(`הוא כתב שעה במילים: ${words}${Number(words.split(":")[0]) < 8 ? ` (כלומר ${Number(words.split(":")[0]) + 12}:${words.split(":")[1]})` : ""}. בדוק אותה בדיוק: פנויה → המשך איתה. רק אם היא באמת לא ברשימת הפנויות, אמור שלא ותן את הקרובות.`);
   return parts.filter(Boolean).join("\n");
 }
 

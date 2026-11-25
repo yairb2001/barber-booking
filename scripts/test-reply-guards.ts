@@ -1,5 +1,6 @@
 /** Checks on the agent's reply before it is sent, and the wordings behind them (25.11.2026). No DB, no AI:
  *  npx tsx scripts/test-reply-guards.ts */
+import { targetDayIn } from "../src/lib/agent/move-flow";
 import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml } from "../src/lib/agent/reply-guards";
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn } from "../src/lib/agent/availability-snapshot";
@@ -70,6 +71,7 @@ eq("about his appointment", [aboutHisAppointment("תקוע עם פנצ'ר", true
 
 const clinicWords = { ...vocabFor("other"), staff: "רופא", other: "אחר" };
 eq("yes to cancel and rebook", [["כן", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"], ["כן", "לבטל את התור ב-18:00?"], ["כן 21:00", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"], ["לא", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"]].map(([t, q]) => yesToCancelAndRebook(t, q, "18:00")), ["20:00", null, null, null]);
+eq("the day a question moves to", ["להזיז את התור שלך משני 30.11 בשעה 10:00 לרביעי 2.12 בשעה 09:00?", "לבטל את התור ב-18:00 ולקבוע ב-20:00?", "לבטל ולקבוע ב-1.12 או ב-2.12 ב-9:00?", "לבטל את שני ולקבוע חמישי ב-9:00?"].map(q => targetDayIn(q, "2026-11-30", "2026-11-25")), ["2026-12-02", "2026-11-30", null, "2026-11-26"]);
 eq("an hour in words", ["אפשר שלוש ועשרה במקום?", "רבע לחמש", "ארבע וחצי", "בשעה עשר וחצי", "אחת עשרה ורבע", "יש שלוש ילדות", "רבע לאחת", "טוב אז שלוש, ניב כץ"].map(hourInWords), ["3:10", "4:45", "4:30", "10:30", "11:15", null, "12:45", "3:00"]);
 eq("the hour he names", ["ב15:10, אורי", "אחרי 17:00", "15:00 או 16:00", "אז שלוש, ניב כץ", "כן"].map(namedHour), ["15:10", null, null, "3:00", null]);
 eq("the same hour", [["3:00", "15:00"], ["3:00", "15:45"], ["15:00", "15:00"], ["12:30", "12:30"]].map(([a, b]) => sameHour(a, b)), [true, false, true, true]);
