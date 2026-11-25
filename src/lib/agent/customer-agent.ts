@@ -1295,7 +1295,7 @@ export async function execTool(
           avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
           const free = avail.find(a => a.staffId === staff!.id)?.slots ?? [];
           if (widerContext(bizId)) {
-            const wrong = await alreadyRefused(conversationId, date, startTime) ? null : await againstWhatHeSaid(conversationId, { staff, serviceId: service.id, date, startTime, free });
+            const wrong = await againstWhatHeSaid(conversationId, { staff, serviceId: service.id, date, startTime, free });
             if (wrong) return wrong;
           }
           if (!free.includes(startTime) && widerContext(bizId)) {
@@ -2663,18 +2663,18 @@ async function cancelTooEarly(businessId: string, conversationId: string, appoin
   return both || waiting ? "שגיאה: לא בוטל. קודם התור החדש: propose_booking. אחרי שהלקוח מאשר אותו המערכת שואלת לבד על ביטול הישן. אל תאמר שבוטל." : null;
 }
 
-/** A proposal is sent back for contradicting him once; insisting on the same hour means he did choose it (25.11.2026: a
+/** A proposal is sent back over its day once; insisting on it means he did choose that day (25.11.2026: a
  *  day mentioned in passing blocked a confirmed booking three times). */
-async function alreadyRefused(conversationId: string, date: string, startTime: string): Promise<boolean> {
+async function dayRefusedBefore(conversationId: string, date: string, startTime: string): Promise<boolean> {
   const rows = await prisma.conversationMessage.findMany({ where: { conversationId, role: "tool", toolName: "propose_booking", createdAt: { gte: new Date(Date.now() - 3600_000) } }, orderBy: { createdAt: "desc" }, take: 6, select: { content: true, toolInput: true } });
-  return rows.some(r => /^שגיאה: הוא /.test(r.content ?? "") && String(r.toolInput ?? "").includes(date) && String(r.toolInput ?? "").includes(startTime));
+  return rows.some(r => /^שגיאה: הוא (?:ביקש \S+ \d+\.\d+ \(|כתב יום)/.test(r.content ?? "") && String(r.toolInput ?? "").includes(date) && String(r.toolInput ?? "").includes(startTime));
 }
 
 async function againstWhatHeSaid(conversationId: string, p: { staff: { id: string; name: string }; serviceId: string; date: string; startTime: string; free: string[] }): Promise<string | null> {
   const said = await recentlySaid(conversationId);
   const talk = await prisma.conversationMessage.findMany({ where: { conversationId, role: { in: ["user", "assistant"] }, createdAt: { gte: new Date(Date.now() - 3 * 3600_000) } }, orderBy: { createdAt: "desc" }, take: 14, select: { role: true, content: true } });
   const wrongDay = againstTalkedDay(talkedDays(talk, getBusinessNow().date), p.date);
-  if (wrongDay) return wrongDay;
+  if (wrongDay && !(await dayRefusedBefore(conversationId, p.date, p.startTime))) return wrongDay;
   const hour = namedHour(said[0] ?? "");
   if (hour && !sameHour(hour, p.startTime)) {
     const exact = p.free.find(t => sameHour(hour, t));

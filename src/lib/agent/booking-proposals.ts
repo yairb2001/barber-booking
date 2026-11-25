@@ -244,6 +244,8 @@ const OTHER_INTENT = /לקבוע|להזיז|להעביר|לדחות|במקום|�
 export async function maybeStartCancelFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null }): Promise<ProposalOutcome> {
   const text = p.text.trim();
   if (!CANCEL_INTENT.test(text) || OTHER_INTENT.test(text) || text.split(/\s+/).length > 14 || !p.customer) return {};
+  // "אם מישהו מבטל היום תכתוב לי" is about someone else's (25.11.2026).
+  if (widerContext(p.businessId) && /אם\s+(?:\S+\s+)?(?:מישהו|מישהי|מבטלים|יבטלו|מבטלת?|יבטל|תבטל|מתבטל|יתבטל)/.test(text)) return {};
   // The business said cancelling goes through it, not the agent (16.10.2026): the model escalates instead.
   if (!(await agentMayCancel(p.businessId))) return {};
   const upcoming = await upcomingAppointments(p.businessId, p.customer.id);
