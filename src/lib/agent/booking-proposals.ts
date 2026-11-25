@@ -294,7 +294,7 @@ async function cancelAskedBeside(prop: { businessId: string; phone: string; conv
 }
 
 /** What the customer wrote here in the last half hour, newest first. */
-async function recentlySaid(conversationId: string): Promise<string[]> {
+export async function recentlySaid(conversationId: string): Promise<string[]> {
   const rows = await prisma.conversationMessage.findMany({ where: { conversationId, role: "user", createdAt: { gte: new Date(Date.now() - 30 * 60_000) } }, orderBy: { createdAt: "desc" }, take: 8, select: { content: true } });
   return rows.map(r => r.content ?? "");
 }

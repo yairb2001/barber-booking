@@ -4,7 +4,7 @@ import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, eme
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn } from "../src/lib/agent/availability-snapshot";
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
-import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, yesToCancelAndRebook, nameAtEnd, nameWithRequest, offeredHour, requestBesideName, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
+import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, namedHour, sameHour, yesToCancelAndRebook, nameAtEnd, nameWithRequest, offeredHour, requestBesideName, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
 import { nearestId } from "../src/lib/agent/repair-ids";
 import { vocabFor } from "../src/lib/vocab";
 import { addDaysISO, getBusinessNow } from "../src/lib/utils";
@@ -68,8 +68,12 @@ eq("an id with one slip", [nearestId("0e9e10ce-ad55-46c1-822f-15d3e3c0b8d0", ids
 eq("must finish by", ["חייב לצאת עד 14", "אני חייבת לצאת ב1 אין משהו לפני?", "לסיים לפני 13:30", "אפשר ב14?", "ללכת ב30.11"].map(finishBy), [840, 780, 810, null, null]);
 eq("about his appointment", [aboutHisAppointment("תקוע עם פנצ'ר", true) !== "", aboutHisAppointment("תקוע עם פנצ'ר", false), aboutHisAppointment("שיניתי ל11:30", true).includes("לא נשמר"), aboutHisAppointment("תודה", true)], [true, "", true, ""]);
 
+const clinicWords = { ...vocabFor("other"), staff: "רופא", other: "אחר" };
 eq("yes to cancel and rebook", [["כן", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"], ["כן", "לבטל את התור ב-18:00?"], ["כן 21:00", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"], ["לא", "לבטל את התור ב-18:00 ולקבוע ב-20:00?"]].map(([t, q]) => yesToCancelAndRebook(t, q, "18:00")), ["20:00", null, null, null]);
-eq("an hour in words", ["אפשר שלוש ועשרה במקום?", "רבע לחמש", "ארבע וחצי", "בשעה עשר וחצי", "אחת עשרה ורבע", "יש שלוש ילדות", "רבע לאחת"].map(hourInWords), ["3:10", "4:45", "4:30", "10:30", "11:15", null, "12:45"]);
+eq("an hour in words", ["אפשר שלוש ועשרה במקום?", "רבע לחמש", "ארבע וחצי", "בשעה עשר וחצי", "אחת עשרה ורבע", "יש שלוש ילדות", "רבע לאחת", "טוב אז שלוש, ניב כץ"].map(hourInWords), ["3:10", "4:45", "4:30", "10:30", "11:15", null, "12:45", "3:00"]);
+eq("the hour he names", ["ב15:10, אורי", "אחרי 17:00", "15:00 או 16:00", "אז שלוש, ניב כץ", "כן"].map(namedHour), ["15:10", null, null, "3:00", null]);
+eq("the same hour", [["3:00", "15:00"], ["3:00", "15:45"], ["15:00", "15:00"], ["12:30", "12:30"]].map(([a, b]) => sameHour(a, b)), [true, false, true, true]);
+eq("another staff member in the business's words", [agentReplyForType("יום אחר או ספר אחר?", clinicWords), agentReplyForType("יש לך מספר אחר?", clinicWords), agentReplyForType("ספר אחר", vocabFor("barber_men"))], ["יום אחר או רופא אחר?", "יש לך מספר אחר?", "ספר אחר"]);
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 const dayIn = (n: number) => DAY[new Date(`${addDaysISO(getBusinessNow().date, n)}T12:00:00Z`).getUTCDay()];
 eq("מחר with the wrong weekday", correctHebrewWeekdayLabels(`הכי קרוב זה מחר ${dayIn(2)}. יש 09:00`), `הכי קרוב זה ביום ${dayIn(2)}. יש 09:00`);

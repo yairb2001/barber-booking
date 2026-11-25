@@ -10,6 +10,8 @@ import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { computeDayAvailability } from "@/lib/agent/availability";
+import { checkSlot } from "@/lib/availability/guard";
+import { shapeOfBooking } from "@/lib/availability/shape";
 import { classifyReply, dayLabelHe, firstNameOf, type ExecTool, type ProposalOutcome } from "@/lib/agent/booking-proposals";
 
 const MOVE_INTENT = /להזיז|תזיז|להעביר|תעביר|לדחות|תדחה|להקדים|תקדים|לאחר את התור|לשנות את התור|להחליף את התור|אפשר להחליף.*תור|reschedule|move my/i;
@@ -26,7 +28,7 @@ const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "
 const MOVE_TTL_MS = 2 * 60 * 60 * 1000;
 
 type MoveMeta = {
-  appointmentId: string; staffId: string; staffName: string; serviceId: string; serviceName: string;
+  appointmentId: string; staffId: string; staffName: string; staffFem?: boolean; serviceId: string; serviceName: string;
   dateISO: string; startTime: string;                      // the existing appointment
   stage: "target" | "pick" | "confirm" | "swapOrPick" | "keepOrOther" | "swapTime";
   targetDate?: string; targetTime?: string; options?: string[]; direction?: "earlier" | "later" | null;
@@ -78,7 +80,7 @@ async function upcomingOne(businessId: string, customerId: string) {
   const list = (await prisma.appointment.findMany({
     where: { businessId, customerId, date: { gte: todayStart }, status: { in: ["pending", "confirmed"] } },
     orderBy: [{ date: "asc" }, { startTime: "asc" }], take: 3,
-    select: { id: true, date: true, startTime: true, staffId: true, serviceId: true, staff: { select: { name: true } }, service: { select: { name: true } } },
+    select: { id: true, date: true, startTime: true, staffId: true, serviceId: true, staff: { select: { name: true, gender: true } }, service: { select: { name: true } } },
   })).filter(a => a.date.toISOString().slice(0, 10) !== nowBiz.date || timeToMinutes(a.startTime) >= nowBiz.minutes);
   return list.length === 1 ? list[0] : null;
 }
@@ -86,6 +88,14 @@ async function upcomingOne(businessId: string, customerId: string) {
 async function freeSlots(businessId: string, staffId: string, serviceId: string, dateISO: string, customerId?: string): Promise<string[]> {
   const avail = await computeDayAvailability(businessId, dateISO, staffId, serviceId, customerId ? { exemptHoldsCustomerId: customerId } : undefined);
   return avail.find(a => a.staffId === staffId)?.slots ?? [];
+}
+
+/** His own appointment does not block a small shift of it the same day ("אפשר ברבע שעה מאוחר יותר?"); the move itself
+ *  already knew that (appointment-swap.ts), the offer did not (25.11.2026). */
+async function freeWithoutHis(businessId: string, meta: MoveMeta, dateISO: string, time: string, customerId?: string): Promise<boolean> {
+  const own = await prisma.appointment.findFirst({ where: { id: meta.appointmentId, businessId } });
+  if (!own || own.date.toISOString().slice(0, 10) !== dateISO) return false;
+  return (await checkSlot(prisma, { staffId: meta.staffId, dateISO, startTime: time, shape: shapeOfBooking(own), ignoreAppointmentIds: [own.id], holds: { exemptCustomerId: customerId ?? null }, room: { businessId, serviceId: own.serviceId }, customer: {} })).ok;
 }
 
 /** What the shop allows: offering a swap at all, and whose approval it takes. */
@@ -136,7 +146,7 @@ export async function maybeStartMoveFlow(p: { businessId: string; phone: string;
   // "כן תזיזי" answers "רוצה שאזיז אותו ל-11:30?" (25.11.2026: asked "לאיזו שעה?" again).
   const offered = widerContext(p.businessId) && startsWithYes(text) && !/\d/.test(text) ? offeredHour(question, a.startTime) : null;
   if (offered) text += ` ל-${offered}`;
-  const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };
+  const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, staffFem: a.staff.gender === "f", serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };
   return advance(p, meta, text, null);
 }
 
@@ -252,7 +262,7 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
   const label = `${dayName(day, today)} ${Number(day.slice(8, 10))}.${Number(day.slice(5, 7))}`;
 
   if (time) {
-    if (daySlots.includes(time)) {
+    if (daySlots.includes(time) || (widerContext(p.businessId) && await freeWithoutHis(p.businessId, meta, day, time, p.customer?.id))) {
       const next: MoveMeta = { ...meta, stage: "confirm", targetDate: day, targetTime: time, direction };
       await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
       return { reply: `${hi}להעביר את התור ל${sameDay ? "שעה" : label + " בשעה"} ${time} אצל ${meta.staffName}?\nמאשר?` };
@@ -262,14 +272,15 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
     const wide = widerContext(p.businessId), later = wide && sameDay && timeToMinutes(time) > timeToMinutes(meta.startTime);
     const useful = later ? daySlots.filter(s => timeToMinutes(s) > timeToMinutes(meta.startTime)) : daySlots;
     const taken = `${time} ${wide ? "לא פנוי" : "תפוס"} אצל ${meta.staffName}`, other = later ? "מאוחרת יותר" : "אחרת פנויה";
+    const to = meta.staffFem ? "לה" : "לו";
     const near = useful.map(s => ({ s, d: Math.abs(timeToMinutes(s) - timeToMinutes(time)) })).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.s).sort();
     const occupied = await prisma.appointment.findFirst({ where: { businessId: p.businessId, staffId: meta.staffId, date: new Date(day + "T00:00:00.000Z"), startTime: time, status: { in: ["pending", "confirmed"] }, NOT: { customerId: p.customer?.id ?? "" } }, select: { id: true } });
     const rules = await swapRules(p.businessId, meta.staffName);
     const swapOk = !!occupied && rules.on;
-    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap: false }, existingId ?? undefined); return { reply: `${taken}, ואין לו שעה ${other} ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
+    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap: false }, existingId ?? undefined); return { reply: `${taken}, ואין ${to} שעה ${other} ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
     const next: MoveMeta = { ...meta, stage: "swapOrPick", targetDate: day, targetTime: time, options: near, direction };
     await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
-    const alt = near.length ? `${taken}. פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${taken}, ואין לו שעה ${other} ${label}.`;
+    const alt = near.length ? `${taken}. פנוי אצ${to} ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${taken}, ואין ${to} שעה ${other} ${label}.`;
     if (!swapOk) return { reply: `${alt} מה עדיף לך?` };
     return { reply: `${alt}\n${twoWays(near.length ? "אפשר גם יום אחר או ספר אחר" : "אפשר לקבוע ליום אחר או אצל ספר אחר", `הלקוח שב-${time}`, rules.needs)}` };
   }

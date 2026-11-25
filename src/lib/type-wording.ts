@@ -133,7 +133,8 @@ export function adaptsKind(kind: MessageKind): boolean {
 export function agentReplyForType(text: string, words: Words): string {
   const v = vocabOfWords(words);
   if (!text) return text;
-  let out = v.type === "barber_men" ? text : text.split("💈").join(v.emoji);
+  let out = v.type === "barber_men" ? text : text.split("💈").join(v.emoji)
+    .replace(word("ספר אחר"), (_m, pre: string) => `${pre}${v.staff} ${v.other}`);
   if (v.customerFem) {
     out = out
       .replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "מאשרת?")

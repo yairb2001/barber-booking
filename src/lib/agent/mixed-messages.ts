@@ -48,15 +48,32 @@ export function yesToCancelAndRebook(text: string, question: string, currentStar
 
 const HOUR_WORDS = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר", "אחת עשרה", "שתים עשרה"];
 const MINUTE_WORDS: Record<string, number> = { "חצי": 30, "רבע": 15, "עשרה": 10, "חמישה": 5, "עשרים": 20 };
-/** "שלוש ועשרה" → "3:10", "רבע לחמש" → "4:45"; an hour with minutes in words only. */
+/** "שלוש ועשרה" → "3:10", "רבע לחמש" → "4:45", "אז שלוש" → "3:00". Morning or evening is for the caller. */
 export function hourInWords(text: string): string | null {
   const hour = (w: string) => HOUR_WORDS.indexOf(w) + 1;
   const hours = [...HOUR_WORDS].reverse().join("|");
   const after = text.match(new RegExp(`(?:^|[\\s,])[בל]?(${hours})\\s+ו(${Object.keys(MINUTE_WORDS).join("|")})(?=$|[\\s,.?!])`));
   if (after) return `${hour(after[1])}:${String(MINUTE_WORDS[after[2]]).padStart(2, "0")}`;
   const before = text.match(new RegExp(`(רבע|עשרה|חמישה|עשרים)\\s+ל(${hours})(?=$|[\\s,.?!])`));
-  return before ? `${(hour(before[2]) + 11) % 12 || 12}:${60 - MINUTE_WORDS[before[1]]}` : null;
+  if (before) return `${(hour(before[2]) + 11) % 12 || 12}:${60 - MINUTE_WORDS[before[1]]}`;
+  const whole = text.match(new RegExp(`(?:^|\\s)(?:ב|אז\\s+|בשעה\\s+)(${hours})(?=$|[,.?!\\n])`));
+  return whole ? `${hour(whole[1])}:00` : null;
 }
+
+/** The one hour he names for the appointment itself ("ב15:10", "אז שלוש"), as "15:10" or "3:00". */
+export function namedHour(text: string): string | null {
+  const words = hourInWords(text);
+  if (words) return words;
+  if (/אחרי|לפני|עד|החל|בסביבות|איזור|אזור|בערך|חייב|לצאת|לסיים|במקום|יש לי|\d\s*(?:או|-|–)\s*\d|\d{1,2}[./]\d{1,2}/.test(text)) return null;
+  const hours = Array.from(text.matchAll(/(?:^|[^\d:])(\d{1,2}:\d{2})(?!\d)/g)).map(m => m[1]);
+  return hours.length === 1 ? hours[0] : null;
+}
+
+/** "3:00" and "15:00" are the same hour when he did not say which half of the day. */
+export const sameHour = (said: string, time: string): boolean => {
+  const [h, m] = said.split(":").map(Number), [th, tm] = time.split(":").map(Number);
+  return m === tm && (h === th || (h <= 12 && h % 12 === th % 12));
+};
 
 /** "ראשון ב11, מורן שי": a chosen time, and a full name that closes the message. */
 export function nameAtEnd(text: string): string | null {
