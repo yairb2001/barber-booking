@@ -4,7 +4,8 @@ import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, eme
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn } from "../src/lib/agent/availability-snapshot";
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
-import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, nameAtEnd, nameWithRequest, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
+import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, nameAtEnd, nameWithRequest, offeredHour, requestBesideName, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
+import { nearestId } from "../src/lib/agent/repair-ids";
 import { vocabFor } from "../src/lib/vocab";
 import { addDaysISO, getBusinessNow } from "../src/lib/utils";
 import { agentReplyForType } from "../src/lib/type-wording";
@@ -60,6 +61,10 @@ eq("a name at the end", ["ראשון ב11, מורן שי", "ראשון בבוק�
 eq("cancel beside a new time", [["18:30 ותבטל לי את רביעי", "11:00"], ["08:30. ואז את ביום ראשון תבטלי", "09:00"], ["לבטל את התור של 11:00", "11:00"], ["לבטל את 26.11", "11:00"], ["לבטל בבקשה", "11:00"]].map(([t, c]) => cancelBesideNewTime(t, c)), [true, true, false, false, false]);
 eq("asks to cancel", ["18:30 ותבטל לי את רביעי", "ואז את ראשון תבטלי", "אל תבטל", "אם מישהו מבטל תעדכן", "עד מתי אפשר לבטל?"].map(asksToCancel), [true, true, false, false, false]);
 eq("what he would rather have", ["תקבעי לי בינתיים מחר ב10 ואם מתפנה היום אחרי 16 תגידי. ענת צור", "ואם מתפנה משהו תעדכן", "מחר ב10"].map(wantsIfOpens), ["היום אחרי 16", "משהו מוקדם יותר", null]);
+eq("a question beside the name", [requestBesideName("קרן אור, רגע כמה זה ומה הכתובת?"), requestBesideName("קרן אור, תודה"), requestBesideName("קרן אור")], ["רגע כמה זה ומה הכתובת?", null, null]);
+eq("the offered hour", [offeredHour("רשום ב-12:30. רוצה שאזיז אותו ל-11:30?", "12:30"), offeredHour("יש 10:00 או 11:00, מה עדיף?", "12:30"), offeredHour("להזיז את התור?", "12:30")], ["11:30", null, null]);
+const ids = ["0e9e10ce-ad55-46c1-822f-15d3e3c0c8d0", "efbf1a36-a8a9-4c71-9c26-ff4937da7b17"];
+eq("an id with one slip", [nearestId("0e9e10ce-ad55-46c1-822f-15d3e3c0b8d0", ids), nearestId(ids[1], ids), nearestId("11111111-ad55-46c1-822f-15d3e3c0c8d0", ids), nearestId("רז", ids)], [ids[0], null, null, null]);
 eq("must finish by", ["חייב לצאת עד 14", "אני חייבת לצאת ב1 אין משהו לפני?", "לסיים לפני 13:30", "אפשר ב14?", "ללכת ב30.11"].map(finishBy), [840, 780, 810, null, null]);
 eq("about his appointment", [aboutHisAppointment("תקוע עם פנצ'ר", true) !== "", aboutHisAppointment("תקוע עם פנצ'ר", false), aboutHisAppointment("שיניתי ל11:30", true).includes("לא נשמר"), aboutHisAppointment("תודה", true)], [true, "", true, ""]);
 

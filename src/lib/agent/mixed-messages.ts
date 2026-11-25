@@ -26,6 +26,19 @@ export function nameWithRequest(text: string): { name: NonNullable<ReturnType<ty
   return name ? { name, rest: m[2].trim() } : null;
 }
 
+/** "קרן אור, רגע כמה זה?" → the question beside the name. */
+export function requestBesideName(text: string): string | null {
+  const rest = nameWithRequest(text)?.rest;
+  return rest && REQUEST.test(rest) ? rest : null;
+}
+
+/** "כן תזיזי" to "רוצה שאזיז אותו ל-11:30?" → "11:30", when the question names one hour besides his own. */
+export function offeredHour(question: string, currentStart: string): string | null {
+  const asked = question.split(/(?<=[.?!\n])/).filter(s => /[?؟]/.test(s)).pop() ?? "";
+  const hours = Array.from(new Set(Array.from(asked.matchAll(/\d{1,2}:\d{2}/g)).map(m => m[0].padStart(5, "0")))).filter(h => h !== currentStart);
+  return hours.length === 1 ? hours[0] : null;
+}
+
 /** "ראשון ב11, מורן שי": a chosen time, and a full name that closes the message. */
 export function nameAtEnd(text: string): string | null {
   const m = text.trim().match(/^([\s\S]*\d[\s\S]*)[,\n]\s*([^,\n\d?]+)$/);

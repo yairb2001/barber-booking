@@ -4,6 +4,8 @@
 // Here: intent + ONE upcoming appointment → the code asks for / reads the target,
 // checks the barber's day, confirms, executes — or offers the swap. Free text at
 // any stage goes to the model with the state as context.
+import { widerContext } from "@/lib/agent/wider-context";
+import { offeredHour, startsWithYes } from "@/lib/agent/mixed-messages";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
@@ -114,11 +116,14 @@ async function save(businessId: string, phone: string, conversationId: string, m
 const close = (id: string, status: "accepted" | "rejected") => prisma.bookingProposal.update({ where: { id }, data: { status, respondedAt: new Date() } });
 
 /** "אפשר להקדים?" / "להזיז את התור ל-12" with exactly one upcoming appointment. */
-export async function maybeStartMoveFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null }): Promise<ProposalOutcome> {
-  const text = p.text.trim();
+export async function maybeStartMoveFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null; lastAssistant?: { content: string } | null }): Promise<ProposalOutcome> {
+  let text = p.text.trim();
   if (!MOVE_INTENT.test(text) || NOT_MOVE.test(text) || text.split(/\s+/).length > 16 || !p.customer) return {};
   const a = await upcomingOne(p.businessId, p.customer.id);
   if (!a) return {};
+  // "כן תזיזי" answers "רוצה שאזיז אותו ל-11:30?" (25.11.2026: asked "לאיזו שעה?" again).
+  const offered = widerContext(p.businessId) && startsWithYes(text) && !/\d/.test(text) ? offeredHour(p.lastAssistant?.content ?? "", a.startTime) : null;
+  if (offered) text += ` ל-${offered}`;
   const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };
   return advance(p, meta, text, null);
 }

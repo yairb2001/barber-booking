@@ -509,7 +509,7 @@ export async function handleIncomingForProposal(p: {
     if (p.lastAssistant && isPureAck(p.text) && leavesNothingOpen(p.lastAssistant.content) && Date.now() - p.lastAssistant.createdAt.getTime() < ACK_WINDOW_MS) return { silent: true };
     const cancel = await maybeStartCancelFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
     if (cancel.reply || cancel.context) return cancel;
-    return maybeStartMoveFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer });
+    return maybeStartMoveFlow({ businessId: p.businessId, phone: p.phone, conversationId: p.conversationId, text: p.text, customer: p.customer, lastAssistant: p.lastAssistant });
   }
   const text = p.text.trim();
   const meta = (() => { try { return JSON.parse(pending.note ?? "{}") as { note?: string | null; originalRequest?: string | null; staffName?: string; serviceName?: string; mentionStaff?: boolean; awaitingName?: boolean; partialName?: string | null }; } catch { return {}; } })();

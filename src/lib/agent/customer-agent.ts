@@ -54,7 +54,8 @@ import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
 import { widerContext } from "@/lib/agent/wider-context";
-import { aboutHisAppointment, finishBy, nameAtEnd, requestBesideYes } from "@/lib/agent/mixed-messages";
+import { withRealIds } from "@/lib/agent/repair-ids";
+import { aboutHisAppointment, finishBy, nameAtEnd, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
@@ -671,7 +672,7 @@ const MUTATING_TOOLS = new Set([
 
 export async function execTool(
   name: string,
-  input: Record<string, string>,
+  rawInput: Record<string, string>,
   bizId: string,
   conversationId: string,
   callerPhone: string,
@@ -679,6 +680,7 @@ export async function execTool(
   /** The customer's message that triggered this turn — parsed for the hours he asked about. */
   askText?: string,
 ): Promise<string> {
+  const input = await withRealIds(bizId, rawInput).catch(() => rawInput);
   if (sandbox && MUTATING_TOOLS.has(name)) {
     sandbox.toolLog.push(`${name}(${JSON.stringify(input)})`);
     return `[מצב בדיקה] הפעולה ${name} בוצעה בהצלחה (סימולציה — שום דבר לא נשמר). ענה ללקוח כאילו הצליחה, עם הפרטים שביקש.`;
@@ -3055,7 +3057,7 @@ async function runCustomerAgentCore(opts: {
   const MAX_ITERATIONS = 8;
 
   let askedOwner = false;
-  let bookedLine = "";
+  let systemLine = "", answerFirst = false;   // the code's own line, waiting for the model's answer beside it
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await anthropicFor(sandbox ? "test" : "prod").messages.create({
       model,
@@ -3132,11 +3134,13 @@ async function runCustomerAgentCore(opts: {
         const preWords = preText.split(/\s+/).filter(w => /[a-zA-Zא-ת]/.test(w));
         const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)(?![א-ת])/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך|אסגור|אסגר|אקבע לך|לאישור/.test(preText);
         const sent = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
-        // "כן. אגב כמה זה?": booked, and the question still needs its answer (25.11.2026). One more call, once.
-        const beside = !bookedLine && widerContext(businessId) && (proposed.content as string).startsWith("BOOKED\n") && !/[?؟]\s*$/.test(sent) ? requestBesideYes(incomingText) : null;
+        // "כן. אגב כמה זה?" / "קרן אור, כמה זה?": the question still needs its answer (25.11.2026). One more call, once.
+        const booked = (proposed.content as string).startsWith("BOOKED\n");
+        const beside = systemLine || keep || !widerContext(businessId) ? null : !booked ? requestBesideName(incomingText) : /[?؟]\s*$/.test(sent) ? null : requestBesideYes(incomingText);
         if (beside) {
-          bookedLine = sent;
-          proposed.content = `התור נקבע, והמערכת כבר שולחת ללקוח: "${sent}". הוא כתב גם: "${beside}". כתוב עכשיו רק תשובה קצרה לזה, בלי לחזור על הקביעה ובלי לקרוא שוב ל-propose_booking.`;
+          systemLine = sent;
+          answerFirst = !booked;
+          proposed.content = `${booked ? "התור נקבע, והמערכת כבר שולחת" : "המערכת תשלח אחריך"} ללקוח: "${sent}". הוא כתב גם: "${beside}". כתוב עכשיו רק תשובה קצרה לזה, בלי לחזור על מה שהמערכת שולחת ובלי לקרוא שוב ל-propose_booking.`;
           continue;
         }
         assistantText = sent;
@@ -3167,7 +3171,7 @@ async function runCustomerAgentCore(opts: {
       if (block.type === "text") assistantText += block.text;
     }
   }
-  if (bookedLine) assistantText = [bookedLine, assistantText.trim()].filter(Boolean).join("\n\n");
+  if (systemLine && assistantText.trim() !== systemLine) assistantText = (answerFirst ? [assistantText.trim(), systemLine] : [systemLine, assistantText.trim()]).filter(Boolean).join("\n\n");
   } // end Anthropic provider branch
 
   // A late message the reply above already answered: nothing more to send.
