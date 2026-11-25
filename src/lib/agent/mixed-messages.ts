@@ -39,6 +39,25 @@ export function offeredHour(question: string, currentStart: string): string | nu
   return hours.length === 1 ? hours[0] : null;
 }
 
+/** "כן" to "לבטל את 18:00 ולקבוע ב-20:00?" is a move: the old appointment stays until the new hour is confirmed
+ *  (25.11.2026: it was cancelled first). Returns the hour and the question it was asked in. */
+export function yesToCancelAndRebook(text: string, question: string, currentStart: string): string | null {
+  if (!startsWithYes(text) || /\d/.test(text) || !/לבטל/.test(question) || !/לקבוע|קובע|אקבע/.test(question)) return null;
+  return offeredHour(question, currentStart);
+}
+
+const HOUR_WORDS = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר", "אחת עשרה", "שתים עשרה"];
+const MINUTE_WORDS: Record<string, number> = { "חצי": 30, "רבע": 15, "עשרה": 10, "חמישה": 5, "עשרים": 20 };
+/** "שלוש ועשרה" → "3:10", "רבע לחמש" → "4:45"; an hour with minutes in words only. */
+export function hourInWords(text: string): string | null {
+  const hour = (w: string) => HOUR_WORDS.indexOf(w) + 1;
+  const hours = [...HOUR_WORDS].reverse().join("|");
+  const after = text.match(new RegExp(`(?:^|[\\s,])[בל]?(${hours})\\s+ו(${Object.keys(MINUTE_WORDS).join("|")})(?=$|[\\s,.?!])`));
+  if (after) return `${hour(after[1])}:${String(MINUTE_WORDS[after[2]]).padStart(2, "0")}`;
+  const before = text.match(new RegExp(`(רבע|עשרה|חמישה|עשרים)\\s+ל(${hours})(?=$|[\\s,.?!])`));
+  return before ? `${(hour(before[2]) + 11) % 12 || 12}:${60 - MINUTE_WORDS[before[1]]}` : null;
+}
+
 /** "ראשון ב11, מורן שי": a chosen time, and a full name that closes the message. */
 export function nameAtEnd(text: string): string | null {
   const m = text.trim().match(/^([\s\S]*\d[\s\S]*)[,\n]\s*([^,\n\d?]+)$/);

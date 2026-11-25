@@ -5,7 +5,7 @@
 // checks the barber's day, confirms, executes — or offers the swap. Free text at
 // any stage goes to the model with the state as context.
 import { widerContext } from "@/lib/agent/wider-context";
-import { offeredHour, startsWithYes } from "@/lib/agent/mixed-messages";
+import { offeredHour, startsWithYes, yesToCancelAndRebook } from "@/lib/agent/mixed-messages";
 import { prisma } from "@/lib/prisma";
 import { normalizeIsraeliPhone } from "@/lib/messaging/phone";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
@@ -118,11 +118,23 @@ const close = (id: string, status: "accepted" | "rejected") => prisma.bookingPro
 /** "אפשר להקדים?" / "להזיז את התור ל-12" with exactly one upcoming appointment. */
 export async function maybeStartMoveFlow(p: { businessId: string; phone: string; conversationId: string; text: string; customer: { id: string; name: string } | null; lastAssistant?: { content: string } | null }): Promise<ProposalOutcome> {
   let text = p.text.trim();
-  if (!MOVE_INTENT.test(text) || NOT_MOVE.test(text) || text.split(/\s+/).length > 16 || !p.customer) return {};
+  const question = p.lastAssistant?.content ?? "";
+  const maybeRebook = widerContext(p.businessId) && startsWithYes(text) && /לבטל/.test(question);
+  if ((!maybeRebook && !MOVE_INTENT.test(text)) || NOT_MOVE.test(text) || text.split(/\s+/).length > 16 || !p.customer) return {};
   const a = await upcomingOne(p.businessId, p.customer.id);
   if (!a) return {};
+  if (maybeRebook && !MOVE_INTENT.test(text)) {
+    const hour = yesToCancelAndRebook(text, question, a.startTime);
+    if (!hour) return {};
+    // Another staff member or treatment in the question: the model moves it, still without cancelling first.
+    const day = parseTargetDay(question, getBusinessNow().date) ?? a.date.toISOString().slice(0, 10);
+    if (!(await freeSlots(p.businessId, a.staffId, a.serviceId, day, p.customer.id)).includes(hour)) {
+      return { context: `הוא אישר להחליף את התור ${dayLabelHe(a.date.toISOString().slice(0, 10))} ב-${a.startTime} (מזהה ${a.id}) בתור ב-${hour}. אל תבטל: request_appointment_move, והתור הישן נשאר עד שהחדש נקבע.` };
+    }
+    text += ` ${day.slice(8, 10)}.${day.slice(5, 7)} ב-${hour}`;
+  }
   // "כן תזיזי" answers "רוצה שאזיז אותו ל-11:30?" (25.11.2026: asked "לאיזו שעה?" again).
-  const offered = widerContext(p.businessId) && startsWithYes(text) && !/\d/.test(text) ? offeredHour(p.lastAssistant?.content ?? "", a.startTime) : null;
+  const offered = widerContext(p.businessId) && startsWithYes(text) && !/\d/.test(text) ? offeredHour(question, a.startTime) : null;
   if (offered) text += ` ל-${offered}`;
   const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };
   return advance(p, meta, text, null);
@@ -246,14 +258,18 @@ async function advance(p: { businessId: string; phone: string; conversationId: s
       return { reply: `${hi}להעביר את התור ל${sameDay ? "שעה" : label + " בשעה"} ${time} אצל ${meta.staffName}?\nמאשר?` };
     }
     // taken → nearest free the same day, plus the swap option when someone holds that slot
-    const near = daySlots.map(s => ({ s, d: Math.abs(timeToMinutes(s) - timeToMinutes(time)) })).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.s).sort();
+    // Asked for later the same day: an hour before his own is no use to him, and "תפוס" may be past closing (25.11.2026).
+    const wide = widerContext(p.businessId), later = wide && sameDay && timeToMinutes(time) > timeToMinutes(meta.startTime);
+    const useful = later ? daySlots.filter(s => timeToMinutes(s) > timeToMinutes(meta.startTime)) : daySlots;
+    const taken = `${time} ${wide ? "לא פנוי" : "תפוס"} אצל ${meta.staffName}`, other = later ? "מאוחרת יותר" : "אחרת פנויה";
+    const near = useful.map(s => ({ s, d: Math.abs(timeToMinutes(s) - timeToMinutes(time)) })).sort((a, b) => a.d - b.d).slice(0, 3).map(x => x.s).sort();
     const occupied = await prisma.appointment.findFirst({ where: { businessId: p.businessId, staffId: meta.staffId, date: new Date(day + "T00:00:00.000Z"), startTime: time, status: { in: ["pending", "confirmed"] }, NOT: { customerId: p.customer?.id ?? "" } }, select: { id: true } });
     const rules = await swapRules(p.businessId, meta.staffName);
     const swapOk = !!occupied && rules.on;
-    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap: false }, existingId ?? undefined); return { reply: `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
+    if (!near.length && !swapOk) { await save(p.businessId, p.phone, p.conversationId, { ...meta, stage: "keepOrOther", targetDate: day, direction, canSwap: false }, existingId ?? undefined); return { reply: `${taken}, ואין לו שעה ${other} ${label}. להשאיר את התור ב-${meta.startTime}, או לבדוק יום אחר או ספר אחר?` }; }
     const next: MoveMeta = { ...meta, stage: "swapOrPick", targetDate: day, targetTime: time, options: near, direction };
     await save(p.businessId, p.phone, p.conversationId, next, existingId ?? undefined);
-    const alt = near.length ? `${time} תפוס אצל ${meta.staffName}. פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${time} תפוס אצל ${meta.staffName}, ואין לו שעה אחרת פנויה ${label}.`;
+    const alt = near.length ? `${taken}. פנוי אצלו ${sameDay ? "באותו יום" : label}: ${near.join(" · ")}.` : `${taken}, ואין לו שעה ${other} ${label}.`;
     if (!swapOk) return { reply: `${alt} מה עדיף לך?` };
     return { reply: `${alt}\n${twoWays(near.length ? "אפשר גם יום אחר או ספר אחר" : "אפשר לקבוע ליום אחר או אצל ספר אחר", `הלקוח שב-${time}`, rules.needs)}` };
   }

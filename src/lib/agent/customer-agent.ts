@@ -55,7 +55,8 @@ import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/ag
 import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
 import { widerContext } from "@/lib/agent/wider-context";
 import { withRealIds } from "@/lib/agent/repair-ids";
-import { aboutHisAppointment, finishBy, nameAtEnd, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
+import { parseTargetDay } from "@/lib/agent/move-flow";
+import { aboutHisAppointment, finishBy, hourInWords, nameAtEnd, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
@@ -2635,7 +2636,17 @@ async function mixedMessageContext(businessId: string, text: string, customerCon
     const services = await prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, take: 15, select: { name: true, durationMinutes: true } });
     const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
     parts.push(`הוא חייב לסיים עד ${hhmm(until)}. שעת ההתחלה המאוחרת ביותר לפי המשך: ${services.map(x => `${x.name} ${hhmm(until - x.durationMinutes)}`).join(", ")}. הצע רק שעות פנויות עד אז, כולל המאוחרת שבהן.`);
+    // The day's times are shown for one treatment; a shorter one may still fit (25.11.2026, "אין לפני 16:30").
+    const today = getBusinessNow().date, day = parseTargetDay(text, today) ?? today;
+    const short = await prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { durationMinutes: "asc" }, take: 4, select: { id: true, name: true, durationMinutes: true } });
+    const fits = await Promise.all(short.map(async x => {
+      const slots = (await computeDayAvailability(businessId, day, undefined, x.id)).flatMap(a => a.slots).filter(s => timeToMinutes(s) + x.durationMinutes <= until);
+      return slots.length ? `${x.name} ${Array.from(new Set(slots)).sort().slice(-4).join(" / ")}` : null;
+    }));
+    parts.push(`${day === today ? "היום" : day} נכנס עד ${hhmm(until)}: ${fits.filter(Boolean).join(", ") || "שום טיפול"}. הטיפול שביקש לא נכנס וקצר ממנו כן → הצע אותו בשמו.`);
   }
+  const words = hourInWords(text);
+  if (words) parts.push(`הוא כתב שעה במילים: ${words}. השעה הזאת בדיוק לא פנויה → אמור שהיא לא פנויה, ואז את הקרובות.`);
   return parts.filter(Boolean).join("\n");
 }
 
