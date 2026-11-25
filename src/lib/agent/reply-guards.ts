@@ -44,10 +44,18 @@ export const withoutHtml = (reply: string): string => reply.replace(/[ \t]*<\/?[
 
 const PROMISED = /בודק|אבדוק|לבדוק|בדקתי|אחזור|חוזר|יחזרו|אברר|מברר|שאלתי|שלחתי|העברתי|מעביר|check|get back/i;
 
-/** ask_owner ran, but the sentence that says so came before the tool call and was lost. */
+/** ask_owner ran, but the sentence that says so came before the tool call and was lost; and the question
+ *  only went out, so "בדקתי" is not true yet. */
 export function withAskOwnerPromise(reply: string, asked: boolean): string {
-  return asked && !PROMISED.test(reply) ? `אני בודק את זה וחוזר אליך.\n\n${reply}` : reply;
+  if (!asked) return reply;
+  const honest = reply.replace(/(^|[^א-ת])בדקתי (?:עם|מול) /g, "$1שאלתי את ").replace(/(^|[^א-ת])בדקתי(?![א-ת])/g, "$1שאלתי");
+  return PROMISED.test(honest) ? honest : `אני בודק את זה וחוזר אליך.\n\n${honest}`;
 }
+
+const ASKS_PRICE = /כמה (?:זה )?(?:עולה|יעלה|עולים|עלה)|מה המחיר|מחיר|עלות/;
+const SAYS_PRICE = /₪|שקל|ש["״]ח|חינם|ללא עלות|בלי עלות|אני בודק|חוזר אליך/;
+/** He asked the price and an hour in one message, and only the hour was answered (25.11.2026). */
+export const missesPrice = (reply: string, incoming: string): boolean => ASKS_PRICE.test(incoming) && !SAYS_PRICE.test(reply);
 
 // "Go there now", not a mention ("מקווה שהכל בסדר בחדר המיון").
 const GO = "(?:פנה|פני|פנו|לפנות|תפנה|גש|גשי|לגשת|לך|לכי|ללכת|להגיע|חייג|חייגי|לחייג|התקשר|התקשרי|להתקשר)";

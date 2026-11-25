@@ -48,7 +48,7 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml } from "@/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
@@ -1067,9 +1067,11 @@ export async function execTool(
         // model can't): it may start off the day's grid, right after the one before
         // it — checked by its exact time under the lock below, with the customer's rules.
         const visitId = typeof (input as Record<string, unknown>).visitId === "string" ? String((input as Record<string, unknown>).visitId) : null;
+        // A person who follows another in a group (bookConfirmedProposal passes exactTime) the same.
+        const exactTime = !!visitId || input.exactTime === "true";
         const dayAvail = await computeDayAvailabilityRetrying(bizId, date, staffId, serviceId, callerPhone);
         const staffSlots = dayAvail.find(s => s.staffId === staffId)?.slots ?? [];
-        if (!visitId && !staffSlots.includes(startTime)) {
+        if (!exactTime && !staffSlots.includes(startTime)) {
           // Diagnostic: this is the "agent said free, booking says taken" path.
           // Dump exactly what the guard saw so an intermittent rejection (e.g. the
           // model attributing another barber's free slot to THIS barber, or a slot
@@ -1161,7 +1163,7 @@ export async function execTool(
         // the treatment's shape recorded on the booking.
         let appt;
         try {
-          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] }, room: { businessId: bizId, serviceId }, ...(visitId ? { customer: {} } : {}) }], (tx, rooms) => tx.appointment.create({
+          appt = await writeChecked([{ staffId, dateISO: date, startTime, shape: eff.shape, holds: { exemptCustomerId: customer.id, exemptHolderKeys: [holderKeyForPhone(callerPhone)] }, room: { businessId: bizId, serviceId }, ...(exactTime ? { customer: {} } : {}) }], (tx, rooms) => tx.appointment.create({
             data: {
               businessId: bizId,
               customerId: customer.id,
@@ -1311,11 +1313,12 @@ export async function execTool(
             const gAvail = gStaff.id === staff.id && gSvc.id === service.id ? avail : await computeDayAvailabilityRetrying(bizId, date, gStaff.id, gSvc.id, callerPhone);
             // Right after the one before it: a real time even when it is off the day's grid.
             const follows = taken.some(x => x.staffId === gStaff!.id && x.start + x.dur === toMin(t)) && !!fitStep(dayCtx, gStaff.id, gSvc.id, toMin(t));
-            if (!follows && !(gAvail.find(a => a.staffId === gStaff!.id)?.slots ?? []).includes(t)) {
+            const onGrid = (gAvail.find(a => a.staffId === gStaff!.id)?.slots ?? []).includes(t);
+            if (!follows && !onGrid) {
               return `שגיאה: ${t} ב-${date} לא פנוי אצל ${gStaff.name} (התור של ${who}). בדוק עם get_available_slots והצע את כל התורים יחד שוב.`;
             }
             taken.push({ staffId: gStaff.id, start: toMin(t), dur });
-            group.push({ staffId: gStaff.id, staffName: gStaff.name, startTime: t, forName: who, ...(gSvc.id !== service.id ? { serviceId: gSvc.id, serviceName: gSvc.name } : {}) });
+            group.push({ staffId: gStaff.id, staffName: gStaff.name, startTime: t, forName: who, ...(gSvc.id !== service.id ? { serviceId: gSvc.id, serviceName: gSvc.name } : {}), ...(follows ? { follows } : {}) });
           }
         }
         // New customer without a full name: the system asks for it (fixed text),
@@ -2509,7 +2512,8 @@ const IN_A_ROW_RE = /אחד אחרי השני|אחת אחרי השני|זה אח
 const inARowGuidance = (v: Vocab) =>
   `קביעה לכמה אנשים בזה אחר זה: בלי find_parallel_slots. אצל ${v.staffFem ? "אותה" : "אותו"} ${v.staff}, השעה השנייה = הראשונה + משך הטיפול הראשון. כשיש יום, שעה ושמות: propose_booking אחד, הראשון ב-startTime ו-staffId וכל השאר ב-others (startTime, forName, ו-serviceId כשהטיפול שלו אחר; staffId ריק = ${v.staffFem ? "אותה" : "אותו"} ${v.staff}). השעה שביקש לא נכנסת → הקרובה אליה באותו יום, לא יום אחר.`;
 /** "אחי" as slang is not a brother. */
-const GROUP_WIDE_RE = new RegExp(GROUP_RE.source.replace("אחי |", "(?:^|\\s)(?:ל|ול|גם ל|עם )אחי(?![א-ת])|") + "|(?:^|\\s)ו?ל(?:בן|בת)(?: שלי|$|[\\s,.?!])|ה?ילדים שלי|לילדים");
+const GROUP_WIDE_RE = new RegExp(GROUP_RE.source.replace("אחי |", "(?:^|\\s)(?:ל|ול|גם ל|עם )אחי(?![א-ת])|") + "|באותו זמן|שני כלבים|(?:^|\\s)ו?ל(?:בן|בת)(?: שלי|$|[\\s,.?!])|ה?ילדים שלי|לילדים");
+const SERIES_RE = /פעם בשבוע|כל שבוע|פעם בשבועיים|סדרה של|(?:^|\s)(?:[2-9]|1\d|שלושה|ארבעה|חמישה|עשרה) (?:טיפולים|תורים|אימונים|פגישות)/;
 /** A card number or an id number (with its word next to it). */
 const CARD_OR_ID_RE = /\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{3,4}|(?:ת\.?ז|תעודת זהות)\D{0,6}\d{8,9}/;
 /** One appointment for someone else is one appointment, and each person keeps his own treatment. */
@@ -2540,6 +2544,7 @@ export function situationalGuidance(incomingText: string, history: { role: strin
   if (CARD_OR_ID_RE.test(incomingText)) parts.push("הלקוח שלח פרטי כרטיס או תעודת זהות: אל תחזור עליהם, בקש לא לשלוח אותם כאן, ואל תבטיח שהם לא נשמרים.");
   if (wide && IN_A_ROW_RE.test(recentText) && GROUP_WIDE_RE.test(recentText)) parts.push(inARowGuidance(vocab ?? vocabFor("barber_men")), FOR_OTHERS_GUIDANCE);
   else if ((wide ? GROUP_WIDE_RE : GROUP_RE).test(recentText)) parts.push(vocab ? groupGuidance(vocab) : GROUP_GUIDANCE, ...(wide ? [FOR_OTHERS_GUIDANCE] : []));
+  if (wide && SERIES_RE.test(incomingText)) parts.push("סדרה של כמה תאריכים: המערכת קובעת תור אחד בכל פעם. קבע את הראשון, אמור שאחרי שהוא נקבע תמשיכו לבא, ואל תכתוב שכולם ייקבעו.");
   const lastAssistant = [...history].reverse().find(h => h.role === "assistant");
   const manual = history.some(h => h.role === "assistant" && h.source === "admin");
   const staleOffer = !!lastAssistant && Date.now() - lastAssistant.createdAt.getTime() > 3600_000 && /\d{1,2}:\d{2}/.test(lastAssistant.content);
@@ -2584,6 +2589,16 @@ type AgentRunCtx = { handoffReason?: string; conversationId?: string };
 /** The 25.11.2026 additions to what the model reads every turn (the named treatment's times in a men's shop, the asked
  *  part of the day, who is off when, in-a-row guidance). DOMINANT keeps its own until Yair says yes. */
 const widerContext = (businessId: string): boolean => businessId !== SUPER_ADMIN_BUSINESS_ID;
+
+const setupSays = (setup: string | null | undefined, key: keyof SetupConfig): unknown => { try { return setup ? (JSON.parse(setup) as SetupConfig)[key] : undefined; } catch { return undefined; } };
+
+/** "תסרוקת ערב: החל מ־350₪" — from the services screen, with each person's own price in it. */
+async function priceLine(serviceId: string): Promise<string> {
+  const sv = await prisma.service.findUniqueOrThrow({ where: { id: serviceId }, select: { name: true, price: true, priceFrom: true, staffServices: { select: { customPrice: true } } } });
+  const prices = sv.staffServices.length ? sv.staffServices.map(x => x.customPrice ?? sv.price) : [sv.price];
+  const low = Math.min(...prices);
+  return `${sv.name}: ${sv.priceFrom || Math.max(...prices) > low ? "החל מ " : ""}${low}₪.`;
+}
 
 /** The customer cancelled an appointment in the last hours. */
 async function cancelledJustNow(businessId: string, phone: string, customerId?: string): Promise<boolean> {
@@ -2903,6 +2918,7 @@ async function runCustomerAgentCore(opts: {
           };
         }
         const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine || wide ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
+          silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
         // Asked for a time that isn't free? Remember it quietly (not at night —
@@ -3122,6 +3138,7 @@ async function runCustomerAgentCore(opts: {
     assistantText = withoutHtml(assistantText);
     assistantText = dropWaitlistForDayOff(assistantText, workDaysIn(customerContext));
     assistantText = dropRepeatedWaitlistAsk(assistantText, history.filter(h => h.role === "assistant").map(h => h.content), incomingText);
+    if (namedServiceIds.length === 1 && missesPrice(assistantText, incomingText)) assistantText = `${await priceLine(namedServiceIds[0])}\n\n${assistantText}`;
     const em = emergencyReply(assistantText);
     assistantText = em.reply;
     if (em.emergency) {

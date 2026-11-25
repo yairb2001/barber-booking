@@ -111,6 +111,8 @@ export type GroupItem = {
    *  right after the one before it, maybe with someone else. With forName, that
    *  person's own treatment when it differs (25.11.2026: a mother's cut and her girl's). */
   serviceId?: string; serviceName?: string;
+  /** Starts the minute the one before it ends: checked by its exact time, not by the day's grid. */
+  follows?: boolean;
 };
 const isVisit = (g?: GroupItem[]) => !!g?.some(x => x.serviceId && !x.forName);
 const mixed = (g?: GroupItem[]) => !!g?.some(x => x.forName && x.serviceId);
@@ -349,15 +351,15 @@ export async function bookConfirmedProposal(p: {
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
   const mainName = pending.customerName ?? p.fallbackName ?? "";
   const jobs = [
-    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf((meta.group?.length ? forWhom(p.noteOverride || meta.note) : null) ?? mainName) || "אתה", note: p.noteOverride || meta.note || null, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "" },
+    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf((meta.group?.length ? forWhom(p.noteOverride || meta.note) : null) ?? mainName) || "אתה", note: p.noteOverride || meta.note || null, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "", follows: false },
     ...(meta.group ?? []).map(g => g.serviceId && !g.forName
-      ? { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(mainName) || "אתה", note: null as string | null, serviceId: g.serviceId, serviceName: g.serviceName ?? "" }
-      : { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(g.forName) || g.forName, note: `התור בפועל עבור: ${g.forName}`, serviceId: g.serviceId ?? pending.serviceId ?? "", serviceName: g.serviceName ?? meta.serviceName ?? "" }),
+      ? { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(mainName) || "אתה", note: null as string | null, serviceId: g.serviceId, serviceName: g.serviceName ?? "", follows: false }
+      : { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(g.forName) || g.forName, note: `התור בפועל עבור: ${g.forName}`, serviceId: g.serviceId ?? pending.serviceId ?? "", serviceName: g.serviceName ?? meta.serviceName ?? "", follows: !!g.follows }),
   ];
   const booked: typeof jobs = [], failed: { job: (typeof jobs)[number]; why: string }[] = [];
   await releaseHolds({ proposalId: pending.id });
   for (const j of jobs) {
-    const res = await p.execTool("book_appointment", { staffId: j.staffId, serviceId: j.serviceId, date: dateISO, startTime: j.startTime, customerName: mainName, ...(j.note ? { note: j.note } : {}), ...(visitId ? { visitId } : {}) });
+    const res = await p.execTool("book_appointment", { staffId: j.staffId, serviceId: j.serviceId, date: dateISO, startTime: j.startTime, customerName: mainName, ...(j.note ? { note: j.note } : {}), ...(visitId ? { visitId } : {}), ...(j.follows ? { exactTime: "true" } : {}) });
     if (p.sandbox || res.startsWith("✅")) booked.push(j); else failed.push({ job: j, why: res.slice(0, 120) });
   }
   await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: booked.length ? "accepted" : "rejected", respondedAt: new Date() } });

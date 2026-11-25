@@ -135,6 +135,8 @@ export async function buildAvailabilitySnapshot(p: {
   /** The customer's last messages, newest first: their part of the day is listed in full,
    *  and who is off on which day is said (25.11.2026). Null = as before. */
   asks?: string[] | null;
+  /** Nobody asked for by name and the business assigns by itself: the asked day's hours of everyone together. */
+  silentAssign?: boolean;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
@@ -193,6 +195,9 @@ export async function buildAvailabilitySnapshot(p: {
     const open = new Set(index.staff.flatMap(s => index.weekDays(s.id)));
     const partWeek = index.staff.filter(s => index.weekDays(s.id).length < open.size);
     if (partWeek.length) notes.push(`${WORK_DAYS} ${partWeek.map(s => `${label(s)} ${index.weekDays(s.id).map(d => DAY[d]).join(", ")}`).join(" | ")} (יום אחר = לא עובדים בו, לא "מלא", ובלי רשימת המתנה ליום כזה)`);
+    // A weekday past the list is not a day off ("רותם לא עובדת בימי שלישי", 25.11.2026: Tuesday was day 7).
+    const past = addDaysISO(today, days), pastDay = DAY[getDayOfWeekISO(past)];
+    if (p.asks[0]?.includes(pastDay)) notes.push(`יום ${pastDay} ${Number(past.slice(8, 10))}.${Number(past.slice(5, 7))} לא ברשימה הזו (היא של ${days} ימים): get_available_slots לפני שעונים עליו`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
   // Code-filtered answer for "מחר אחרי 17:00" / "בערב השבוע" / "הכי מוקדם מחר" —
@@ -201,6 +206,12 @@ export async function buildAvailabilitySnapshot(p: {
   if (p.askText) {
     const ask = parseAvailabilityAsk(p.askText, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
     if (ask) focus = "\n" + focusLine(index, ask, p.serviceId ?? null, label, today, days, p.regularStaffId);
+    // "מחר בערב" got one barber's single hour while two others were free (25.11.2026).
+    const bookable = index.staff.filter(s => !hasPool || s.inQuickPool);
+    if (ask && p.silentAssign && !ask.staffHint && !ask.pick && !p.regularStaffId && ask.days.length === 1 && bookable.length > 1) {
+      const all = Array.from(new Set(bookable.flatMap(s => index.slots(s.id, ask.days[0], p.serviceId ?? null)))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
+      if (all.length) focus += `\nהשעות של כולם יחד: ${all.slice(0, MAX_LISTED).join(" · ")}${all.length > MAX_LISTED ? " ועוד" : ""}. לא ביקשו מישהו בשם → הצע מכאן בלי שמות ובלי לשאול אצל מי, וקבע אצל מי שהשעה בשורה שלו.`;
+    }
   }
   const byTreatment = (index.staff.some(s => other(s)) ? " שם בסוגריים = השעות לטיפול הזה; לטיפול אחר (משך אחר) → get_available_slots עם serviceId." : "") +
     (index.staff.length < rawIndex.staff.length ? " מופיעים רק מי שעושים את מה שהלקוח ביקש; מי שלא מופיע לא עושה אותו (זה לא אומר שאין לו מקום)." : "");
