@@ -48,6 +48,20 @@ export function compressSlots(slots: string[]): string {
  * is "תספורת + זקן", not also "תספורת נשים").
  */
 export function namedServices(text: string, services: { id: string; name: string }[]): string[] {
+  return matchServices(text, services).map(x => x.id);
+}
+
+/**
+ * Of those, only what the text names beyond doubt: every word of the name, or
+ * the one and only candidate. "תספורת גבר" half-fits both "תספורת גברים" and
+ * "תספורת נשים", so it names neither (a man got the link to women's haircuts, 25.11.2026).
+ */
+export function clearlyNamedServices(text: string, services: { id: string; name: string }[]): string[] {
+  const found = matchServices(text, services);
+  return found.filter(x => x.score === 1 || found.length === 1).map(x => x.id);
+}
+
+function matchServices(text: string, services: { id: string; name: string }[]): { id: string; hits: string[]; score: number }[] {
   const norm = (x: string) => x.replace(/['׳’`"״]/g, "").toLowerCase();
   const t = norm(text);
   const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -58,7 +72,7 @@ export function namedServices(text: string, services: { id: string; name: string
   }).filter(x => x.hits.length && x.score >= 0.5);
   const covered = new Set(found.filter(x => x.score === 1).flatMap(x => x.hits));
   return found.filter(x => x.score === 1 || x.hits.some(w => !covered.has(w)))
-    .sort((a, b) => b.score - a.score || b.hits.length - a.hits.length).map(x => x.id);
+    .sort((a, b) => b.score - a.score || b.hits.length - a.hits.length);
 }
 
 const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;

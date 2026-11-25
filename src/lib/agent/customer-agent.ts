@@ -49,7 +49,7 @@ import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
 import { applyToolDescriptions, toolsForType } from "@/lib/agent/tool-descriptions";
-import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices } from "@/lib/agent/availability-snapshot";
+import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
@@ -2796,8 +2796,10 @@ async function runCustomerAgentCore(opts: {
           const byStaff = new Map<string, { id: string; name: string }[]>();
           for (const r of rows) byStaff.set(r.staffId, [...(byStaff.get(r.staffId) ?? []), r.service]);
           const all = Array.from(new Map(rows.map(r => [r.service.id, r.service])).values());
-          const asked = namedServices([incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content)].join("\n"), all);
-          if (asked.length) { snapServiceId = asked[0]; namedServiceIds = asked; }
+          const said = [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content)].join("\n");
+          const asked = namedServices(said, all);
+          // The works link goes only for a treatment the text names beyond doubt.
+          if (asked.length) { snapServiceId = asked[0]; namedServiceIds = clearlyNamedServices(said, all); }
           serviceOf = staffId => {
             const mine = byStaff.get(staffId) ?? [];
             // She named a treatment: only who does it (the others confused the model, "ליאור בשישי").
