@@ -2083,8 +2083,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
   const [rebookErr, setRebookErr] = useState<string | null>(null);
   const baseDateISO = dispDate.split("T")[0];
   const addDays = (iso: string, n: number) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISODate(d); };
-  const rebookWeeks = [2, 3, 4, 5, 6];
-  const defaultWeeks = rhythmDays ? Math.min(6, Math.max(2, Math.round(rhythmDays / 7))) : 3;
+  // The weeks on offer follow the customer's own rhythm (25.11.2026): a weekly
+  // customer starts at one week, and a rhythm past six weeks gets its own chip.
+  const defaultWeeks = rhythmDays ? Math.min(12, Math.max(1, Math.round(rhythmDays / 7))) : 3;
+  const rebookWeeks = defaultWeeks > 6 ? [1, 2, 3, 4, 6, defaultWeeks] : [1, 2, 3, 4, 5, 6];
   function openRebook() {
     setRebookOpen(true); setRebookDone(null); setRebookErr(null);
     setRebookDate(addDays(baseDateISO, defaultWeeks * 7));
@@ -2942,8 +2944,10 @@ function ApptModal({ appt, onClose, onChange, onReload, onEnterSwapMode, onMarkS
                     const active = rebookDate === iso;
                     return (
                       <button key={w} onClick={() => setRebookDate(iso)}
-                        className={`flex-1 py-1 rounded-md text-[11px] font-medium border transition ${active ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-700 border-neutral-200"}`}>
-                        {w} שב׳{w === defaultWeeks && rhythmDays ? " ★" : ""}
+                        className={`relative flex-1 min-w-0 py-1 rounded-md text-[11px] whitespace-nowrap font-medium border transition ${active ? "bg-teal-600 text-white border-teal-600" : "bg-white text-neutral-700 border-neutral-200"}`}>
+                        {w} שב׳
+                        {/* the customer's own rhythm; a corner mark, so six chips still fit a phone */}
+                        {w === defaultWeeks && rhythmDays ? <span aria-label="הקצב של הלקוח" className="absolute -top-1.5 left-0.5 text-[10px] leading-none text-amber-500">★</span> : null}
                       </button>
                     );
                   })}
