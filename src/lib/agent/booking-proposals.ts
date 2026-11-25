@@ -117,7 +117,11 @@ export type GroupItem = {
 const isVisit = (g?: GroupItem[]) => !!g?.some(x => x.serviceId && !x.forName);
 const mixed = (g?: GroupItem[]) => !!g?.some(x => x.forName && x.serviceId);
 /** "התור בפועל עבור: נועם ארז" → "נועם ארז": a parent books, the child is the one who comes. */
-const forWhom = (note?: string | null): string | null => note?.match(/עבור:\s*([^\n,.;]+)/)?.[1]?.trim() || null;
+const forWhom = (note: string | null | undefined, group: GroupItem[] = []): string | null => {
+  const who = note?.match(/עבור:\s*([^\n,.;]+)/)?.[1]?.trim() || null;
+  // Someone who has an appointment of his own in the group is not the main one (25.11.2026: mother and girl both came out "תמר").
+  return who && group.some(g => g.forName && (g.forName === who || nameOf(g.forName) === nameOf(who))) ? null : who;
+};
 
 /** One question for the whole visit: "לייזר ב-10:00 אצל דנה, ואחריו לק ג'ל ב-10:40 אצל שירן". */
 export function visitConfirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; date: string; startTime: string; group: GroupItem[]; lang?: Lang }): string {
@@ -324,7 +328,7 @@ export async function createConfirmProposal(p: {
   if (p.awaitingName) return nameQuestion(lang, !!p.partialName);
   if (p.question) return p.question;
   if (isVisit(p.group)) return visitConfirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group!, lang });
-  if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: forWhom(p.note) ?? p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group, lang });
+  if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: forWhom(p.note, p.group) ?? p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group, lang });
   return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime, lang });
 }
 
@@ -350,8 +354,9 @@ export async function bookConfirmedProposal(p: {
   const visitId = visit ? randomUUID() : null;
   const dateISO = pending.date ? pending.date.toISOString().slice(0, 10) : "";
   const mainName = pending.customerName ?? p.fallbackName ?? "";
+  const mainNote = p.noteOverride || meta.note || null;
   const jobs = [
-    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf((meta.group?.length ? forWhom(p.noteOverride || meta.note) : null) ?? mainName) || "אתה", note: p.noteOverride || meta.note || null, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "", follows: false },
+    { staffId: pending.staffId ?? "", staffName: meta.staffName ?? "", startTime: pending.startTime ?? "", name: nameOf((meta.group?.length ? forWhom(mainNote, meta.group) : null) ?? mainName) || "אתה", note: mainNote && forWhom(mainNote) && !forWhom(mainNote, meta.group) ? null : mainNote, serviceId: pending.serviceId ?? "", serviceName: meta.serviceName ?? "", follows: false },
     ...(meta.group ?? []).map(g => g.serviceId && !g.forName
       ? { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(mainName) || "אתה", note: null as string | null, serviceId: g.serviceId, serviceName: g.serviceName ?? "", follows: false }
       : { staffId: g.staffId, staffName: g.staffName, startTime: g.startTime, name: nameOf(g.forName) || g.forName, note: `התור בפועל עבור: ${g.forName}`, serviceId: g.serviceId ?? pending.serviceId ?? "", serviceName: g.serviceName ?? meta.serviceName ?? "", follows: !!g.follows }),
@@ -501,7 +506,7 @@ export async function handleIncomingForProposal(p: {
         return { reply: isVisit(grp)
           ? visitConfirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp!, lang: await convLang(pending.conversationId) })
           : grp?.length
-          ? groupConfirmationQuestion({ firstName: firstNameOf(full), mainName: forWhom(meta.note) ?? full, serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp, lang: await convLang(pending.conversationId) })
+          ? groupConfirmationQuestion({ firstName: firstNameOf(full), mainName: forWhom(meta.note, grp) ?? full, serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", group: grp, lang: await convLang(pending.conversationId) })
           : confirmationQuestion({ firstName: firstNameOf(full), serviceName: meta.serviceName ?? "", staffName: meta.staffName ?? "", mentionStaff: !!meta.mentionStaff, date: dateISO, startTime: pending.startTime ?? "", lang: await convLang(pending.conversationId) }) };
       };
       if (nm?.full) return finish(nm.full);
