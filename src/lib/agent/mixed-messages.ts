@@ -35,7 +35,9 @@ export function requestBesideName(text: string): string | null {
 /** "כן תזיזי" to "רוצה שאזיז אותו ל-11:30?" → "11:30", when the question names one hour besides his own. */
 export function offeredHour(question: string, currentStart: string): string | null {
   const asked = question.split(/(?<=[?!\n])|(?<=\.)(?!\d)/).filter(s => /[?؟]/.test(s)).pop() ?? "";
-  const hours = Array.from(new Set(Array.from(asked.matchAll(/\d{1,2}:\d{2}/g)).map(m => m[0].padStart(5, "0")))).filter(h => h !== currentStart);
+  // "שלישי 17:00 לא נשמר. רוצה שאזיז עכשיו?": the hour stands before the question.
+  const from = /\d{1,2}:\d{2}/.test(asked) ? asked : question;
+  const hours = Array.from(new Set(Array.from(from.matchAll(/\d{1,2}:\d{2}/g)).map(m => m[0].padStart(5, "0")))).filter(h => h !== currentStart);
   return hours.length === 1 ? hours[0] : null;
 }
 
@@ -60,12 +62,15 @@ export function hourInWords(text: string): string | null {
   return whole ? `${hour(whole[1])}:00` : null;
 }
 
+const halfInWords = (text: string): string => text.replace(/(^|\s)(\d{1,2})\s+ו(רבע|חצי)(?![א-ת])/, (m, pre: string, h: string, w: string) => HOUR_WORDS[Number(h) - 1] ? `${pre}${HOUR_WORDS[Number(h) - 1]} ו${w}` : m);
 /** The one hour he names for the appointment itself ("ב15:10", "אז שלוש"), as "15:10" or "3:00". */
 export function namedHour(text: string): string | null {
-  const words = hourInWords(text);
+  const words = hourInWords(halfInWords(text));
   if (words) return words;
   if (/אחרי|לפני|עד|החל|בסביבות|איזור|אזור|בערך|חייב|לצאת|לסיים|במקום|יש לי|\d\s*(?:או|-|–)\s*\d|\d{1,2}[./]\d{1,2}/.test(text)) return null;
-  const hours = Array.from(text.matchAll(/(?:^|[^\d:])(\d{1,2}:\d{2})(?!\d)/g)).map(m => m[1]);
+  // "930" and "1830" are hours too, unless it is money.
+  const compact = /₪|שקל|ש["״]ח/.test(text) ? [] : Array.from(text.matchAll(/(?:^|\s)ב?-?(\d{1,2})(00|15|30|45)(?![\d₪])/g)).filter(m => Number(m[1]) < 24).map(m => `${m[1]}:${m[2]}`);
+  const hours = [...Array.from(text.matchAll(/(?:^|[^\d:])(\d{1,2}:\d{2})(?!\d)/g)).map(m => m[1]), ...compact];
   return hours.length === 1 ? hours[0] : null;
 }
 
@@ -75,16 +80,18 @@ export const sameHour = (said: string, time: string): boolean => {
   return m === tm && (h === th || (h <= 12 && h % 12 === th % 12));
 };
 
+/** "…, הברך הורגת אותי": a complaint, not a name (25.11.2026). */
+const NOT_A_NAME = /(?:^|\s)(?:אותי|לי|לך|שלי|ממש|נורא|כוא\S+|הורג\S*|צריכה?|דחוף|בבקשה|תודה|לאשר|מאשרת?)(?=\s|$)/;
 /** "ראשון ב11, מורן שי": a chosen time, and a full name that closes the message. */
 export function nameAtEnd(text: string): string | null {
-  const m = text.trim().match(/^([\s\S]+)[,.\n]\s*([^,.\n\d?]+)$/);
-  return (m && (/\d/.test(m[1]) || hourInWords(m[1]) || YES_PREFIX.test(m[1])) && looksLikeName(m[2])?.full) || null;
+  const m = text.trim().match(/^([\s\S]+)[,\n]\s*([^,\n\d?]+)$/);
+  return (m && (/\d/.test(m[1]) || ((hourInWords(m[1]) || YES_PREFIX.test(m[1])) && m[2].trim().split(/\s+/).length === 2)) && !NOT_A_NAME.test(m[2]) && looksLikeName(m[2])?.full) || null;
 }
 
 const CLOCK = /(?:^|[^\d:./])(\d{1,2}):?(\d{2})(?!\d|[./]\d)/g;
 /** He cancels one appointment and names an hour that is not its own: a new booking comes first. */
 export function cancelBesideNewTime(text: string, currentStart: string): boolean {
-  const bare = Array.from(text.matchAll(/(?:^|\s)ב-?(\d{1,2})(?![\d:./])(?!\s*לחודש)/g)).map(m => Number(m[1])).filter(h => h >= 1 && h <= 23);
+  const bare = Array.from(text.matchAll(/(?:^|\s)ב[- ]?(\d{1,2})(?![\d:./])(?!\s*לחודש)/g)).map(m => Number(m[1])).filter(h => h >= 1 && h <= 23);
   const own = Number(currentStart.split(":")[0]);
   if (bare.length && bare.every(h => h % 12 !== own % 12)) return true;
   const times = Array.from(text.matchAll(CLOCK)).filter(m => Number(m[1]) < 24 && Number(m[2]) < 60).map(m => `${m[1].padStart(2, "0")}:${m[2]}`);
@@ -92,7 +99,7 @@ export function cancelBesideNewTime(text: string, currentStart: string): boolean
 }
 
 /** He asks to cancel ("ותבטל לי את רביעי"), not about cancelling and not "אם מישהו מבטל". */
-export const asksToCancel = (text: string): boolean => !/[?؟]/.test(text) && !/אל\s+תבטל|לא\s+לבטל|אם\s+\S*\s*(?:מבטל|יבטל|מתבטל|יתבטל)/.test(text) && /(?:^|\s)ו?(?:לבטל|תבטלי?|תבטלו|בטלי?)(?=\s|$)|cancel/i.test(text);
+export const asksToCancel = (text: string): boolean => !/[?؟]/.test(text) && !/אל\s+תבטל|לא\s+לבטל|אם\s+\S*\s*(?:מבטל|יבטל|מתבטל|יתבטל)/.test(text) && /(?:^|\s)ו?(?:לבטל|תבטלי?|תבטלו|בטלי?|(?:תורידי?|תורידו|תמחקי?)(?=\s[^\n]*(?:תור|של|את)))(?=\s|$)|cancel/i.test(text);
 
 /** "תקבע בינתיים ואם מתפנה היום אחרי 16 תגיד" → "היום אחרי 16": what he would rather have. */
 export function wantsIfOpens(text: string): string | null {

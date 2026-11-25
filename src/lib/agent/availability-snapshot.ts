@@ -162,7 +162,9 @@ export async function buildAvailabilitySnapshot(p: {
    *  and who is off on which day is said (25.11.2026). Null = as before. */
   asks?: string[] | null;
   /** The day the conversation is about (talked-day.ts) and the agent's last message: a bare hour is checked against them. */
-  talked?: string | null; lastReply?: string;
+  talked?: string[]; lastReply?: string;
+  /** Set when he has not named a treatment: what each person does, to say an hour fits a shorter one. */
+  servicesOf?: (staffId: string) => { id: string; name: string }[];
   /** Nobody asked for by name and the business assigns by itself: the asked day's hours of everyone together. */
   silentAssign?: boolean;
 }): Promise<string> {
@@ -211,9 +213,10 @@ export async function buildAvailabilitySnapshot(p: {
   }
   /** One day asked about: who is free at the hour he named, or everyone's hours in the part of the day he named
    *  (25.11.2026: "מחר בערב" got one barber's single hour while two others were free). */
-  const askedHours = (text: string): string => {
+  const askedHours = (text: string): string => (p.talked?.length ? p.talked : [null]).map(d => askedHoursOn(text, d)).join("");
+  const askedHoursOn = (text: string, talkedDay: string | null): string => {
     const ask = parseAvailabilityAsk(text, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
-    const day = p.talked ?? (ask && ask.days.length === 1 ? ask.days[0] : null);
+    const day = talkedDay ?? (ask && ask.days.length === 1 ? ask.days[0] : null);
     if (ask?.pick || !day || !inList.includes(day)) return "";
     // Named in this message or just before it ("אצל רז" then "ב-17:00"); a two-letter name counts too.
     const said = (p.asks ?? []).join("\n");
@@ -228,6 +231,8 @@ export async function buildAvailabilitySnapshot(p: {
       const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour));
       if (!at.length) {
         const near = [...everyone].sort((a, b) => Math.abs(a - hour) - Math.abs(b - hour)).slice(0, 3).sort((a, b) => a - b).map(fmt);
+        const fits = Array.from(new Set(staff.flatMap(s => (p.servicesOf?.(s.id) ?? []).filter(x => rawIndex.slots(s.id, day, x.id).some(t => timeToMinutes(t) === hour)).map(x => x.name))));
+        if (fits.length) return `\nב-${fmt(hour)} ${dayLabel} נכנס רק: ${fits.join(" / ")} (לא נאמר איזה טיפול). אל תאמר שהשעה לא פנויה: הצע אותה לטיפול הזה ושאל אם זה הטיפול.`;
         return near.length ? `\n${fmt(hour)} ${dayLabel} אי אפשר להתחיל${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} לטיפול הזה. הקרובות: ${near.join(", ")}. אמור שהשעה לא פנויה (לא "תפוס" ולא "נתפס") ותן אותן. טיפול אחר → get_available_slots עם ה-serviceId שלו.` : "";
       }
       // He named nobody and the business assigns by itself: one name, so there is nothing to ask.

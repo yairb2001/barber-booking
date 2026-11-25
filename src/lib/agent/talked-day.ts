@@ -12,6 +12,11 @@ const OPEN = /הכי (?:קרוב|מוקדם|מהר)|מתי שיש|לא משנה 
 /** The day of an appointment he already has ("תבטל את שני", "במקום רביעי", "לא מחר"): not what he asks for. */
 const NOT_ASKED = new RegExp(`(?:תבטל\\S*|לבטל|ביטול|התור(?: שלי)?|במקום|למה|ולא|לא(?: יכולה?)?|משני|מהתור)\\s+(?:את\\s+|של\\s+|ה?תור\\s+|זה\\s+|ה)*(?:ב|ל|מ)?(?:יום\\s+)?ה?(?:${DAY.join("|")}|היום|מחר)(?![א-ת])`, "g");
 
+/** "ואם מתפנה היום תעדכנו": what he would rather have, not the day he books. */
+const IF_OPENS = /אם\s+(?:כן\s+)?(?:יש\s+)?(?:י?תפנה|יתפנה|מתפנה|תתפנה|נפתח|ייפתח|מתבטל|יתבטל|משהו|מישהו|מישהי)[^,.?!\n]*|(?:תעדכ|תודיע|תגיד)\S*[^,.?!\n]*(?:מתפנה|יתפנה|מתבטל|יתבטל)[^,.?!\n]*/g;
+/** "ושלי ביום שני לא זז נכון?": the appointment he already has. */
+const HIS_OWN = new RegExp(`(?:ושלי|שלי|התור שלו|התור שלה|נשאר)\\s+(?:זה\\s+)?(?:ב|ל)?(?:יום\\s+)?(?:${DAY.join("|")}|היום|מחר)(?![א-ת])`, "g");
+
 const dateOf = (d: number, m: number, today: string): string | null => {
   for (let i = 0; i < 90; i++) { const iso = addDaysISO(today, i); if (Number(iso.slice(8)) === d && Number(iso.slice(5, 7)) === m) return iso; }
   return null;
@@ -24,7 +29,7 @@ export type AskedDays = { days: string[]; week: boolean; open: boolean; mismatch
 
 /** The days a message asks for. `around` = the day discussed before it: a weekday alone may be that week's. */
 export function askedDays(raw: string, today: string, around: string | null = null): AskedDays {
-  const text = raw.replace(NOT_ASKED, " ");
+  const text = raw.replace(IF_OPENS, " ").replace(HIS_OWN, " ").replace(NOT_ASKED, " ");
   const days = new Set<string>(), weekdays: number[] = [], dates: string[] = [];
   for (const m of Array.from(text.matchAll(/(?:^|[^\d:./])(\d{1,2})[./](\d{1,2})(?![\d:])/g))) { const iso = dateOf(Number(m[1]), Number(m[2]), today); if (iso) dates.push(iso); }
   if (/(?:^|[\s,])ל?מחרתיים|day after tomorrow/i.test(text)) days.add(addDaysISO(today, 2));

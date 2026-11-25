@@ -52,6 +52,9 @@ export function withAskOwnerPromise(reply: string, asked: boolean): string {
   return PROMISED.test(honest) ? honest : `אני בודק את זה וחוזר אליך.\n\n${honest}`;
 }
 
+/** "סגור ✅, מחר ב-10:00" / "קבעתי לך" / "התור נקבע": says an appointment exists (25.11.2026, said twice with nothing booked). */
+export const claimsBooked = (reply: string): boolean => /(?:^|[\n.!] ?)\s*(?:סגור ?✅|קבעתי|מעולה, התור נקבע|התור נקבע)|\d{1,2}:\d{2}[^\n?]{0,40}(?:[-,] ?)קבוע[!.]/.test(reply) && !/[?؟]\s*$/.test(reply.trim());
+
 /** A sentence about our own tools ("קרא לי propose_booking", 25.11.2026) is not for the customer. */
 export const withoutToolNames = (reply: string): string =>
   reply.split(/(?<=[.!?\n])/).filter(x => !/[a-z]+_[a-z_]+/.test(x.replace(/https?:\S+/g, ""))).join("").replace(/\n{3,}/g, "\n\n").trim() || reply;

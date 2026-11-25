@@ -156,8 +156,8 @@ export async function maybeStartMoveFlow(p: { businessId: string; phone: string;
   // "כן תזיזי" answers "רוצה שאזיז אותו ל-11:30?" (25.11.2026: asked "לאיזו שעה?" again).
   // Also "טוב תזיזו" and "מוזר, אז תזיז", and the day that question moved it to.
   if (widerContext(p.businessId) && !/\d/.test(text) && /[?؟]/.test(question) && !NEGATIVE.test(text)) {
-    const own = a.date.toISOString().slice(0, 10), today = getBusinessNow().date, day = targetDayIn(question, own, today);
-    const offered = offeredHour(question, day === own ? a.startTime : "") ?? (/באותה שעה/.test(text) ? a.startTime : null);
+    const own = a.date.toISOString().slice(0, 10), today = getBusinessNow().date, day = targetDayIn(question.replace(/ב(?:נובמבר|דצמבר|ינואר)/g, ""), own, today);
+    const offered = offeredHour(question, a.startTime) ?? (day === own ? null : offeredHour(question, "")) ?? (/באותה שעה/.test(text) ? a.startTime : null);
     if (offered && day) text += `${parseTargetDay(text, today) || day === own ? "" : ` ${day.slice(8, 10)}.${day.slice(5, 7)}`} ב-${offered}`;
   }
   const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, staffFem: a.staff.gender === "f", serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };

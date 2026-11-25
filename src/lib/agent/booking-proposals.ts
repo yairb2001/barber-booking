@@ -249,6 +249,8 @@ export async function maybeStartCancelFlow(p: { businessId: string; phone: strin
   const upcoming = await upcomingAppointments(p.businessId, p.customer.id);
   if (upcoming.length !== 1) return {};
   const a = upcoming[0];
+  // "תעבירי אותי לרביעי ותבטלי את שני" is one move, not a cancellation (25.11.2026).
+  if (widerContext(p.businessId) && /(?:^|\s)(?:תעביר|תזיז|תקדימ|תדח)/.test(text)) return { context: `הוא מבקש להעביר את התור ${dayLabelHe(a.date.toISOString().slice(0, 10))} בשעה ${a.startTime} (מזהה ${a.id}), והישן מתבטל מעצמו בהעברה: מצא את השעה שביקש ו-request_appointment_move אחרי שאישר. אל תבטל בנפרד.` };
   if (widerContext(p.businessId) && cancelBesideNewTime(text, a.startTime)) {
     return { context: `בהודעה אחת הוא בוחר שעה לתור חדש וגם מבקש לבטל את התור ${dayLabelHe(a.date.toISOString().slice(0, 10))} בשעה ${a.startTime} אצל ${a.staff.name}. קודם התור החדש: propose_booking. את הביטול המערכת שואלת לבד אחרי שהחדש נקבע: אל תבטל ואל תשאל על הביטול עכשיו.` };
   }

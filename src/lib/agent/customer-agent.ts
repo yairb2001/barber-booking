@@ -48,7 +48,7 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
+import { claimsBooked, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
@@ -1295,7 +1295,7 @@ export async function execTool(
           avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
           const free = avail.find(a => a.staffId === staff!.id)?.slots ?? [];
           if (widerContext(bizId)) {
-            const wrong = await againstWhatHeSaid(conversationId, { staff, serviceId: service.id, date, startTime, free });
+            const wrong = await alreadyRefused(conversationId, date, startTime) ? null : await againstWhatHeSaid(conversationId, { staff, serviceId: service.id, date, startTime, free });
             if (wrong) return wrong;
           }
           if (!free.includes(startTime) && widerContext(bizId)) {
@@ -2620,8 +2620,8 @@ type AgentRunCtx = { handoffReason?: string; conversationId?: string };
 const setupSays = (setup: string | null | undefined, key: keyof SetupConfig): unknown => { try { return setup ? (JSON.parse(setup) as SetupConfig)[key] : undefined; } catch { return undefined; } };
 
 /** "תסרוקת ערב: החל מ־350₪" — from the services screen, with each person's own price in it. */
-async function priceLine(serviceId: string): Promise<string> {
-  const sv = await prisma.service.findUniqueOrThrow({ where: { id: serviceId }, select: { name: true, price: true, priceFrom: true, staffServices: { select: { customPrice: true } } } });
+async function priceLine(serviceId: string, staffId?: string | null): Promise<string> {
+  const sv = await prisma.service.findUniqueOrThrow({ where: { id: serviceId }, select: { name: true, price: true, priceFrom: true, staffServices: { where: staffId ? { staffId } : {}, select: { customPrice: true } } } });
   const prices = sv.staffServices.length ? sv.staffServices.map(x => x.customPrice ?? sv.price) : [sv.price];
   const low = Math.min(...prices);
   return `${sv.name}: ${sv.priceFrom || Math.max(...prices) > low ? "החל מ " : ""}${low}₪.`;
@@ -2658,9 +2658,16 @@ async function cancelTooEarly(businessId: string, conversationId: string, appoin
   if (await prisma.bookingProposal.count({ where: { conversationId, kind: { in: ["confirm", "cancel"] }, status: "accepted", respondedAt: { gte: since } } })) return null;
   const appt = await prisma.appointment.findFirst({ where: { id: appointmentId, businessId }, select: { startTime: true } });
   const said = await recentlySaid(conversationId);
-  const both = !!appt && said.some(t => asksToCancel(t) && cancelBesideNewTime(t, appt.startTime));
+  const both = !!appt && said.some(asksToCancel) && said.some(t => cancelBesideNewTime(t, appt.startTime) || /(?:^|\s)(?:קודם|תקבע|לקבוע|תעביר|תזיז)|באותה שעה/.test(t));
   const waiting = await prisma.bookingProposal.count({ where: { conversationId, kind: "confirm", status: "pending", createdAt: { gte: since } } });
   return both || waiting ? "שגיאה: לא בוטל. קודם התור החדש: propose_booking. אחרי שהלקוח מאשר אותו המערכת שואלת לבד על ביטול הישן. אל תאמר שבוטל." : null;
+}
+
+/** A proposal is sent back for contradicting him once; insisting on the same hour means he did choose it (25.11.2026: a
+ *  day mentioned in passing blocked a confirmed booking three times). */
+async function alreadyRefused(conversationId: string, date: string, startTime: string): Promise<boolean> {
+  const rows = await prisma.conversationMessage.findMany({ where: { conversationId, role: "tool", toolName: "propose_booking", createdAt: { gte: new Date(Date.now() - 3600_000) } }, orderBy: { createdAt: "desc" }, take: 6, select: { content: true, toolInput: true } });
+  return rows.some(r => /^שגיאה: הוא /.test(r.content ?? "") && String(r.toolInput ?? "").includes(date) && String(r.toolInput ?? "").includes(startTime));
 }
 
 async function againstWhatHeSaid(conversationId: string, p: { staff: { id: string; name: string }; serviceId: string; date: string; startTime: string; free: string[] }): Promise<string | null> {
@@ -2711,6 +2718,17 @@ async function mixedMessageContext(businessId: string, text: string, earlier: st
   const words = hourInWords(text);
   if (words) parts.push(`הוא כתב שעה במילים: ${words}${Number(words.split(":")[0]) < 8 ? ` (כלומר ${Number(words.split(":")[0]) + 12}:${words.split(":")[1]})` : ""}. בדוק אותה בדיוק: פנויה → המשך איתה. רק אם היא באמת לא ברשימת הפנויות, אמור שלא ותן את הקרובות.`);
   return parts.filter(Boolean).join("\n");
+}
+
+/** A booking really made in this chat lately (the sandbox keeps the proposals too), or an appointment he has. */
+async function anythingBooked(businessId: string, phone: string): Promise<boolean> {
+  const ph = normalizeIsraeliPhone(phone), today = new Date(getBusinessNow().date + "T00:00:00.000Z");
+  const [proposals, appointments, classes] = await Promise.all([
+    prisma.bookingProposal.count({ where: { businessId, phone: ph, status: "accepted", respondedAt: { gte: new Date(Date.now() - 24 * 3600_000) } } }),
+    prisma.appointment.count({ where: { businessId, customer: { phone: { in: [ph, ph.replace(/^972/, "0")] } }, date: { gte: today }, status: { in: ["pending", "confirmed"] } } }),
+    prisma.conversationMessage.count({ where: { conversation: { businessId, phone: ph }, role: "tool", toolName: { in: ["book_class", "book_appointment"] }, createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } } }),
+  ]);
+  return proposals + appointments + classes > 0;
 }
 
 /** The customer cancelled an appointment in the last hours. */
@@ -3015,6 +3033,7 @@ async function runCustomerAgentCore(opts: {
         // Beauty (28.10.2026): the treatment she named, and each person's times
         // for a treatment that person does — a nail tech is never "full" because
         // the default service is a haircut she doesn't do.
+        let servicesOf: ((staffId: string) => { id: string; name: string }[]) | undefined;
         let snapServiceId = serviceId, serviceOf: ((staffId: string) => { id: string; name: string } | null) | undefined;
         const wide = widerContext(businessId);
         const menShop = businessTypeOf(biz) === "barber_men";
@@ -3029,6 +3048,7 @@ async function runCustomerAgentCore(opts: {
           const asked = [said, ...history.filter(h => h.role === "user").slice(0, -3).reverse().map(h => h.content)].map(t => namedServices(t, all)).find(ids => ids.length) ?? [];
           // The works link goes only for a treatment the text names beyond doubt.
           if (asked.length) { snapServiceId = asked[0]; if (!menShop) namedServiceIds = clearlyNamedServices(said, all); }
+          if (menShop && !asked.length) servicesOf = staffId => byStaff.get(staffId) ?? all;
           serviceOf = staffId => {
             const mine = byStaff.get(staffId) ?? [];
             // A barber with no list of his own does everything (the men's catalog reads it that way too).
@@ -3039,7 +3059,7 @@ async function runCustomerAgentCore(opts: {
           };
         }
         const snap = await buildAvailabilitySnapshot({ businessId, days: wide ? 8 : 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
-          talked: wide && talk.asked?.days.length === 1 ? talk.asked.days[0] : null, lastReply: [...history].reverse().find(h => h.role === "assistant")?.content,
+          talked: wide && talk.asked && talk.asked.days.length <= 2 ? talk.asked.days : [], servicesOf, lastReply: [...history].reverse().find(h => h.role === "assistant")?.content,
           silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
@@ -3168,7 +3188,6 @@ async function runCustomerAgentCore(opts: {
       for (const block of response.content) {
         if (block.type !== "tool_use") continue;
         if (SMART_TOOLS.has(block.name) && !sandbox?.modelOverride) model = MODEL_SMART; // escalate next iteration
-        if (block.name === "ask_owner") askedOwner = true;
         const result = toolResultForType(await execTool(
           block.name,
           block.input as Record<string, string>,
@@ -3180,6 +3199,7 @@ async function runCustomerAgentCore(opts: {
           sandbox,
           incomingText,
         ), vocabOf(biz));
+        if (block.name === "ask_owner" && !/^(?:התשובה כבר כתובה|השאלה הזאת כבר)/.test(result)) askedOwner = true;
         toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
 
         // Save tool call + result to DB
@@ -3274,8 +3294,16 @@ async function runCustomerAgentCore(opts: {
     assistantText = dropRepeatedWaitlistAsk(assistantText, history.filter(h => h.role === "assistant").map(h => h.content), incomingText);
     if (widerContext(businessId)) assistantText = withoutToolNames(withRedFlag(assistantText, incomingText));
     if (missesPrice(assistantText, incomingText) && widerContext(businessId)) {
-      const priced = namedServiceIds.length === 1 ? namedServiceIds[0] : (await findPendingProposal(businessId, normalizeIsraeliPhone(phone)).catch(() => null))?.serviceId;
-      if (priced) assistantText = `${await priceLine(priced)}\n\n${assistantText}`;
+      const open = await findPendingProposal(businessId, normalizeIsraeliPhone(phone)).catch(() => null);
+      const priced = open?.serviceId ?? (namedServiceIds.length === 1 ? namedServiceIds[0] : null);
+      if (priced) assistantText = `${await priceLine(priced, open?.serviceId === priced ? open?.staffId : null)}\n\n${assistantText}`;
+    }
+    if (widerContext(businessId) && claimsBooked(assistantText) && !(await anythingBooked(businessId, phone))) {
+      console.warn(`[agent] claimed a booking that does not exist biz=${businessId}`);
+      assistantText = "רגע, התור עוד לא נקבע במערכת. העברתי לצוות שיסגרו אותו ויחזרו אליך.";
+      ctx.handoffReason = `הסוכן לא הצליח לקבוע את התור שהלקוח אישר: «${incomingText.slice(0, 200)}»`;
+      ctx.conversationId = conversation.id;
+      sandbox?.toolLog.push("escalate_to_human(תור שלא נקבע)");
     }
     const em = emergencyReply(assistantText);
     assistantText = em.reply;

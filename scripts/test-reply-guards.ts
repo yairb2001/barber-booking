@@ -2,7 +2,7 @@
  *  npx tsx scripts/test-reply-guards.ts */
 import { askedDays, againstTalkedDay, talkedDays } from "../src/lib/agent/talked-day";
 import { targetDayIn } from "../src/lib/agent/move-flow";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml, withRedFlag } from "../src/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml, withRedFlag, claimsBooked } from "../src/lib/agent/reply-guards";
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn, pickedHour } from "../src/lib/agent/availability-snapshot";
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
@@ -81,10 +81,16 @@ const WED = "2026-11-25";
 const asked = (t: string, around?: string) => askedDays(t, WED, around ?? null).days.join();
 eq("the day he asks for", ["ביום שלישי אחהצ אפשר?", "רביעי הבא ב16:00", "אפשר רביעי?", "חמישי הבא בבוקר", "3.12 ב11 ותבטלו את השלישי", "שני תורים למחר", "ביקור ראשון", "תור לרז שלישי או רביעי"].map(t => asked(t)), ["2026-12-01", "2026-12-02", "2026-12-02", "2026-12-03", "2026-12-03", "2026-11-26", "", "2026-12-01,2026-12-02"]);
 eq("the week in talk", [asked("בעצם אני לא יכול בשלישי תעשה לי רביעי", "2026-12-01"), asked("התכוונתי ללחמישי לא לרביעי", "2026-12-02")], ["2026-12-02", "2026-12-03"]);
+eq("a day in passing", ["חמישי ב10 ואם מתפנה היום תעדכנו", "התור על שם רותי לא דור. ושלי ביום שני לא זז נכון?"].map(t => asked(t)), ["2026-11-26", ""]);
 eq("next week, open, mismatch", [askedDays("כמו תמיד לשבוע הבא", WED).week, askedDays("הכי קרוב שיש", WED).open, askedDays("יום שלישי 2.12", WED).mismatch?.weekday], [true, true, "שלישי"]);
 const chat = talkedDays([{ role: "user", content: "אז 17:30" }, { role: "assistant", content: "יש 17:15 או 17:30" }, { role: "user", content: "ביום שלישי אפשר?" }], WED);
 eq("a proposal for another day", [againstTalkedDay(chat, "2026-11-29") === null, againstTalkedDay(chat, "2026-12-01") === null], [false, true]);
 eq("the picked hour", [["5", [1020], []], ["ב12", [], [720]], ["4 ורבע", [], [975]], ["1830 כמו שביקשתי", [], []], ["6. בר חזן", [1080], []], ["3", [900], []], ["אחרי 17", [], []], ["אז 17:30", [], []]].map(([t, o, f]) => pickedHour(t as string, o as number[], f as number[])), [1020, 720, 975, 1110, 1080, 900, null, 1050]);
+eq("claims a booking", ["סגור ✅, בנייה מחר ב-10:00", "עזרה ראשונה מחר בשעה 09:30 אצל ד\"ר יוסי - קבוע! 🦷", "מעולה, התור נקבע! ביום ראשון", "יש 10:00, לקבוע?", "סגור, קבעתי לך מחר? מאשר?"].map(claimsBooked), [true, true, true, false, false]);
+eq("not a name", [nameAtEnd("ליום שני ארבע וחצי, הברך הורגת אותי"), nameAtEnd("טוב אז שלוש, ניב כץ"), nameAtEnd("ראשון ב11, מורן שי")], [null, "ניב כץ", "מורן שי"]);
+eq("the hour before the question", offeredHour("רשום שני 12:40. שלישי 17:00 לא נשמר. רוצה שאזיז עכשיו?", "12:40"), "17:00");
+eq("more hours he names", ["9 וחצי אפשר?", "אז 930 נכון", "1830 בטוח אין?", "כמה זה 150 ש״ח"].map(namedHour), ["9:30", "9:30", "18:30", null]);
+eq("cancel in other words", [asksToCancel("ואז תורידי לי את של שני"), cancelBesideNewTime("ליום שלישי ב 18 תספורת ואת שני תבטל לי", "11:20")], [true, true]);
 eq("a red flag", [withRedFlag("נציג יחזור אליך", "הלחי שלי נפוחה ויש לי חום ואני בקושי בולע").includes("101"), withRedFlag("נציג יחזור אליך", "יש לי פריחה קלה"), withRedFlag("לך למיון", "לחץ בחזה")], [true, "נציג יחזור אליך", "לך למיון"]);
 eq("offered hour with a date", offeredHour("רוצה שאעביר אותך עכשיו לשלישי 1.12 ב-14:30?", ""), "14:30");
 eq("cancel beside a bare hour", [cancelBesideNewTime("ביום שלישי ב10 ותבטלו את של שני", "11:00"), cancelBesideNewTime("לבטל את התור של מחר ב10", "10:00")], [true, false]);
