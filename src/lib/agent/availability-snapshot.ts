@@ -64,6 +64,16 @@ export function askedWindow(texts: string[], today: string): Window | null {
   return null;
 }
 
+/** Opens the note of who works which weekdays; reply-guards reads it back (workDaysIn). */
+const WORK_DAYS = "ימי עבודה קבועים:";
+export function workDaysIn(context: string): { name: string; days: string[] }[] {
+  const line = context.split(WORK_DAYS)[1]?.split(" (יום אחר")[0];
+  return (line ?? "").split("|").map(x => x.trim()).filter(Boolean).map(x => {
+    const days = DAY.filter(d => x.includes(d));
+    return { name: x.slice(0, x.indexOf(days[0] ?? "")).trim(), days };
+  }).filter(x => x.name && x.days.length);
+}
+
 /**
  * The services a customer named ("לק ג'ל ביום ראשון?" → "לק ג'ל ידיים"), best
  * match first: at least half the words of the name, each at a word start
@@ -177,11 +187,12 @@ export async function buildAvailabilitySnapshot(p: {
     const outside = index.staff.filter(s => !s.inQuickPool).map(label);
     if (outside.length) notes.push(`${outside.join(", ")} — רק אם הלקוח מבקש אותו בשמו או שהוא הקבוע שלו`);
   }
-  // Off that day is not "full": no "אין לו מקום", and no waitlist for a day nobody opens.
+  // Off that day is not "full": no "אין לו מקום", and no waitlist for a day he never opens. The regular week and
+  // not only these days: a list of these days' offs was read as "she doesn't work Tuesdays" (25.11.2026).
   if (p.asks) {
-    const isos = Array.from({ length: days }, (_, d) => addDaysISO(today, d)).filter(iso => index.staff.some(s => index.works(s.id, iso)));
-    const off = index.staff.map(s => ({ s, iso: isos.filter(iso => !index.works(s.id, iso)) })).filter(x => x.iso.length && x.iso.length < isos.length);
-    if (off.length) notes.push(`ימים שהם לא עובדים בהם (לא "מלא", ובלי רשימת המתנה לימים האלה): ${off.map(x => `${label(x.s)} ${x.iso.map(iso => DAY[getDayOfWeekISO(iso)]).join(", ")}`).join(" | ")}`);
+    const open = new Set(index.staff.flatMap(s => index.weekDays(s.id)));
+    const partWeek = index.staff.filter(s => index.weekDays(s.id).length < open.size);
+    if (partWeek.length) notes.push(`${WORK_DAYS} ${partWeek.map(s => `${label(s)} ${index.weekDays(s.id).map(d => DAY[d]).join(", ")}`).join(" | ")} (יום אחר = לא עובדים בו, לא "מלא", ובלי רשימת המתנה ליום כזה)`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }
   // Code-filtered answer for "מחר אחרי 17:00" / "בערב השבוע" / "הכי מוקדם מחר" —

@@ -1,8 +1,10 @@
 /** Checks on the agent's reply before it is sent, and the wordings behind them (25.11.2026). No DB, no AI:
  *  npx tsx scripts/test-reply-guards.ts */
-import { dropInventedPhones, dropRepeatedWaitlistAsk, emergencyReply, withAskOwnerPromise } from "../src/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml } from "../src/lib/agent/reply-guards";
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
-import { askedWindow, namedServices } from "../src/lib/agent/availability-snapshot";
+import { askedWindow, namedServices, workDaysIn } from "../src/lib/agent/availability-snapshot";
+import { policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
+import { vocabFor } from "../src/lib/vocab";
 import { looksLikeProspect } from "../src/lib/agent/sales-agent";
 
 let failed = 0;
@@ -35,5 +37,17 @@ const owners = ["אני בעלת מספרת נשים ברחובות, זה מתא
 const customers = ["12:00 מתאים לי", "זה מתאים לי", "תספורת לבעל שלי", "אני צריכה תור לציפורניים", "יש לי תור מחר?", "יש לכם תספורת גברים?", "זה בסדר, 17:00", "הבעל שלי רוצה תספורת", "אפשר אצל מיכל?"];
 eq("a business owner leaves the demo", owners.filter(t => !looksLikeProspect(t, "demo")), []);
 eq("a customer stays in it", customers.filter(t => looksLikeProspect(t, "demo")), []);
+
+const days = workDaysIn("(ימי עבודה קבועים: משה שני, שלישי | ד\"ר רון ראשון (יום אחר = לא עובדים בו))");
+eq("the work days are read back", days, [{ name: "משה", days: ["שני", "שלישי"] }, { name: "ד\"ר רון", days: ["ראשון"] }]);
+eq("no waitlist for a day off", dropWaitlistForDayOff("בסדר.\nרוצה שאעדכן אותך אם יתפנה אצל משה ביום ראשון?", days), "בסדר.");
+eq("a work day keeps it", dropWaitlistForDayOff("רוצה שאעדכן אותך אם יתפנה אצל משה ביום שני?", days), "רוצה שאעדכן אותך אם יתפנה אצל משה ביום שני?");
+eq("no html", withoutHtml("מה שמו?\n<br>\n(על שמך)"), "מה שמו?\n\n(על שמך)");
+const clinic = vocabFor("other");
+eq("nothing written about the funds", policyGapGuidance("אתם עובדים עם מכבי?", "תשלום: אשראי", clinic).includes("קופות חולים"), true);
+eq("written", policyGapGuidance("אתם עובדים עם מכבי?", "עובדים עם מכבי וכללית", clinic), "");
+eq("slang is not a brother", situationalGuidance("אהלן אחי יש משהו מחר?", [], undefined, true), "");
+eq("a brother is", situationalGuidance("תור לי ולאחי", [], undefined, true) !== "", true);
+eq("DOMINANT's guidance is as it was", situationalGuidance("אהלן אחי יש משהו מחר?", []) !== "", true);
 
 process.exit(failed ? 1 : 0);

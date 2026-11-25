@@ -30,6 +30,18 @@ export function dropRepeatedWaitlistAsk(reply: string, earlier: string[], incomi
   return rest || "סבבה, אני כאן אם צריך משהו.";
 }
 
+/** No waitlist for a weekday that person never works ("אם יתפנה אצל משה ביום ראשון", 25.11.2026). */
+export function dropWaitlistForDayOff(reply: string, workDays: { name: string; days: string[] }[]): string {
+  const asked = reply.match(WAITLIST_ASK)?.[0];
+  const day = asked?.match(/ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת/)?.[0];
+  const who = asked && day ? workDays.find(w => asked.includes(w.name)) : undefined;
+  if (!who || who.days.includes(day!)) return reply;
+  return reply.split(/(?<=[.!?\n])/).filter(x => !WAITLIST_ASK.test(x)).join("").trim() || "סבבה, אני כאן אם צריך משהו.";
+}
+
+/** "<br>" reached a customer as text (25.11.2026). */
+export const withoutHtml = (reply: string): string => reply.replace(/[ \t]*<\/?[a-z][^<>\n]{0,40}>[ \t]*/gi, "").replace(/\n{3,}/g, "\n\n");
+
 const PROMISED = /בודק|אבדוק|לבדוק|בדקתי|אחזור|חוזר|יחזרו|אברר|מברר|שאלתי|שלחתי|העברתי|מעביר|check|get back/i;
 
 /** ask_owner ran, but the sentence that says so came before the tool call and was lost. */

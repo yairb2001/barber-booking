@@ -93,6 +93,7 @@ function wordsForType(v: Vocab): (s: string) => string {
     .split("ספר מסוים").join(`${v.staff} ${f ? "מסוימת" : "מסוים"}`)
     .split("אותו ספר").join(`${f ? "אותה" : "אותו"} ${v.staff}`)
     .split("איזה ספר").join(`${f ? "איזו" : "איזה"} ${v.staff}`)
+    .replace(/ספרים (באמת )?פנויים/g, (_m, sure: string | undefined) => `${v.staffPlural} ${sure ?? ""}${v.freePlural}`)
     .replace(word("הספרים"), (_m, p: string) => p + v.staffPluralDef)
     .replace(word("ספרים"), (_m, p: string) => p + v.staffPlural)
     .replace(word("הספר"), (_m, p: string) => p + v.staffDef)
@@ -105,14 +106,22 @@ export function toolResultForType(result: string, v: Vocab): string {
   return v.type === "barber_men" || result.startsWith("PROPOSED\n") || result.startsWith("BOOKED\n") ? result : wordsForType(v)(result);
 }
 
+/** A father's cut and his boy's (25.11.2026): each person in "others" may have a treatment of his own. */
+function withServicePerPerson<T extends { input_schema: unknown }>(tool: T): T {
+  const schema = structuredClone(tool.input_schema) as { properties?: { others?: { items?: { properties?: Record<string, unknown> } } } };
+  const item = schema.properties?.others?.items?.properties;
+  if (item) item.serviceId = { type: "string", description: "מזהה השירות של האדם הזה, כשהוא שונה מהשירות הראשי (למשל תספורת ילד)" };
+  return { ...tool, input_schema: schema };
+}
+
 /**
  * The tools in the business's words (16.10.2026): a nail studio's agent reads
  * "מניקוריסטית", never "ספר", so it never says "ספר" to a customer. A men's
  * barbershop gets the tools untouched (same bytes, same prompt cache).
  */
-export function toolsForType<T extends { name: string; description?: string; input_schema: unknown }>(tools: T[], v: Vocab): T[] {
+export function toolsForType<T extends { name: string; description?: string; input_schema: unknown }>(tools: T[], v: Vocab, groupServices = false): T[] {
   // Visits with several treatments are a beauty thing: a barbershop's tools stay as they were.
-  if (v.type === "barber_men") return tools.filter(t => t.name !== "find_visit_times");
+  if (v.type === "barber_men") return tools.filter(t => t.name !== "find_visit_times").map(t => (groupServices && t.name === "propose_booking" ? withServicePerPerson(t) : t));
   const swap = wordsForType(v);
   const deep = (x: unknown): unknown => {
     if (Array.isArray(x)) return x.map(deep);

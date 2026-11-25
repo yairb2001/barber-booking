@@ -23,6 +23,8 @@ export type AvailabilityIndex = {
   slots(staffId: string, dateISO: string, serviceId: string | null): string[];
   /** On the schedule that day (25.11.2026): off is not the same as full. */
   works(staffId: string, dateISO: string): boolean;
+  /** The weekdays on his regular schedule (0 = Sunday). */
+  weekDays(staffId: string): number[];
   /** Least-loaded barbers first for a day. */
   staffByLoad(dateISO: string): StaffRow[];
 };
@@ -99,10 +101,11 @@ export async function buildAvailabilityIndex(businessId: string, fromISO: string
     cache.set(key, out); return out;
   };
   const works = (staffId: string, dateISO: string): boolean => (over.get(`${staffId}|${dateISO}`) ?? sched.get(`${staffId}|${getDayOfWeekISO(dateISO)}`))?.isWorking ?? false;
+  const weekDays = (staffId: string): number[] => schedules.filter(sc => sc.staffId === staffId && sc.isWorking).map(sc => sc.dayOfWeek).sort((a, b) => a - b);
   // "Any barber" = the quick pool (everyone if the business defined no pool).
   const pool = staff.some(s => s.inQuickPool) ? staff.filter(s => s.inQuickPool) : staff;
   // Least booked first; "most" (settings.staffChoice) fills the fullest calendar first.
   const dir = staffChoiceOf(biz) === "most" ? -1 : 1;
   const staffByLoad = (dateISO: string) => [...pool].sort((a, b) => dir * ((booked.get(`${a.id}|${dateISO}`)?.length || 0) - (booked.get(`${b.id}|${dateISO}`)?.length || 0)));
-  return { fromISO, toISO, staff, slots, works, staffByLoad };
+  return { fromISO, toISO, staff, slots, works, weekDays, staffByLoad };
 }

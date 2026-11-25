@@ -48,12 +48,12 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, emergencyReply, withAskOwnerPromise } from "@/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { SUPER_ADMIN_BUSINESS_ID } from "@/lib/super-admin";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
-import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices } from "@/lib/agent/availability-snapshot";
+import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes } from "@/lib/utils";
@@ -735,7 +735,8 @@ export async function execTool(
 
       // ── get_available_slots ──────────────────────────────────────────────────
       case "get_available_slots": {
-        const { date, staffId: inputStaffId, serviceId: inputServiceId } = input;
+        const { date, staffId: inputStaffId } = input;
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
         // A specific barber coming back empty has bitten us: the agent offered
         // slots for a day, the customer picked one, and the pre-book re-check then
         // returned "no availability" for that SAME day — which still had free
@@ -808,7 +809,8 @@ export async function execTool(
       // blew the iteration budget and left the customer with no reply).
       case "find_next_available": {
         let { staffId: inputStaffId } = input;
-        const { serviceId: inputServiceId, afterDate: inputAfterDate } = input;
+        const { afterDate: inputAfterDate } = input;
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
         // Same hallucinated/stale-id guard as get_available_slots (see comment
         // there): an invalid staffId makes computeDayAvailability return []
         // for EVERY day scanned, indistinguishable from "no room in 30 days" —
@@ -970,7 +972,8 @@ export async function execTool(
       }
 
       case "find_parallel_slots": {
-        const { date: inDate, serviceId: inputServiceId } = input;
+        const { date: inDate } = input;
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
         const count = Math.max(2, Number(input.count) || 2);
         const fmt = (rows: { time: string; barbers: { staffId: string; name: string }[] }[]) =>
           rows
@@ -1273,7 +1276,10 @@ export async function execTool(
           for (const it of chk.items.slice(1)) group.push({ staffId: it.staffId, staffName: it.staffName, startTime: it.startTime, forName: "", serviceId: it.serviceId, serviceName: it.serviceName });
         } else {
           avail = await computeDayAvailabilityRetrying(bizId, date, staff.id, service.id, callerPhone);
-          if (!(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(startTime)) {
+          const free = avail.find(a => a.staffId === staff!.id)?.slots ?? [];
+          if (!free.includes(startTime)) {
+            const near = [...free].sort((x, y) => Math.abs(timeToMinutes(x) - timeToMinutes(startTime)) - Math.abs(timeToMinutes(y) - timeToMinutes(startTime))).slice(0, 3).sort();
+            if (near.length) return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name} ל${service.name}. הקרובות אליה שכן פנויות: ${near.join(", ")}. הצע רק אותן (יום מלא יותר → get_available_slots עם ה-serviceId הזה).`;
             return `שגיאה: ${startTime} ב-${date} לא פנוי אצל ${staff.name}. קרא ל-get_available_slots לאותו יום והצע רק שעה שחזרה.`;
           }
         }
@@ -1347,12 +1353,18 @@ export async function execTool(
             return `שגיאה: ${r.context}`;
           }
         }
+        // "בעצם תספורת וזקן" at the confirmation moved 11:00 to 11:15 without a word (25.11.2026): the new hour is said.
+        const before = await findPendingProposal(bizId, proposalPhone);
+        const hourMoved = before?.kind === "confirm" && before.serviceId !== service.id && before.date?.toISOString().slice(0, 10) === date
+          && !!before.startTime && before.startTime !== startTime && !(askText ?? "").includes(startTime)
+          && !(avail.find(a => a.staffId === staff!.id)?.slots ?? []).includes(before.startTime);
+        const saidMove = hourMoved && /[א-ת]/.test(askText ?? "") ? `ל${service.name} ב-${before!.startTime} אין מקום, אז ב-${startTime}.\n\n` : "";
         const question = await createConfirmProposal({
           businessId: bizId, phone: proposalPhone, conversationId, staffId: staff.id, staffName: staff.name, serviceId: service.id, serviceName: service.name,
           date, startTime, customerName: registeredName ? customer!.name : customerName, note: note || null, mentionStaff,
           originalRequest: originalRequest || null, firstName: proposalFirstName(registeredName ? customer!.name : customerName), hold: !sandbox, group,
         });
-        return "PROPOSED\n" + question;
+        return "PROPOSED\n" + saidMove + question;
       }
 
       // ── check_appointment ────────────────────────────────────────────────────
@@ -2119,7 +2131,7 @@ export async function warmCustomerAgentCache(businessId: string): Promise<{ cach
   // EXACT tool set real calls send, or it warms a prefix nobody uses (that was
   // the case from stage C, 20.9, until 22.9: v3 businesses send 10 tools).
   const flags = promptFlagsFor(biz.settings, { hasCustomPrompt: !!agentConfig?.systemPrompt?.trim() });
-  const pingTools = toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: flags.v3, hasCatalog: !!catalogBlock }), agentConfig?.setupConfig, withClasses);
+  const pingTools = toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz), widerContext(businessId)), { v3: flags.v3, hasCatalog: !!catalogBlock }), agentConfig?.setupConfig, withClasses);
   const res = await anthropic.messages.create({
     model: MODEL_SMART,
     max_tokens: 1,
@@ -2496,6 +2508,10 @@ export const groupGuidance = (v: Vocab) =>
 const IN_A_ROW_RE = /אחד אחרי השני|אחת אחרי השני|זה אחרי זה|זו אחרי זו|ברצף|רצוף|רצופים|צמוד/;
 const inARowGuidance = (v: Vocab) =>
   `קביעה לכמה אנשים בזה אחר זה: בלי find_parallel_slots. אצל ${v.staffFem ? "אותה" : "אותו"} ${v.staff}, השעה השנייה = הראשונה + משך הטיפול הראשון. כשיש יום, שעה ושמות: propose_booking אחד, הראשון ב-startTime ו-staffId וכל השאר ב-others (startTime, forName, ו-serviceId כשהטיפול שלו אחר; staffId ריק = ${v.staffFem ? "אותה" : "אותו"} ${v.staff}). השעה שביקש לא נכנסת → הקרובה אליה באותו יום, לא יום אחר.`;
+/** "אחי" as slang is not a brother. */
+const GROUP_WIDE_RE = new RegExp(GROUP_RE.source.replace("אחי |", "(?:^|\\s)(?:ל|ול|גם ל|עם )אחי(?![א-ת])|"));
+/** A card number or an id number (with its word next to it). */
+const CARD_OR_ID_RE = /\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{3,4}|(?:ת\.?ז|תעודת זהות)\D{0,6}\d{8,9}/;
 /** One appointment for someone else is one appointment, and each person keeps his own treatment. */
 const FOR_OTHERS_GUIDANCE = "תור אחד בשביל מישהו אחר (אח, ילד) = תור אחד רגיל עם note 'התור בפועל עבור: <שם>', בלי לחפש שעות מקבילות; חסר שם → שאל איך קוראים לו. הורה לכמה ילדים: הילד הראשון ב-note ('התור בפועל עבור: <שם הילד>'), השאר ב-others. טיפול אחר לכל אחד (תספורת / תספורת ילד) → serviceId ב-others.";
 /** DOMINANT wording (barber_men) — kept byte-identical for the live prompt. */
@@ -2504,11 +2520,26 @@ export const MANUAL_OFFER_GUIDANCE =
   "בשיחה הזאת יש הודעות שנכתבו ידנית על ידי הספר, או הצעת שעה מלפני יותר משעה. התייחס אליהן כאילו אתה כתבת: אותו קו, אותה הבטחה, בלי להתחיל מחדש ובלי להציג את עצמך. " +
   "אם הוצעו יום ושעה ספציפיים והלקוח מאשר — אל תשאל שוב איזה יום ושעה. הסדר: 1) get_available_slots לאותו יום ולספר שהוצע — ההצעה ישנה והשעה יכלה להיתפס; " +
   "2) פנויה → שאלת האישור הסופית בנוסח הקבוע (לא \"רק לוודא, בסדר?\") ואחרי כן book_appointment; 3) נתפסה → אמור בכנות והצע את הקרובה שכן פנויה.";
+/** Asked about something this business wrote nothing about, where a "no" is as much a guess as a "yes" (a clinic's
+ *  agent said "לא עובדים עם קופות חולים", 25.11.2026). Not in men's barbershops. */
+const POLICY_TOPICS: [string, RegExp][] = [
+  ["קופות חולים", /מכבי|כללית|מאוחדת|לאומית|קופת חולים|קופ["״]ח|טופס ?17|התחייבות/],
+  ["ביטוח והחזרים", /ביטוח|משלים|החזר/],
+  ["מרשמים, הפניות ואישורים", /מרשם|הפני(?:ה|ות)|אישור מחלה|אישור רפואי/],
+  ["תוצאות בדיקות", /תוצאות|ביופסיה|פענוח/],
+  ["חיה עם בעיה (נשכנית, חולה, בהריון)", /נושך|נושכת|תוקפני|תוקפנית/],
+];
+export function policyGapGuidance(text: string, own: string, v: Vocab): string {
+  if (v.type === "barber_men") return "";
+  const gaps = POLICY_TOPICS.filter(([, re]) => re.test(text) && !re.test(own)).map(([name]) => name);
+  return gaps.length ? `העסק לא כתב כלום על: ${gaps.join(", ")}. אל תענה "כן" או "לא" ואל תסביר איך זה עובד אצלנו: ask_owner עם השאלה, ואמור שאתה בודק וחוזר.` : "";
+}
 export function situationalGuidance(incomingText: string, history: { role: string; content: string; source: string | null; createdAt: Date }[], vocab?: Vocab, wide = false): string {
   const parts: string[] = [];
   const recentText = [incomingText, ...history.slice(-6).map(h => h.content)].join("\n");
+  if (CARD_OR_ID_RE.test(incomingText)) parts.push("הלקוח שלח פרטי כרטיס או תעודת זהות: אל תחזור עליהם, בקש לא לשלוח אותם כאן, ואל תבטיח שהם לא נשמרים.");
   if (wide && IN_A_ROW_RE.test(recentText)) parts.push(inARowGuidance(vocab ?? vocabFor("barber_men")), FOR_OTHERS_GUIDANCE);
-  else if (GROUP_RE.test(recentText)) parts.push(vocab ? groupGuidance(vocab) : GROUP_GUIDANCE, ...(wide ? [FOR_OTHERS_GUIDANCE] : []));
+  else if ((wide ? GROUP_WIDE_RE : GROUP_RE).test(recentText)) parts.push(vocab ? groupGuidance(vocab) : GROUP_GUIDANCE, ...(wide ? [FOR_OTHERS_GUIDANCE] : []));
   const lastAssistant = [...history].reverse().find(h => h.role === "assistant");
   const manual = history.some(h => h.role === "assistant" && h.source === "admin");
   const staleOffer = !!lastAssistant && Date.now() - lastAssistant.createdAt.getTime() > 3600_000 && /\d{1,2}:\d{2}/.test(lastAssistant.content);
@@ -2534,6 +2565,18 @@ export type SandboxOptions = {
   /** Preview: unsaved setup answers used for this run only (the owner tries them before saving). */
   setupOverride?: Record<string, string | boolean>;
 };
+
+/** The haircut a times search is for when the model names none: his last one, else the shop's default. Without it the
+ *  search answered for 30 minutes and the booking then refused the hour (25.11.2026, "20 לדצמבר ב-17:00"). Men's shops
+ *  only: elsewhere a search without a treatment means everyone. */
+async function assumedServiceId(businessId: string, callerPhone: string): Promise<string | undefined> {
+  const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true, settings: true, agentConfig: { select: { setupConfig: true } } } });
+  if (!widerContext(businessId) || businessTypeOf(biz) !== "barber_men") return undefined;
+  const customerId = await callerCustomerId(businessId, callerPhone);
+  const last = customerId ? await prisma.appointment.findFirst({ where: { businessId, customerId, status: { in: ["confirmed", "completed"] } }, orderBy: { date: "desc" }, select: { serviceId: true } }) : null;
+  const byName = last ? null : await prisma.service.findFirst({ where: { businessId, isVisible: true, name: { equals: defaultServiceName(biz!, biz!.agentConfig), mode: "insensitive" } }, select: { id: true } });
+  return last?.serviceId ?? byName?.id;
+}
 
 /** What a run asks for after it ends (19.10.2026): hand the chat to a person. */
 type AgentRunCtx = { handoffReason?: string; conversationId?: string };
@@ -2859,7 +2902,7 @@ async function runCustomerAgentCore(opts: {
             return mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
           };
         }
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
+        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine || wide ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
         // Asked for a time that isn't free? Remember it quietly (not at night —
@@ -2878,6 +2921,8 @@ async function runCustomerAgentCore(opts: {
     : sandbox?.setupOverride
       ? { agentName: agentConfig?.agentName ?? null, systemPrompt: agentConfig?.systemPrompt ?? null, setupConfig: setupForPrompt, faqs: agentConfig?.faqs ?? [] }
       : agentConfig;
+  const gap = policyGapGuidance(incomingText, [catalogBlock, setupForPrompt ?? "", ...(agentConfig?.faqs ?? []).map(f => `${f.question} ${f.answer}`)].join("\n"), vocabOf(biz));
+  if (gap) customerContext += `\n${gap}`;
   const promptParams = stablePromptParams(biz, configForPrompt, catalogBlock, bookingLink);
   const systemPrompt = buildSystemPrompt({
     ...promptParams,
@@ -2885,7 +2930,7 @@ async function runCustomerAgentCore(opts: {
     customerContext,
   });
   const promptV3 = promptFlags.v3;
-  const tools = sandbox?.toolsOverride ?? toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz)), { v3: promptV3, hasCatalog: !!catalogBlock }), setupForPrompt, withClasses);
+  const tools = sandbox?.toolsOverride ?? toolsForSwitches(selectTools(toolsForType(AGENT_TOOLS, vocabOf(biz), widerContext(businessId)), { v3: promptV3, hasCatalog: !!catalogBlock }), setupForPrompt, withClasses);
   const usageKind = sandbox?.usageKind ?? "customer";
 
   // ── Agentic loop ──────────────────────────────────────────────────────────────
@@ -3024,7 +3069,7 @@ async function runCustomerAgentCore(opts: {
         // useless bubble before the system's question (real chat, 22.9.2026).
         const preText = (response.content.filter(b => b.type === "text").map(b => (b as { text: string }).text).join("\n").trim().split(/\n\s*\n+/)[0] ?? "").trim();
         const preWords = preText.split(/\s+/).filter(w => /[a-zA-Zא-ת]/.test(w));
-        const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)(?![א-ת])/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך|אסגור|אסגר|אקבע לך/.test(preText);
+        const keep = preText && preText.length <= 200 && preWords.length >= 4 && !/^(רגע|שנייה|שניה|אוקיי|אוקי|סבבה|מעולה|יאללה)(?![א-ת])/.test(preText) && !/[?؟]/.test(preText) && !/מאשר|קבעתי|סגור,|קובע לך|סוגר לך|אסגור|אסגר|אקבע לך|לאישור/.test(preText);
         assistantText = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
         break;
       }
@@ -3074,6 +3119,8 @@ async function runCustomerAgentCore(opts: {
   if (!preHandledReply) {
     const known = [phone, ...systemPrompt.map(b => b.text), ...messages.map(m => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))].join("\n");
     assistantText = dropInventedPhones(assistantText, known);
+    assistantText = withoutHtml(assistantText);
+    assistantText = dropWaitlistForDayOff(assistantText, workDaysIn(customerContext));
     assistantText = dropRepeatedWaitlistAsk(assistantText, history.filter(h => h.role === "assistant").map(h => h.content), incomingText);
     const em = emergencyReply(assistantText);
     assistantText = em.reply;

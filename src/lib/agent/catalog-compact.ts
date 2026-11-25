@@ -25,10 +25,10 @@ export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { 
     const fem = staffFemOf(s, v);
     const mark = s.gender === "x" ? " (בלי מגדר: אמור רק את השם, בלי היא או הוא)" : fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
     const pool = hasPool && !s.inQuickPool ? ` (לא ${fem ? "מציעים אותה" : "מציעים אותו"} ביוזמתנו; רק בשם או ${fem ? "כשהיא הקבועה" : "כשהוא הקבוע"})` : "";
-    // Who does one or two things is said next to the name: from the per-service lists alone the
-    // model gave a physiotherapist a treatment of someone else (25.11.2026).
+    // What she does, next to the name (in a short catalog; in a long one, only who does one or two
+    // things): from the per-service lists alone the model gave people each other's treatments (25.11.2026).
     const mine = services.filter(sv => s.staffServices.some(x => x.service.id === sv.id)).map(sv => sv.name);
-    const only = mine.length && mine.length <= 2 && mine.length < services.length ? ` (עושה רק: ${mine.join(" / ")})` : "";
+    const only = mine.length && mine.length < services.length && (services.length <= 12 || mine.length <= 2) ? ` (עושה רק: ${mine.join(" / ")})` : "";
     return `${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}${only}`;
   });
   // Who does each service: only her own rows, as the booking guard reads it in these businesses (strictServices).
