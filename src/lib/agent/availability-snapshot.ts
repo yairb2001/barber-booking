@@ -18,6 +18,7 @@ import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { isNightWindow } from "@/lib/agent/night-window";
 import { getBusinessNow, addDaysISO, getDayOfWeekISO, timeToMinutes } from "@/lib/utils";
 import { parseAvailabilityAsk, focusLine } from "@/lib/agent/availability-focus";
+import { hourInWords } from "@/lib/agent/mixed-messages";
 import { staffFirst, staffShort } from "@/lib/agent/staff-label";
 
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -46,8 +47,28 @@ export function compressSlots(slots: string[], win?: Window | null): string {
   }
   const shown = mins.slice(0, MAX_LISTED).map(fmt);
   const rest = mins.length - shown.length;
-  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}` : "");
+  return shown.join(" · ") + (rest > 0 ? ` · ועוד ${rest} עד ${fmt(mins[mins.length - 1])}${win === undefined ? "" : holesIn(mins)}` : "");
 }
+
+/** The break inside the hours that were cut ("חוץ מ-12:45 עד 16:00"): 14:00 was offered at a clinic closed from 13:00 (25.11.2026). */
+function holesIn(mins: number[]): string {
+  const holes = mins.slice(1).map((m, i) => [mins[i], m]).filter(([a, b], i) => b - a > 60 && i + 1 >= MAX_LISTED - 1);
+  return holes.length ? `, בלי שום שעה בין ${holes.map(([a, b]) => `${fmt(a)} ל-${fmt(b)}`).join(", ובין ")}` : "";
+}
+
+/** The hour he picks, in minutes: "ב12", "17:20 אם יש", "1830", "אז 5", "4 ורבע", "שלוש ועשרה". Two readings of a bare hour
+ *  (5 or 17): the one among the hours just offered, else among the day's. Null = no one hour. */
+export function pickedHour(text: string, offered: number[], free: number[]): number | null {
+  if (/אחרי|לפני|(?:^|\s)עד\s|החל|בסביבות|א[יז]+ור|בערך|במקום|יש לי|\d\s*(?:או|-|–)\s*\d/.test(text)) return null;
+  const words = hourInWords(text.replace(/(?:^|\s)(\d{1,2})\s+ו(רבע|חצי|עשרה|עשרים)/, (_m, h: string, w: string) => ` ${HOUR_NAMES[Number(h) - 1] ?? h} ו${w}`));
+  const m = words ? words.match(/(\d+):(\d+)/)
+    : text.match(/(?:^|[^\d:./])(\d{1,2}):(\d{2})(?!\d)/) ?? text.match(/(?:^|[^\d:./])(\d{2})(\d{2})(?!\d)/)
+    ?? text.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה |אז )-?(\d{1,2})()(?![\d:./])/) ?? text.match(/(?:^|\n)\s*(\d{1,2})()\s*(?=[.,!?\n]|$)/);
+  if (!m || Number(m[1]) > 23 || Number(m[2] || 0) > 59) return null;
+  const at = Number(m[1]) * 60 + Number(m[2] || 0), both = Number(m[1]) < 12 && Number(m[1]) > 0 ? [at, at + 720] : [at];
+  return both.find(x => offered.includes(x)) ?? both.find(x => free.includes(x)) ?? (Number(m[1]) >= 1 && Number(m[1]) <= 7 ? at + 720 : at);
+}
+const HOUR_NAMES = ["אחת", "שתיים", "שלוש", "ארבע", "חמש", "שש", "שבע", "שמונה", "תשע", "עשר", "אחת עשרה", "שתים עשרה"];
 
 /** "ב-16:30", "בשעה 12:00", "ב5" → minutes; a bare 1–7 is the afternoon. */
 function namedHour(text: string): number | null {
@@ -140,6 +161,8 @@ export async function buildAvailabilitySnapshot(p: {
   /** The customer's last messages, newest first: their part of the day is listed in full,
    *  and who is off on which day is said (25.11.2026). Null = as before. */
   asks?: string[] | null;
+  /** The day the conversation is about (talked-day.ts) and the agent's last message: a bare hour is checked against them. */
+  talked?: string | null; lastReply?: string;
   /** Nobody asked for by name and the business assigns by itself: the asked day's hours of everyone together. */
   silentAssign?: boolean;
 }): Promise<string> {
@@ -166,7 +189,7 @@ export async function buildAvailabilitySnapshot(p: {
   const other = (s: { id: string }) => { const o = own(s.id); return o && o.id !== p.serviceId ? ` (${o.name})` : ""; };
 
   const win = p.asks ? askedWindow(p.asks, today) : null;
-  const lines: string[] = [];
+  const lines: string[] = [], inList: string[] = [], dayNames: string[] = [];
   for (let d = 0; d < days; d++) {
     const iso = addDaysISO(today, d);
     // "הבא" on next week's days — a customer offered "רביעי" on Thursday plans
@@ -177,11 +200,12 @@ export async function buildAvailabilitySnapshot(p: {
       // answered that Thursday was full (demo, 4.11.2026).
       : d <= 1 ? `${d === 0 ? "היום" : "מחר"} ${DAY[getDayOfWeekISO(iso)]}` : `${DAY[getDayOfWeekISO(iso)]}${dayDistance(iso, today).isNext ? " הבא" : ""}`;
     const dd = new Date(iso + "T00:00:00.000Z");
+    inList.push(iso); dayNames.push(dayName);
     const parts: string[] = [];
     for (const s of index.staff) {
       const slots = index.slots(s.id, iso, p.serviceId ?? null);
       if (!slots.length) continue;
-      parts.push(`${label(s)}${other(s)} ${compressSlots(slots, win)}`);
+      parts.push(`${label(s)}${other(s)} ${compressSlots(slots, p.asks ? win : undefined)}`);
     }
     lines.push(`${dayName} ${dd.getUTCDate()}.${dd.getUTCMonth() + 1}: ${parts.length ? parts.join(" | ") : "אין"}`);
   }
@@ -189,21 +213,28 @@ export async function buildAvailabilitySnapshot(p: {
    *  (25.11.2026: "מחר בערב" got one barber's single hour while two others were free). */
   const askedHours = (text: string): string => {
     const ask = parseAvailabilityAsk(text, today, days, index.staff.map(s => ({ id: s.id, name: s.name })));
-    if (!ask || ask.days.length !== 1 || ask.pick) return "";
+    const day = p.talked ?? (ask && ask.days.length === 1 ? ask.days[0] : null);
+    if (ask?.pick || !day || !inList.includes(day)) return "";
     // Named in this message or just before it ("אצל רז" then "ב-17:00"); a two-letter name counts too.
     const said = (p.asks ?? []).join("\n");
     const named = index.staff.filter(s => new RegExp(`(^|[^א-ת])[לבש]?${staffFirst(s.name)}(?![א-ת])`).test(said));
     const staff = named.length ? named : index.staff.filter(s => !hasPool || s.inQuickPool || s.id === p.regularStaffId);
-    const free = (s: { id: string }) => index.slots(s.id, ask.days[0], p.serviceId ?? null);
-    const hour = ask.from === undefined && ask.to === undefined ? namedHour(text) : null;
+    const free = (s: { id: string }) => index.slots(s.id, day, p.serviceId ?? null);
+    const everyone = Array.from(new Set(staff.flatMap(free).map(timeToMinutes))).sort((a, b) => a - b);
+    const offered = Array.from((p.lastReply ?? "").matchAll(/(\d{1,2}):(\d{2})/g)).map(m => Number(m[1]) * 60 + Number(m[2]));
+    const hour = ask?.from === undefined && ask?.to === undefined ? pickedHour(text, offered, everyone) : null;
+    const dayLabel = ask && ask.days.length === 1 && ask.days[0] === day ? ask.dayLabel : `ב${dayNames[inList.indexOf(day)]} ${Number(day.slice(8))}.${Number(day.slice(5, 7))}`;
     if (hour !== null) {
       const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour));
-      if (!at.length) return "";
+      if (!at.length) {
+        const near = [...everyone].sort((a, b) => Math.abs(a - hour) - Math.abs(b - hour)).slice(0, 3).sort((a, b) => a - b).map(fmt);
+        return near.length ? `\n${fmt(hour)} ${dayLabel} אי אפשר להתחיל${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} לטיפול הזה. הקרובות: ${near.join(", ")}. אמור שהשעה לא פנויה (לא "תפוס" ולא "נתפס") ותן אותן. טיפול אחר → get_available_slots עם ה-serviceId שלו.` : "";
+      }
       // He named nobody and the business assigns by itself: one name, so there is nothing to ask.
-      const one = !named.length && p.silentAssign ? at.find(s => s.id === p.regularStaffId) ?? index.staffByLoad(ask.days[0]).map(x => at.find(s => s.id === x.id)).find(x => !!x) ?? at[0] : null;
-      return `\nב-${fmt(hour)} ${ask.dayLabel} פנוי אצל ${(one ? [one] : at).map(label).join(", ")} → propose_booking לשעה הזו${one ? ", בלי לשאול אצל מי" : ""}.`;
+      const one = !named.length && p.silentAssign ? at.find(s => s.id === p.regularStaffId) ?? index.staffByLoad(day).map(x => at.find(s => s.id === x.id)).find(x => !!x) ?? at[0] : null;
+      return `\nב-${fmt(hour)} ${dayLabel} פנוי אצל ${(one ? [one] : at).map(label).join(", ")} → propose_booking לשעה הזו${one ? ", בלי לשאול אצל מי" : ""}.`;
     }
-    if ((ask.from === undefined && ask.to === undefined) || !p.silentAssign || named.length || p.regularStaffId || staff.length < 2) return "";
+    if (!ask || ask.days.length !== 1 || ask.days[0] !== day || (ask.from === undefined && ask.to === undefined) || !p.silentAssign || named.length || p.regularStaffId || staff.length < 2) return "";
     const all = Array.from(new Set(staff.flatMap(free))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
     if (!all.length) return "";
     const answer = all.length > 3 ? `${all.slice(0, 3).join(", ")} ויש עוד עד ${all[all.length - 1]}` : all.join(", ");
@@ -223,10 +254,11 @@ export async function buildAvailabilitySnapshot(p: {
   if (p.asks) {
     const open = new Set(index.staff.flatMap(s => index.weekDays(s.id)));
     // No regular week at all (opened day by day) says nothing about his days.
-    const partWeek = index.staff.filter(s => { const n = index.weekDays(s.id).length; return n > 0 && n < open.size; });
+    const partWeek = index.staff.filter(s => { const n = index.weekDays(s.id).length; return n > 0 && (n < open.size || index.staff.length <= 8); });
     if (partWeek.length) notes.push(`${WORK_DAYS} ${partWeek.map(s => `${label(s)} ${index.weekDays(s.id).map(d => DAY[d]).join(", ")}`).join(" | ")} (יום אחר = לא עובדים בו, לא "מלא", ובלי רשימת המתנה ליום כזה)`);
     // A weekday past the list is not a day off ("רותם לא עובדת בימי שלישי", 25.11.2026: Tuesday was day 7).
     const past = addDaysISO(today, days), pastDay = DAY[getDayOfWeekISO(past)];
+    notes.push("השעה אחרי \"עד\" היא ההתחלה האחרונה, לא שעת סגירה; היום כבר אין שעות = נגמרו להיום, לא \"לא עובדים ביום הזה\"");
     if (p.asks[0]?.includes(pastDay)) notes.push(`יום ${pastDay} ${Number(past.slice(8, 10))}.${Number(past.slice(5, 7))} לא ברשימה הזו (היא של ${days} ימים): get_available_slots לפני שעונים עליו`);
   }
   if (p.regularStaffId) { const r = index.staff.find(s => s.id === p.regularStaffId); if (r) notes.push(`הקבוע של הלקוח: ${label(r)}`); }

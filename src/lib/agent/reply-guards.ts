@@ -52,14 +52,24 @@ export function withAskOwnerPromise(reply: string, asked: boolean): string {
   return PROMISED.test(honest) ? honest : `אני בודק את זה וחוזר אליך.\n\n${honest}`;
 }
 
+/** A sentence about our own tools ("קרא לי propose_booking", 25.11.2026) is not for the customer. */
+export const withoutToolNames = (reply: string): string =>
+  reply.split(/(?<=[.!?\n])/).filter(x => !/[a-z]+_[a-z_]+/.test(x.replace(/https?:\S+/g, ""))).join("").replace(/\n{3,}/g, "\n\n").trim() || reply;
+
 const ASKS_PRICE = /כמה (?:זה )?(?:עולה|יעלה|עולים|עלה)|מה המחיר|מחיר|עלות/;
-const SAYS_PRICE = /₪|שקל|ש["״]ח|חינם|ללא עלות|בלי עלות|אני בודק|חוזר אליך/;
+const SAYS_PRICE = /₪|שקל|ש["״]ח|חינם|ללא עלות|בלי עלות/;
 /** He asked the price and an hour in one message, and only the hour was answered (25.11.2026). */
 export const missesPrice = (reply: string, incoming: string): boolean => ASKS_PRICE.test(incoming) && !SAYS_PRICE.test(reply);
 
 // "Go there now", not a mention ("מקווה שהכל בסדר בחדר המיון").
 const GO = "(?:פנה|פני|פנו|לפנות|תפנה|גש|גשי|לגשת|לך|לכי|ללכת|להגיע|חייג|חייגי|לחייג|התקשר|התקשרי|להתקשר)";
 const EMERGENCY = new RegExp(`${GO}[^\\n]{0,40}(?:חדרי? ה?מיון|מד["״]א|(?<!\\d)(?:101|1201)(?!\\d))|חדר ה?מיון (?:מיד|מייד|עכשיו)|ער["״]ן|(?<!\\d)1201(?!\\d)`);
+
+// Signs that do not wait for a call back, in a person (a dog's go to the model).
+const RED_FLAG = /(?:בקושי|קשה(?: לי)?|קושי(?: ב)?|לא מצליח\S*)\s*(?:לנשום|נושמ?ת?|נושם|נשימה|לבלוע|בולעת?|בליעה)|(?:לחץ|כאבים?)\s+(?:חזק\S*\s+)?ב?חזה|(?:נפוח|נפיחות)[^\n]{0,80}(?:חום|לבלוע|בולע|לנשום)/;
+/** He describes one and the reply only promises a call back (25.11.2026, a swollen cheek with fever and trouble swallowing). */
+export const withRedFlag = (reply: string, incoming: string): string =>
+  RED_FLAG.test(incoming) && !/כלב|חתול/.test(incoming) && !/מיון|(?<!\d)101(?!\d)|מד["״]א/.test(reply) ? `עם סימנים כאלה לא מחכים: לפנות עכשיו לחדר מיון או להתקשר למד"א 101.\n\n${reply}` : reply;
 
 /** The reply sent someone to emergency services: the number is always there, and a person gets the chat. */
 export function emergencyReply(reply: string): { reply: string; emergency: boolean } {

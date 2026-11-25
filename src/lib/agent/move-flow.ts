@@ -25,6 +25,7 @@ const SWAP_YES = new RegExp(SWAP_WORD.source + "|^1\\b");
 // Whole words only: "היום אחרי 5" is a time today, not "יום אחר".
 const OTHER_WAY = /(^|\s)[ולב]?(יום|ספר|ספרית|מישהו) אחרת?(?![א-ת])|לא משנה (לי )?(אצל )?מי/;
 const DAY = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+const NEGATIVE = /(^|\s)(?:לא|אל|בלי|עזוב|אין)(?=\s|$)/;
 const MOVE_TTL_MS = 2 * 60 * 60 * 1000;
 
 type MoveMeta = {
@@ -153,8 +154,12 @@ export async function maybeStartMoveFlow(p: { businessId: string; phone: string;
     text += ` ${day.slice(8, 10)}.${day.slice(5, 7)} ב-${hour}`;
   }
   // "כן תזיזי" answers "רוצה שאזיז אותו ל-11:30?" (25.11.2026: asked "לאיזו שעה?" again).
-  const offered = widerContext(p.businessId) && startsWithYes(text) && !/\d/.test(text) ? offeredHour(question, a.startTime) : null;
-  if (offered) text += ` ל-${offered}`;
+  // Also "טוב תזיזו" and "מוזר, אז תזיז", and the day that question moved it to.
+  if (widerContext(p.businessId) && !/\d/.test(text) && /[?؟]/.test(question) && !NEGATIVE.test(text)) {
+    const own = a.date.toISOString().slice(0, 10), today = getBusinessNow().date, day = targetDayIn(question, own, today);
+    const offered = offeredHour(question, day === own ? a.startTime : "") ?? (/באותה שעה/.test(text) ? a.startTime : null);
+    if (offered && day) text += `${parseTargetDay(text, today) || day === own ? "" : ` ${day.slice(8, 10)}.${day.slice(5, 7)}`} ב-${offered}`;
+  }
   const meta: MoveMeta = { appointmentId: a.id, staffId: a.staffId, staffName: a.staff.name, staffFem: a.staff.gender === "f", serviceId: a.serviceId, serviceName: a.service.name, dateISO: a.date.toISOString().slice(0, 10), startTime: a.startTime, stage: "target", direction: EARLIER.test(text) ? "earlier" : LATER.test(text) ? "later" : null };
   return advance(p, meta, text, null);
 }
@@ -202,6 +207,8 @@ export async function handleMoveReply(p: { businessId: string; phone: string; co
       if (ok) return { reply: `סגור, התור עבר ל${dayLabelHe(meta.targetDate).replace(/^ב/, "")} בשעה ${meta.targetTime} אצל ${meta.staffName}. נתראה 💈` };
       return { context: `הלקוח אישר להעביר את ${what} ל-${meta.targetDate} ${meta.targetTime} אבל ההעברה נכשלה: "${result.slice(0, 200)}". הסבר בכנות והצע חלופה.` };
     }
+    // "לא בעצם 14:30" is another hour, not "leave it" (25.11.2026: the request was closed and her appointment stayed).
+    if (cls === "no" && widerContext(p.businessId) && parseTargetTime(text, null, meta.startTime)) return advance(p, meta, text, pending.id);
     if (cls === "no") { await close(pending.id, "rejected"); return { reply: `סבבה, ${what} נשאר כמו שהוא 👍` }; }
     // a different time/day → evaluate it instead
     return advance(p, meta, text, pending.id);

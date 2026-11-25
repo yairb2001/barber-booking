@@ -421,7 +421,8 @@ export async function runDemoTurn(p: {
           await prisma.conversationMessage.create({ data: { conversationId: conv.id, role: "user", content: text } });
           await prisma.conversation.update({ where: { id: conv.id }, data: { lastMessageAt: new Date() } });
         }
-        if (!INTENT_WHEN_RE.test(text)) {
+        // A price or "the earliest" is a question to answer, not "which day?" (25.11.2026).
+        if (!INTENT_WHEN_RE.test(text) && !/כמה|מחיר|עולה|הכי (?:קרוב|מוקדם)/.test(text)) {
           const lines = [V2_ENTRY_INTENT, intentQuestion(text)];
           await reply(conv.id, phone, lines, p.sandbox);
           return { handled: true, mode: state.mode, replies: lines };

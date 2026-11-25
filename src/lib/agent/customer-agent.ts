@@ -48,7 +48,7 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml } from "@/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
@@ -56,7 +56,8 @@ import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clea
 import { widerContext } from "@/lib/agent/wider-context";
 import { withRealIds } from "@/lib/agent/repair-ids";
 import { parseTargetDay } from "@/lib/agent/move-flow";
-import { aboutHisAppointment, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
+import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
+import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, recentlySaid, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes, minutesToTime } from "@/lib/utils";
@@ -682,6 +683,11 @@ export async function execTool(
   askText?: string,
 ): Promise<string> {
   const input = await withRealIds(bizId, rawInput).catch(() => rawInput);
+  if (widerContext(bizId)) {
+    const refused = name === "cancel_appointment" ? await cancelTooEarly(bizId, conversationId, input.appointmentId).catch(() => null)
+      : name === "ask_owner" ? await alreadyKnown(bizId, conversationId, input.question ?? "").catch(() => null) : null;
+    if (refused) return refused;
+  }
   if (sandbox && MUTATING_TOOLS.has(name)) {
     sandbox.toolLog.push(`${name}(${JSON.stringify(input)})`);
     return `[מצב בדיקה] הפעולה ${name} בוצעה בהצלחה (סימולציה — שום דבר לא נשמר). ענה ללקוח כאילו הצליחה, עם הפרטים שביקש.`;
@@ -740,7 +746,7 @@ export async function execTool(
       // ── get_available_slots ──────────────────────────────────────────────────
       case "get_available_slots": {
         const { date, staffId: inputStaffId } = input;
-        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone, conversationId);
         // A specific barber coming back empty has bitten us: the agent offered
         // slots for a day, the customer picked one, and the pre-book re-check then
         // returned "no availability" for that SAME day — which still had free
@@ -814,7 +820,7 @@ export async function execTool(
       case "find_next_available": {
         let { staffId: inputStaffId } = input;
         const { afterDate: inputAfterDate } = input;
-        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone, conversationId);
         // Same hallucinated/stale-id guard as get_available_slots (see comment
         // there): an invalid staffId makes computeDayAvailability return []
         // for EVERY day scanned, indistinguishable from "no room in 30 days" —
@@ -982,7 +988,7 @@ export async function execTool(
           if (IN_A_ROW_RE.test(said) && !/באותה שעה|באותו זמן|במקביל/.test(said)) return "הלקוח ביקש אחד אחרי השני, לא במקביל: קח שעה פנויה של איש צוות אחד, השני מתחיל כשהראשון מסיים, וקרא ל-propose_booking אחד עם others (startTime, forName, serviceId כשהשירות שונה).";
         }
         const { date: inDate } = input;
-        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone);
+        const inputServiceId = input.serviceId ?? await assumedServiceId(bizId, callerPhone, conversationId);
         const count = Math.max(2, Number(input.count) || 2);
         const fmt = (rows: { time: string; barbers: { staffId: string; name: string }[] }[]) =>
           rows
@@ -2595,9 +2601,13 @@ export type SandboxOptions = {
 /** The haircut a times search is for when the model names none: his last one, else the shop's default. Without it the
  *  search answered for 30 minutes and the booking then refused the hour (25.11.2026, "20 לדצמבר ב-17:00"). Men's shops
  *  only: elsewhere a search without a treatment means everyone. */
-async function assumedServiceId(businessId: string, callerPhone: string): Promise<string | undefined> {
+async function assumedServiceId(businessId: string, callerPhone: string, conversationId: string): Promise<string | undefined> {
   const biz = await prisma.business.findUnique({ where: { id: businessId }, select: { businessType: true, settings: true, agentConfig: { select: { setupConfig: true } } } });
   if (!widerContext(businessId) || businessTypeOf(biz) !== "barber_men") return undefined;
+  // What he named in this chat ("רק תספורת") comes before any assumption.
+  const all = await prisma.service.findMany({ where: { businessId, isVisible: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } });
+  const named = (await recentlySaid(conversationId)).map(t => namedServices(t, all)[0]).find(Boolean);
+  if (named) return named;
   const customerId = await callerCustomerId(businessId, callerPhone);
   const last = customerId ? await prisma.appointment.findFirst({ where: { businessId, customerId, status: { in: ["confirmed", "completed"] } }, orderBy: { date: "desc" }, select: { serviceId: true } }) : null;
   const byName = last ? null : await prisma.service.findFirst({ where: { businessId, isVisible: true, name: { equals: defaultServiceName(biz!, biz!.agentConfig), mode: "insensitive" } }, select: { id: true } });
@@ -2628,8 +2638,36 @@ async function afterCancelContext(businessId: string, phone: string): Promise<st
 
 /** A proposal that contradicts his own words: another hour than the one he named ("אז שלוש" → 15:45), or past the hour
  *  he must leave by (25.11.2026). Null = nothing against it. */
+const CALLER_SAYS = [["חניה", /חני/], ["מעלית", /מעלית/], ["תשלום", /ביט|אשראי|מזומן|תשלום/], ["כתובת", /כתובת|איפה אתם/], ["ביטול", /ביטול|לבטל/]] as const;
+/** A question the business already answered in its setup, or one that was already sent in this chat (25.11.2026: "יש חניה"
+ *  went to the owner three times, and the answer was in the instructions). */
+async function alreadyKnown(businessId: string, conversationId: string, question: string): Promise<string | null> {
+  const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true, faqs: { select: { question: true, answer: true } } } });
+  const own = [...Object.values((() => { try { return JSON.parse(cfg?.setupConfig ?? "{}") as Record<string, unknown>; } catch { return {}; } })()).filter((x): x is string => typeof x === "string"), ...(cfg?.faqs ?? []).map(f => `${f.question} ${f.answer}`)];
+  for (const [, re] of CALLER_SAYS) { const line = re.test(question) ? own.find(x => re.test(x)) : null; if (line) return `התשובה כבר כתובה: «${line.slice(0, 300)}». ענה ללקוח ממנה, וגם על שאר מה ששאל.`; }
+  const words = (t: string) => new Set(t.replace(/[^א-תa-z0-9 ]/gi, " ").split(/\s+/).filter(w => w.length > 2));
+  const now = words(question);
+  const before = await prisma.conversationMessage.findMany({ where: { conversationId, role: "tool", toolName: "ask_owner", createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } }, select: { toolInput: true }, take: 10 });
+  const same = before.some(b => { const w = words(String(b.toolInput ?? "")); return now.size > 0 && Array.from(now).filter(x => w.has(x)).length / now.size >= 0.6; });
+  return same ? "השאלה הזאת כבר נשלחה לבעל העסק בשיחה הזאת, אל תשלח ואל תבטיח שוב. ענה עכשיו על מה שהלקוח כתב בהודעה האחרונה; שאל משהו חדש שאין לך → ask_owner רק עם השאלה החדשה." : null;
+}
+
+/** He asked for a new appointment and to cancel the old one: nothing is cancelled before the new one is booked (25.11.2026). */
+async function cancelTooEarly(businessId: string, conversationId: string, appointmentId: string): Promise<string | null> {
+  const since = new Date(Date.now() - 30 * 60_000);
+  if (await prisma.bookingProposal.count({ where: { conversationId, kind: { in: ["confirm", "cancel"] }, status: "accepted", respondedAt: { gte: since } } })) return null;
+  const appt = await prisma.appointment.findFirst({ where: { id: appointmentId, businessId }, select: { startTime: true } });
+  const said = await recentlySaid(conversationId);
+  const both = !!appt && said.some(t => asksToCancel(t) && cancelBesideNewTime(t, appt.startTime));
+  const waiting = await prisma.bookingProposal.count({ where: { conversationId, kind: "confirm", status: "pending", createdAt: { gte: since } } });
+  return both || waiting ? "שגיאה: לא בוטל. קודם התור החדש: propose_booking. אחרי שהלקוח מאשר אותו המערכת שואלת לבד על ביטול הישן. אל תאמר שבוטל." : null;
+}
+
 async function againstWhatHeSaid(conversationId: string, p: { staff: { id: string; name: string }; serviceId: string; date: string; startTime: string; free: string[] }): Promise<string | null> {
   const said = await recentlySaid(conversationId);
+  const talk = await prisma.conversationMessage.findMany({ where: { conversationId, role: { in: ["user", "assistant"] }, createdAt: { gte: new Date(Date.now() - 3 * 3600_000) } }, orderBy: { createdAt: "desc" }, take: 14, select: { role: true, content: true } });
+  const wrongDay = againstTalkedDay(talkedDays(talk, getBusinessNow().date), p.date);
+  if (wrongDay) return wrongDay;
   const hour = namedHour(said[0] ?? "");
   if (hour && !sameHour(hour, p.startTime)) {
     const exact = p.free.find(t => sameHour(hour, t));
@@ -2647,8 +2685,8 @@ async function againstWhatHeSaid(conversationId: string, p: { staff: { id: strin
 const distance = (time: string, said: string): number => Math.min(...[0, 720].map(shift => Math.abs(timeToMinutes(time) - timeToMinutes(said) - shift)));
 
 /** What the code can read in the message better than the model (mixed-messages.ts). */
-async function mixedMessageContext(businessId: string, text: string, earlier: string[], customerContext: string): Promise<string> {
-  const parts = [aboutHisAppointment(text, customerContext.includes("יש לו כבר תור קבוע"))];
+async function mixedMessageContext(businessId: string, text: string, earlier: string[], customerContext: string, talk: string): Promise<string> {
+  const parts = [talk, aboutHisAppointment(text, customerContext.includes("יש לו כבר תור קבוע"))];
   const name = customerContext.includes("לקוח חדש שעדיין לא רשום") ? nameAtEnd(text) : null;
   if (name) {
     const contains = name.split(" ")[0];
@@ -2912,10 +2950,11 @@ async function runCustomerAgentCore(opts: {
     else if (outcome.context) customerContext += `\n${outcome.context}`;
     else { const wl = await afterBookingWaitlistContext(businessId, phone); if (wl) customerContext += `\n${wl}`; }
   } catch (e) { console.error("[agent] proposal handling failed", e); }
+  const talk = talkedDays([{ role: "user", content: incomingText }, ...[...history].reverse()], getBusinessNow().date);
   if (!preHandledReply && widerContext(businessId)) {
     const cancelled = await afterCancelContext(businessId, phone).catch(() => null);
     if (cancelled) customerContext += `\n${cancelled}`;
-    const mixed = await mixedMessageContext(businessId, incomingText, history.filter(h => h.role === "user").slice(-4).reverse().map(h => h.content), customerContext).catch(() => "");
+    const mixed = await mixedMessageContext(businessId, incomingText, history.filter(h => h.role === "user").slice(-4).reverse().map(h => h.content), customerContext, talkedDayLine(talk, getBusinessNow().date)).catch(() => "");
     if (mixed) customerContext += `\n${mixed}`;
   }
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
@@ -2999,7 +3038,8 @@ async function runCustomerAgentCore(opts: {
             return mine.find(x => x.id === snapServiceId) ?? mine[0] ?? null;
           };
         }
-        const snap = await buildAvailabilitySnapshot({ businessId, days: 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
+        const snap = await buildAvailabilitySnapshot({ businessId, days: wide ? 8 : 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
+          talked: wide && talk.asked?.days.length === 1 ? talk.asked.days[0] : null, lastReply: [...history].reverse().find(h => h.role === "assistant")?.content,
           silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
@@ -3232,7 +3272,11 @@ async function runCustomerAgentCore(opts: {
     assistantText = withoutHtml(assistantText);
     assistantText = dropWaitlistForDayOff(assistantText, workDaysIn(customerContext));
     assistantText = dropRepeatedWaitlistAsk(assistantText, history.filter(h => h.role === "assistant").map(h => h.content), incomingText);
-    if (namedServiceIds.length === 1 && missesPrice(assistantText, incomingText)) assistantText = `${await priceLine(namedServiceIds[0])}\n\n${assistantText}`;
+    if (widerContext(businessId)) assistantText = withoutToolNames(withRedFlag(assistantText, incomingText));
+    if (missesPrice(assistantText, incomingText) && widerContext(businessId)) {
+      const priced = namedServiceIds.length === 1 ? namedServiceIds[0] : (await findPendingProposal(businessId, normalizeIsraeliPhone(phone)).catch(() => null))?.serviceId;
+      if (priced) assistantText = `${await priceLine(priced)}\n\n${assistantText}`;
+    }
     const em = emergencyReply(assistantText);
     assistantText = em.reply;
     if (em.emergency) {

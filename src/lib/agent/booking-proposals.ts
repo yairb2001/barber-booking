@@ -23,6 +23,7 @@ import { dayDistance } from "@/lib/day-distance";
 import { randomUUID } from "crypto";
 import { loadDayContext, findUpsell } from "@/lib/availability/visit";
 import { prisma } from "@/lib/prisma";
+import { askedDays } from "@/lib/agent/talked-day";
 import { widerContext } from "@/lib/agent/wider-context";
 import { asksToCancel, cancelBesideNewTime, nameWithRequest, requestBesideYes, startsWithYes, wantsIfOpens } from "@/lib/agent/mixed-messages";
 import { agentSwitches } from "@/lib/agent/setup-fields";
@@ -164,11 +165,11 @@ export function groupBookedMessage(p: { staffName: string; date: string; booked:
 }
 
 /** The fixed final-confirmation question (owner's mandated phrasing). */
-export function confirmationQuestion(p: { firstName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string; lang?: Lang }): string {
+export function confirmationQuestion(p: { firstName?: string | null; forName?: string | null; serviceName: string; staffName: string; mentionStaff: boolean; date: string; startTime: string; lang?: Lang }): string {
   const who = p.firstName ? `${p.firstName}, ` : "";
   if (p.lang === "en") return `${who}${who ? "just" : "Just"} before I lock it in: ${p.serviceName}${p.mentionStaff ? ` with ${p.staffName}` : ""} ${dayLabelEn(p.date)} at ${p.startTime}\nConfirm?`;
-  const at = p.mentionStaff ? ` אצל ${p.staffName}` : "";
-  return `${who}רגע לפני שאני קובע לך את זה סופית: ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
+  const at = `${p.forName ? ` ל${p.forName}` : ""}${p.mentionStaff ? ` אצל ${p.staffName}` : ""}`;
+  return `${who}רגע לפני שאני קובע${p.forName ? "" : " לך"} את זה סופית: ${p.serviceName}${at} ${dayLabelWithDistance(p.date)} בשעה ${p.startTime}\nמאשר?`;
 }
 
 // ── Reply classifier ────────────────────────────────────────────────────────
@@ -286,12 +287,16 @@ async function cancelAskedBeside(prop: { businessId: string; phone: string; conv
   const said = await recentlySaid(prop.conversationId);
   if (!said.some(asksToCancel) || !(await agentMayCancel(prop.businessId))) return null;
   const since = new Date(Date.now() - 30 * 60_000);
-  if (await prisma.bookingProposal.count({ where: { conversationId: prop.conversationId, kind: "cancel", createdAt: { gte: since } } })) return null;
+  // Asked and answered; a question that a new booking replaced still waits ("קודם תקבעו לי").
+  if (await prisma.bookingProposal.count({ where: { conversationId: prop.conversationId, kind: "cancel", status: { in: ["pending", "accepted", "rejected"] }, createdAt: { gte: since } } })) return null;
   const customer = await prisma.customer.findFirst({ where: { businessId: prop.businessId, OR: [{ phone: prop.phone }, { phone: prop.phone.replace(/^972/, "0") }] }, select: { id: true } });
   const others = customer ? (await upcomingAppointments(prop.businessId, customer.id)).filter(a => a.startTime !== prop.startTime || a.date.getTime() !== prop.date?.getTime()) : [];
   if (others.length !== 1) return null;
   return (await createCancelProposal({ businessId: prop.businessId, phone: prop.phone, conversationId: prop.conversationId }, others[0])).question(langOf(said[0]));
 }
+
+const bookedJustNow = async (businessId: string, phone: string): Promise<boolean> =>
+  (await prisma.bookingProposal.count({ where: { businessId, phone, kind: "confirm", status: "accepted", respondedAt: { gte: new Date(Date.now() - 30 * 60_000) } } })) > 0;
 
 /** What the customer wrote here in the last half hour, newest first. */
 export async function recentlySaid(conversationId: string): Promise<string[]> {
@@ -365,7 +370,7 @@ export async function createConfirmProposal(p: {
   if (p.question) return p.question;
   if (isVisit(p.group)) return visitConfirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group!, lang });
   if (p.group?.length) return groupConfirmationQuestion({ firstName: p.firstName, mainName: forWhom(p.note, p.group) ?? p.customerName, serviceName: p.serviceName, staffName: p.staffName, date: p.date, startTime: p.startTime, group: p.group, lang });
-  return confirmationQuestion({ firstName: p.firstName, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime, lang });
+  return confirmationQuestion({ firstName: p.firstName, forName: widerContext(p.businessId) ? forWhom(p.note) : null, serviceName: p.serviceName, staffName: p.staffName, mentionStaff: p.mentionStaff, date: p.date, startTime: p.startTime, lang });
 }
 
 // A single booking in a conversation that talked about more than one person →
@@ -416,8 +421,15 @@ export async function bookConfirmedProposal(p: {
     meta.originalRequest = (await recentlySaid(pending.conversationId)).map(wantsIfOpens).find(Boolean) ?? null;
     if (meta.originalRequest) await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify(meta) } });
   }
+  // He asked to be told, in his own words: he is put on the list, not asked again (25.11.2026).
+  const listed = await joinAsAsked(p, meta.serviceName ?? "", dateISO, mainName).catch(e => { console.error("[waitlist-asked]", e); return null; });
+  if (listed) {
+    meta.originalRequest = null;
+    await prisma.bookingProposal.update({ where: { id: pending.id }, data: { note: JSON.stringify(meta) } });
+  }
   const waitlistOk = !meta.originalRequest || !pending.conversationId || agentSwitches((await prisma.agentConfig.findFirst({ where: { business: { conversations: { some: { id: pending.conversationId } } } }, select: { setupConfig: true } }))?.setupConfig).offerWaitlist;
   let reply = bookedMessage({ staffName: meta.staffName ?? "", date: dateISO, startTime: pending.startTime ?? "", originalRequest: waitlistOk ? meta.originalRequest : null, lang });
+  if (listed) reply += `\n\n${listed}`;
   const cancelAsk = await cancelAskedBeside(pending).catch(e => { console.error("[cancel-beside]", e); return null; });
   if (cancelAsk) return { booked: booked.length, reply: `${reply}\n\n${cancelAsk}` };
   // The extra treatment right after it (16.10.2026), never after an offer that was itself extra.
@@ -436,6 +448,20 @@ export async function bookConfirmedProposal(p: {
     if (bookedHere < 2 && recent.some(m => MULTI_ASK.test(m.content || ""))) reply += (await convLang(pending.conversationId)) === "en" ? "\n\nWe also talked about another appointment, want me to book that one too?" : `\n\nודיברנו גם על תור נוסף — לקבוע גם אותו?`;
   }
   return { booked: booked.length, reply };
+}
+
+/** "ואם מתפנה משהו קודם תעדכן" said around this booking → the waitlist, and the line that says so. Null = nothing was
+ *  asked, or the list refused (a day nobody works), and then nothing is promised. */
+async function joinAsAsked(p: { pending: { businessId: string; staffId: string | null; serviceId: string | null; conversationId: string | null; startTime: string | null }; execTool: ExecTool }, serviceName: string, bookedISO: string, customerName: string): Promise<string | null> {
+  const { pending } = p;
+  if (!pending.conversationId || !pending.serviceId || !widerContext(pending.businessId)) return null;
+  const said = await recentlySaid(pending.conversationId), text = said.find(wantsIfOpens);
+  if (!text) return null;
+  const want = wantsIfOpens(text)!, today = getBusinessNow().date;
+  const days = askedDays(want, today).days, from = days[0] ?? today, to = days.length ? days[days.length - 1] : addDaysISO(today, Math.min(13, Math.max(0, Math.round((Date.parse(bookedISO) - Date.parse(today)) / 864e5))));
+  const res = await p.execTool("join_waitlist", { serviceId: pending.serviceId, staffId: pending.staffId ?? "", date: from, endDate: to, preferredTimeOfDay: /בוקר/.test(want) ? "morning" : /ערב/.test(want) ? "evening" : "any", customerName });
+  if (/^(?:שגיאה|לא נרשם)/.test(res)) return null;
+  return langOf(text) === "en" ? "You're on the list: I'll write if something earlier opens up." : `ורשמתי שביקשת להתעדכן: אם יתפנה ${want}, אכתוב לך.`;
 }
 
 /** Called when a rhythm nudge goes out: remember what was offered, structured. */
@@ -525,7 +551,7 @@ export async function handleIncomingForProposal(p: {
       const result = await p.execTool("cancel_appointment", { appointmentId: cm.appointmentId });
       const ok = p.sandbox || /✅|בוטל/.test(result);
       await prisma.bookingProposal.update({ where: { id: pending.id }, data: { status: ok ? "accepted" : "rejected", respondedAt: new Date() } });
-      if (ok) return { reply: langOf(text) === "en" ? "Cancelled. If you want to book again, I'm here 👍" : `בוטל. אם תרצה לקבוע מחדש, אני כאן 👍` };
+      if (ok) return { reply: langOf(text) === "en" ? "Cancelled. If you want to book again, I'm here 👍" : widerContext(p.businessId) && await bookedJustNow(p.businessId, normalizeIsraeliPhone(p.phone)) ? "בוטל, והתור החדש נשאר 👍" : `בוטל. אם תרצה לקבוע מחדש, אני כאן 👍` };
       return { context: `הלקוח אישר לבטל את ${what} אבל הביטול נכשל: "${result.slice(0, 160)}". הסבר בכנות ועזור.` };
     }
     if (cls === "no") {
