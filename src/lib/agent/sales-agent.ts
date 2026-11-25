@@ -188,6 +188,8 @@ const V2_ENTRY_INTENT = "היי, כאן הסלון של דני, סלון ההד�
 const INTENT_WHEN_RE = /היום|מחר|ראשון|שני|שלישי|רביעי|חמישי|שישי|השבוע|בערב|בבוקר|בצהריים|\d{1,2}[:.]\d{2}|ב-?\d{1,2}\b/;
 const INTENT_WHAT_RE = /גבר|(^|[\sל])נשים|אישה|אשתי|ציפורניים|לק ג|גבות|שעווה|טיפול פנים|גוונים|צבע|(^|\s)פן|זקן|החלקה/;
 const intentQuestion = (text: string) => INTENT_WHAT_RE.test(text) ? "לאיזה יום ושעה נוח לך?" : "גברים או נשים? ולאיזה יום ושעה נוח לך?";
+/** "פן מחר אחרי 12": what and when, without the word "תור" (25.11.2026). Hours of a shop ("ראשון עד שישי") are not a booking. */
+const namesATurn = (text: string) => INTENT_WHAT_RE.test(text) && INTENT_WHEN_RE.test(text) && !/(^|\s)עד(\s|$)/.test(text);
 /** The first question (27.10.2026, Yair: "לצאת מנקודת הנחה שיש לו מספרה ... ולא להשאיר את השאלה פתוחה"). */
 const HOW_Q = "איך אתה מתנהל היום עם הוואטסאפ של המספרה? עונה לבד בין תספורות, מישהו מהצוות, או מערכת תורים?";
 const V2_OPEN_STRANGER = `היי, כאן צ'אטור. ${HOW_Q}`;
@@ -411,8 +413,7 @@ export async function runDemoTurn(p: {
         await reply(conv.id, phone, [entry], p.sandbox);
         return { handled: true, mode: state.mode, replies: [entry] };
       }
-      // "פן מחר אחרי 12" says what and when without the word "תור" (25.11.2026).
-      const wantsBooking = BOOKING_INTENT_RE.test(text) || (INTENT_WHAT_RE.test(text) && INTENT_WHEN_RE.test(text));
+      const wantsBooking = BOOKING_INTENT_RE.test(text) || namesATurn(text);
       if (wantsBooking && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text) && !OWNER_RE.test(text)) {
         state = { mode: "demo", taggedAt: new Date().toISOString(), source: "intent", demoTurns: 0 };
         await saveState(conv.id, state);
@@ -558,6 +559,15 @@ export async function runDemoTurn(p: {
     }
     const out = await runSalesTurn({ conversationId: conv.id, phone, text, state, senderName: p.senderName ?? null, sandbox: p.sandbox, lead });
     return { handled: true, mode: out.state.mode, replies: out.replies };
+  }
+
+  // In the sale, and wrote like a customer ("לק ג'ל ביום ראשון בבוקר"): the demo shop answers, not "נראה שכתבת בטעות" (25.11.2026).
+  if (v2 && state.mode === "sales" && state.channel !== "instagram" && namesATurn(text) && !ABOUT_SYSTEM_RE.test(text) && !PRICE_RE.test(text) && !OWNER_RE.test(text)) {
+    state = { ...state, mode: "demo", demoTurns: 0 };
+    await saveState(conv.id, state);
+    await reply(conv.id, phone, [V2_ENTRY_INTENT], p.sandbox);
+    const out = await runDemoBooking(conv.id, phone, text, state, p, false, v2, lead);
+    return { handled: true, mode: out.mode ?? state.mode, replies: [V2_ENTRY_INTENT, ...(out.replies ?? [])] };
   }
 
   // ── Demo visitor ──

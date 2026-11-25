@@ -2509,7 +2509,7 @@ const IN_A_ROW_RE = /אחד אחרי השני|אחת אחרי השני|זה אח
 const inARowGuidance = (v: Vocab) =>
   `קביעה לכמה אנשים בזה אחר זה: בלי find_parallel_slots. אצל ${v.staffFem ? "אותה" : "אותו"} ${v.staff}, השעה השנייה = הראשונה + משך הטיפול הראשון. כשיש יום, שעה ושמות: propose_booking אחד, הראשון ב-startTime ו-staffId וכל השאר ב-others (startTime, forName, ו-serviceId כשהטיפול שלו אחר; staffId ריק = ${v.staffFem ? "אותה" : "אותו"} ${v.staff}). השעה שביקש לא נכנסת → הקרובה אליה באותו יום, לא יום אחר.`;
 /** "אחי" as slang is not a brother. */
-const GROUP_WIDE_RE = new RegExp(GROUP_RE.source.replace("אחי |", "(?:^|\\s)(?:ל|ול|גם ל|עם )אחי(?![א-ת])|"));
+const GROUP_WIDE_RE = new RegExp(GROUP_RE.source.replace("אחי |", "(?:^|\\s)(?:ל|ול|גם ל|עם )אחי(?![א-ת])|") + "|(?:^|\\s)ו?ל(?:בן|בת)(?: שלי|$|[\\s,.?!])|ה?ילדים שלי|לילדים");
 /** A card number or an id number (with its word next to it). */
 const CARD_OR_ID_RE = /\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{3,4}|(?:ת\.?ז|תעודת זהות)\D{0,6}\d{8,9}/;
 /** One appointment for someone else is one appointment, and each person keeps his own treatment. */
@@ -2538,7 +2538,7 @@ export function situationalGuidance(incomingText: string, history: { role: strin
   const parts: string[] = [];
   const recentText = [incomingText, ...history.slice(-6).map(h => h.content)].join("\n");
   if (CARD_OR_ID_RE.test(incomingText)) parts.push("הלקוח שלח פרטי כרטיס או תעודת זהות: אל תחזור עליהם, בקש לא לשלוח אותם כאן, ואל תבטיח שהם לא נשמרים.");
-  if (wide && IN_A_ROW_RE.test(recentText)) parts.push(inARowGuidance(vocab ?? vocabFor("barber_men")), FOR_OTHERS_GUIDANCE);
+  if (wide && IN_A_ROW_RE.test(recentText) && GROUP_WIDE_RE.test(recentText)) parts.push(inARowGuidance(vocab ?? vocabFor("barber_men")), FOR_OTHERS_GUIDANCE);
   else if ((wide ? GROUP_WIDE_RE : GROUP_RE).test(recentText)) parts.push(vocab ? groupGuidance(vocab) : GROUP_GUIDANCE, ...(wide ? [FOR_OTHERS_GUIDANCE] : []));
   const lastAssistant = [...history].reverse().find(h => h.role === "assistant");
   const manual = history.some(h => h.role === "assistant" && h.source === "admin");
