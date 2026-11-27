@@ -751,6 +751,8 @@ model Conversation {
   // ── Stage 1 sales funnel (demo shop only): JSON { mode: "demo" | "pitched" | "sales" | "lead" | "declined", ... }
   //    written by src/lib/agent/sales-agent.ts. Null = an ordinary conversation.
   salesState  String?  @map("sales_state")
+  /// The click-to-WhatsApp ad the chat started from, JSON (ad-referral.ts, 27.11.2026).
+  adReferral  String?  @map("ad_referral")
   // ── Manual escalation: when an admin sends a manual reply, agent is muted
   // for this conversation for 24h. Null = agent active. Logic is lazy:
   // checked on incoming message, cleared automatically when expired.

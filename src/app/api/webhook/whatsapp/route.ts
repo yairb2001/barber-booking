@@ -47,6 +47,7 @@ import { sendMessage } from "@/lib/messaging";
 import { bookConfirmWhileHandedOver } from "@/lib/agent/confirm-while-handed-over";
 import { tierHas } from "@/lib/tier";
 import { fallbackBusiness } from "@/lib/tenant";
+import { adReferralJson, type GowaReferral } from "@/lib/agent/ad-referral";
 import { isLinkFirstEnabled, sendGreetingLink, shouldSendGreeting, classifyFirstContactIntent, isNonHebrewMessage } from "@/lib/link-first";
 
 /** Build a short preview of the incoming message for a push notification. */
@@ -81,6 +82,8 @@ interface GreenApiWebhook {
     quotedMessage?: unknown;
     fileMessageData?: { downloadUrl?: string; caption?: string; fileName?: string; mimeType?: string; jpegThumbnail?: string };
   };
+  /** The click-to-WhatsApp ad of the first message (only from GOWA). */
+  referral?: GowaReferral;
 }
 
 /** Extract plain text from a Green API webhook payload */
@@ -418,6 +421,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       },
     });
   }
+  // The ad he clicked to write (27.11.2026): kept on the chat, so the booking from it is credited to that ad.
+  const adJson = adReferralJson(body.referral);
+  if (adJson) conv = await prisma.conversation.update({ where: { id: conv.id }, data: { adReferral: adJson } });
 
   // ── Idempotency guard ───────────────────────────────────────────────────────
   // Green API occasionally delivers the same webhook twice (network retry).

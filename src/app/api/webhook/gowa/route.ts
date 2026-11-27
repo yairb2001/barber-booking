@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { POST as greenWebhook } from "@/app/api/webhook/whatsapp/route";
 import { fetchAsDataUrl } from "@/lib/messaging/evolution";
 import { phoneVariants } from "@/lib/messaging/phone";
+import type { GowaReferral } from "@/lib/agent/ad-referral";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -29,6 +30,8 @@ type GowaEvent = {
     timestamp?: string; is_from_me?: boolean; body?: string;
     image?: Media; video?: Media; audio?: Media; document?: Media; sticker?: Media;
     location?: unknown; contact?: unknown;
+    /** A click-to-WhatsApp ad, on the first message of the chat (GOWA docs, "Meta Ads Referral"). */
+    referral?: GowaReferral;
   };
 };
 
@@ -117,6 +120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         ...(typeMessage === "textMessage" ? { textMessageData: { textMessage: text } } : {}),
         ...(fileMessageData ? { fileMessageData } : {}),
       },
+      ...(p.referral && !p.is_from_me ? { referral: p.referral } : {}),
     };
     const url = new URL("/api/webhook/whatsapp", req.url);
     if (process.env.WHATSAPP_WEBHOOK_TOKEN) url.searchParams.set("token", process.env.WHATSAPP_WEBHOOK_TOKEN);

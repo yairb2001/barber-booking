@@ -58,6 +58,7 @@ import { inCustomerLanguage } from "@/lib/agent/reply-language";
 import { seasonLine } from "@/lib/agent/season-line";
 import { catalogIds, withRealIds } from "@/lib/agent/repair-ids";
 import { CONSULT_FIRST_NOTE } from "@/lib/domains";
+import { adOfConversation, creditCustomer } from "@/lib/agent/ad-referral";
 import { parseTargetDay } from "@/lib/agent/move-flow";
 import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
 import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
@@ -1045,6 +1046,7 @@ export async function execTool(
 
       // ── book_appointment ─────────────────────────────────────────────────────
       case "book_appointment": {
+        const ad = await adOfConversation(conversationId);
         const { staffId: staffIdIn, serviceId: serviceIdIn, date, startTime, customerName, note } = input;
         // The caller IS the customer — always use their WhatsApp number, never
         // a number the model invented or asked for.
@@ -1124,6 +1126,7 @@ export async function execTool(
           customer = customer
             ? await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } })
             : await prisma.customer.create({ data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" } });
+          await creditCustomer(customer.id, ad);
         } else if (nameWords(customerName) > nameWords(customer.name)) {
           // EXISTING customer: the name on file is the source of truth. Only
           // upgrade it when the new name is MORE complete (more words) — e.g.
@@ -1195,6 +1198,7 @@ export async function execTool(
               price:     eff.price,
               referralSource: "whatsapp_agent",
               source:    "agent",
+              ...(ad ? { attribution: JSON.stringify(ad) } : {}),
               note:      note || null,
               ...bookingRecord(eff.shape),
               roomId:    rooms[0],
@@ -1567,6 +1571,7 @@ export async function execTool(
 
       // ── join_waitlist ────────────────────────────────────────────────────────
       case "join_waitlist": {
+        const ad = await adOfConversation(conversationId);
         const { serviceId, date } = input;
         const staffId = (input.staffId || "").trim() || null;
         const customerName = input.customerName;
@@ -1631,6 +1636,7 @@ export async function execTool(
           customer = customer
             ? await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } })
             : await prisma.customer.create({ data: { businessId: bizId, phone, name: customerName, referralSource: "whatsapp" } });
+          await creditCustomer(customer.id, ad);
         } else if (nameWords(customerName) > nameWords(customer.name)) {
           customer = await prisma.customer.update({ where: { id: customer.id }, data: { name: customerName } });
         }
