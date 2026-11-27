@@ -2720,6 +2720,9 @@ async function againstWhatHeSaid(conversationId: string, p: { staff: { id: strin
 /** Minutes between two hours, whichever half of the day the first one means. */
 const distance = (time: string, said: string): number => Math.min(...[0, 720].map(shift => Math.abs(timeToMinutes(time) - timeToMinutes(said) - shift)));
 
+/** "איפה אתם?" / "мой адрес?" / "where are you?": he asks for the address. */
+const asksWhere = (t: string) => /איפה (?:אתם|אתן|את|זה|נמצאים|המקום)|כתובת|где вы|адрес|وين|عنوان|where are you|address/i.test(t);
+
 /** What the code can read in the message better than the model (mixed-messages.ts). */
 async function mixedMessageContext(businessId: string, text: string, earlier: string[], customerContext: string, talk: string): Promise<string> {
   const parts = [talk, aboutHisAppointment(text, customerContext.includes("יש לו כבר תור קבוע"))];
@@ -2795,7 +2798,7 @@ async function runCustomerAgentCore(opts: {
   const [biz, agentConfig] = await Promise.all([
     prisma.business.findUnique({
       where: { id: businessId },
-      select: { id: true, name: true, slug: true, bookingHorizonDays: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true, settings: true },
+      select: { id: true, name: true, slug: true, address: true, bookingHorizonDays: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true, settings: true },
     }),
     prisma.agentConfig.findUnique({
       where: { businessId },
@@ -3344,6 +3347,8 @@ async function runCustomerAgentCore(opts: {
       console.warn(`[agent] denied a free part of the day biz=${businessId}`);
       assistantText = freeRange;
     }
+    // "איפה אתם? ויש חניה?": only the parking went to the owner, the address was never said (27.11.2026).
+    if (onTrial(biz.settings) && biz.address && asksWhere(incomingText) && !assistantText.includes(biz.address.split(",")[0].trim())) assistantText = `📍 ${biz.address}\n\n${assistantText}`;
     if (widerContext(businessId) && claimsBooked(assistantText) && !(await anythingBooked(businessId, phone))) {
       console.warn(`[agent] claimed a booking that does not exist biz=${businessId}`);
       assistantText = "רגע, התור עוד לא נקבע במערכת. העברתי לצוות שיסגרו אותו ויחזרו אליך.";
