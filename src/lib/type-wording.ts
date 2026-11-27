@@ -129,13 +129,14 @@ export function adaptsKind(kind: MessageKind): boolean {
 /** The agent's replies: its fixed lines written in code ("מאשר?", "נתראה 💈",
  *  "אם תרצה לקבוע מחדש") and any 💈 the model copied from a tool result.
  *  Narrow on purpose: the model writes its own Hebrew, and there "תוכל" may
- *  be "she will be able", about the staff member, not "you will". */
-export function agentReplyForType(text: string, words: Words): string {
+ *  be "she will be able", about the staff member, not "you will". A man who writes to a women's
+ *  place (`man`, customer-gender.ts) keeps "מאשר?". */
+export function agentReplyForType(text: string, words: Words, man = false): string {
   const v = vocabOfWords(words);
   if (!text) return text;
   let out = v.type === "barber_men" ? text : text.split("💈").join(v.emoji)
     .replace(word("ספר אחר"), (_m, pre: string) => `${pre}${v.staff} ${v.other}`);
-  if (v.customerFem) {
+  if (v.customerFem && !man) {
     out = out
       .replace(/(^|\n)מאשר\?/g, (_m, pre: string) => pre + "מאשרת?")
       .split("אם תרצה לקבוע מחדש").join("אם תרצי לקבוע מחדש")

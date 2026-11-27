@@ -8,6 +8,7 @@ import { askedWindow, namedServices, workDaysIn, pickedHour } from "../src/lib/a
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
 import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, namedHour, sameHour, yesToCancelAndRebook, nameAtEnd, nameWithRequest, offeredHour, priceQuestion, requestBesideName, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
 import { foreignLang } from "../src/lib/agent/reply-language";
+import { writesAsMan } from "../src/lib/agent/customer-gender";
 import { catalogIds, nearestId, realId } from "../src/lib/agent/repair-ids";
 import { vocabFor } from "../src/lib/vocab";
 import { addDaysISO, getBusinessNow } from "../src/lib/utils";
@@ -111,4 +112,6 @@ eq("the short catalog id", [realId("0e9e10ce", ids), realId("0E9E10CE", ids), re
 eq("a short id stays whole when two share it", [catalogIds(ids)(ids[0]), catalogIds([ids[0], "0e9e10ce-0000-4000-8000-000000000000"])(ids[0])], ["0e9e10ce", ids[0]]);
 
 eq("his language", ["16:40 please", "my name is Daniel Cohen", "ok", "Daniel Cohen", "שלום hi there"].map(foreignLang), [null, "en", null, null, null]);
+eq("a man writing to a women's place", [["אהלן אחי, צריך גבות"], ["כן מעולה\nאני אבי שושן והיא רינת"], ["עומר דהן"], ["תקבעי לי אצל אורי חמישי"], ["בעלי אבי רוצה גם"], ["אני צריכה ג'ל"], ["טל כהן"]].map(writesAsMan), [true, true, true, false, false, false, false]);
+eq("his confirmation stays masculine", [agentReplyForType("רגע לפני:\nמאשר?", { customerFem: true } as never, true), agentReplyForType("רגע לפני:\nמאשר?", { customerFem: true } as never)], ["רגע לפני:\nמאשר?", "רגע לפני:\nמאשרת?"]);
 process.exit(failed ? 1 : 0);

@@ -17,6 +17,7 @@ type Service = {
   category?: string | null;
   priceFrom?: boolean;
   rebookDays?: number | null;
+  minGapDays?: number | null;
   segments?: string | null;
   bufferAfterMin?: number;
   upsellIds?: string | null;
@@ -39,7 +40,7 @@ const waitsOf = (s: Service) => (procOf(s) ?? []).filter((_, i) => i % 2 === 1);
 // rebookDays: when she usually comes back for it, the "הגיע הזמן לתור" date (beauty types).
 // Stage B (16.10.2026): cleaning after the treatment, and a wait inside it
 // (color processing: work → the stylist is free → work again).
-const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", bufferAfterMin: "", proc: false, segs: ["", "", ""] as string[], upsellIds: [] as string[], staffIds: [] as string[] };
+const empty = { name: "", description: "", price: "", durationMinutes: "30", isVisible: true, showDuration: true, category: "", priceFrom: false, rebookDays: "", minGapDays: "", bufferAfterMin: "", proc: false, segs: ["", "", ""] as string[], upsellIds: [] as string[], staffIds: [] as string[] };
 
 export default function AdminServicesPage() {
   const v = useVocab();
@@ -74,6 +75,7 @@ export default function AdminServicesPage() {
     const payload = {
       ...rest,
       rebookDays: parseInt(form.rebookDays) > 0 ? parseInt(form.rebookDays) : null,
+      minGapDays: parseInt(form.minGapDays) > 0 ? parseInt(form.minGapDays) : null,
       bufferAfterMin: parseInt(form.bufferAfterMin) > 0 ? parseInt(form.bufferAfterMin) : 0,
       segments: procOk ? JSON.stringify(segs.map((m, i) => ({ m, busy: i % 2 === 0 }))) : null,
       ...(procOk ? { durationMinutes: String(segs.reduce((t, x) => t + x, 0)) } : {}),
@@ -125,6 +127,7 @@ export default function AdminServicesPage() {
       category: s.category ?? "",
       priceFrom: !!s.priceFrom,
       rebookDays: s.rebookDays ? String(s.rebookDays) : "",
+      minGapDays: s.minGapDays ? String(s.minGapDays) : "",
       bufferAfterMin: s.bufferAfterMin ? String(s.bufferAfterMin) : "",
       proc: !!procOf(s),
       segs: procOf(s) ? procOf(s)!.map(String) : ["", "", ""],
@@ -366,6 +369,20 @@ export default function AdminServicesPage() {
                     min="1"
                     value={form.rebookDays}
                     onChange={(e) => setForm((p) => ({ ...p, rebookDays: e.target.value }))}
+                    className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
+                    dir="ltr"
+                  />
+                </div>
+              )}
+
+              {v.type !== "barber_men" && (
+                <div>
+                  <label className="text-xs text-neutral-500 block mb-1">לא לקבוע שוב לפני (ימים) <span className="text-neutral-400">(למשל: לייזר באותו אזור 28, בוטוקס 120. ריק = אין הגבלה)</span></label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={form.minGapDays}
+                    onChange={(e) => setForm((p) => ({ ...p, minGapDays: e.target.value }))}
                     className="w-full border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
                     dir="ltr"
                   />

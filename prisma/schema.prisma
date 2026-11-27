@@ -289,6 +289,8 @@ model Service {
   priceFrom       Boolean  @default(false) @map("price_from")
   /// The treatment's return pace in days (gel 21, laser 49): the rhythm nudge's date in beauty businesses.
   rebookDays      Int?     @map("rebook_days")
+  /// The least days between two of this treatment for one customer (laser on one area 28, botox 120). Null = none.
+  minGapDays      Int?     @map("min_gap_days")
   /// Stage B: the treatment's parts, JSON [{"m":30,"busy":true},{"m":35,"busy":false}] (busy false = processing, the staff member is free). Null = one block.
   segments        String?
   /// Cleaning after the customer leaves; the staff member stays busy.

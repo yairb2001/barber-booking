@@ -21,6 +21,8 @@ import { toHHMM } from "@/lib/availability/engine";
 import { writeChecked, SlotRefused } from "@/lib/availability/guard";
 import { bookingRecord } from "@/lib/availability/shape";
 import { agentReplyForType } from "@/lib/type-wording";
+import { writesAsMan } from "@/lib/agent/customer-gender";
+import { gapRefusal } from "@/lib/agent/treatment-gap";
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicFor } from "@/lib/anthropic-clients";
 import { prisma } from "@/lib/prisma";
@@ -974,7 +976,9 @@ export async function execTool(
             const span = o[o.length - 1].end - o[0].start;
             const path = o.map(it => `${it.startTime} ${it.serviceName} אצל ${it.staffName}`).join(" ← ");
             const call = `propose_booking staffId=${o[0].staffId} serviceId=${o[0].serviceId} startTime=${o[0].startTime}${o.length > 1 ? `, others=${JSON.stringify(o.slice(1).map(it => ({ serviceId: it.serviceId, staffId: it.staffId, startTime: it.startTime })))}` : ""}`;
-            return `${i + 1}) ${path}. סה"כ ${span} דק', ₪${o.reduce((t, it) => t + it.price, 0)}.\n   לקביעה: ${call}`;
+            // The model added the minutes up itself and said 12:20 for a visit that ends 11:50 (27.11.2026).
+            const ends = trialVisit ? ` (מסתיים ב-${minutesToTime(o[o.length - 1].end)})` : "";
+            return `${i + 1}) ${path}. סה"כ ${span} דק'${ends}, ₪${o.reduce((t, it) => t + it.price, 0)}.\n   לקביעה: ${call}`;
           });
           return `ביקור ${dayLabelWithDistance(d)} (date=${d})${windowLabel ? ` שמתחיל ${windowLabel}` : ""} — האפשרויות הקצרות ביותר:\n${lines.join("\n")}\n` +
             `באותו יום אפשר להתחיל את הביקור: ${startRanges(starts, ctx.step)}. אלה לא כל האפשרויות, אז בלי "אין מקום" ובלי "הכי מאוחר" לפיהן; ביקשה חלק יום אחר → קרא שוב עם fromTime/toTime.\n` +
@@ -1056,7 +1060,7 @@ export async function execTool(
           prisma.staff.findFirst({ where: { id: staffIdIn, businessId: bizId }, select: { id: true, name: true } }),
           prisma.service.findFirst({ where: { id: serviceIdIn, businessId: bizId }, select: { id: true, name: true, price: true, durationMinutes: true } }),
         ]);
-        const biz = await prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true } });
+        const biz = await prisma.business.findUnique({ where: { id: bizId }, select: { id: true, name: true, settings: true } });
         // Measured 13–20.9.2026: in 21% of bookings the model passed a NAME
         // (or a stale id) here, got the error below, re-fetched the lists and
         // retried — doubling those conversations' model calls (24.8 vs 11.9).
@@ -1077,6 +1081,11 @@ export async function execTool(
         }
         if (!staff || !service || !biz) return "שגיאה: לא נמצא הספר או השירות לפי המזהה. קרא שוב ל-get_staff_list ו-get_services כדי לקבל מזהים מעודכנים, ואז נסה לקבוע שוב — אל תעביר לאדם בגלל זה.";
         const staffId = staff.id, serviceId = service.id;
+        if (onTrial(biz.settings) && !(input as Record<string, unknown>).forName) {
+          const him = await prisma.customer.findFirst({ where: { businessId: bizId, phone: { in: [phone, phone.replace(/^972/, "0")] } }, select: { id: true } });
+          const gap = await gapRefusal(bizId, him?.id, [serviceId], date);
+          if (gap) return gap;
+        }
 
         // ── Hard availability guard ──────────────────────────────────────────
         // NEVER create an appointment on a slot that isn't genuinely open for
@@ -1277,6 +1286,9 @@ export async function execTool(
         // opens up?" (28.10.2026, still happening 25.11.2026).
         const originalRequest = input.originalRequest && await cancelledJustNow(bizId, proposalPhone, customer?.id) ? "" : input.originalRequest;
         const othersIn = (input as Record<string, unknown>).others;
+        const trialBiz = onTrial((await prisma.business.findUnique({ where: { id: bizId }, select: { settings: true } }))?.settings);
+        const gap = trialBiz ? await gapRefusal(bizId, customer?.id, [service.id, ...(Array.isArray(othersIn) ? othersIn.map((o: { serviceId?: unknown }) => String(o?.serviceId ?? "")) : [])], date) : null;
+        if (gap) return gap;
         const group: GroupItem[] = [];
         // A visit (16.10.2026): further treatments for the same customer, each with
         // its own serviceId — the whole chain checked together (order, staff, rooms,
@@ -2994,6 +3006,8 @@ async function runCustomerAgentCore(opts: {
     const season = onTrial(biz.settings) ? seasonLine([incomingText, ...history.filter(h => h.role === "user").slice(-2).map(h => h.content)].join("\n"), getBusinessNow().date) : "";
     if (season) customerContext += `\n${season}`;
   }
+  const man = onTrial(biz.settings) && vocabOf(biz).customerFem && writesAsMan([incomingText, ...history.filter(h => h.role === "user").map(h => h.content)]);
+  if (man) customerContext += "\nכותב גבר: פנה אליו בלשון זכר (\"מאשר?\", \"תגיע\"), גם אם רוב הלקוחות כאן נשים.";
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
   // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
   // the model kept answering "אין לי נייד, אני הבוט".
@@ -3305,7 +3319,7 @@ async function runCustomerAgentCore(opts: {
 
   assistantText = correctHebrewWeekdayLabels(assistantText);
   // A nail studio's customer reads "מאשרת?" and 💅, never 💈 (type-wording.ts).
-  assistantText = agentReplyForType(assistantText, vocabOf(biz));
+  assistantText = agentReplyForType(assistantText, vocabOf(biz), man);
   // A reply that copies its own instructions never goes out (prompt-guard.ts).
   if (!preHandledReply) {
     const known = [phone, ...systemPrompt.map(b => b.text), ...messages.map(m => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))].join("\n");

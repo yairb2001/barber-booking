@@ -28,6 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       ...(body.bufferAfterMin !== undefined && { bufferAfterMin: (Number.isInteger(body.bufferAfterMin) && body.bufferAfterMin >= 0 && body.bufferAfterMin <= 240 ? body.bufferAfterMin : 0) }),
       ...(body.upsellIds !== undefined && { upsellIds: (() => { if (!Array.isArray(body.upsellIds)) return null; const ids = body.upsellIds.filter((x: unknown) => typeof x === "string").slice(0, 5); return ids.length ? JSON.stringify(ids) : null; })() }),
       ...(body.rebookDays !== undefined && { rebookDays: (Number.isInteger(body.rebookDays) && body.rebookDays > 0 && body.rebookDays <= 365 ? body.rebookDays : null) }),
+      ...(body.minGapDays !== undefined && { minGapDays: (Number.isInteger(body.minGapDays) && body.minGapDays > 0 && body.minGapDays <= 365 ? body.minGapDays : null) }),
       ...(body.sortOrder !== undefined && { sortOrder: body.sortOrder }),
     },
   });
