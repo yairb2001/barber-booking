@@ -7,7 +7,7 @@ import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn, pickedHour } from "../src/lib/agent/availability-snapshot";
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
 import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, namedHour, sameHour, yesToCancelAndRebook, nameAtEnd, nameWithRequest, offeredHour, requestBesideName, requestBesideYes, wantsIfOpens } from "../src/lib/agent/mixed-messages";
-import { nearestId } from "../src/lib/agent/repair-ids";
+import { catalogIds, nearestId, realId } from "../src/lib/agent/repair-ids";
 import { vocabFor } from "../src/lib/vocab";
 import { addDaysISO, getBusinessNow } from "../src/lib/utils";
 import { agentReplyForType } from "../src/lib/type-wording";
@@ -105,5 +105,7 @@ eq("denies a free hour", ["אצל רז ברביעי 2.12 יש לו 18:45 (18:30 
 eq("crisis line", ["אין לי כוח לחיות יותר, אפשר תור לרופאה?", "אין לי כוח לתור ארוך", "בא לי למות מהצחוק"].map(t => !!crisisReply("נציג יחזור אליך", t)), [true, false, false]);
 eq("ignores his hour", [ignoresHour("רוצה לקבוע ב-13:00?", "15:00"), ignoresHour("מה השם המלא?", "15:00"), ignoresHour("15:00 אצל מיכל, לאשר?", "15:00")], [true, false, false]);
 eq("an hour at the end of a sentence", [pickedHour("ביום ראשון ב12. שמי יפעת", [], []), pickedHour("ב12.5", [], [])], [720, null]);
+eq("the short catalog id", [realId("0e9e10ce", ids), realId("0E9E10CE", ids), realId("11111111", ids), realId("0e9e10ce-ad55-46c1-822f-15d3e3c0b8d0", ids)], [ids[0], ids[0], null, ids[0]]);
+eq("a short id stays whole when two share it", [catalogIds(ids)(ids[0]), catalogIds([ids[0], "0e9e10ce-0000-4000-8000-000000000000"])(ids[0])], ["0e9e10ce", ids[0]]);
 
 process.exit(failed ? 1 : 0);

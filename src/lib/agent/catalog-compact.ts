@@ -8,6 +8,7 @@
  * the customer has not named a service (prompt-template.ts).
  */
 import { staffFemOf, type Vocab } from "@/lib/vocab";
+import { catalogIds } from "@/lib/agent/repair-ids";
 
 type Svc = { id: string; name: string; price: number; durationMinutes: number; note: string | null; category: string | null; priceFrom: boolean };
 type Own = { customName: string | null; customPrice: number | null; customDuration: number | null; customNote: string | null; service: { id: string } };
@@ -19,8 +20,9 @@ type StaffRow = {
 // "החל מ": the price is set at the consultation, so the agent never quotes it as final.
 const line = (name: string, price: number, dur: number, note: string | null, from: boolean) => `${name} ${from ? "החל מ-" : ""}${price}₪/${dur} דק׳${note ? ` (${note})` : ""}`;
 
-export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { header: string; body: string } {
+export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab, short = true): { header: string; body: string } {
   const hasPool = staff.some(s => s.inQuickPool);
+  const sid = short ? catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]) : (id: string) => id;
   const team = staff.map(s => {
     const fem = staffFemOf(s, v);
     const mark = s.gender === "x" ? " (בלי מגדר: אמור רק את השם, בלי היא או הוא)" : fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
@@ -29,7 +31,7 @@ export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { 
     // things): from the per-service lists alone the model gave people each other's treatments (25.11.2026).
     const mine = services.filter(sv => s.staffServices.some(x => x.service.id === sv.id)).map(sv => sv.name);
     const only = mine.length && mine.length < services.length && (services.length <= 12 || mine.length <= 2) ? ` (עושה רק: ${mine.join(" / ")})` : "";
-    return `${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}${only}`;
+    return `${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${sid(s.id)}]${pool}${only}`;
   });
   // Who does each service: only her own rows, as the booking guard reads it in these businesses (strictServices).
   const rows = services.map(sv => {
@@ -37,7 +39,7 @@ export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { 
     if (!by.length) return null;
     const own = by.filter(({ own: o }) => o.customName || o.customPrice != null || o.customDuration != null || o.customNote)
       .map(({ s, own: o }) => `אצל ${s.name}: ${line(o.customName ?? sv.name, o.customPrice ?? sv.price, o.customDuration ?? sv.durationMinutes, o.customNote ?? sv.note, sv.priceFrom)}`);
-    return { cat: sv.category?.trim() || "", text: `• ${line(sv.name, sv.price, sv.durationMinutes, sv.note, sv.priceFrom)} [id: ${sv.id}] · אצל: ${by.map(b => b.s.name).join(", ")}${own.length ? ` (${own.join("; ")})` : ""}` };
+    return { cat: sv.category?.trim() || "", text: `• ${line(sv.name, sv.price, sv.durationMinutes, sv.note, sv.priceFrom)} [id: ${sid(sv.id)}] · אצל: ${by.map(b => b.s.name).join(", ")}${own.length ? ` (${own.join("; ")})` : ""}` };
   }).filter((r): r is { cat: string; text: string } => !!r);
   const cats = Array.from(new Set(rows.map(r => r.cat)));
   const grouped = cats.length > 1 || cats[0]

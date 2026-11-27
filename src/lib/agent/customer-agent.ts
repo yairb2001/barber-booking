@@ -56,7 +56,8 @@ import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clea
 import { onTrial, widerContext } from "@/lib/agent/wider-context";
 import { inCustomerLanguage } from "@/lib/agent/reply-language";
 import { seasonLine } from "@/lib/agent/season-line";
-import { withRealIds } from "@/lib/agent/repair-ids";
+import { catalogIds, withRealIds } from "@/lib/agent/repair-ids";
+import { CONSULT_FIRST_NOTE } from "@/lib/domains";
 import { parseTargetDay } from "@/lib/agent/move-flow";
 import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
 import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
@@ -2029,11 +2030,12 @@ async function catalogCore(businessId: string): Promise<string> {
     .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
   // Beauty and every other type: each service once, by category, with who does it (catalog-compact.ts).
   if (v.type !== "barber_men") {
-    const c = compactCatalog(staff, services, v);
+    const c = compactCatalog(staff, services, v, onTrial(biz?.settings));
     return withDescriptions(`${c.header}\n${c.body}${twins.length ? "\n" + twins.join("\n") : ""}${info ? `\nפרטי העסק: ${info}` : ""}`, services, info);
   }
   const hasPool = staff.some(s => s.inQuickPool);
-  const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${id}]`;
+  const sid = onTrial(biz?.settings) ? catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]) : (id: string) => id;
+  const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${sid(id)}]`;
   const lines = staff.map(s => {
     const own = [...s.staffServices].sort((a, b) => a.service.sortOrder - b.service.sortOrder);
     const list = own.length
@@ -2044,7 +2046,7 @@ async function catalogCore(businessId: string): Promise<string> {
     const fem = staffFemOf(s, v);
     const mark = fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
     const pool = hasPool && !s.inQuickPool ? (fem ? " — לא מציעים אותה ביוזמתנו; רק אם הלקוח מבקש אותה בשמה או שהיא הקבועה שלו" : " — לא מציעים אותו ביוזמתנו; רק אם הלקוח מבקש אותו בשמו או שהוא הספר הקבוע שלו") : "";
-    return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${s.id}]${pool}: ${list.join("; ")}`;
+    return `• ${s.name}${mark}${s.nickname ? ` (${s.nickname})` : ""} [id: ${sid(s.id)}]${pool}: ${list.join("; ")}`;
   });
   const block = `${v.staffPluralDef} והשירותים (עדכני. המחיר והמשך הם של כל ${v.staff} בנפרד. המזהים בסוגריים הם מה שמעבירים לכלים — אין צורך לקרוא ל-get_staff_list או ל-get_services):\n` + lines.join("\n") + (twins.length ? "\n" + twins.join("\n") : "") + (info ? `\nפרטי העסק: ${info}` : "");
   return withDescriptions(block, services, info);
@@ -2095,6 +2097,8 @@ export function stablePromptParams(
     addressStyle: typeof setup?.address === "string" ? setup.address : null,
     bookingLink: bookingLink ?? null,
     setup,
+    consultFirst: catalogBlock.includes(CONSULT_FIRST_NOTE),
+    trim: onTrial(biz.settings),
   });
   const setupBlock = setup ? compileSetupConfig(setup, vocab, custom ? undefined : { skipTemplateKeys: true }) : "";
   return {
