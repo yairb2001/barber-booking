@@ -76,9 +76,9 @@ export const withRedFlag = (reply: string, incoming: string): string =>
   RED_FLAG.test(incoming) && !/כלב|חתול/.test(incoming) && !/מיון|(?<!\d)101(?!\d)|מד["״]א/.test(reply) ? `עם סימנים כאלה לא מחכים: לפנות עכשיו לחדר מיון או להתקשר למד"א 101.\n\n${reply}` : reply;
 
 /** The reply sent someone to emergency services: the number is always there, and a person gets the chat. */
-export function emergencyReply(reply: string): { reply: string; emergency: boolean } {
+export function emergencyReply(reply: string, incoming = ""): { reply: string; emergency: boolean } {
   if (!EMERGENCY.test(reply)) return { reply, emergency: false };
-  return { reply: /(?<!\d)(101|1201)(?!\d)/.test(reply) ? reply : `${reply}\n\nמד"א: 101`, emergency: true };
+  return { reply: /(?<!\d)(101|1201)(?!\d)/.test(reply) || ANIMAL.test(incoming) ? reply : `${reply}\n\nמד"א: 101`, emergency: true };
 }
 
 /** "18:30 לא פנוי" about an hour the code found free (27.11.2026: said three times in one chat, and the customer left). */
@@ -97,3 +97,11 @@ export const ignoresHour = (reply: string, hour: string): boolean => !reply.incl
 
 /** "אין מקום" with no hour in it, about a part of the day the code found free hours in (27.11.2026: "הצהריים יש משהו?"). */
 export const deniesRange = (reply: string): boolean => /אין (?:מקום|תורים|שעות|כלום|משהו)|לא פנוי|תפוס|מלא(?![א-ת])/.test(reply) && !/(?<!\d)\d{1,2}:\d{2}(?!\d)/.test(reply);
+
+const ANIMAL = /כלב|חתול|(?<![א-ת])גור(?![א-ת])|ארנב|תוכי|אוגר|\bdogs?\b|\bcats?\b|собак|кошк|كلب|قطة|قطتي/i;
+/** 101 is the ambulance for people: a poisoned dog was sent there twice (27.11.2026). Those lines go; the vet's own advice stays. */
+export function withoutHumanEmergency(reply: string, incoming: string): string {
+  if (!ANIMAL.test(incoming) || !/(?<!\d)101(?!\d)|מד["״]א/.test(reply)) return reply;
+  const kept = reply.split(/(?<=[.!?\n])/).filter(s => !/(?<!\d)101(?!\d)|מד["״]א/.test(s)).join("").trim();
+  return kept || "זה מצב חירום: הגיעו עכשיו לחירום וטרינרי, בלי לחכות לתור.";
+}

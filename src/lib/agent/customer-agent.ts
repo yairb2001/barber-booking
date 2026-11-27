@@ -48,7 +48,7 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { claimsBooked, crisisReply, deniesHour, deniesRange, ignoresHour, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
+import { claimsBooked, crisisReply, withoutHumanEmergency, deniesHour, deniesRange, ignoresHour, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
@@ -3327,7 +3327,8 @@ async function runCustomerAgentCore(opts: {
     }
     const crisis = onTrial(biz.settings) ? crisisReply(assistantText, incomingText) : null;
     if (crisis) { assistantText = crisis; ctx.handoffReason = `הלקוח כתב שאין לו כוח לחיות. הסוכן נתן את ער"ן 1201. כדאי לחזור אליו עכשיו: «${incomingText.slice(0, 200)}»`; ctx.conversationId = conversation.id; sandbox?.toolLog.push("escalate_to_human(מצוקה)"); }
-    const em = emergencyReply(assistantText);
+    if (onTrial(biz.settings)) assistantText = withoutHumanEmergency(assistantText, incomingText);
+    const em = emergencyReply(assistantText, onTrial(biz.settings) ? incomingText : "");
     assistantText = em.reply;
     if (em.emergency) {
       ctx.handoffReason = `הלקוח תיאר מצב שנשמע כמו חירום, והסוכן הפנה אותו ל-101. כדאי לחזור אליו עכשיו: «${incomingText.slice(0, 200)}»`;
@@ -3336,7 +3337,7 @@ async function runCustomerAgentCore(opts: {
     }
   }
   assistantText = guardReply(assistantText, promptInstructions(promptParams), { agent: "shop", label: `${biz.name} · ${phone}`, businessId });
-  if (onTrial(biz.settings)) assistantText = await inCustomerLanguage(assistantText, incomingText, { businessId, conversationId: conversation.id, kind: usageKind, sandbox: !!sandbox });
+  if (onTrial(biz.settings)) assistantText = await inCustomerLanguage(assistantText, incomingText, { businessId, conversationId: conversation.id, kind: usageKind, sandbox: !!sandbox, earlier: history.filter(h => h.role === "user").slice(-3).reverse().map(h => h.content) });
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open
