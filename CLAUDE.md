@@ -107,7 +107,7 @@ Piggybacked on the every-minute drip-queue tick: rolling reminder sweep (every 1
 
 ## Key flows / where the logic lives
 
-- **Customer agent (AI)** — `src/lib/agent/customer-agent.ts`. Driven by Anthropic tool use. Tools live in `src/lib/agent/tools/` (book_appointment, list_services, etc.). Webhook entry: `src/app/api/webhook/whatsapp/route.ts`.
+- **Customer agent (AI)** — before changing its prompt or guards read `docs/agent-change-rules.md`. `src/lib/agent/customer-agent.ts`. Driven by Anthropic tool use. Tools live in `src/lib/agent/tools/` (book_appointment, list_services, etc.). Webhook entry: `src/app/api/webhook/whatsapp/route.ts`.
 - **Outgoing messages** — always through `sendMessage()` in `src/lib/messaging/index.ts` (creates MessageLog, then provider.sendText). Provider is GreenAPI by default.
 - **Phone normalization** — `normalizeIsraeliPhone()` in `src/lib/messaging/phone.ts` — converts to E.164 (`972...`). **Customer.phone may be stored in either `0...` or `972...` format** — always normalize before comparing.
 - **Webhook** — saves *every* incoming message to `ConversationMessage` (regardless of agent on/off), then runs the agent only if enabled and not escalated. Captures `senderName` to `Conversation.whatsappName`. Before the agent, deterministic reply routers run: swap/move proposals, waitlist decline, and — when appointment confirmations are on — a bare "1"/"2" answer to the reminder (`src/lib/confirmations.ts`, pure code, no agent). In escalated threads a customer reply pushes the inbox handlers with the message text (`notifyOnReply`).

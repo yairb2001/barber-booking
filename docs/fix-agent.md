@@ -49,6 +49,7 @@ other sessions work in that checkout. Code work happens in a worktree per fix.
 3. **status `revert`**: a fresh worktree from origin/main, `git revert <fix.plan.commit>`,
    tsc, push to main, poll, `fix-agent.ts reverted <id>`.
 4. **status `queued`**: understand what Yair wants, read the conversations,
+   read `docs/agent-change-rules.md` (what broke before and how not to repeat it),
    then decide what kind of fix it is:
    - **a bug in code** (duplicate messages, wrong name, a slot that is not free,
      a false error): fix the code. Plan `{type:"code", branch, files}`.
