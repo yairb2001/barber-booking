@@ -83,3 +83,16 @@ export function emergencyReply(reply: string): { reply: string; emergency: boole
 /** "18:30 לא פנוי" about an hour the code found free (27.11.2026: said three times in one chat, and the customer left). */
 export const deniesHour = (reply: string, hour: string): boolean =>
   reply.split(/[.!?\n|()]+/).some(s => s.includes(hour) && /(^|[^א-ת])(לא|אין|תפוס)(?![א-ת])|isn'?t|not available/i.test(s) && !/(^|[^א-ת])יש(?![א-ת])|(?<!לא )פנוי/.test(s));
+
+const SELF_HARM = /(?:אין לי|אין לי שום|איבדתי(?: את)?(?: ה)?)\s*(?:כוח|חשק|סיבה|טעם)\s*(?:ל|ב)חיות|לא רוצה (?:לחיות|להיות פה|להמשיך לחיות)|(?:רוצה|בא לי) למות(?!\s*מ)|להתאבד|לפגוע בעצמי|לשים קץ|נמאס לי (?:לחיות|מהחיים)/;
+/** He writes he doesn't want to live: the crisis line, a person, and nothing else (27.11.2026: "maybe general tiredness" and a booking offer). */
+export const crisisReply = (reply: string, incoming: string): string | null =>
+  SELF_HARM.test(incoming) && !/ער["״]ן|(?<!\d)1201(?!\d)/.test(reply)
+    ? 'אני כאן ושומע אותך. אם יש מחשבות לפגוע בעצמך, אפשר לדבר עכשיו עם ער"ן בטלפון 1201, 24 שעות ביממה ובחינם. בסכנה מיידית: מד"א 101.\n\nהעברתי את ההודעה שלך לצוות, ויחזרו אליך בהקדם.'
+    : null;
+
+/** He named an hour ("3", "6 בערב") that is free, and the reply offers other hours without it (27.11.2026: "3" → "13:00?"). */
+export const ignoresHour = (reply: string, hour: string): boolean => !reply.includes(hour) && /(?<!\d)\d{1,2}:\d{2}(?!\d)/.test(reply);
+
+/** "אין מקום" with no hour in it, about a part of the day the code found free hours in (27.11.2026: "הצהריים יש משהו?"). */
+export const deniesRange = (reply: string): boolean => /אין (?:מקום|תורים|שעות|כלום|משהו)|לא פנוי|תפוס|מלא(?![א-ת])/.test(reply) && !/(?<!\d)\d{1,2}:\d{2}(?!\d)/.test(reply);

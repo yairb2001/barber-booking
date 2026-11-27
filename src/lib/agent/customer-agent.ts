@@ -48,7 +48,7 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { claimsBooked, deniesHour, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
+import { claimsBooked, crisisReply, deniesHour, deniesRange, ignoresHour, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
@@ -2760,7 +2760,7 @@ async function runCustomerAgentCore(opts: {
   const turnStart = new Date();
   // The treatments she named, when the availability block was built for them (works link).
   let namedServiceIds: string[] = [];
-  let freeHour: { hour: string; line: string } | null = null;
+  let freeHour = null as { hour: string; line: string } | null, freeRange = null as string | null;
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -3010,11 +3010,11 @@ async function runCustomerAgentCore(opts: {
       if (looksLikeBookingContext(recentTexts) || availTools) {
         const ctxPhone = normalizeIsraeliPhone(sandbox?.contextPhone ?? phone);
         const cust = await prisma.customer.findFirst({ where: { businessId, OR: [{ phone: ctxPhone }, { phone: ctxPhone.replace(/^972/, "0") }] }, select: { id: true } });
-        let serviceId: string | null = null, regularStaffId: string | null = null;
+        let serviceId: string | null = null, regularStaffId: string | null = null, hisUsual = false;
         if (cust) {
           const past = await prisma.appointment.findMany({ where: { businessId, customerId: cust.id, status: { in: ["confirmed", "completed"] } }, orderBy: { date: "desc" }, take: 12, select: { staffId: true, serviceId: true } });
           if (past.length) {
-            serviceId = past[0].serviceId;
+            serviceId = past[0].serviceId; hisUsual = true;
             const cnt = new Map<string, number>(); for (const a of past) cnt.set(a.staffId, (cnt.get(a.staffId) ?? 0) + 1);
             const top = Array.from(cnt.entries()).sort((a, b) => b[1] - a[1])[0];
             if (top && past.length >= 2 && top[1] / past.length >= 0.7) regularStaffId = top[0];
@@ -3049,7 +3049,8 @@ async function runCustomerAgentCore(opts: {
           const asked = [said, ...history.filter(h => h.role === "user").slice(0, -3).reverse().map(h => h.content)].map(t => namedServices(t, all)).find(ids => ids.length) ?? [];
           // The works link goes only for a treatment the text names beyond doubt.
           if (asked.length) { snapServiceId = asked[0]; if (!menShop) namedServiceIds = clearlyNamedServices(said, all); }
-          if (menShop && !asked.length) servicesOf = staffId => byStaff.get(staffId) ?? all;
+          // His last treatment is what he means (25.11.2026: a haircut customer was asked "ב-18:15 נכנס תספורת + זקן, זה הטיפול?").
+          if (menShop && !asked.length && !(hisUsual && onTrial(biz.settings))) servicesOf = staffId => byStaff.get(staffId) ?? all;
           serviceOf = staffId => {
             const mine = byStaff.get(staffId) ?? [];
             // A barber with no list of his own does everything (the men's catalog reads it that way too).
@@ -3062,7 +3063,7 @@ async function runCustomerAgentCore(opts: {
         const snap = await buildAvailabilitySnapshot({ businessId, days: wide ? 8 : 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
           talked: wide && talk.asked && talk.asked.days.length <= 2 ? talk.asked.days : [], servicesOf, lastReply: [...history].reverse().find(h => h.role === "assistant")?.content,
           silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
-          onFreeHour: (hour, line) => { freeHour ??= { hour, line }; },
+          onFreeHour: (hour, line) => { freeHour ??= { hour, line }; }, onFreeRange: line => { freeRange ??= line; },
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
         // Asked for a time that isn't free? Remember it quietly (not at night —
@@ -3300,10 +3301,13 @@ async function runCustomerAgentCore(opts: {
       const priced = open?.serviceId ?? (namedServiceIds.length === 1 ? namedServiceIds[0] : null);
       if (priced) assistantText = `${await priceLine(priced, open?.serviceId === priced ? open?.staffId : null)}\n\n${assistantText}`;
     }
-    // The code found the hour he asked for free; the model said it isn't (27.11.2026).
-    if (freeHour && onTrial(biz.settings) && deniesHour(assistantText, freeHour.hour)) {
+    // The code found the hour he asked for free; the model said it isn't, or offered others (27.11.2026).
+    if (freeHour && onTrial(biz.settings) && (deniesHour(assistantText, freeHour.hour) || ignoresHour(assistantText, freeHour.hour))) {
       console.warn(`[agent] denied a free hour biz=${businessId} hour=${freeHour.hour}`);
       assistantText = freeHour.line;
+    } else if (freeRange && onTrial(biz.settings) && deniesRange(assistantText)) {
+      console.warn(`[agent] denied a free part of the day biz=${businessId}`);
+      assistantText = freeRange;
     }
     if (widerContext(businessId) && claimsBooked(assistantText) && !(await anythingBooked(businessId, phone))) {
       console.warn(`[agent] claimed a booking that does not exist biz=${businessId}`);
@@ -3312,6 +3316,8 @@ async function runCustomerAgentCore(opts: {
       ctx.conversationId = conversation.id;
       sandbox?.toolLog.push("escalate_to_human(תור שלא נקבע)");
     }
+    const crisis = onTrial(biz.settings) ? crisisReply(assistantText, incomingText) : null;
+    if (crisis) { assistantText = crisis; ctx.handoffReason = `הלקוח כתב שאין לו כוח לחיות. הסוכן נתן את ער"ן 1201. כדאי לחזור אליו עכשיו: «${incomingText.slice(0, 200)}»`; ctx.conversationId = conversation.id; sandbox?.toolLog.push("escalate_to_human(מצוקה)"); }
     const em = emergencyReply(assistantText);
     assistantText = em.reply;
     if (em.emergency) {

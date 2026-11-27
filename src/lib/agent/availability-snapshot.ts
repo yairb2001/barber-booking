@@ -63,7 +63,7 @@ export function pickedHour(text: string, offered: number[], free: number[]): num
   const words = hourInWords(text.replace(/(?:^|\s)(\d{1,2})\s+ו(רבע|חצי|עשרה|עשרים)/, (_m, h: string, w: string) => ` ${HOUR_NAMES[Number(h) - 1] ?? h} ו${w}`));
   const m = words ? words.match(/(\d+):(\d+)/)
     : text.match(/(?:^|[^\d:./])(\d{1,2}):(\d{2})(?!\d)/) ?? text.match(/(?:^|[^\d:./])(\d{2})(\d{2})(?!\d)/)
-    ?? text.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה |אז )-?(\d{1,2})()(?![\d:./])/) ?? text.match(/(?:^|\n)\s*(\d{1,2})()\s*(?=[.,!?\n]|$)/);
+    ?? text.match(/(?:^|\s)(?:ב|ל|בשעה |לשעה |אז )-?(\d{1,2})()(?![\d:]|[./]\d)/) ?? text.match(/(?:^|\n)\s*(\d{1,2})()\s*(?=[.,!?\n]|$)/);
   if (!m || Number(m[1]) > 23 || Number(m[2] || 0) > 59) return null;
   const at = Number(m[1]) * 60 + Number(m[2] || 0), both = Number(m[1]) < 12 && Number(m[1]) > 0 ? [at, at + 720] : [at];
   return both.find(x => offered.includes(x)) ?? both.find(x => free.includes(x)) ?? (Number(m[1]) >= 1 && Number(m[1]) <= 7 ? at + 720 : at);
@@ -169,6 +169,8 @@ export async function buildAvailabilitySnapshot(p: {
   silentAssign?: boolean;
   /** The hour he asked for is free (or free for a shorter treatment), with the line that says so: a reply that denies it is replaced (27.11.2026). */
   onFreeHour?: (hour: string, line: string) => void;
+  /** The part of the day he asked about has free hours, with the line that gives them: a reply of "אין מקום" is replaced. */
+  onFreeRange?: (line: string) => void;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
@@ -229,19 +231,24 @@ export async function buildAvailabilitySnapshot(p: {
     const offered = Array.from((p.lastReply ?? "").matchAll(/(\d{1,2}):(\d{2})/g)).map(m => Number(m[1]) * 60 + Number(m[2]));
     const hour = ask?.from === undefined && ask?.to === undefined ? pickedHour(text, offered, everyone) : null;
     const dayLabel = ask && ask.days.length === 1 && ask.days[0] === day ? ask.dayLabel : `ב${dayNames[inList.indexOf(day)]} ${Number(day.slice(8))}.${Number(day.slice(5, 7))}`;
+    const onDay = dayLabel.startsWith("יום ") ? "ב" + dayLabel : dayLabel;
     if (hour !== null) {
       const at = staff.filter(s => free(s).some(t => timeToMinutes(t) === hour));
       if (!at.length) {
         const near = [...everyone].sort((a, b) => Math.abs(a - hour) - Math.abs(b - hour)).slice(0, 3).sort((a, b) => a - b).map(fmt);
         const fits = Array.from(new Set(staff.flatMap(s => (p.servicesOf?.(s.id) ?? []).filter(x => rawIndex.slots(s.id, day, x.id).some(t => timeToMinutes(t) === hour)).map(x => x.name))));
-        if (fits.length) p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${dayLabel} יש מקום${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} ל${fits.join(" או ל")}. לקבוע לך?${near.length ? ` (לטיפול ארוך יותר הכי קרוב ${near.join(", ")})` : ""}`);
+        if (fits.length) p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${onDay} יש מקום${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} ל${fits.join(" או ל")}. לקבוע לך?${near.length ? ` (לטיפול ארוך יותר הכי קרוב ${near.join(", ")})` : ""}`);
         if (fits.length) return `\nב-${fmt(hour)} ${dayLabel} נכנס רק: ${fits.join(" / ")} (לא נאמר איזה טיפול). אל תאמר שהשעה לא פנויה: הצע אותה לטיפול הזה ושאל אם זה הטיפול.`;
         return near.length ? `\n${fmt(hour)} ${dayLabel} אי אפשר להתחיל${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} לטיפול הזה. הקרובות: ${near.join(", ")}. אמור שהשעה לא פנויה (לא "תפוס" ולא "נתפס") ותן אותן. טיפול אחר → get_available_slots עם ה-serviceId שלו.` : "";
       }
       // He named nobody and the business assigns by itself: one name, so there is nothing to ask.
       const one = !named.length && p.silentAssign ? at.find(s => s.id === p.regularStaffId) ?? index.staffByLoad(day).map(x => at.find(s => s.id === x.id)).find(x => !!x) ?? at[0] : null;
-      p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${dayLabel} יש מקום אצל ${(one ? [one] : at).map(label).join(" או אצל ")}. לקבוע לך?`);
+      p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${onDay} יש מקום אצל ${(one ? [one] : at).map(label).join(" או אצל ")}. לקבוע לך?`);
       return `\nב-${fmt(hour)} ${dayLabel} פנוי אצל ${(one ? [one] : at).map(label).join(", ")} → propose_booking לשעה הזו${one ? ", בלי לשאול אצל מי" : ""}.`;
+    }
+    if (ask && (ask.from !== undefined || ask.to !== undefined) && (ask.dayLabel === "בימים הקרובים" || (ask.days.length === 1 && ask.days[0] === day))) {
+      const inRange = Array.from(new Set(staff.flatMap(free))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
+      if (inRange.length) p.onFreeRange?.(`${onDay} ${ask.rangeLabel ?? ""} יש${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} ${inRange.length > 3 ? `${inRange.slice(0, 3).join(", ")} ועוד עד ${inRange[inRange.length - 1]}` : inRange.join(", ")}. מה מתאים?`.replace(/\s+/g, " "));
     }
     if (!ask || ask.days.length !== 1 || ask.days[0] !== day || (ask.from === undefined && ask.to === undefined) || !p.silentAssign || named.length || p.regularStaffId || staff.length < 2) return "";
     const all = Array.from(new Set(staff.flatMap(free))).filter(t => timeToMinutes(t) >= (ask.from ?? 0) && timeToMinutes(t) < (ask.to ?? 24 * 60)).sort();
