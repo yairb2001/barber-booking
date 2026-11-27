@@ -167,6 +167,8 @@ export async function buildAvailabilitySnapshot(p: {
   servicesOf?: (staffId: string) => { id: string; name: string }[];
   /** Nobody asked for by name and the business assigns by itself: the asked day's hours of everyone together. */
   silentAssign?: boolean;
+  /** The hour he asked for is free (or free for a shorter treatment), with the line that says so: a reply that denies it is replaced (27.11.2026). */
+  onFreeHour?: (hour: string, line: string) => void;
 }): Promise<string> {
   const days = p.days ?? 6;
   const today = getBusinessNow().date;
@@ -232,11 +234,13 @@ export async function buildAvailabilitySnapshot(p: {
       if (!at.length) {
         const near = [...everyone].sort((a, b) => Math.abs(a - hour) - Math.abs(b - hour)).slice(0, 3).sort((a, b) => a - b).map(fmt);
         const fits = Array.from(new Set(staff.flatMap(s => (p.servicesOf?.(s.id) ?? []).filter(x => rawIndex.slots(s.id, day, x.id).some(t => timeToMinutes(t) === hour)).map(x => x.name))));
+        if (fits.length) p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${dayLabel} יש מקום${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} ל${fits.join(" או ל")}. לקבוע לך?${near.length ? ` (לטיפול ארוך יותר הכי קרוב ${near.join(", ")})` : ""}`);
         if (fits.length) return `\nב-${fmt(hour)} ${dayLabel} נכנס רק: ${fits.join(" / ")} (לא נאמר איזה טיפול). אל תאמר שהשעה לא פנויה: הצע אותה לטיפול הזה ושאל אם זה הטיפול.`;
         return near.length ? `\n${fmt(hour)} ${dayLabel} אי אפשר להתחיל${named.length ? ` אצל ${named.map(label).join(", ")}` : ""} לטיפול הזה. הקרובות: ${near.join(", ")}. אמור שהשעה לא פנויה (לא "תפוס" ולא "נתפס") ותן אותן. טיפול אחר → get_available_slots עם ה-serviceId שלו.` : "";
       }
       // He named nobody and the business assigns by itself: one name, so there is nothing to ask.
       const one = !named.length && p.silentAssign ? at.find(s => s.id === p.regularStaffId) ?? index.staffByLoad(day).map(x => at.find(s => s.id === x.id)).find(x => !!x) ?? at[0] : null;
+      p.onFreeHour?.(fmt(hour), `ב-${fmt(hour)} ${dayLabel} יש מקום אצל ${(one ? [one] : at).map(label).join(" או אצל ")}. לקבוע לך?`);
       return `\nב-${fmt(hour)} ${dayLabel} פנוי אצל ${(one ? [one] : at).map(label).join(", ")} → propose_booking לשעה הזו${one ? ", בלי לשאול אצל מי" : ""}.`;
     }
     if (!ask || ask.days.length !== 1 || ask.days[0] !== day || (ask.from === undefined && ask.to === undefined) || !p.silentAssign || named.length || p.regularStaffId || staff.length < 2) return "";

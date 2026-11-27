@@ -48,12 +48,12 @@ import { vocabFor, vocabOf, staffChoiceOf, staffFemOf, businessTypeOf, type Voca
 import { buildBookingLink } from "@/lib/link-first";
 import { tokenBudgetGate } from "@/lib/agent/token-budget";
 import { SECRECY_RULE, guardReply } from "@/lib/agent/prompt-guard";
-import { claimsBooked, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
+import { claimsBooked, deniesHour, dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, missesPrice, withAskOwnerPromise, withoutHtml, withoutToolNames, withRedFlag } from "@/lib/agent/reply-guards";
 import { staffFirst } from "@/lib/agent/staff-label";
 import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
-import { widerContext } from "@/lib/agent/wider-context";
+import { onTrial, widerContext } from "@/lib/agent/wider-context";
 import { withRealIds } from "@/lib/agent/repair-ids";
 import { parseTargetDay } from "@/lib/agent/move-flow";
 import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
@@ -2760,6 +2760,7 @@ async function runCustomerAgentCore(opts: {
   const turnStart = new Date();
   // The treatments she named, when the availability block was built for them (works link).
   let namedServiceIds: string[] = [];
+  let freeHour: { hour: string; line: string } | null = null;
 
   // ── Load business + agent config ─────────────────────────────────────────────
   const [biz, agentConfig] = await Promise.all([
@@ -3061,6 +3062,7 @@ async function runCustomerAgentCore(opts: {
         const snap = await buildAvailabilitySnapshot({ businessId, days: wide ? 8 : 6, serviceId: snapServiceId, serviceOf, regularStaffId, askText: focusLine ? incomingText : null, excludeStaffIds, customerId: cust?.id ?? null, holderKey: holderKeyForPhone(sandbox?.contextPhone ?? phone), vocab: vocabOf(biz),
           talked: wide && talk.asked && talk.asked.days.length <= 2 ? talk.asked.days : [], servicesOf, lastReply: [...history].reverse().find(h => h.role === "assistant")?.content,
           silentAssign: wide && setupSays(agentConfig?.setupConfig, "barberAssign") !== "לשאול",
+          onFreeHour: (hour, line) => { freeHour ??= { hour, line }; },
           asks: wide ? [incomingText, ...history.filter(h => h.role === "user").slice(-3).map(h => h.content).reverse()] : null });
         customerContext += `\n${snap}`;
         // Asked for a time that isn't free? Remember it quietly (not at night —
@@ -3297,6 +3299,11 @@ async function runCustomerAgentCore(opts: {
       const open = await findPendingProposal(businessId, normalizeIsraeliPhone(phone)).catch(() => null);
       const priced = open?.serviceId ?? (namedServiceIds.length === 1 ? namedServiceIds[0] : null);
       if (priced) assistantText = `${await priceLine(priced, open?.serviceId === priced ? open?.staffId : null)}\n\n${assistantText}`;
+    }
+    // The code found the hour he asked for free; the model said it isn't (27.11.2026).
+    if (freeHour && onTrial(biz.settings) && deniesHour(assistantText, freeHour.hour)) {
+      console.warn(`[agent] denied a free hour biz=${businessId} hour=${freeHour.hour}`);
+      assistantText = freeHour.line;
     }
     if (widerContext(businessId) && claimsBooked(assistantText) && !(await anythingBooked(businessId, phone))) {
       console.warn(`[agent] claimed a booking that does not exist biz=${businessId}`);

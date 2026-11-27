@@ -2,7 +2,7 @@
  *  npx tsx scripts/test-reply-guards.ts */
 import { askedDays, againstTalkedDay, talkedDays } from "../src/lib/agent/talked-day";
 import { targetDayIn } from "../src/lib/agent/move-flow";
-import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml, withRedFlag, claimsBooked } from "../src/lib/agent/reply-guards";
+import { dropInventedPhones, dropRepeatedWaitlistAsk, dropWaitlistForDayOff, emergencyReply, withAskOwnerPromise, withoutHtml, withRedFlag, claimsBooked, deniesHour } from "../src/lib/agent/reply-guards";
 import { staffFirst, staffShort } from "../src/lib/agent/staff-label";
 import { askedWindow, namedServices, workDaysIn, pickedHour } from "../src/lib/agent/availability-snapshot";
 import { correctHebrewWeekdayLabels, policyGapGuidance, situationalGuidance } from "../src/lib/agent/customer-agent";
@@ -101,5 +101,6 @@ eq("מחר with the right one", correctHebrewWeekdayLabels(`מחר ${dayIn(1)}, 
 eq("מחר שני תורים stays", correctHebrewWeekdayLabels("מחר שני תורים פנויים"), "מחר שני תורים פנויים");
 eq("a long dash after a date", agentReplyForType("ביום שני 30.11 — 10:00, 11:00", vocabFor("barber_men")), "ביום שני 30.11, 10:00, 11:00");
 eq("a range keeps it", agentReplyForType("10:00 — 12:00", vocabFor("barber_men")), "10:00 — 12:00");
+eq("denies a free hour", ["אצל רז ברביעי 2.12 יש לו 18:45 (18:30 לא פנוי אצלו).", "1830 בטוח אין", "אין 18:30 לתספורת וזקן, אבל לתספורת יש", "18:30 פנוי, מתאים?", "10:30 isn't actually an available slot"].map(r => deniesHour(r, r.includes("10:30") ? "10:30" : "18:30")), [true, false, false, false, true]);
 
 process.exit(failed ? 1 : 0);

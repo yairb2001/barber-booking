@@ -79,3 +79,7 @@ export function emergencyReply(reply: string): { reply: string; emergency: boole
   if (!EMERGENCY.test(reply)) return { reply, emergency: false };
   return { reply: /(?<!\d)(101|1201)(?!\d)/.test(reply) ? reply : `${reply}\n\nמד"א: 101`, emergency: true };
 }
+
+/** "18:30 לא פנוי" about an hour the code found free (27.11.2026: said three times in one chat, and the customer left). */
+export const deniesHour = (reply: string, hour: string): boolean =>
+  reply.split(/[.!?\n|()]+/).some(s => s.includes(hour) && /(^|[^א-ת])(לא|אין|תפוס)(?![א-ת])|isn'?t|not available/i.test(s) && !/(^|[^א-ת])יש(?![א-ת])|(?<!לא )פנוי/.test(s));
