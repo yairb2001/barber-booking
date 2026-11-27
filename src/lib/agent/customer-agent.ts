@@ -3348,7 +3348,7 @@ async function runCustomerAgentCore(opts: {
       assistantText = freeRange;
     }
     // "איפה אתם? ויש חניה?": only the parking went to the owner, the address was never said (27.11.2026).
-    if (onTrial(biz.settings) && biz.address && asksWhere(incomingText) && !assistantText.includes(biz.address.split(",")[0].trim())) assistantText = `📍 ${biz.address}\n\n${assistantText}`;
+    if (onTrial(biz.settings) && biz.address && asksWhere(incomingText) && !assistantText.includes(biz.address.split(/[\s,]+/).find(w => w.length > 1) ?? biz.address)) assistantText = `📍 ${biz.address}\n\n${assistantText}`;
     if (widerContext(businessId) && claimsBooked(assistantText) && !(await anythingBooked(businessId, phone))) {
       console.warn(`[agent] claimed a booking that does not exist biz=${businessId}`);
       assistantText = "רגע, התור עוד לא נקבע במערכת. העברתי לצוות שיסגרו אותו ויחזרו אליך.";
