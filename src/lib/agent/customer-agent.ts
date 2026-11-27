@@ -61,7 +61,7 @@ import { CONSULT_FIRST_NOTE } from "@/lib/domains";
 import { adOfConversation, creditCustomer } from "@/lib/agent/ad-referral";
 import { parseTargetDay } from "@/lib/agent/move-flow";
 import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
-import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
+import { aboutHisAppointment, asksToCancel, cancelBesideNewTime, finishBy, hourInWords, nameAtEnd, namedHour, sameHour, priceQuestion, requestBesideName, requestBesideYes } from "@/lib/agent/mixed-messages";
 import { createConfirmProposal, handleIncomingForProposal, afterBookingWaitlistContext, firstNameOf as proposalFirstName, findPendingProposal, bookConfirmedProposal, recentlySaid, dayLabelWithDistance, type GroupItem } from "@/lib/agent/booking-proposals";
 import { requestAppointmentMove, reportRunningLate } from "@/lib/agent/appointment-swap";
 import { getBusinessNow, addDaysISO, timeToMinutes, minutesToTime } from "@/lib/utils";
@@ -3253,7 +3253,7 @@ async function runCustomerAgentCore(opts: {
         const sent = (keep ? preText + "\n\n" : "") + (proposed.content as string).replace(/^(PROPOSED|BOOKED)\n/, "");
         // "כן. אגב כמה זה?" / "קרן אור, כמה זה?": the question still needs its answer (25.11.2026). One more call, once.
         const booked = (proposed.content as string).startsWith("BOOKED\n");
-        const beside = systemLine || keep || !widerContext(businessId) ? null : !booked ? requestBesideName(incomingText) : /[?؟]\s*$/.test(sent) ? null : requestBesideYes(incomingText);
+        const beside = systemLine || keep || !widerContext(businessId) ? null : !booked ? requestBesideName(incomingText) ?? (onTrial(biz.settings) ? priceQuestion(incomingText) : null) : /[?؟]\s*$/.test(sent) ? null : requestBesideYes(incomingText);
         if (beside) {
           systemLine = sent;
           answerFirst = !booked;

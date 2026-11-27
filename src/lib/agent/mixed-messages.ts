@@ -8,6 +8,12 @@ import { classifyReply, looksLikeName } from "@/lib/agent/booking-proposals";
 const REQUEST = /[?؟]|אגב|כמה (?:זה|עולה|יעלה|זמן)|איפה|כתובת|חניה|תבטל|לבטל|תזיז|להזיז|תעדכ[ןנ]|תגיד|האם|by the way|how much|where|cancel/i;
 const YES_PREFIX = /^\s*(?:כן+|מאשרת?|אוקיי?|סבבה|בסדר|מעולה|סגור|אישור|yes|yep|ok(?:ay)?|sure)(?![א-תa-z])[\s,.!]*/i;
 
+/** "сколько стоит?" / "قديش السعر؟" / "how much?" beside the name or the hour: the fixed confirmation question
+ *  has no price, so the question needs its own answer (27.11.2026, Arabic, Russian and English chats). */
+export function priceQuestion(text: string): string | null {
+  return text.split("\n").map(l => l.trim()).find(l => /כמה (?:זה|עולה|יעלה)|מחיר|сколько|цен[аы]|стоит|السعر|سعر|قديش|كم|how much|price|cost/i.test(l)) ?? null;
+}
+
 /** "כן" with another request beside it → the request; a yes alone (or a yes that only adds detail) → null. */
 export function requestBesideYes(text: string): string | null {
   const t = text.trim();
