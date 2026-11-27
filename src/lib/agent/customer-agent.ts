@@ -2030,11 +2030,11 @@ async function catalogCore(businessId: string): Promise<string> {
     .map(([first, names]) => `זהירות, ${names.length} בשם "${first}": ${names.join(" / ")}. לקוח שכותב רק "${first}" → לפי ההקשר (${v.regular} שלו או מי שדיברתם עליו); לא ברור → שאל איזה מהם. תמיד הבחן לפי המזהה.`);
   // Beauty and every other type: each service once, by category, with who does it (catalog-compact.ts).
   if (v.type !== "barber_men") {
-    const c = compactCatalog(staff, services, v, onTrial(biz?.settings));
+    const c = compactCatalog(staff, services, v);
     return withDescriptions(`${c.header}\n${c.body}${twins.length ? "\n" + twins.join("\n") : ""}${info ? `\nפרטי העסק: ${info}` : ""}`, services, info);
   }
   const hasPool = staff.some(s => s.inQuickPool);
-  const sid = onTrial(biz?.settings) ? catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]) : (id: string) => id;
+  const sid = catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]);
   const svc = (name: string, price: number, dur: number, note: string | null, id: string) => `${name} ${price}₪/${dur} דק׳${note ? ` (${note})` : ""} [id: ${sid(id)}]`;
   const lines = staff.map(s => {
     const own = [...s.staffServices].sort((a, b) => a.service.sortOrder - b.service.sortOrder);
@@ -2098,7 +2098,6 @@ export function stablePromptParams(
     bookingLink: bookingLink ?? null,
     setup,
     consultFirst: catalogBlock.includes(CONSULT_FIRST_NOTE),
-    trim: onTrial(biz.settings),
   });
   const setupBlock = setup ? compileSetupConfig(setup, vocab, custom ? undefined : { skipTemplateKeys: true }) : "";
   return {

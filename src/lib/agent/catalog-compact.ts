@@ -20,9 +20,9 @@ type StaffRow = {
 // "החל מ": the price is set at the consultation, so the agent never quotes it as final.
 const line = (name: string, price: number, dur: number, note: string | null, from: boolean) => `${name} ${from ? "החל מ-" : ""}${price}₪/${dur} דק׳${note ? ` (${note})` : ""}`;
 
-export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab, short = true): { header: string; body: string } {
+export function compactCatalog(staff: StaffRow[], services: Svc[], v: Vocab): { header: string; body: string } {
   const hasPool = staff.some(s => s.inQuickPool);
-  const sid = short ? catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]) : (id: string) => id;
+  const sid = catalogIds([...staff.map(s => s.id), ...services.map(s => s.id)]);
   const team = staff.map(s => {
     const fem = staffFemOf(s, v);
     const mark = s.gender === "x" ? " (בלי מגדר: אמור רק את השם, בלי היא או הוא)" : fem === v.staffFem ? "" : fem ? " (אישה)" : " (גבר)";
