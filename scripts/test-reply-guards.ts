@@ -112,6 +112,6 @@ eq("the short catalog id", [realId("0e9e10ce", ids), realId("0E9E10CE", ids), re
 eq("a short id stays whole when two share it", [catalogIds(ids)(ids[0]), catalogIds([ids[0], "0e9e10ce-0000-4000-8000-000000000000"])(ids[0])], ["0e9e10ce", ids[0]]);
 
 eq("his language", ["16:40 please", "my name is Daniel Cohen", "ok", "Daniel Cohen", "שלום hi there"].map(foreignLang), [null, "en", null, null, null]);
-eq("a man writing to a women's place", [["אהלן אחי, צריך גבות"], ["כן מעולה\nאני אבי שושן והיא רינת"], ["עומר דהן"], ["תקבעי לי אצל אורי חמישי"], ["בעלי אבי רוצה גם"], ["אני צריכה ג'ל"], ["טל כהן"]].map(writesAsMan), [true, true, true, false, false, false, false]);
+eq("a man writing to a women's place", [["אהלן אחי, צריך גבות"], ["וצריך לבוא לייעוץ לפני?\nשמי אורית פז"], ["אהלן, אבי. עשיתי אצלכם כבר ייעוץ"], ["כן מעולה\nאני אבי שושן והיא רינת"], ["עומר דהן"], ["תקבעי לי אצל אורי חמישי"], ["בעלי אבי רוצה גם"], ["אני צריכה ג'ל"], ["טל כהן"]].map(writesAsMan), [true, false, true, true, true, false, false, false, false]);
 eq("his confirmation stays masculine", [agentReplyForType("רגע לפני:\nמאשר?", { customerFem: true } as never, true), agentReplyForType("רגע לפני:\nמאשר?", { customerFem: true } as never)], ["רגע לפני:\nמאשר?", "רגע לפני:\nמאשרת?"]);
 process.exit(failed ? 1 : 0);

@@ -2670,8 +2670,9 @@ const CALLER_SAYS = [["חניה", /חני/], ["מעלית", /מעלית/], ["ת�
 /** A question the business already answered in its setup, or one that was already sent in this chat (25.11.2026: "יש חניה"
  *  went to the owner three times, and the answer was in the instructions). */
 async function alreadyKnown(businessId: string, conversationId: string, question: string): Promise<string | null> {
-  const cfg = await prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true, faqs: { select: { question: true, answer: true } } } });
-  const own = [...Object.values((() => { try { return JSON.parse(cfg?.setupConfig ?? "{}") as Record<string, unknown>; } catch { return {}; } })()).filter((x): x is string => typeof x === "string"), ...(cfg?.faqs ?? []).map(f => `${f.question} ${f.answer}`)];
+  const [cfg, biz] = await Promise.all([prisma.agentConfig.findUnique({ where: { businessId }, select: { setupConfig: true, faqs: { select: { question: true, answer: true } } } }), prisma.business.findUnique({ where: { id: businessId }, select: { address: true, settings: true } })]);
+  // The address lives on the business, not in the setup: "איפה אתם?" went to the owner three times (27.11.2026).
+  const own = [...(biz?.address && onTrial(biz.settings) ? [`כתובת: ${biz.address}`] : []), ...Object.values((() => { try { return JSON.parse(cfg?.setupConfig ?? "{}") as Record<string, unknown>; } catch { return {}; } })()).filter((x): x is string => typeof x === "string"), ...(cfg?.faqs ?? []).map(f => `${f.question} ${f.answer}`)];
   for (const [, re] of CALLER_SAYS) { const line = re.test(question) ? own.find(x => re.test(x)) : null; if (line) return `התשובה כבר כתובה: «${line.slice(0, 300)}». ענה ללקוח ממנה, וגם על שאר מה ששאל.`; }
   const words = (t: string) => new Set(t.replace(/[^א-תa-z0-9 ]/gi, " ").split(/\s+/).filter(w => w.length > 2));
   const now = words(question);
@@ -2794,7 +2795,7 @@ async function runCustomerAgentCore(opts: {
   const [biz, agentConfig] = await Promise.all([
     prisma.business.findUnique({
       where: { id: businessId },
-      select: { id: true, name: true, slug: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true, settings: true },
+      select: { id: true, name: true, slug: true, bookingHorizonDays: true, businessType: true, messagingProvider: true, whatsappNumber: true, greenApiInstanceId: true, greenApiToken: true, evolutionInstance: true, settings: true },
     }),
     prisma.agentConfig.findUnique({
       where: { businessId },
@@ -3007,6 +3008,8 @@ async function runCustomerAgentCore(opts: {
     if (season) customerContext += `\n${season}`;
   }
   const man = onTrial(biz.settings) && vocabOf(biz).customerFem && writesAsMan([incomingText, ...history.filter(h => h.role === "user").map(h => h.content)]);
+  // A date past the calendar came back "full" (27.11.2026, a peeling series in January): say it is not open yet.
+  if (onTrial(biz.settings)) customerContext += `\nאפשר לקבוע עד ${addDaysISO(getBusinessNow().date, biz.bookingHorizonDays)}. תאריך אחרי זה: אמור שעוד אי אפשר לקבוע אותו ושיחזרו אליו קרוב יותר, ולא "אין מקום".`;
   if (man) customerContext += "\nכותב גבר: פנה אליו בלשון זכר (\"מאשר?\", \"תגיע\"), גם אם רוב הלקוחות כאן נשים.";
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
   // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
