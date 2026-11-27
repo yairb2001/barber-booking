@@ -54,6 +54,8 @@ import { buildAvailabilityIndex } from "@/lib/availability-index";
 import { applyToolDescriptions, toolResultForType, toolsForType } from "@/lib/agent/tool-descriptions";
 import { buildAvailabilitySnapshot, looksLikeBookingContext, namedServices, clearlyNamedServices, workDaysIn } from "@/lib/agent/availability-snapshot";
 import { onTrial, widerContext } from "@/lib/agent/wider-context";
+import { inCustomerLanguage } from "@/lib/agent/reply-language";
+import { seasonLine } from "@/lib/agent/season-line";
 import { withRealIds } from "@/lib/agent/repair-ids";
 import { parseTargetDay } from "@/lib/agent/move-flow";
 import { againstTalkedDay, talkedDayLine, talkedDays } from "@/lib/agent/talked-day";
@@ -939,7 +941,8 @@ export async function execTool(
       // ── find_visit_times (16.10.2026): several treatments in a row ──────────
       case "find_visit_times": {
         const raw = (input as Record<string, unknown>).treatments;
-        const asked = (Array.isArray(raw) ? raw : []).slice(0, 4).map((x: { serviceId?: unknown; staffId?: unknown }) => ({ serviceId: String(x?.serviceId ?? "").trim(), staffId: x?.staffId ? String(x.staffId).trim() : null })).filter(x => x.serviceId);
+        const trialVisit = onTrial((await prisma.business.findUnique({ where: { id: bizId }, select: { settings: true } }))?.settings);
+        const asked = (Array.isArray(raw) ? raw : []).slice(0, trialVisit ? 6 : 4).map((x: { serviceId?: unknown; staffId?: unknown }) => ({ serviceId: String(x?.serviceId ?? "").trim(), staffId: x?.staffId ? String(x.staffId).trim() : null })).filter(x => x.serviceId);
         if (!asked.length) return "שגיאה: צריך את כל הטיפולים (treatments עם serviceId לכל אחד).";
         // Ids as written in the instructions; a name is accepted too.
         const steps: { serviceId: string; staffId: string | null }[] = [];
@@ -960,7 +963,7 @@ export async function execTool(
         const dates = oneDay ? [input.date] : Array.from({ length: 14 }, (_, i) => addDaysISO(today, i));
         for (const d of dates) {
           const ctx = await loadDayContext(bizId, d, exempt);
-          const { options, starts } = findVisitOptions(ctx, steps, { keepOrder, from, to });
+          const { options, starts } = findVisitOptions(ctx, steps, { keepOrder, from, to, hairOrder: trialVisit });
           if (!options.length) {
             if (oneDay && windowLabel && starts.length) return `ב-${d} אין ביקור כזה שמתחיל ${windowLabel}. באותו יום אפשר להתחיל: ${startRanges(starts, ctx.step)}. הצע את הקרובה למה שביקשה, או קרא בלי date עם אותו fromTime/toTime כדי למצוא יום אחר.`;
             continue;
@@ -1279,7 +1282,8 @@ export async function execTool(
         let avail: Awaited<ReturnType<typeof computeDayAvailabilityRetrying>> = [];
         if (visitMode) {
           const items = [{ staffId: staff.id, serviceId: service.id, startTime }];
-          for (const o of (othersIn as { serviceId?: string; staffId?: string; startTime?: string }[]).slice(0, 3)) {
+          const upTo = onTrial((await prisma.business.findUnique({ where: { id: bizId }, select: { settings: true } }))?.settings) ? 5 : 3;
+          for (const o of (othersIn as { serviceId?: string; staffId?: string; startTime?: string }[]).slice(0, upTo)) {
             const t = String(o?.startTime ?? "");
             const vs = await prisma.service.findFirst({ where: { businessId: bizId, OR: [{ id: String(o?.serviceId ?? "") }, { name: { contains: String(o?.serviceId ?? "-"), mode: "insensitive" } }] }, select: { id: true } });
             const vst = await prisma.staff.findFirst({ where: { businessId: bizId, OR: [{ id: String(o?.staffId ?? "") }, { name: { contains: String(o?.staffId ?? "-"), mode: "insensitive" } }] }, select: { id: true } });
@@ -1675,6 +1679,9 @@ export async function execTool(
         if (!q) return "חסרה שאלה.";
         const { askOwner } = await import("@/lib/agent/learn");
         await askOwner({ businessId: bizId, conversationId, phone: callerPhone, question: q });
+        // The other questions of the same message were dropped once one went to the owner (27.11.2026, eight chats).
+        if (onTrial((await prisma.business.findUnique({ where: { id: bizId }, select: { settings: true } }))?.settings))
+          return "השאלה הועברה לבעל העסק. בתשובה הזאת: משפט אחד שאתה בודק את זה וחוזר (בלי להבטיח מתי), ובאותה הודעה ענה על כל שאר מה שהלקוח שאל ושהתשובה עליו כתובה אצלך (מחיר, משך, תשלום, כתובת, שעות, תור). אל תשאיר שאלה שלו בלי מענה.";
         return "השאלה הועברה לבעל העסק. כתוב ללקוח במשפט אחד בזמן הווה, למשל \"שאלה טובה, אני בודק את זה ואחזור אליך\", בלי להבטיח מתי, והמשך לעזור בשאר אם יש.";
       }
 
@@ -2975,6 +2982,8 @@ async function runCustomerAgentCore(opts: {
     if (cancelled) customerContext += `\n${cancelled}`;
     const mixed = await mixedMessageContext(businessId, incomingText, history.filter(h => h.role === "user").slice(-4).reverse().map(h => h.content), customerContext, talkedDayLine(talk, getBusinessNow().date)).catch(() => "");
     if (mixed) customerContext += `\n${mixed}`;
+    const season = onTrial(biz.settings) ? seasonLine([incomingText, ...history.filter(h => h.role === "user").slice(-2).map(h => h.content)].join("\n"), getBusinessNow().date) : "";
+    if (season) customerContext += `\n${season}`;
   }
   // Asked for the owner's or a barber's own number ("מה הנייד שלך הפרטי יאיר",
   // DOMINANT 1.11.2026): a person answers that, not the bot. Handed over in code,
@@ -3291,7 +3300,7 @@ async function runCustomerAgentCore(opts: {
   // A reply that copies its own instructions never goes out (prompt-guard.ts).
   if (!preHandledReply) {
     const known = [phone, ...systemPrompt.map(b => b.text), ...messages.map(m => (typeof m.content === "string" ? m.content : JSON.stringify(m.content)))].join("\n");
-    assistantText = dropInventedPhones(assistantText, known);
+    assistantText = dropInventedPhones(assistantText, known, onTrial(biz.settings));
     assistantText = withoutHtml(assistantText);
     assistantText = dropWaitlistForDayOff(assistantText, workDaysIn(customerContext));
     assistantText = dropRepeatedWaitlistAsk(assistantText, history.filter(h => h.role === "assistant").map(h => h.content), incomingText);
@@ -3327,6 +3336,7 @@ async function runCustomerAgentCore(opts: {
     }
   }
   assistantText = guardReply(assistantText, promptInstructions(promptParams), { agent: "shop", label: `${biz.name} · ${phone}`, businessId });
+  if (onTrial(biz.settings)) assistantText = await inCustomerLanguage(assistantText, incomingText, { businessId, conversationId: conversation.id, kind: usageKind, sandbox: !!sandbox });
 
   // ── Save assistant reply + send via WhatsApp ──────────────────────────────────
   // A blank line means "send as a separate WhatsApp bubble" — lets the agent open

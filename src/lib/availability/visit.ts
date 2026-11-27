@@ -143,6 +143,14 @@ function chainFrom(ctx: DayContext, steps: VisitStep[], start: number, maxGap: n
   return best;
 }
 
+/** Colour, then the cut, then the blow-dry: a haircut before the colour is wrong (27.11.2026). Other treatments anywhere. */
+const HAIR_RANK: [RegExp, number][] = [[/צבע|גוונים|בלייאז|החלק|קרטין/, 0], [/תספורת|פוני/, 1], [/פן|בייביליס|תסרוקת/, 2]];
+function inHairOrder(ctx: DayContext, p: VisitStep[]): boolean {
+  const name = (id: string) => ctx.staff.map(s => s.services.get(id)?.svc.name).find(Boolean) ?? "";
+  const ranks = p.map(x => HAIR_RANK.find(([re]) => re.test(name(x.serviceId)))?.[1]).filter((r): r is number => r !== undefined);
+  return ranks.every((r, i) => i === 0 || r >= ranks[i - 1]);
+}
+
 /** Every order of the treatments (up to 4 of them: 24 orders). */
 function orders<T>(xs: T[]): T[][] {
   if (xs.length <= 1) return [xs];
@@ -158,9 +166,12 @@ function orders<T>(xs: T[]): T[][] {
  * ("בצהריים"); `starts` = every start that works that day, so the agent never
  * reads three morning options as "nothing at noon" (28.10.2026).
  */
-export function findVisitOptions(ctx: DayContext, steps: VisitStep[], o: { limit?: number; maxGap?: number; keepOrder?: boolean; from?: number; to?: number } = {}): { options: VisitItem[][]; starts: number[] } {
+export function findVisitOptions(ctx: DayContext, steps: VisitStep[], o: { limit?: number; maxGap?: number; keepOrder?: boolean; from?: number; to?: number; hairOrder?: boolean } = {}): { options: VisitItem[][]; starts: number[] } {
   if (!steps.length || !ctx.staff.length) return { options: [], starts: [] };
-  const perms = o.keepOrder ? [steps] : orders(steps.slice(0, 4));
+  // A fifth treatment was dropped (27.11.2026): past four, the rest keep the order she gave, after them.
+  const all = o.keepOrder ? [steps] : orders(steps.slice(0, 4)).map(p => [...p, ...steps.slice(4)]);
+  const ordered = o.hairOrder && !o.keepOrder ? all.filter(p => inHairOrder(ctx, p)) : all;
+  const perms = ordered.length ? ordered : all;
   const firsts = new Set(perms.map(p => p[0]));
   const cands = new Set<number>();
   for (const f of Array.from(firsts)) {

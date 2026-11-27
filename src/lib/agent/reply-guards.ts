@@ -8,8 +8,9 @@ const digits = (s: string) => s.replace(/\D/g, "");
 
 /** A phone number that appears nowhere in what the agent was given is invented
  *  ("גרר 04-6500600", a garage's agent made it up). It is taken out of the reply. */
-export function dropInventedPhones(reply: string, known: string): string {
-  const ref = digits(known);
+export function dropInventedPhones(reply: string, known: string, wholeNumbers = true): string {
+  // Each number on its own: all the digits joined (ids, dates) held almost any 9 digits (27.11.2026, a vet agent's "073-7026516").
+  const ref = wholeNumbers ? Array.from(known.matchAll(/\d[\d\s-]{5,}\d/g), m => digits(m[0])).join("|") : digits(known);
   return reply.replace(PHONE, m => (ref.includes(digits(m).replace(/^(972|0)/, "")) ? m : ""))
     .replace(/[ \t]*\([ \t]*\)/g, "").replace(/[ \t]{2,}/g, " ");
 }
