@@ -5,6 +5,7 @@ import { generateSlug } from "@/lib/tenant";
 import { notifyPlatformOwner } from "@/lib/super-admin";
 import { isBusinessType, DEFAULT_BUSINESS_TYPE } from "@/lib/vocab";
 import { cleanDomains, setupForDomains } from "@/lib/domains";
+import { professionOf } from "@/lib/professions";
 import { saveSetupAnswers } from "@/lib/agent/setup-save";
 import { SERVICE_LIST } from "@/lib/agent/setup-fields";
 import { getPlans } from "@/lib/crm/plans";
@@ -45,12 +46,14 @@ function phoneMatches(input: string, stored: string | null | undefined): boolean
 
 export async function POST(req: NextRequest) {
   try {
-    const { businessName, phone, password, confirmPassword, businessType: rawType, domains: rawDomains, planKey, ref, referrerPhone, attribution: rawAttribution } = await req.json();
+    const { businessName, phone, password, confirmPassword, businessType: rawType, domains: rawDomains, profession: rawProfession, planKey, ref, referrerPhone, attribution: rawAttribution } = await req.json();
     const attribution = cleanAttribution(rawAttribution);
     // "מה עושים אצלכם" (28.10.2026): the domains set the type and words; an empty pick is "עסק אחר".
     const domains = cleanDomains(rawDomains);
     const fromDomains = Array.isArray(rawDomains) ? setupForDomains(domains) : null;
-    const businessType = fromDomains?.businessType ?? (isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE);
+    // A profession (27.11.2026): its type and words; the rules and the services follow below and in the wizard.
+    const profession = domains.length ? undefined : professionOf(rawProfession);
+    const businessType = profession?.businessType ?? fromDomains?.businessType ?? (isBusinessType(rawType) ? rawType : DEFAULT_BUSINESS_TYPE);
 
     // The shop's name is optional at signup (Yair, 10.10.2026); the wizard asks for it.
     // The free month runs on the shop's own WhatsApp (regular, by QR), so the
@@ -115,7 +118,7 @@ export async function POST(req: NextRequest) {
         trialEndsAt: null,
         whatsappStatus: "not_requested",
         messagingProvider: "evolution", evolutionInstance: slug, // our WhatsApp server; device is created on first QR
-        settings: JSON.stringify({ ownerLoginPhone: ownerPhone, ...(domains.length > 1 ? { domains } : {}), ...(fromDomains?.vocab ? { vocab: fromDomains.vocab } : {}), ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}), ...(attribution ? { signupAttribution: JSON.parse(attribution) } : {}) }),
+        settings: JSON.stringify({ ownerLoginPhone: ownerPhone, ...(domains.length > 1 ? { domains } : {}), ...(fromDomains?.vocab ? { vocab: fromDomains.vocab } : {}), ...(profession ? { profession: profession.id, vocab: profession.vocab } : {}), ...(plan ? { planKey: plan.key, tokenBudgetIls: plan.aiBudgetIls } : {}), ...(attribution ? { signupAttribution: JSON.parse(attribution) } : {}) }),
         ...(plan ? { monthlyPrice: plan.priceIls } : {}),
       },
       select: { id: true, slug: true },
@@ -123,6 +126,7 @@ export async function POST(req: NextRequest) {
 
     // Several domains: "רוצה תור" can mean anything, so the agent asks by category (prompt-template.ts).
     if (domains.length > 1) await saveSetupAnswers(business.id, { defaultService: SERVICE_LIST }, "wizard");
+    if (profession) await saveSetupAnswers(business.id, { defaultService: SERVICE_LIST, businessRules: profession.rules }, "wizard");
     // "חבר מביא חבר" (11.10.2026): his link, or the phone of the owner who told him.
     const referrer = await findReferrer({ ref, phone: referrerPhone }, business.id);
     if (referrer) await recordReferral({ id: business.id, name }, referrer);

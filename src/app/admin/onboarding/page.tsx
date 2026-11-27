@@ -11,6 +11,7 @@ import { estimateAppts, recommendPlan, MESSAGES_EXPLAINED } from "@/lib/crm/plan
 import { ConnectBox, BusinessNumberNote, startOurServerConnection } from "@/components/WhatsAppQrPanel";
 import { C, input, chip, Help, Bubble } from "./ui";
 import { domainsOf, starterCatalog, CONSULT_FIRST_NOTE, type Domain } from "@/lib/domains";
+import { professionOf } from "@/lib/professions";
 import { newMember, whoOf, type Member, type Svc } from "./model";
 import TeamStep from "./TeamStep";
 import ServicesStep from "./ServicesStep";
@@ -151,7 +152,7 @@ export default function OnboardingPage() {
         // (before 28.10.2026 it was set from the default type first, and a nail studio got the men's list).
         setServices(sv.length
           ? sv.map((x: { id: string; name: string; price: number; durationMinutes: number; category?: string | null }) => ({ id: x.id, name: x.name, price: String(x.price), duration: String(x.durationMinutes), category: x.category ?? undefined, who: whoSaved(x.id), savedWho: rowsOf(x.id) }))
-          : starterCatalog(doms).map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom, rebookDays: x.rebookDays, about: x.about, domain: x.domain, segments: x.segments, bufferAfterMin: x.bufferAfterMin, specialist: x.specialist, consultFirst: x.consultFirst, who: null })));
+          : (professionOf(s.profession)?.catalog.map(x => ({ ...x, domain: undefined as Domain | undefined })) ?? starterCatalog(doms)).map(x => ({ name: x.name, price: String(x.price), duration: String(x.duration), category: x.category, priceFrom: x.priceFrom, rebookDays: x.rebookDays, about: x.about, domain: x.domain, segments: x.segments, bufferAfterMin: x.bufferAfterMin, specialist: x.specialist, consultFirst: x.consultFirst, who: null })));
         if (agentRes.ok) {
           const a = await agentRes.json();
           if (a?.agentName) setAgentName(a.agentName);

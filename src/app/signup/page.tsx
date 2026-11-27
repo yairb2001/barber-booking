@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { DOMAINS, setupForDomains, type Domain } from "@/lib/domains";
+import { PROFESSIONS, professionOf } from "@/lib/professions";
 import { TYPICAL_BUSINESS, recommendPlan } from "@/lib/crm/plan-reco";
 import { CHATOR_PIXEL_ID } from "@/lib/lead-attribution";
 
@@ -61,8 +62,10 @@ export default function SignupPage() {
   // What they do, as many as apply (28.10.2026, spec "הקמה עצמית ליופי"); "עסק אחר" stands alone.
   const [domains, setDomains] = useState<Domain[]>([]);
   const [otherBiz, setOtherBiz] = useState(false);
-  const businessType = setupForDomains(domains).businessType;
-  const toggleDomain = (d: Domain) => { setOtherBiz(false); setDomains(a => (a.includes(d) ? a.filter(x => x !== d) : [...a, d])); };
+  // A profession outside hair and beauty (27.11.2026) stands alone, like "עסק אחר".
+  const [profession, setProfession] = useState("");
+  const businessType = professionOf(profession)?.businessType ?? setupForDomains(domains).businessType;
+  const toggleDomain = (d: Domain) => { setOtherBiz(false); setProfession(""); setDomains(a => (a.includes(d) ? a.filter(x => x !== d) : [...a, d])); };
   // The plans are shown, not picked (25.10.2026, Yair): the first month is free and the
   // plan is chosen at its end. The one that fits his type is marked.
   const [plans, setPlans] = useState<{ key: string; name: string; apptsEstimate: number; messages: number; priceIls: number }[]>([]);
@@ -89,7 +92,7 @@ export default function SignupPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!domains.length && !otherBiz) { setError("מה עושים אצלכם? אפשר לבחור כמה"); return; }
+    if (!domains.length && !otherBiz && !profession) { setError("מה עושים אצלכם? אפשר לבחור כמה"); return; }
     if (!phone) { setError("נא להזין טלפון"); return; }
     if (password.length < 6) { setError("סיסמה חייבת להיות לפחות 6 תווים"); return; }
     if (password !== confirmPassword) { setError("הסיסמאות לא תואמות"); return; }
@@ -97,7 +100,7 @@ export default function SignupPage() {
     try {
       const res = await fetch("/api/signup", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ businessName, domains, phone, password, confirmPassword, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined, attribution: readAttribution() }),
+        body: JSON.stringify({ businessName, domains, ...(profession ? { profession } : {}), phone, password, confirmPassword, ref: ref?.code, referrerPhone: !ref && referrerPhone.trim() ? referrerPhone : undefined, attribution: readAttribution() }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -131,7 +134,8 @@ export default function SignupPage() {
             <p className={section} style={{ color: C.ink }}>מה עושים אצלכם? <span className="font-normal text-slate-400">(אפשר לבחור כמה)</span></p>
             <div className="flex flex-wrap gap-2 mb-3">
               {[...DOMAINS.map(d => ({ id: d.id as string, label: d.label, on: domains.includes(d.id), pick: () => toggleDomain(d.id) })),
-                { id: "other", label: "עסק אחר", on: otherBiz, pick: () => { setDomains([]); setOtherBiz(o => !o); } }].map(t => (
+                ...PROFESSIONS.map(p => ({ id: p.id, label: p.label, on: profession === p.id, pick: () => { setDomains([]); setOtherBiz(false); setProfession(x => (x === p.id ? "" : p.id)); } })),
+                { id: "other", label: "עסק אחר", on: otherBiz, pick: () => { setDomains([]); setProfession(""); setOtherBiz(o => !o); } }].map(t => (
                 <button key={t.id} type="button" onClick={t.pick} aria-pressed={t.on}
                   className={`px-3.5 py-2 rounded-full text-sm border transition ${t.on ? "text-white border-transparent" : "bg-white border-slate-200 text-slate-600"}`}
                   style={t.on ? { background: C.petrol } : {}}>
